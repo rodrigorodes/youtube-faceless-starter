@@ -44,6 +44,8 @@ def check_env(env_text: str, required: list[str], optional: list[str] = ()) -> l
                 checks.append(Check(name, False, "ausente", is_required))
             elif not values[name]:
                 checks.append(Check(name, False, "em branco", is_required))
+            elif values[name].upper().startswith("CHANGE_ME"):
+                checks.append(Check(name, False, "placeholder do .env.example não trocado", is_required))
             else:
                 checks.append(Check(name, True, "definida", is_required))
     return checks

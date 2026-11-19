@@ -2,13 +2,13 @@ import ast
 from pathlib import Path
 
 STUDIO = Path(__file__).resolve().parents[1] / "renderer" / "app" / "studio"
-IO = {"fastapi", "psycopg", "httpx", "subprocess", "requests"}
+IO = {"fastapi", "psycopg", "httpx", "subprocess", "requests", "os", "socket", "urllib", "sqlalchemy"}
 
 
-def imports_of(layer: str) -> set[str]:
+def imports_of(layer: str, studio: Path = STUDIO) -> set[str]:
     found = set()
-    for path in (STUDIO / layer).rglob("*.py"):
-        module = ".".join(("app", "studio", layer, *path.relative_to(STUDIO / layer).with_suffix("").parts))
+    for path in (studio / layer).rglob("*.py"):
+        module = ".".join(("app", "studio", layer, *path.relative_to(studio / layer).with_suffix("").parts))
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Import):
                 found |= {a.name for a in node.names}
@@ -18,6 +18,7 @@ def imports_of(layer: str) -> set[str]:
                     parent = module.split(".")[: -node.level]
                     base = ".".join(parent + ([base] if base else []))
                 found.add(base)
+                found |= {f"{base}.{a.name}" for a in node.names}  # "from .. import adapters" importa o submódulo
     return found
 
 
@@ -37,9 +38,10 @@ def test_api_does_not_touch_adapters_or_database():
     assert violates(imports_of("api"), ("app.studio.adapters", "psycopg")) == set()
 
 
-def test_detector_catches_a_violation(tmp_path):
-    bad = tmp_path / "x.py"
-    bad.write_text("from ..adapters import y\nimport psycopg\n")
-    tree = ast.parse(bad.read_text())
-    assert any(isinstance(n, ast.ImportFrom) and n.level == 2 for n in ast.walk(tree))
-    assert violates({"psycopg", "app.studio.adapters.y"}, ("app.studio.adapters", "psycopg")) == {"psycopg", "app.studio.adapters.y"}
+def test_imports_of_resolves_relative_and_named_imports(tmp_path):
+    (tmp_path / "application").mkdir()
+    (tmp_path / "application" / "x.py").write_text(
+        "from .. import adapters\nfrom app.studio import api\nfrom ..adapters.postgres import repo\nimport os\n")
+    found = imports_of("application", tmp_path)
+    assert {"app.studio.adapters", "app.studio.api", "app.studio.adapters.postgres.repo", "os"} <= found
+    assert violates(found, ("app.studio.adapters", "app.studio.api", "os"))

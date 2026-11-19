@@ -19,6 +19,9 @@ def check_cost(estimated_usd: float | None, spent_usd: float, cap_usd: float,
     """Recusa antes da chamada paga. Estimativa ausente/negativa/NaN nunca vale como zero."""
     if estimated_usd is None or not math.isfinite(estimated_usd) or estimated_usd < 0:
         raise CostRefused(f"invalid cost estimate: {estimated_usd!r}")
+    for label, value in (("spent", spent_usd), ("cap", cap_usd), ("monthly spent", spent_month_usd), ("monthly cap", cap_month_usd)):
+        if value is None or not math.isfinite(value) or value < 0:  # NaN/inf/negativo nunca liberam gasto
+            raise CostRefused(f"invalid {label} value: {value!r}")
     if cap_usd == 0 and estimated_usd != 0.0:
         raise CostRefused("per-video cap is 0: paid providers are disabled")
     if spent_usd + estimated_usd > cap_usd:
@@ -45,17 +48,20 @@ class QaMetrics:
 def evaluate_qa(m: QaMetrics, fmt: VideoFormat) -> QaReport:
     max_duration, width, height = LIMITS[fmt]
     failures: list[str] = []
-    if m.duration_s > max_duration:
+    def bad(value: float | None) -> bool:  # NaN/inf/negativo é medição quebrada: reprova, nunca passa
+        return value is None or not math.isfinite(value) or value < 0
+
+    if bad(m.duration_s) or m.duration_s > max_duration:
         failures.append("duration")
     if (m.width, m.height) != (width, height):
         failures.append("resolution")
     if not m.has_audio:
         failures.append("no_audio")
-    elif m.loudness_lufs is None or abs(m.loudness_lufs - LOUDNESS_TARGET) > LOUDNESS_TOLERANCE:
+    elif m.loudness_lufs is None or not math.isfinite(m.loudness_lufs) or abs(m.loudness_lufs - LOUDNESS_TARGET) > LOUDNESS_TOLERANCE:
         failures.append("loudness")
-    if m.max_silence_s > MAX_SILENCE_S:
+    if bad(m.max_silence_s) or m.max_silence_s > MAX_SILENCE_S:
         failures.append("silence")
-    if m.max_black_s > MAX_BLACK_S:
+    if bad(m.max_black_s) or m.max_black_s > MAX_BLACK_S:
         failures.append("black")
     if not (m.disclosure_in_video and m.disclosure_in_description):
         failures.append("disclosure")

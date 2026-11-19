@@ -44,3 +44,11 @@ def test_unknown_field_rejected():
 
 def test_project_config_defaults_empty():
     assert Project(id="a" * 32, name="x").config == {}
+
+
+def test_schema_version_must_match_everywhere():
+    from app.studio.domain.contracts import QaReport
+    with pytest.raises(ValidationError):
+        Project(id="a" * 32, name="x", schema_version=2)
+    with pytest.raises(ValidationError):
+        QaReport(passed=True, schema_version=99)

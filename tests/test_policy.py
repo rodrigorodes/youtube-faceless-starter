@@ -70,3 +70,20 @@ def test_long_format_limits():
     assert evaluate_qa(ok, VideoFormat.long).passed
     assert evaluate_qa(replace(ok, duration_s=1801), VideoFormat.long).failures == ["duration"]
     assert evaluate_qa(GOOD, VideoFormat.long).failures == ["resolution"]
+
+
+NAN = float("nan")
+
+
+@pytest.mark.parametrize("kw", [{"spent_usd": NAN}, {"spent_usd": -1.0}, {"cap_usd": NAN}, {"cap_usd": float("inf")},
+                                {"spent_month_usd": NAN}, {"spent_month_usd": -1.0}, {"cap_month_usd": NAN}])
+def test_non_finite_or_negative_inputs_are_refused(kw):
+    args = {"estimated_usd": 0.5, "spent_usd": 0.0, "cap_usd": 5.0, "spent_month_usd": 0.0, "cap_month_usd": 15.0} | kw
+    with pytest.raises(CostRefused):
+        check_cost(**args)
+
+
+@pytest.mark.parametrize("field,code", [("duration_s", "duration"), ("loudness_lufs", "loudness"),
+                                        ("max_silence_s", "silence"), ("max_black_s", "black")])
+def test_nan_metrics_fail_qa_instead_of_passing(field, code):
+    assert evaluate_qa(replace(GOOD, **{field: NAN}), VideoFormat.short).failures == [code]

@@ -74,3 +74,29 @@ def test_transition_wins_once_under_concurrency(repo, project):
         [t.start() for t in threads]
         [t.join() for t in threads]
         assert sorted(results) == [False, True]
+
+
+def test_unknown_schema_version_in_db_is_rejected(repo, project, conn):
+    v = repo.create_video(project.id, "ADE 2026", VideoFormat.short)
+    conn.execute("UPDATE studio.videos SET qa_report = %s::jsonb WHERE id = %s", ('{"schema_version": 99, "passed": true}', v.id))
+    conn.commit()
+    with pytest.raises(ValueError):
+        repo.get_video(v.id)
+    conn.execute("UPDATE studio.videos SET qa_report = NULL, schema_version = 99 WHERE id = %s", (v.id,))
+    conn.commit()
+    with pytest.raises(ValueError):
+        repo.get_video(v.id)
+
+
+def test_dead_connection_becomes_service_unavailable(dsn):
+    from app.studio.application.use_cases import ServiceUnavailable
+    closed = psycopg.connect(dsn)
+    closed.close()
+    with pytest.raises(ServiceUnavailable):
+        PostgresVideoRepository(lambda: closed).get_video("0" * 32)
+
+
+def test_nul_byte_is_invalid_input(repo):
+    from app.studio.application.use_cases import InvalidInput
+    with pytest.raises(InvalidInput):
+        repo.create_project("a\x00b")

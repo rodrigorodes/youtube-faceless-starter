@@ -10,6 +10,10 @@ class ProjectNotFound(LookupError):
     pass
 
 
+class InvalidInput(ValueError):
+    """Dado recusado pela persistência (ex.: byte NUL em texto)."""
+
+
 class ServiceUnavailable(RuntimeError):
     """Persistência indisponível (traduzida pelos adaptadores; a API responde 503)."""
 

@@ -4,10 +4,14 @@ from collections.abc import Callable
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..application.use_cases import ProjectNotFound, ServiceUnavailable, UseCases
+from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Project, Video, VideoFormat, VideoStatus
 from ..domain.ids import InvalidId, check_id
 from ..domain.states import InvalidTransition
+
+
+# Aprovar, rejeitar e publicar só pelos endpoints próprios (P05), que checam QA e aprovação humana.
+RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED}
 
 
 class ProjectIn(BaseModel):
@@ -40,7 +44,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(422, "invalid id") from exc
         except ProjectNotFound as exc:
             raise HTTPException(404, "project not found") from exc
-        except InvalidTransition as exc:
+        except (InvalidTransition, InvalidInput) as exc:
             raise HTTPException(422, str(exc)) from exc
         except ServiceUnavailable as exc:
             raise HTTPException(503, "studio database unavailable") from exc
@@ -62,6 +66,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.post("/videos/{video_id}/transition")
     def transition(video_id: str, body: TransitionIn):
+        if body.new in RESERVED_TARGETS:
+            raise HTTPException(403, "approve/reject/publish are reserved for the dedicated endpoints (P05)")
         if not run(lambda uc: uc.transition_video.execute(check_id(video_id), body.expected, body.new)):
             raise HTTPException(409, "video is not in the expected state")
         return {"ok": True}

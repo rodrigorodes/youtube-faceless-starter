@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SCHEMA_VERSION = 1
 
@@ -56,6 +56,13 @@ class PublicationStatus(str, Enum):
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: int = SCHEMA_VERSION
+
+    @field_validator("schema_version")
+    @classmethod
+    def _known_version(cls, value: int) -> int:
+        if value != SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema_version {value!r}; expected {SCHEMA_VERSION}")
+        return value
 
 
 class QaReport(_Model):

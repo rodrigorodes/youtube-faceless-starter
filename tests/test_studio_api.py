@@ -56,7 +56,7 @@ def test_transition_conflict_is_409(client, video_id):
 
 
 def test_forbidden_transition_is_422_and_state_untouched(client, video_id):
-    r = client.post(f"/studio/videos/{video_id}/transition", json={"expected": "RENDERED", "new": "APPROVED"})
+    r = client.post(f"/studio/videos/{video_id}/transition", json={"expected": "IDEA", "new": "RENDERED"})
     assert r.status_code == 422
     assert client.get(f"/studio/videos/{video_id}").json()["status"] == "IDEA"
 
@@ -88,3 +88,14 @@ def test_health_and_studio_survive_db_down(url, tmp_path, monkeypatch):
     assert r.status_code == 200 and r.json()["status"] == "ok" and r.json()["ffmpeg"] is True and r.json()["studio_db"] == "unavailable"
     assert c.post("/studio/projects", json={"name": "x"}).status_code == 503
     assert c.get("/studio/videos/" + "0" * 32).status_code == 503
+
+
+def test_nul_byte_is_422_not_500(client):
+    assert client.post("/studio/projects", json={"name": "a\u0000b"}).status_code == 422
+
+
+@pytest.mark.parametrize("target", ["APPROVED", "REJECTED", "PUBLISHED"])
+def test_generic_endpoint_cannot_approve_reject_or_publish(client, video_id, target):
+    r = client.post(f"/studio/videos/{video_id}/transition", json={"expected": "AWAITING_APPROVAL", "new": target})
+    assert r.status_code == 403
+    assert client.get(f"/studio/videos/{video_id}").json()["status"] == "IDEA"

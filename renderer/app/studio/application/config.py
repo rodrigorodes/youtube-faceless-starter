@@ -1,5 +1,4 @@
 """Configuração por projeto e registro de provedores por nome."""
-import os
 from collections.abc import Callable, Mapping
 
 from pydantic import BaseModel, ConfigDict
@@ -26,8 +25,8 @@ class ProjectConfig(BaseModel):
     renderer: str
 
     @classmethod
-    def resolve(cls, overrides: Mapping[str, str], env: Mapping[str, str] | None = None) -> "ProjectConfig":
-        env = os.environ if env is None else env
+    def resolve(cls, overrides: Mapping[str, str], env: Mapping[str, str]) -> "ProjectConfig":
+        """`env` é injetado (a composição passa os.environ): a camada de aplicação não lê o ambiente."""
         unknown = set(overrides) - set(KINDS)
         if unknown:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")

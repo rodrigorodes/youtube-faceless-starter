@@ -72,12 +72,12 @@ def test_registry_builds_by_name_and_rejects_unknown():
 
 
 def test_project_config_overrides_env_defaults(monkeypatch):
-    monkeypatch.setenv("STUDIO_TEXT", "opencode:a")
-    assert ProjectConfig.resolve({"text": "gemini:b"}).text == "gemini:b"
-    assert ProjectConfig.resolve({}).text == "opencode:a"
-    assert ProjectConfig.resolve({}).renderer == "ffmpeg:rich"
+    env = {"STUDIO_TEXT": "opencode:a"}
+    assert ProjectConfig.resolve({"text": "gemini:b"}, env).text == "gemini:b"
+    assert ProjectConfig.resolve({}, env).text == "opencode:a"
+    assert ProjectConfig.resolve({}, {}).renderer == "ffmpeg:rich"
 
 
 def test_project_config_rejects_unknown_key():
     with pytest.raises(ValueError):
-        ProjectConfig.resolve({"textt": "x:y"})
+        ProjectConfig.resolve({"textt": "x:y"}, {})

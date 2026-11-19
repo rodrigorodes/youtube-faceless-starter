@@ -83,3 +83,10 @@ def test_main_zero_when_required_present_and_never_prints_secret(tmp_path, capsy
 def test_bridge_token_required_only_with_opencode_provider(tmp_path):
     (tmp_path / ".env").write_text(f"POSTGRES_PASSWORD=a\nN8N_ENCRYPTION_KEY=b\nAI_PROVIDER=opencode\n")
     assert doctor.main(root=tmp_path, network=False) == 1
+
+
+def test_placeholders_from_env_example_are_not_ok(tmp_path, capsys):
+    checks = doctor.check_env("POSTGRES_PASSWORD=CHANGE_ME_LONG_RANDOM\nN8N_ENCRYPTION_KEY=change_me_32\n", REQUIRED)
+    assert all(not c.ok and "placeholder" in c.detail for c in checks)
+    (tmp_path / ".env").write_text((ROOT / ".env.example").read_text())
+    assert doctor.main(root=tmp_path, network=False) == 1
