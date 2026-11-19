@@ -2,7 +2,7 @@ import ast
 from pathlib import Path
 
 STUDIO = Path(__file__).resolve().parents[1] / "renderer" / "app" / "studio"
-IO = {"fastapi", "psycopg", "httpx", "subprocess", "requests", "os", "socket", "urllib", "sqlalchemy"}
+IO = {"fastapi", "psycopg", "httpx", "subprocess", "requests", "os", "socket", "urllib.request", "http.client", "sqlalchemy"}  # urllib.parse é puro (sem I/O) e permitido
 
 
 def imports_of(layer: str, studio: Path = STUDIO) -> set[str]:
