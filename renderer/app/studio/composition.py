@@ -10,6 +10,13 @@ import psycopg
 
 from .adapters.postgres.db import migrate
 from .adapters.fetcher import HttpxFetcher
+from .adapters.image_opencode import OpenCodeImage
+from .adapters.image_placeholder import PlaceholderImage
+from .adapters.image_stock import PexelsImage
+from .adapters.image_veo import VeoImage
+from .adapters.postgres.media_repo import PostgresAssetRepository
+from .adapters.storage import FileAssetStore
+from .adapters.voice_piper import PiperVoice
 from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
 from .adapters.postgres.repo import PostgresVideoRepository
@@ -17,6 +24,7 @@ from .adapters.text_demo import DemoText
 from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
+from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
 from .application.use_cases import ServiceUnavailable, UseCases
 
@@ -47,6 +55,9 @@ class Settings:
     max_cost_month: float = 15.0  # teto mensal do projeto (US$ 15)
     bridge_token: str = ""
     bridge_url: str = "http://host.docker.internal:8787"
+    pexels_key: str = ""
+    paid_image_usd: float = 0.05        # estimativa por imagem de modelo não ':free' (o guard decide)
+    veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -54,7 +65,8 @@ class Settings:
         return cls(env.get("STUDIO_DATABASE_URL") or None, Path(env.get("STUDIO_STORAGE_ROOT", "/data")),
                    _csv(env.get("STUDIO_SOURCE_ALLOWLIST"), DEFAULT_ALLOWLIST), _csv(env.get("STUDIO_ALLOW_NAMES"), DEFAULT_ALLOW_NAMES),
                    _cap(env.get("MAX_COST_USD_PER_VIDEO"), 0.0), _cap(env.get("MAX_COST_USD_PER_MONTH"), 15.0),
-                   env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787")
+                   env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
+                   env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40))
 
 
 RETRY_SECONDS = 5.0
@@ -71,6 +83,11 @@ class Studio:
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
         register("text", "opencode", lambda model: OpenCodeText(model, settings.bridge_token, settings.bridge_url))
         register("text", "demo", DemoText)
+        register("image", "opencode", lambda model: OpenCodeImage(model, settings.bridge_token, settings.bridge_url, paid_estimate_usd=settings.paid_image_usd))
+        register("image", "placeholder", PlaceholderImage)
+        register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
+        register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
+        register("voice", "piper", PiperVoice)
         self._use_cases: UseCases | None = None
         self._lock = threading.Lock()
         self._retry_at = 0.0  # backoff após falha de inicialização
@@ -105,13 +122,16 @@ class Studio:
         repo, snaps, scripts = PostgresVideoRepository(connect), PostgresSnapshotRepository(connect), PostgresScriptRepository(connect)
         usage, checks = PostgresUsageRepository(connect), PostgresFactCheckRepository(connect)
 
-        def text_for(project_id: str | None):
+        def provider_for(kind: str, project_id: str | None):
             project = repo.get_project(project_id) if project_id else None
             try:
-                spec = ProjectConfig.resolve(project.config if project else {}, self.environ).text
+                spec = getattr(ProjectConfig.resolve(project.config if project else {}, self.environ), kind)
             except ValueError as exc:
                 raise ProviderNotFound(str(exc)) from exc
-            return build("text", spec)
+            return build(kind, spec)
+
+        def text_for(project_id: str | None):
+            return provider_for("text", project_id)
 
         guard = CostGuard(usage, s.max_cost_video, s.max_cost_month)
         editorial = Editorial(
@@ -120,7 +140,13 @@ class Studio:
             get_script=GetScript(repo, scripts),
             fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
             score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for))
-        return UseCases.from_repo(repo, editorial)
+        assets = PostgresAssetRepository(connect)
+        media = Media(
+            storyboard=PrepareStoryboard(repo, scripts),
+            produce=ProduceAssets(repo, scripts, assets, FileAssetStore(s.storage_root), guard, usage,
+                                  image_for=lambda project_id: provider_for("image", project_id)),
+            list_assets=ListAssets(repo, scripts, assets))
+        return UseCases.from_repo(repo, editorial, media)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

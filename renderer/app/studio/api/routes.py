@@ -7,9 +7,10 @@ from pydantic import BaseModel, Field, field_validator
 from ..application.config import ProviderNotFound
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
+from ..application.media import AssetRefused
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import FactCheckReport, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Asset, FactCheckReport, Project, Scene, Script, Video, VideoFormat, VideoStatus
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
@@ -17,7 +18,8 @@ from ..domain.states import InvalidTransition
 
 
 # Aprovar, rejeitar e publicar só pelos endpoints próprios (P05), que checam QA e aprovação humana.
-RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED, VideoStatus.FACT_CHECKED}
+RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED, VideoStatus.FACT_CHECKED,
+                    VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY}
 # Retomar de FAILED não pode saltar etapas com gate; a retomada validada é a P06.
 POST_GATE = {VideoStatus.FACT_CHECKED, VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
 
@@ -81,6 +83,20 @@ class IdeasOut(BaseModel):
     ranked: list[RankedOut]
 
 
+class ProduceOut(BaseModel):
+    generated: int
+    reused: int
+
+
+class SceneAssetOut(BaseModel):
+    idx: int
+    asset: Asset | None
+
+
+class AssetsOut(BaseModel):
+    scenes: list[SceneAssetOut]
+
+
 class TransitionIn(BaseModel):
     expected: VideoStatus
     new: VideoStatus
@@ -113,7 +129,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(403, f"cost cap: {exc}") from exc
         except (SourceUnavailable, ModelUnavailable) as exc:
             raise HTTPException(502, str(exc)) from exc
-        except (ScriptRejected, IdeasRejected) as exc:
+        except (ScriptRejected, IdeasRejected, AssetRefused) as exc:
             raise HTTPException(502, f"model output rejected: {exc}") from exc
 
     def editorial(uc: UseCases):
@@ -185,5 +201,25 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return IdeasOut(ranked=[RankedOut(topic=r.topic, score=r.score, scores=r.scores)
                                     for r in ed.score_ideas.execute(body.topics, project)])
         return run(go)
+
+    def media(uc: UseCases):
+        if uc.media is None:
+            raise HTTPException(503, "media services unavailable")
+        return uc.media
+
+    @router.post("/videos/{video_id}/storyboard")
+    def storyboard(video_id: str):
+        run(lambda uc: media(uc).storyboard.execute(check_id(video_id)))
+        return {"ok": True, "status": VideoStatus.STORYBOARDED.value}
+
+    @router.post("/videos/{video_id}/assets", response_model=ProduceOut)
+    def produce_assets(video_id: str):
+        result = run(lambda uc: media(uc).produce.execute(check_id(video_id)))
+        return ProduceOut(generated=result.generated, reused=result.reused)
+
+    @router.get("/videos/{video_id}/assets", response_model=AssetsOut)
+    def list_assets(video_id: str):
+        listed = run(lambda uc: media(uc).list_assets.execute(check_id(video_id)))
+        return AssetsOut(scenes=[SceneAssetOut(idx=x.idx, asset=x.asset) for x in listed])
 
     return router
