@@ -1,0 +1,8 @@
+.env
+storage/output/*
+storage/jobs/*
+!storage/output/.gitkeep
+!storage/jobs/.gitkeep
+__pycache__/
+*.pyc
+.DS_Store
