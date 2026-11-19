@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "budget_usd_month": {
+      "default": 15.0,
+      "minimum": 0,
+      "title": "Budget Usd Month",
+      "type": "number"
+    },
+    "config": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Config",
+      "type": "object"
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "language": {
+      "default": "pt-BR",
+      "title": "Language",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "niche": {
+      "default": "",
+      "title": "Niche",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "title": "Project",
+  "type": "object"
+}

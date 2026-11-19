@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "QaReport": {
+      "additionalProperties": false,
+      "properties": {
+        "failures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failures",
+          "type": "array"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Metrics",
+          "type": "object"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "passed"
+      ],
+      "title": "QaReport",
+      "type": "object"
+    },
+    "VideoFormat": {
+      "enum": [
+        "short",
+        "long"
+      ],
+      "title": "VideoFormat",
+      "type": "string"
+    },
+    "VideoStatus": {
+      "enum": [
+        "IDEA",
+        "SCRIPTED",
+        "FACT_CHECKED",
+        "STORYBOARDED",
+        "ASSETS_READY",
+        "RENDERED",
+        "AWAITING_APPROVAL",
+        "APPROVED",
+        "PUBLISHED",
+        "REJECTED",
+        "FAILED"
+      ],
+      "title": "VideoStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "format": {
+      "$ref": "#/$defs/VideoFormat"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "privacy": {
+      "default": "private",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ],
+      "title": "Privacy",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "qa_report": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/QaReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/VideoStatus",
+      "default": "IDEA"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    },
+    "topic": {
+      "maxLength": 300,
+      "minLength": 3,
+      "title": "Topic",
+      "type": "string"
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated At"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "topic",
+    "format"
+  ],
+  "title": "Video",
+  "type": "object"
+}

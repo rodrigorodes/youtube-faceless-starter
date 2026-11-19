@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "PublicationStatus": {
+      "enum": [
+        "PENDING",
+        "UPLOADING",
+        "UPLOADED",
+        "FAILED"
+      ],
+      "title": "PublicationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "privacy": {
+      "default": "private",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ],
+      "title": "Privacy",
+      "type": "string"
+    },
+    "publish_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish At"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/PublicationStatus",
+      "default": "PENDING"
+    },
+    "thumbnail_set": {
+      "default": false,
+      "title": "Thumbnail Set",
+      "type": "boolean"
+    },
+    "upload_uri": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Upload Uri"
+    },
+    "video_id": {
+      "title": "Video Id",
+      "type": "string"
+    },
+    "youtube_video_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Youtube Video Id"
+    }
+  },
+  "required": [
+    "id",
+    "video_id"
+  ],
+  "title": "Publication",
+  "type": "object"
+}
