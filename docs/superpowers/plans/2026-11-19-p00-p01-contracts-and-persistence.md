@@ -4,7 +4,7 @@
 
 **Goal:** Dar ao starter entidades persistidas com contratos JSON versionados, máquina de estados com transição atômica, política de custo/QA, layout de storage e ferramentas de operação (`doctor`, backup), validado no Lenovo.
 
-**Architecture:** Novo pacote `renderer/app/studio/` (contratos, estados, política, storage, banco, repositório) ao lado do código atual, **sem alterar o comportamento dos endpoints `/videos` existentes**. O serviço `renderer` é o único escritor do schema `studio` no Postgres já existente; o n8n continua só orquestrando por HTTP.
+**Architecture:** Clean Architecture simples em 4 camadas dentro de `renderer/app/studio/`: `domain` (entidades, estados, política, sem I/O) ← `application` (casos de uso e **portas**) ← `adapters` (Postgres, storage, e depois LLM/imagem/voz/render) e `api` (FastAPI). A raiz de composição liga portas a adaptadores a partir da configuração. O pacote fica ao lado do código atual, **sem alterar o comportamento dos endpoints `/videos` existentes**. O serviço `renderer` é o único escritor do schema `studio` no Postgres já existente; o n8n continua só orquestrando por HTTP.
 
 **Tech Stack:** Python 3.12, Pydantic v2, FastAPI, `psycopg[binary]` 3, PostgreSQL 16, pytest, Docker Compose.
 
@@ -36,20 +36,25 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `renderer/app/studio/__init__.py` | Marca o pacote (vazio) |
-| `renderer/app/studio/contracts.py` | Enums e modelos Pydantic das entidades; `SCHEMA_VERSION = 1` |
-| `renderer/app/studio/states.py` | Transições válidas e `to_mermaid()` |
-| `renderer/app/studio/policy.py` | `check_cost`, `evaluate_qa` |
-| `renderer/app/studio/storage.py` | Layout de pastas e `asset_cache_key`, com validação de ID |
-| `renderer/app/studio/db.py` | Conexão, `migrate()` |
-| `renderer/app/studio/migrations/0001_init.sql` | Schema `studio` completo |
-| `renderer/app/studio/repo.py` | `create_project`, `create_video`, `get_video`, `transition_video` |
-| `renderer/app/studio/api.py` | `APIRouter` `/studio/*` |
+| `renderer/app/studio/{domain,application,adapters,api}/__init__.py` | Marcam as camadas (vazios) |
+| `domain/contracts.py` | Enums e modelos Pydantic das entidades; `SCHEMA_VERSION = 1` |
+| `domain/ids.py` | `InvalidId`, validação de ID, `asset_cache_key` (puro) |
+| `application/ports.py` | Protocolos: `VideoRepository`, `TextModel`, `ImageModel`, `Voice`, `Renderer` |
+| `application/config.py` | `ProjectConfig` e registro de provedores por nome |
+| `application/use_cases.py` | `TransitionVideo`, `CreateVideo`, `CreateProject` |
+| `composition.py` | Monta casos de uso com os adaptadores escolhidos |
+| `domain/states.py` | Transições válidas e `to_mermaid()` |
+| `domain/policy.py` | `check_cost`, `evaluate_qa` |
+| `adapters/storage.py` | Layout de pastas e `asset_cache_key`, com validação de ID |
+| `adapters/postgres/db.py` | Conexão, `migrate()` |
+| `adapters/postgres/migrations/0001_init.sql` | Schema `studio` completo |
+| `adapters/postgres/repo.py` | `create_project`, `create_video`, `get_video`, `transition_video` |
+| `api/routes.py` | `APIRouter` `/studio/*` |
 | `contracts/v1/*.schema.json` | Schemas exportados (gerados, versionados) |
 | `scripts/export_contracts.py` | Gera schemas e `docs/10-arquitetura.md` |
 | `scripts/doctor.py`, `scripts/backup.py` | Operação |
 | `docker-compose.test.yml` | Postgres descartável para testes de banco |
-| `tests/test_contracts.py`, `test_states.py`, `test_policy.py`, `test_storage.py`, `test_db.py`, `test_repo.py`, `test_studio_api.py`, `test_doctor.py`, `test_backup.py` | Testes |
+| `tests/test_architecture.py`, `tests/test_ports.py`, `tests/test_contracts.py`, `test_states.py`, `test_policy.py`, `test_storage.py`, `test_db.py`, `test_repo.py`, `test_studio_api.py`, `test_doctor.py`, `test_backup.py` | Testes |
 
 ---
 
@@ -58,7 +63,7 @@
 ### Task 1: Entidades e contratos
 
 **Files:**
-- Create: `renderer/app/studio/__init__.py`, `renderer/app/studio/contracts.py`
+- Create: `renderer/app/studio/{domain,application,adapters,api}/__init__.py`, `renderer/app/studio/domain/contracts.py`
 - Test: `tests/test_contracts.py`
 
 **Interfaces:**
@@ -71,6 +76,7 @@
   - Modelos Pydantic v2 com `schema_version: int = SCHEMA_VERSION` e `model_config = ConfigDict(extra="forbid")`: `Project`, `Video`, `Script`, `Scene`, `Asset`, `RenderJob`, `Publication`, `UsageEntry`, `QaReport`
   - `Asset` exige `license: str` (não vazio) e `cost_usd: float >= 0`
   - `UsageEntry`: `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` (todos `int | None`, `>= 0`), `cost_usd: float >= 0`
+  - `Project.config: dict[str, str]` (padrão `{}`), consumido por `ProjectConfig.resolve` (Task 4A); coluna `config jsonb` em `projects` (Task 6)
   - `Video.privacy` padrão `"private"`, valores aceitos `private|unlisted|public`
   - `def load_versioned(model: type[T], data: dict) -> T` — levanta `ValueError` se `data["schema_version"] != SCHEMA_VERSION`
 
@@ -111,7 +117,7 @@ def test_unknown_field_rejected():
 ### Task 2: Máquina de estados
 
 **Files:**
-- Create: `renderer/app/studio/states.py`
+- Create: `renderer/app/studio/domain/states.py`
 - Test: `tests/test_states.py`
 
 **Interfaces:**
@@ -157,7 +163,7 @@ def test_mermaid_mentions_every_status():
 ### Task 3: Política de custo e QA
 
 **Files:**
-- Create: `renderer/app/studio/policy.py`
+- Create: `renderer/app/studio/domain/policy.py`
 - Test: `tests/test_policy.py`
 
 **Interfaces:**
@@ -198,7 +204,63 @@ def test_committed_contracts_match_code():
 - [ ] **Step 4: Run** `pytest tests/test_contracts_snapshot.py -v` — Expected: PASS; depois mudar um campo de propósito e confirmar que FALHA, e reverter.
 - [ ] **Step 5: Commit** — `git add contracts docs/10-arquitetura.md scripts/export_contracts.py tests/test_contracts_snapshot.py && git commit -m "feat(studio): schemas JSON versionados e diagrama gerado (P00)"`
 
-**Marco P00:** `pytest -q` completo verde (48 antigos + novos), schemas versionados no repositório.
+### Task 4A: Portas, configuração por projeto e regra de dependência
+
+**Files:**
+- Create: `renderer/app/studio/application/ports.py`, `application/config.py`, `application/use_cases.py`, `renderer/app/studio/composition.py`
+- Test: `tests/test_architecture.py`, `tests/test_ports.py`
+
+**Interfaces:**
+- Consumes: entidades e `VideoStatus` (Task 1), `assert_transition` (Task 2), `check_cost` (Task 3)
+- Produces (`application/ports.py`, todos `typing.Protocol`):
+  - `VideoRepository`: `create_video(project_id, topic, fmt) -> Video`, `get_video(video_id) -> Video | None`, `transition_video(video_id, expected, new) -> bool`
+  - `TextModel`: `complete(prompt: str, *, json_schema: dict | None = None) -> TextResult` (`text: str`, `usage: UsageEntry`)
+  - `ImageModel`: `generate(prompt: str, *, aspect: str = "9:16") -> ImageResult` (`data: bytes`, `mime: str`, `usage: UsageEntry`)
+  - `Voice`: `speak(text: str, out_path: Path) -> float` (duração em segundos)
+  - `Renderer`: `render(job: RenderSpec, out_path: Path) -> Path`
+  - cada provedor de modelo expõe `cost_estimate(...) -> float` e `name: str`
+- Produces (`application/config.py`):
+  - `class ProjectConfig(BaseModel)`: `text`, `image`, `voice`, `renderer` — strings `"<provedor>:<modelo>"` (ex.: `"opencode:openai/gpt-6-luna"`); padrão vem do ambiente (`STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER`); o do projeto sobrescreve
+  - `def register(kind: str, name: str, factory: Callable[[str], object]) -> None`; `def build(kind: str, spec: str) -> object` — `ProviderNotFound(ValueError)` se `kind`/`name` não existirem
+- Produces (`application/use_cases.py`): `TransitionVideo(repo).execute(video_id, expected, new) -> bool` (valida com `assert_transition`, depois chama o repositório); `CreateVideo`, `CreateProject` análogos
+- Produces (`composition.py`): `def build_use_cases(cfg: Settings) -> UseCases` — único lugar que importa adaptadores concretos
+
+**Regra de dependência:** `domain` não importa nada de `application`, `adapters`, `api`, `fastapi`, `psycopg`, `httpx`, `subprocess`. `application` importa só `domain`. `adapters` e `api` importam `application`/`domain`. Só `composition.py` importa adaptadores.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_domain_has_no_outward_or_io_imports():
+    forbidden = {"app.studio.application", "app.studio.adapters", "app.studio.api", "fastapi", "psycopg", "httpx", "subprocess"}
+    assert imports_of("domain") & forbidden == set()   # varre os .py com ast
+
+def test_application_only_imports_domain():
+    assert not any(m.startswith(("app.studio.adapters", "app.studio.api", "fastapi", "psycopg")) for m in imports_of("application"))
+
+def test_transition_use_case_with_fake_repo_needs_no_database():
+    repo = FakeRepo(status=VideoStatus.IDEA)
+    assert TransitionVideo(repo).execute("v"*32, VideoStatus.IDEA, VideoStatus.SCRIPTED) is True
+    with pytest.raises(InvalidTransition):
+        TransitionVideo(repo).execute("v"*32, VideoStatus.RENDERED, VideoStatus.APPROVED)
+
+def test_registry_builds_by_name_and_rejects_unknown():
+    register("text", "fake", lambda model: FakeText(model))
+    assert build("text", "fake:m").name == "fake"
+    with pytest.raises(ProviderNotFound):
+        build("text", "naoexiste:m")
+
+def test_project_config_overrides_env_defaults(monkeypatch):
+    monkeypatch.setenv("STUDIO_TEXT", "opencode:a")
+    assert ProjectConfig.resolve({"text": "gemini:b"}).text == "gemini:b"
+    assert ProjectConfig.resolve({}).text == "opencode:a"
+```
+
+- [ ] **Step 2: Run** `pytest tests/test_architecture.py tests/test_ports.py -v` — Expected: FAIL
+- [ ] **Step 3: Implement** conforme Interfaces. Os provedores reais (LLM, imagem, Piper, FFmpeg) **não** entram aqui: viram adaptadores na P03/P04, sem mudar o comportamento atual do `/videos`.
+- [ ] **Step 4: Run** — Expected: passam
+- [ ] **Step 5: Commit** — `git commit -m "feat(studio): portas, config por projeto e regra de dependência (P00)"`
+
+**Marco P00:** `pytest -q` completo verde, incluindo o teste de arquitetura, (48 antigos + novos), schemas versionados no repositório.
 
 ---
 
@@ -207,12 +269,13 @@ def test_committed_contracts_match_code():
 ### Task 5: Layout de storage e chave de cache
 
 **Files:**
-- Create: `renderer/app/studio/storage.py`
+- Create: `renderer/app/studio/domain/ids.py`, `renderer/app/studio/adapters/storage.py`
 - Test: `tests/test_storage.py`
 
 **Interfaces:**
 - Produces:
-  - `class InvalidId(ValueError)`
+  - em `domain/ids.py`: `class InvalidId(ValueError)`, `def check_id(value: str) -> str`, `def check_cache_key(value: str) -> str`, `def asset_cache_key(...)` (abaixo)
+  - em `adapters/storage.py`: usa `domain/ids.py` e fornece
   - `def video_dir(root: Path, project_id: str, video_id: str) -> Path` → `root/projects/<p>/videos/<v>`
   - `def cache_path(root: Path, cache_key: str) -> Path` → `root/cache/<2 primeiros>/<cache_key>`
   - `def asset_cache_key(kind: str, provider: str, model: str, prompt: str, params: dict) -> str` — sha256 hex de JSON canônico (`sort_keys`), estável entre execuções
@@ -252,7 +315,7 @@ def test_cache_path_rejects_bad_key(tmp_path):
 ### Task 6: Banco, migrações e Postgres de teste
 
 **Files:**
-- Create: `renderer/app/studio/db.py`, `renderer/app/studio/migrations/0001_init.sql`, `docker-compose.test.yml`
+- Create: `renderer/app/studio/adapters/postgres/db.py`, `renderer/app/studio/adapters/postgres/migrations/0001_init.sql`, `docker-compose.test.yml`
 - Modify: `renderer/requirements.txt` (adicionar `psycopg[binary]==3.2.9`), `requirements-dev.txt` se preciso
 - Test: `tests/test_db.py`
 
@@ -301,12 +364,12 @@ def test_rejects_bad_id_and_negative_cost(conn):
 ### Task 7: Repositório com transição atômica
 
 **Files:**
-- Create: `renderer/app/studio/repo.py`
+- Create: `renderer/app/studio/adapters/postgres/repo.py`
 - Test: `tests/test_repo.py`
 
 **Interfaces:**
 - Consumes: `connect`, `migrate` (Task 6); `Video`, `VideoStatus`, `assert_transition` (Tasks 1–2)
-- Produces:
+- Implementa a porta `VideoRepository` (Task 4A) e acrescenta `create_project`. Produces:
   - `def create_project(conn, name: str, niche: str = "", language: str = "pt-BR") -> Project`
   - `def create_video(conn, project_id: str, topic: str, fmt: VideoFormat) -> Video` (estado `IDEA`, privacidade `private`)
   - `def get_video(conn, video_id: str) -> Video | None`
@@ -340,12 +403,12 @@ def test_new_video_is_private_idea(conn):
 ### Task 8: API `/studio` e saúde com banco
 
 **Files:**
-- Create: `renderer/app/studio/api.py`
+- Create: `renderer/app/studio/api/routes.py`
 - Modify: `renderer/app/main.py` (incluir o router e estender `/health` **sem remover campos existentes**), `docker-compose.yml` (variável `STUDIO_DATABASE_URL` montada a partir de `POSTGRES_*`; `depends_on` do postgres saudável; `STUDIO_STORAGE_ROOT: /data`)
 - Test: `tests/test_studio_api.py`
 
 **Interfaces:**
-- Consumes: `repo` (Task 7), `migrate` (Task 6)
+- Consumes: casos de uso e `composition.build_use_cases` (Task 4A), `migrate` (Task 6). As rotas **não** importam o repositório nem `psycopg`; só os casos de uso.
 - Produces (HTTP):
   - `POST /studio/projects` `{name, niche?, language?}` → 201 `Project`
   - `POST /studio/videos` `{project_id, topic, format}` → 201 `Video`; 404 se o projeto não existe
@@ -471,7 +534,7 @@ O agente não alcança o Lenovo; esta tarefa entrega o roteiro e **só é conclu
 
 ## Auto-revisão
 
-- **Cobertura da spec:** P00 (contratos, estados, política, schemas e diagramas) → Tasks 1–4. P01 (migrações, layout, doctor, backup, healthchecks, Lenovo) → Tasks 5–11. `UsageLedger` com colunas separadas → Tasks 1 e 6. Teto de custo padrão 0 → Task 3. Aprovação obrigatória → Task 2 (sem atalho a `APPROVED`).
+- **Cobertura da spec:** troca de LLM, imagem, voz e render por configuração → Task 4A (portas e registro). P00 (contratos, estados, política, schemas e diagramas) → Tasks 1–4. P01 (migrações, layout, doctor, backup, healthchecks, Lenovo) → Tasks 5–11. `UsageLedger` com colunas separadas → Tasks 1 e 6. Teto de custo padrão 0 → Task 3. Aprovação obrigatória → Task 2 (sem atalho a `APPROVED`).
 - **Lacuna declarada:** a validação de *para onde* um vídeo `FAILED` pode voltar fica para a P06 (anotado na Task 2).
 - **Consistência de tipos:** `VideoStatus`, `transition_video(conn, video_id, expected, new)`, `asset_cache_key(kind, provider, model, prompt, params)` e `check_cost(estimated_usd, spent_usd, cap_usd)` têm a mesma assinatura onde reaparecem.
 - **Proporção:** os blocos de código são testes e assinaturas; os corpos ficam com o implementador.

@@ -71,6 +71,8 @@ Decisões adicionais, resolvidas na revisão independente do documento:
 13. **Rigor da checagem factual.** Reprovação bloqueia `AWAITING_APPROVAL`. O humano pode liberar com um *override* explícito, registrando o motivo. O casamento normaliza maiúsculas, acentos e formatos numéricos (`1.500`, `1,5 mil`) e converte número por extenso em pt-BR de 0 a 100 ("três" = 3). Valores derivados, como "três dias", precisam citar os dois números da fonte ou passam por override.
 14. **Credenciais e analytics.** A coleta da P07 roda **no n8n**, com credencial própria no mesmo projeto Google, e entrega os números ao renderer por `POST /studio/metrics`. Os tokens ficam só no n8n. O renderer nunca guarda segredo do YouTube. O estado atual do app é *Testing* (token de 7 dias); a verificação do canal para miniaturas fica para a P05.
 15. **Lenovo e paralelismo.** A Task 11 da P01 é um ponto de controle **executado por você**. Ela bloqueia o fechamento da P01 e a P05, mas não bloqueia o código da P02 e da P03, que só dependem dos contratos e da persistência (Tasks 1–8).
+16. **Clean Architecture simples, 4 camadas** em `renderer/app/studio/`: `domain` (entidades, estados, política; sem I/O) ← `application` (casos de uso e portas) ← `adapters` (Postgres, storage, LLM, imagem, voz, render) e `api`. Só `composition.py` conhece adaptadores concretos. Um teste de arquitetura barra importações proibidas. Sem frameworks de DI nem pastas extras.
+17. **Provedores trocáveis por configuração.** Quatro portas (`TextModel`, `ImageModel`, `Voice`, `Renderer`) com registro por nome. `ProjectConfig` usa `"<provedor>:<modelo>"` e o ambiente dá o padrão. Trocar ou acrescentar provedor é um arquivo novo mais um registro, sem mexer no fluxo. A trava de custo e a regra `:free` valem para todos, e o ledger grava provedor e modelo.
 
 ## 6. Entidades
 
@@ -108,12 +110,12 @@ Pronto quando: roteiro com um número inventado é reprovado por teste; roteiro 
 Risco: sites que bloqueiam raspagem → fallback para texto colado pelo humano.
 
 ### P03 — Storyboard e produção de mídia (L)
-Entrega: `AssetProvider` (protocolo) com `opencode_free`, `placeholder`, `stock` (Pexels/Pixabay: chave, licença e atribuição gravadas) e `veo` (off por padrão); `cache_key = sha256(tipo|provedor|modelo|prompt|parâmetros)`; cada `Scene` aponta para o `Asset`.
+Entrega: adaptadores das quatro portas, extraídos do código atual **sem mudar o comportamento do `/videos`** (os `if` de `call_provider` e o Piper de `rich.py` viram adaptadores `opencode`, `gemini`, `vertex`, `demo` e `piper`), mais novos provedores de imagem: `opencode_free`, `placeholder`, `stock` (Pexels/Pixabay: chave, licença e atribuição gravadas) e `veo` (off por padrão); `cache_key = sha256(tipo|provedor|modelo|prompt|parâmetros)`; cada `Scene` aponta para o `Asset`.
 Pronto quando: segundo render do mesmo vídeo gera 0 imagens novas; asset sem licença registrada é recusado; Veo recusado com teto 0.
 Risco: preço e limites do Veo mudam — conferir a documentação na hora de implementar, não agora.
 
 ### P04 — Narração e renderização (L)
-Entrega: legendas por trecho (tempo proporcional ao texto dentro da duração da fala; sem alinhamento forçado por modelo, para não somar dependência pesada); `.srt` exportado; templates `short` (1080×1920) e `long` (1920×1080); `qa_report` com `ebur128`, `silencedetect`, `blackdetect`; **render assíncrono** (`POST /videos/{id}/render` → 202 + consulta), porque vídeo longo estoura o timeout síncrono atual de 900 s; `RENDER_CONCURRENCY=1` para não saturar o Lenovo.
+Entrega: FFmpeg como adaptador da porta `Renderer`; legendas por trecho (tempo proporcional ao texto dentro da duração da fala; sem alinhamento forçado por modelo, para não somar dependência pesada); `.srt` exportado; templates `short` (1080×1920) e `long` (1920×1080); `qa_report` com `ebur128`, `silencedetect`, `blackdetect`; **render assíncrono** (`POST /videos/{id}/render` → 202 + consulta), porque vídeo longo estoura o timeout síncrono atual de 900 s; `RENDER_CONCURRENCY=1` para não saturar o Lenovo.
 Pronto quando: MP4 curto e longo com áudio e legenda; QA reprova vídeo mudo e vídeo estourado em duração.
 
 ### P05 — Aprovação e publicação (L)
