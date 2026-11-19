@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from ..domain.contracts import FactCheckReport, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Asset, FactCheckReport, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,9 @@ class ImageResult:
     data: bytes
     mime: str
     usage: UsageEntry
+    license: str = ""  # obrigatória: o caso de uso recusa imagem sem licença registrada
+    attribution: str = ""
+    source_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class TextModel(Protocol):
 
 class ImageModel(Protocol):
     name: str
+    model: str
     def cost_estimate(self, prompt: str) -> float: ...
     def generate(self, prompt: str, *, aspect: str = "9:16") -> ImageResult: ...
 
@@ -104,3 +108,16 @@ class UsageRepository(Protocol):
     def record(self, video_id: str | None, entry: UsageEntry) -> None: ...
     def spent_video(self, video_id: str) -> float: ...
     def spent_month(self) -> float: ...
+
+
+class AssetRepository(Protocol):
+    def find(self, cache_key: str) -> Asset | None: ...
+    def get(self, asset_id: str) -> Asset | None: ...
+    def add(self, asset: Asset) -> Asset:
+        """Insere; se a chave de cache já existir (corrida), devolve o asset existente."""
+    def link_scene(self, video_id: str, idx: int, asset_id: str) -> None: ...
+
+
+class AssetStore(Protocol):
+    def put(self, cache_key: str, data: bytes, aspect: str) -> str:
+        """Valida e grava a imagem; devolve o caminho relativo à raiz de storage."""

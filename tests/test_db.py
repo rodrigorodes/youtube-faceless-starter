@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version"]
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits"]
     assert migrate(conn) == []
 
 
@@ -34,7 +34,7 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
@@ -101,3 +101,14 @@ def test_scene_claim_ids_and_snapshot_dedupe(conn):
     conn.execute(snap, ("5" * 32, V, "a" * 64))
     with pytest.raises(psycopg.errors.UniqueViolation):
         conn.execute(snap, ("6" * 32, V, "a" * 64))
+
+
+def test_asset_license_blank_rejected_and_credits_stored(conn):
+    migrate(conn)
+    ins = "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license, attribution, source_url) VALUES (%s, 'image', %s, 'x', 'p', 'm', %s, %s, %s)"
+    conn.execute(ins, ("1" * 32, "a" * 64, "Pexels License", "Foto de Fulano", "https://x.example"))
+    for lic in ("", "   "):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(ins, ("2" * 32, "b" * 64, lic, "", ""))
+        conn.rollback()
+        migrate(conn)

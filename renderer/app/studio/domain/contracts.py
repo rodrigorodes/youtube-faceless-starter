@@ -3,13 +3,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 SCHEMA_VERSION = 1
 
 Cost = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Tokens = Annotated[int | None, Field(ge=0)]
 Privacy = Literal["private", "unlisted", "public"]
+License = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]  # licença em branco não é licença
 
 
 class VideoStatus(str, Enum):
@@ -124,7 +125,9 @@ class Asset(_Model):
     path: str
     provider: str
     model: str
-    license: str = Field(min_length=1)
+    license: License
+    attribution: str = ""
+    source_url: str = ""
     cost_usd: Cost = 0.0
 
 

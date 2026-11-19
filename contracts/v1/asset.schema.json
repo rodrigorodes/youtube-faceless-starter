@@ -14,6 +14,11 @@
   },
   "additionalProperties": false,
   "properties": {
+    "attribution": {
+      "default": "",
+      "title": "Attribution",
+      "type": "string"
+    },
     "cache_key": {
       "title": "Cache Key",
       "type": "string"
@@ -52,6 +57,11 @@
       "default": 1,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "source_url": {
+      "default": "",
+      "title": "Source Url",
+      "type": "string"
     }
   },
   "required": [

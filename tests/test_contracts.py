@@ -16,9 +16,15 @@ def test_video_defaults_are_private_and_new():
     assert v.privacy == "private" and v.status == VideoStatus.IDEA and v.schema_version == 1
 
 
-def test_asset_requires_license():
+@pytest.mark.parametrize("license", ["", "   ", "\n"])
+def test_asset_requires_license(license):
     with pytest.raises(ValidationError):
-        Asset(id="a" * 32, kind=AssetKind.image, cache_key="c" * 64, path="x", provider="p", model="m", license="", cost_usd=0)
+        Asset(id="a" * 32, kind=AssetKind.image, cache_key="c" * 64, path="x", provider="p", model="m", license=license, cost_usd=0)
+
+
+def test_asset_license_is_trimmed_and_credits_default_empty():
+    a = Asset(id="a" * 32, kind=AssetKind.image, cache_key="c" * 64, path="x", provider="p", model="m", license=" CC0 ")
+    assert a.license == "CC0" and a.attribution == "" and a.source_url == ""
 
 
 def test_usage_rejects_negative_and_nan_cost():
