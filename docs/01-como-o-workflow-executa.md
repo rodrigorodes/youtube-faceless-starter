@@ -131,8 +131,8 @@ O renderer (`renderer/app/main.py`, endpoint `POST /videos`) executa, **de forma
 > **Atenção — erro silencioso pelo n8n.** O workflow não trata erro do nó *Render Demo Video*. Quando o renderer
 > rejeita ou falha, o webhook responde `200 OK` com corpo vazio. Quem integra **não pode usar o status HTTP**
 > do webhook como sinal de sucesso: confira se o corpo traz `id` e `video_url`, ou veja a falha em
-> *Executions* no n8n. Para ver o erro real, chame o renderer direto (`POST :8000/videos`). Correção planejada: tratar
-> erro no nó e responder com status e mensagem.
+> *Executions* no n8n. Para ver o erro real, chame o renderer direto (`POST :8000/videos`). O workflow **V2** (`02-create-and-publish.json`) já trata esse erro e responde 502 com o estágio e a causa
+> (veja [08](08-publicar-no-youtube.md)).
 
 Estas limitações são esperadas no MVP e estão no roadmap (P01, P06).
 

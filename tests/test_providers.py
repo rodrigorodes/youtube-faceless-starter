@@ -181,3 +181,35 @@ def test_opencode_bridge_down_is_502(monkeypatch):
     with pytest.raises(HTTPException) as e:
         run(main.generate_script("t", "s"))
     assert e.value.status_code == 502 and "bridge" in e.value.detail
+
+
+def test_content_object_with_metadata(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    obj = '{"slides":["a","b","c","d"],"title":"  Meu título  ","description":"desc","tags":["x"," ",5,"y"]}'
+    calls = capture(monkeypatch, response={"text": obj})
+    out = run(main.generate_content("tema", "doc", "FATO: algo verificado"))
+    assert out == {"slides": ["a", "b", "c", "d"], "title": "Meu título", "description": "desc", "tags": ["x", "y"]}
+    assert "SOMENTE" in calls[0][2]["prompt"] and "FATO: algo verificado" in calls[0][2]["prompt"]
+
+
+def test_prompt_without_context_has_no_context_block():
+    prompt = main.build_prompt("t", "s")
+    assert "CONTEXTO:" not in prompt and "Sem alegações" in prompt
+
+
+def test_old_list_format_still_valid(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    capture(monkeypatch, response={"text": SLIDES})
+    out = run(main.generate_content("t", "s"))
+    assert out["slides"] == ["a", "b", "c", "d"] and out["title"] == "" and out["tags"] == []
+
+
+def test_video_request_validates_sources():
+    ok = main.VideoRequest(topic="abc", sources=["https://www.amsterdam-dance-event.nl/en/news/"])
+    assert str(ok.sources[0]).startswith("https://")
+    with pytest.raises(Exception):
+        main.VideoRequest(topic="abc", sources=["javascript:alert(1)"])
+    with pytest.raises(Exception):
+        main.VideoRequest(topic="abc", sources=["https://a.com"] * 6)

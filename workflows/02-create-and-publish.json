@@ -1,0 +1,287 @@
+{
+  "name": "Faceless V2 - Create and Publish Short (private)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "faceless-publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b1",
+      "name": "Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "faceless-publish"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://renderer:8000/videos",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ topic: $json.body.topic, format: 'short', duration_seconds: Number($json.body.duration_seconds || 30), style: $json.body.style || 'documentary', context: $json.body.context || '', sources: $json.body.sources || [], footer: $json.body.footer || 'YOUTUBE FACELESS' }) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "b2",
+      "name": "Render Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Upload-Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ snippet: { title: $json.title, description: $json.description, ...($json.tags && $json.tags.length ? { tags: $json.tags } : {}), categoryId: String($('Publish Webhook').item.json.body.category_id || '24'), defaultLanguage: 'pt-BR', defaultAudioLanguage: 'pt-BR' }, status: { privacyStatus: ['private','unlisted','public'].includes($('Publish Webhook').item.json.body.privacy) ? $('Publish Webhook').item.json.body.privacy : 'private', selfDeclaredMadeForKids: false, containsSyntheticMedia: true } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "b3",
+      "name": "Init YouTube Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        200
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://renderer:8000/videos/' + $('Render Video').item.json.id + '/file' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "b4",
+      "name": "Download MP4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Init YouTube Upload').item.json.headers.location }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "b5",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        200
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'UPLOADED', privacy: $json.status && $json.status.privacyStatus, video_id: $json.id, url: 'https://www.youtube.com/watch?v=' + $json.id, studio_url: 'https://studio.youtube.com/video/' + $json.id + '/edit', title: $json.snippet && $json.snippet.title, render_id: $('Render Video').item.json.id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b6",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1480,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'FAILED', stage: 'render', error: ($json.error && ($json.error.message || $json.error)) || $json.message || 'unknown', details: ($json.error && $json.error.description) || null }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "b7",
+      "name": "Respond Render Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'FAILED', stage: 'upload', error: ($json.error && ($json.error.message || $json.error)) || $json.message || 'unknown', details: ($json.error && $json.error.description) || null }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "b8",
+      "name": "Respond Upload Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1220,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Publish Webhook": {
+      "main": [
+        [
+          {
+            "node": "Render Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Video": {
+      "main": [
+        [
+          {
+            "node": "Init YouTube Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Render Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init YouTube Upload": {
+      "main": [
+        [
+          {
+            "node": "Download MP4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Upload Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download MP4": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Upload Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Upload Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
