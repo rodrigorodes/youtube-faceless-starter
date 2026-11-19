@@ -53,11 +53,21 @@ services:
       OPENCODE_BRIDGE_URL: ${OPENCODE_BRIDGE_URL:-http://host.docker.internal:8787}
       OPENCODE_BRIDGE_TOKEN: ${OPENCODE_BRIDGE_TOKEN:-}
       IMAGE_PROVIDER: ${IMAGE_PROVIDER:-opencode}
+      STUDIO_DATABASE_URL: postgresql://${POSTGRES_USER:-n8n}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-n8n}
+      STUDIO_STORAGE_ROOT: /data
       MAX_DURATION_SECONDS: '60'
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./storage:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 volumes:
   pg_data:
   n8n_data:

@@ -10,6 +10,10 @@ class ProjectNotFound(LookupError):
     pass
 
 
+class ServiceUnavailable(RuntimeError):
+    """Persistência indisponível (traduzida pelos adaptadores; a API responde 503)."""
+
+
 class CreateProject:
     def __init__(self, repo: VideoRepository):
         self.repo = repo
@@ -28,6 +32,14 @@ class CreateVideo:
         return self.repo.create_video(project_id, topic, fmt)
 
 
+class GetVideo:
+    def __init__(self, repo: VideoRepository):
+        self.repo = repo
+
+    def execute(self, video_id: str) -> Video | None:
+        return self.repo.get_video(video_id)
+
+
 class TransitionVideo:
     def __init__(self, repo: VideoRepository):
         self.repo = repo
@@ -41,8 +53,9 @@ class TransitionVideo:
 class UseCases:
     create_project: CreateProject
     create_video: CreateVideo
+    get_video: GetVideo
     transition_video: TransitionVideo
 
     @classmethod
     def from_repo(cls, repo: VideoRepository) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), TransitionVideo(repo))
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo))

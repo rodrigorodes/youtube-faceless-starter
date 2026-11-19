@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -14,8 +15,19 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field, HttpUrl
 
 from . import rich
+from .studio.api.routes import make_router
+from .studio.composition import Settings, Studio
 
-app = FastAPI(title="Faceless Renderer MVP", version="0.2.0")
+studio = Studio(Settings.from_env())  # estado de domínio (Postgres); opcional: sem banco o modo /videos segue funcionando
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    await asyncio.to_thread(studio.use_cases)  # migra o schema studio; falha não derruba o app
+    yield
+
+
+app = FastAPI(title="Faceless Renderer MVP", version="0.3.0", lifespan=lifespan)
 OUTPUT = Path(os.getenv("OUTPUT_DIR", "/data/output"))
 JOBS = Path(os.getenv("JOB_DIR", "/data/jobs"))
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -362,7 +374,7 @@ def make_slide(text, path, index, footer="YOUTUBE FACELESS • DEMO"):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "ffmpeg": True}
+    return {"status": "ok", "ffmpeg": True, "studio_db": "ok" if studio.ping() else "unavailable"}
 
 
 @app.post("/videos")
@@ -419,3 +431,6 @@ def get_file(job_id: str):
     if not path.exists():
         raise HTTPException(404, "Not found")
     return FileResponse(path, media_type="video/mp4", filename=f"{job_id}.mp4")
+
+
+app.include_router(make_router(lambda: studio.use_cases(), lambda: studio.ping()))
