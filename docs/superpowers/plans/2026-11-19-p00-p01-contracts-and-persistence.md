@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Upload no YouTube sempre `private` por padrão; `selfDeclaredMadeForKids=false`; `containsSyntheticMedia=true`; idioma pt-BR.
-- Só modelos `:free` por padrão; `MAX_COST_USD_PER_VIDEO` padrão **0**.
+- Só modelos `:free` por padrão; `MAX_COST_USD_PER_VIDEO` padrão **0**; teto mensal do projeto `MAX_COST_USD_PER_MONTH` padrão **15** (US$ 15, decisão do usuário).
 - Não usar o projeto GCP `cerc2-book-stg-01`.
 - Nunca imprimir segredos (valores de `.env`, tokens, senhas) em logs, saída de `doctor` ou testes.
 - Documentar para macOS **e** Windows; scripts novos só com biblioteca padrão do Python, sem shell específico de SO.
@@ -170,12 +170,13 @@ def test_mermaid_mentions_every_status():
 - Consumes: `QaReport`, `VideoFormat` (Task 1)
 - Produces:
   - `class CostRefused(ValueError)`
-  - `def check_cost(estimated_usd: float | None, spent_usd: float, cap_usd: float) -> None` — recusa se `estimated_usd` for `None`, negativo ou `NaN`; recusa se `spent_usd + estimated_usd > cap_usd`; com `cap_usd == 0`, só aceita estimativa exatamente `0.0`
+  - `DEFAULT_MONTHLY_CAP_USD = 15.0`
+  - `def check_cost(estimated_usd: float | None, spent_usd: float, cap_usd: float, spent_month_usd: float = 0.0, cap_month_usd: float = DEFAULT_MONTHLY_CAP_USD) -> None` — recusa se `estimated_usd` for `None`, negativo ou `NaN`; recusa se `spent_usd + estimated_usd > cap_usd`; recusa se `spent_month_usd + estimated_usd > cap_month_usd`; com `cap_usd == 0`, só aceita estimativa exatamente `0.0` (o teto mensal nunca libera gasto sozinho)
   - `def evaluate_qa(m: QaMetrics, fmt: VideoFormat) -> QaReport` — `QaMetrics` é dataclass com `duration_s`, `width`, `height`, `loudness_lufs: float | None`, `max_silence_s`, `max_black_s`, `has_audio: bool`, `disclosure_in_video: bool`, `disclosure_in_description: bool`, `unsourced_claims: int`, `paid_assets_without_cap: int`
   - `QaReport.passed: bool` e `QaReport.failures: list[str]` (códigos estáveis: `duration`, `resolution`, `loudness`, `silence`, `black`, `no_audio`, `disclosure`, `unsourced_claim`, `paid_asset`)
   - Limites: Short ≤ 175 s, 1080×1920; long ≤ 1800 s, 1920×1080; loudness −16 ± 1,5; silêncio > 4 s e quadro preto > 2 s reprovam
 
-- [ ] **Step 1: Write the failing tests** — `check_cost(0.0, 0.0, 0.0)` passa; `check_cost(0.01, 0.0, 0.0)` levanta; `check_cost(None, 0, 5)`, `-1` e `nan` levantam; `check_cost(1.0, 4.5, 5.0)` levanta; `evaluate_qa` com vídeo ideal passa; um caso por código de falha (parametrizado) retorna exatamente aquele código; vídeo mudo (`has_audio=False`) falha `no_audio`.
+- [ ] **Step 1: Write the failing tests** — `check_cost(0.0, 0.0, 0.0)` passa; `check_cost(0.01, 0.0, 0.0)` levanta; `check_cost(None, 0, 5)`, `-1` e `nan` levantam; `check_cost(1.0, 4.5, 5.0)` levanta; `check_cost(1.0, 0.0, 5.0, spent_month_usd=14.5)` levanta (estoura os US$ 15 do mês); `check_cost(0.5, 0.0, 5.0, spent_month_usd=14.0)` passa; `evaluate_qa` com vídeo ideal passa; um caso por código de falha (parametrizado) retorna exatamente aquele código; vídeo mudo (`has_audio=False`) falha `no_audio`.
 - [ ] **Step 2: Run** `pytest tests/test_policy.py -v` — Expected: FAIL
 - [ ] **Step 3: Implement** `policy.py`
 - [ ] **Step 4: Run** — Expected: todos passam
@@ -536,6 +537,6 @@ O agente não alcança o Lenovo; esta tarefa entrega o roteiro e **só é conclu
 
 - **Cobertura da spec:** troca de LLM, imagem, voz e render por configuração → Task 4A (portas e registro). P00 (contratos, estados, política, schemas e diagramas) → Tasks 1–4. P01 (migrações, layout, doctor, backup, healthchecks, Lenovo) → Tasks 5–11. `UsageLedger` com colunas separadas → Tasks 1 e 6. Teto de custo padrão 0 → Task 3. Aprovação obrigatória → Task 2 (sem atalho a `APPROVED`).
 - **Lacuna declarada:** a validação de *para onde* um vídeo `FAILED` pode voltar fica para a P06 (anotado na Task 2).
-- **Consistência de tipos:** `VideoStatus`, `transition_video(conn, video_id, expected, new)`, `asset_cache_key(kind, provider, model, prompt, params)` e `check_cost(estimated_usd, spent_usd, cap_usd)` têm a mesma assinatura onde reaparecem.
+- **Consistência de tipos:** `VideoStatus`, `transition_video(conn, video_id, expected, new)`, `asset_cache_key(kind, provider, model, prompt, params)` e `check_cost(estimated_usd, spent_usd, cap_usd, spent_month_usd, cap_month_usd)` têm a mesma assinatura onde reaparecem.
 - **Proporção:** os blocos de código são testes e assinaturas; os corpos ficam com o implementador.
 - **Healthchecks de compose:** o `postgres` já tem `healthcheck`; a Task 8 acrescenta `depends_on: condition: service_healthy` ao `renderer`, e o `renderer` ganha `healthcheck` em `/health`.

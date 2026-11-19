@@ -82,7 +82,7 @@ Estados do `Video`: `IDEA → SCRIPTED → FACT_CHECKED → STORYBOARDED → ASS
 
 ## 7. Orçamento e custo
 
-- **Operação do pipeline:** hoje US$ 0 (modelos `:free`, Piper, trilha local). Teto por vídeo `MAX_COST_USD_PER_VIDEO` (padrão **0**) e mensal por projeto; qualquer provedor com custo > 0 é recusado antes da chamada se estourar.
+- **Operação do pipeline:** hoje US$ 0 (modelos `:free`, Piper, trilha local). Teto por vídeo `MAX_COST_USD_PER_VIDEO` (padrão **0**) e **teto mensal do projeto de US$ 15** (`MAX_COST_USD_PER_MONTH`, decisão do usuário). O teto mensal só limita; gasto pago exige liberar antes o teto do vídeo; qualquer provedor com custo > 0 é recusado antes da chamada se estourar.
 - **Tokens:** `UsageLedger` guarda `input`, `output`, `cache_read`, `cache_write` em colunas separadas. A API de texto do OpenCode só devolve `input`/`output`, e só quando o provider reporta; cache e ausências ficam `NULL` e o relatório marca o valor como estimado, nunca como medido.
 - **Custo de construir** (agentes de código reenviam arquivos, histórico e saída de testes): tarefas pequenas com contexto curto, um plano por fase, e o mesmo controle de entrada/saída/cache separados ao reportar o consumo das sessões.
 
