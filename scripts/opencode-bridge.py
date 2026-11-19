@@ -98,7 +98,7 @@ def make_handler(token, model_ref, binary, generate_fn=generate, image_model=DEF
 
         def do_GET(self):
             if self.path == "/health":
-                return self.reply(200, {"status": "ok", "model": model_ref})
+                return self.reply(200, {"status": "ok", "model": model_ref, "image_model": image_model})
             self.reply(404, {"detail": "not found"})
 
         def do_POST(self):

@@ -130,3 +130,24 @@ def test_image_usage_is_recorded_and_project_config_overrides_env(conn, dsn, tmp
     assert client.post(f"/studio/videos/{vid}/assets").status_code == 200
     conn.commit()
     assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE video_id=%s AND step='image'", (vid,)).fetchone()[0] == 1
+
+
+def test_storyboard_without_scenes_is_409_not_a_model_error(client):
+    pid = client.post("/studio/projects", json={"name": "vazio"}).json()["id"]
+    vid = client.post("/studio/videos", json={"project_id": pid, "topic": "ADE 2026", "format": "short"}).json()["id"]
+    assert client.post(f"/studio/videos/{vid}/storyboard").status_code == 409  # IDEA: estado errado vem antes
+
+
+def test_each_scene_gets_the_asset_of_its_own_prompt(conn, dsn, tmp_path):
+    from app.studio.adapters.postgres.db import migrate
+    migrate(conn)
+    client = make_client(dsn, tmp_path)
+    vid = fact_checked_video(client)
+    conn.execute("UPDATE studio.scenes SET image_prompt = 'prompt numero ' || idx || ' sobre palco' WHERE video_id = %s", (vid,))
+    conn.commit()
+    client.post(f"/studio/videos/{vid}/storyboard")
+    assert client.post(f"/studio/videos/{vid}/assets").json() == {"generated": 4, "reused": 0}
+    listed = client.get(f"/studio/videos/{vid}/assets").json()["scenes"]
+    assert len({s["asset"]["id"] for s in listed}) == 4
+    conn.commit()
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE video_id=%s AND step='image'", (vid,)).fetchone()[0] == 4

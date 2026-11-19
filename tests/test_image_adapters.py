@@ -82,8 +82,16 @@ def test_placeholder_is_deterministic_sized_free_and_licensed():
 
 
 # ---------- opencode ----------
-def opencode(handler, model="openrouter/recraft/recraft-v4.1-flash-v2:free", token="tok", **kw):
-    return OpenCodeImage(model, token=token, base_url="http://bridge:8787/", transport=httpx.MockTransport(handler), **kw)
+def opencode(handler, model="openrouter/recraft/recraft-v4.1-flash-v2:free", token="tok", bridge_model=None, **kw):
+    """`bridge_model` é o que o /health do bridge declara (padrão: o mesmo modelo configurado)."""
+    declared = model if bridge_model is None else bridge_model
+
+    def routed(request):
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok", "model": "t", "image_model": declared})
+        return handler(request)
+
+    return OpenCodeImage(model, token=token, base_url="http://bridge:8787/", transport=httpx.MockTransport(routed), **kw)
 
 
 def test_opencode_posts_prompt_decodes_image_and_records_license():
@@ -106,7 +114,7 @@ def test_opencode_paid_model_has_a_nonzero_estimate_so_the_guard_can_refuse():
     assert opencode(lambda r: httpx.Response(200), model="a/b", paid_estimate_usd=0.2).cost_estimate("p") == pytest.approx(0.2)
 
 
-def test_opencode_retries_transient_failures_once_but_not_client_errors():
+def test_free_model_retries_a_5xx_once_but_client_errors_never():
     calls = []
 
     def flaky(request):
@@ -122,6 +130,51 @@ def test_opencode_retries_transient_failures_once_but_not_client_errors():
     with pytest.raises(ModelUnavailable):
         opencode(lambda r: (calls.append(1), httpx.Response(401, json={"detail": "unauthorized"}))[1], token="SECRET-TOKEN").generate("p")
     assert len(calls) == 1
+
+
+def test_paid_model_is_never_retried_a_read_timeout_may_have_been_charged():
+    calls = []
+
+    def slow(request):
+        calls.append(1)
+        raise httpx.ReadTimeout("slow")
+
+    with pytest.raises(ModelUnavailable):
+        opencode(slow, model="a/b").generate("p")
+    assert len(calls) == 1
+    calls.clear()
+    with pytest.raises(ModelUnavailable):
+        opencode(lambda r: (calls.append(1), httpx.Response(503))[1], model="a/b").generate("p")
+    assert len(calls) == 1
+
+
+def test_free_model_does_not_retry_after_a_read_timeout_either():
+    calls = []
+
+    def slow(request):
+        calls.append(1)
+        raise httpx.ReadTimeout("slow")
+
+    with pytest.raises(ModelUnavailable):
+        opencode(slow).generate("p")
+    assert len(calls) == 1
+
+
+def test_bridge_declaring_another_image_model_is_refused_before_generating():
+    calls = []
+    model = opencode(lambda r: (calls.append(1), httpx.Response(200))[1], bridge_model="openrouter/google/gemini-3-pro-image")
+    with pytest.raises(ModelUnavailable, match="differs"):
+        model.generate("p")
+    assert calls == []
+
+
+def test_bridge_without_image_model_in_health_is_refused():
+    calls = []
+    transport = httpx.MockTransport(lambda r: (calls.append(r.url.path), httpx.Response(200, json={"status": "ok"}))[1])
+    model = OpenCodeImage("a/b:free", token="tok", base_url="http://bridge:8787", transport=transport)
+    with pytest.raises(ModelUnavailable, match="differs|declare"):
+        model.generate("p")
+    assert calls == ["/health"]
 
 
 @pytest.mark.parametrize("response", [httpx.Response(200, json={"nada": 1}), httpx.Response(200, json={"mime": "image/png", "data": "!!!não-base64"}), httpx.Response(200, content=b"x")])
@@ -211,3 +264,40 @@ def test_piper_voice_wraps_the_legacy_synthesis(tmp_path, monkeypatch):
     assert PiperVoice("pt_BR-faber-medium").speak("Olá, mundo.", tmp_path / "a.wav") == pytest.approx(1.0, abs=0.01)
     with pytest.raises(ValueError):
         PiperVoice("x").speak("   ", tmp_path / "b.wav")
+
+
+def test_store_rewrites_a_corrupted_or_wrong_size_cache_entry(tmp_path):
+    store = FileAssetStore(tmp_path)
+    rel = store.put(KEY, png(), "9:16")
+    (tmp_path / rel).write_bytes(b"lixo")
+    assert store.put(KEY, png(), "9:16") == rel and Image.open(tmp_path / rel).size == (1080, 1920)
+    store.put(KEY, png(), "16:9")  # mesma chave, aspecto diferente: não devolve a imagem do outro aspecto
+    assert Image.open(tmp_path / rel).size == (1920, 1080)
+
+
+def test_store_applies_exif_orientation_and_does_not_change_the_global_pil_limit(tmp_path):
+    exif = Image.Exif()
+    exif[0x0112] = 6  # rotacionar 90°
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 200), (255, 0, 0)).save(buf, "JPEG", exif=exif)
+    rel = FileAssetStore(tmp_path).put(KEY, buf.getvalue(), "9:16")
+    assert Image.open(tmp_path / rel).size == (1080, 1920)
+    assert Image.MAX_IMAGE_PIXELS != 50_000_000 and FileAssetStore.__module__
+
+
+def test_store_refuses_more_than_25_megapixels(tmp_path):
+    buf = io.BytesIO()
+    Image.new("1", (6000, 5000)).save(buf, "PNG")  # 30 Mpx
+    with pytest.raises(AssetRefused):
+        FileAssetStore(tmp_path).put(KEY, buf.getvalue(), "9:16")
+
+
+def test_pexels_invalid_url_does_not_crash_and_empty_credit_is_clean():
+    for bad in ("https://images.pexels.com/a b.jpg", "https://images.pexels.com/\tx.jpg", " https://images.pexels.com/x.jpg"):
+        photo = {**PHOTO, "src": {"portrait": bad, "landscape": bad}}
+        model, _ = pexels(photos=[photo])
+        with pytest.raises(ModelUnavailable):
+            model.generate("tema")
+    photo = {**PHOTO, "photographer": "", "photographer_url": ""}
+    r = pexels(photos=[photo])[0].generate("tema")
+    assert "Foto de  " not in r.attribution and "()" not in r.attribution and "Pexels" in r.attribution

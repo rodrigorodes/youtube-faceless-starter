@@ -1,4 +1,6 @@
 """Portas (interfaces) que os adaptadores implementam. Só dependem do domínio."""
+import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -115,9 +117,15 @@ class AssetRepository(Protocol):
     def get(self, asset_id: str) -> Asset | None: ...
     def add(self, asset: Asset) -> Asset:
         """Insere; se a chave de cache já existir (corrida), devolve o asset existente."""
-    def link_scene(self, video_id: str, idx: int, asset_id: str) -> None: ...
+    def link_scene(self, video_id: str, idx: int, asset_id: str, image_prompt: str) -> bool:
+        """Vincula só se o vídeo ainda está STORYBOARDED e a cena idx continua com este prompt; False caso contrário."""
 
 
 class AssetStore(Protocol):
     def put(self, cache_key: str, data: bytes, aspect: str) -> str:
         """Valida e grava a imagem; devolve o caminho relativo à raiz de storage."""
+
+
+class ProductionLock(Protocol):
+    def hold(self, video_id: str) -> "contextlib.AbstractContextManager[bool]":
+        """Exclusão mútua da produção de um vídeo; entra com False se outra execução já a detém (não espera)."""

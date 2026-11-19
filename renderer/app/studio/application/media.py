@@ -7,7 +7,7 @@ from ..domain.contracts import Asset, AssetKind, VideoStatus
 from ..domain.ids import asset_cache_key
 from ..domain.media import ASPECT_FOR, build_image_prompt
 from .editorial import CostGuard, StateConflict, _require_video
-from .ports import AssetRepository, AssetStore, ImageModel, ScriptRepository, UsageRepository, VideoRepository
+from .ports import AssetRepository, AssetStore, ImageModel, ProductionLock, ScriptRepository, UsageRepository, VideoRepository
 
 ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
 
@@ -25,7 +25,7 @@ class PrepareStoryboard:
         if video.status != VideoStatus.FACT_CHECKED:
             raise StateConflict(f"storyboard needs state FACT_CHECKED, got {video.status.value}")
         if not self.scripts.scenes(video_id):
-            raise AssetRefused("no scenes to storyboard")
+            raise StateConflict("no scenes to storyboard: write a script first")
         if not self.videos.transition_video(video_id, VideoStatus.FACT_CHECKED, VideoStatus.STORYBOARDED):
             raise StateConflict("video state changed during the storyboard")
 
@@ -38,12 +38,19 @@ class ProduceResult:
 
 class ProduceAssets:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, store: AssetStore,
-                 guard: CostGuard, usage: UsageRepository, image_for: Callable[[str], ImageModel]):
+                 guard: CostGuard, usage: UsageRepository, image_for: Callable[[str], ImageModel], lock: ProductionLock):
         self.videos, self.scripts, self.assets, self.store = videos, scripts, assets, store
-        self.guard, self.usage, self.image_for = guard, usage, image_for
+        self.guard, self.usage, self.image_for, self.lock = guard, usage, image_for, lock
 
     def execute(self, video_id: str) -> ProduceResult:
-        """Retomável: cena já vinculada é pulada; imagem já no cache é reaproveitada; só o que falta é gerado."""
+        """Retomável: cena já vinculada é pulada; imagem já no cache é reaproveitada; só o que falta é gerado.
+        Uma execução por vídeo: a segunda recebe conflito em vez de gerar (e pagar) de novo em paralelo."""
+        with self.lock.hold(video_id) as acquired:
+            if not acquired:
+                raise StateConflict("asset production already in progress for this video")
+            return self._run(video_id)
+
+    def _run(self, video_id: str) -> ProduceResult:
         video = _require_video(self.videos, video_id)
         if video.status != VideoStatus.STORYBOARDED:
             raise StateConflict(f"asset production needs state STORYBOARDED, got {video.status.value}")
@@ -61,7 +68,8 @@ class ProduceAssets:
                 generated += 1
             else:
                 reused += 1
-            self.assets.link_scene(video_id, scene.idx, asset.id)
+            if not self.assets.link_scene(video_id, scene.idx, asset.id, scene.image_prompt):
+                raise StateConflict("video or scenes changed during asset production")
         if not self.videos.transition_video(video_id, VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY):
             raise StateConflict("video state changed during asset production")
         return ProduceResult(generated, reused)

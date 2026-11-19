@@ -1,3 +1,4 @@
+import contextlib
 import sys
 from pathlib import Path
 
@@ -45,6 +46,7 @@ class Scripts:
 class Assets:
     def __init__(self):
         self.by_key, self.by_id, self.links = {}, {}, {}
+        self.link_calls, self.refuse_link = [], False
 
     def find(self, cache_key):
         return self.by_key.get(cache_key)
@@ -59,8 +61,12 @@ class Assets:
     def get(self, asset_id):
         return self.by_id.get(asset_id)
 
-    def link_scene(self, video_id, idx, asset_id):
+    def link_scene(self, video_id, idx, asset_id, image_prompt):
+        self.link_calls.append((idx, image_prompt))
+        if self.refuse_link:
+            return False
         self.links[idx] = asset_id
+        return True
 
 
 class Store:
@@ -74,6 +80,17 @@ class Store:
         return f"cache/{cache_key[:2]}/{cache_key}.png"
 
 
+class Lock:
+    def __init__(self, free=True):
+        self.free, self.held = free, 0
+
+    @contextlib.contextmanager
+    def hold(self, video_id):
+        if self.free:
+            self.held += 1
+        yield self.free
+
+
 class Usage:
     def __init__(self):
         self.entries = []
@@ -82,7 +99,7 @@ class Usage:
         self.entries.append(entry)
 
     def spent_video(self, video_id):
-        return 0.0
+        return sum(e.cost_usd for e in self.entries)
 
     def spent_month(self):
         return 0.0
@@ -110,11 +127,12 @@ class Image:
 
 def world(status=S.STORYBOARDED, **kw):
     assets = Assets()
-    return {"videos": Videos(status, **kw), "assets": assets, "scripts": Scripts(assets), "store": Store(), "usage": Usage()}
+    return {"videos": Videos(status, **kw), "assets": assets, "scripts": Scripts(assets), "store": Store(), "usage": Usage(), "lock": Lock()}
 
 
 def producer(w, image, cap_video=0.0):
-    return ProduceAssets(w["videos"], w["scripts"], w["assets"], w["store"], CostGuard(w["usage"], cap_video, 15.0), w["usage"], image_for=lambda project_id: image)
+    return ProduceAssets(w["videos"], w["scripts"], w["assets"], w["store"], CostGuard(w["usage"], cap_video, 15.0), w["usage"],
+                        image_for=lambda project_id: image, lock=w["lock"])
 
 
 # ---------- storyboard ----------
@@ -135,7 +153,7 @@ def test_storyboard_needs_fact_checked(status):
 def test_storyboard_unknown_video_and_no_scenes():
     w = world(S.FACT_CHECKED)
     w["scripts"].prompts = []
-    with pytest.raises(AssetRefused, match="scenes"):
+    with pytest.raises(StateConflict, match="scenes"):
         PrepareStoryboard(w["videos"], w["scripts"]).execute(V)
     w["videos"].exists = False
     with pytest.raises(VideoNotFound):
@@ -250,3 +268,53 @@ def test_list_assets_returns_scene_with_asset():
     producer(w, Image()).execute(V)
     listed = ListAssets(w["videos"], w["scripts"], w["assets"]).execute(V)
     assert [x.idx for x in listed] == [0, 1, 2] and all(x.asset and x.asset.license for x in listed)
+
+
+# ---------- achados da revisão ----------
+def test_concurrent_production_for_the_same_video_is_refused_without_calling_the_provider():
+    w, img = world(), Image()
+    w["lock"].free = False
+    with pytest.raises(StateConflict, match="in progress"):
+        producer(w, img).execute(V)
+    assert img.calls == 0 and w["usage"].entries == [] and w["videos"].status == S.STORYBOARDED
+
+
+def test_lock_is_held_for_the_whole_run():
+    w = world()
+    producer(w, Image()).execute(V)
+    assert w["lock"].held == 1
+
+
+def test_link_refused_when_scene_changed_underneath_stops_without_advancing():
+    w = world()
+    w["assets"].refuse_link = True
+    with pytest.raises(StateConflict, match="scenes changed"):
+        producer(w, Image()).execute(V)
+    assert w["videos"].status == S.STORYBOARDED and w["assets"].links == {}
+
+
+def test_link_is_conditioned_on_the_scene_prompt():
+    w = world()
+    producer(w, Image()).execute(V)
+    assert sorted(w["assets"].link_calls) == sorted(enumerate(w["scripts"].prompts))
+
+
+def test_accumulated_per_video_cap_stops_the_third_paid_image():
+    w, img = world(), Image(cost=0.05)
+    with pytest.raises(CostRefused):
+        producer(w, img, cap_video=0.10).execute(V)
+    assert img.calls == 2 and len(w["usage"].entries) == 2 and sorted(w["assets"].links) == [0, 1]
+    assert w["videos"].status == S.STORYBOARDED
+
+
+def test_rejected_images_are_still_in_the_ledger():
+    for kw in ({"license": ""}, {"mime": "text/html"}):
+        w = world()
+        with pytest.raises(AssetRefused):
+            producer(w, Image(**kw)).execute(V)
+        assert len(w["usage"].entries) == 1
+    w = world()
+    w["store"].fail = True
+    with pytest.raises(AssetRefused):
+        producer(w, Image()).execute(V)
+    assert len(w["usage"].entries) == 1

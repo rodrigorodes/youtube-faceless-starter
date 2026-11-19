@@ -129,8 +129,10 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(403, f"cost cap: {exc}") from exc
         except (SourceUnavailable, ModelUnavailable) as exc:
             raise HTTPException(502, str(exc)) from exc
-        except (ScriptRejected, IdeasRejected, AssetRefused) as exc:
+        except (ScriptRejected, IdeasRejected) as exc:
             raise HTTPException(502, f"model output rejected: {exc}") from exc
+        except AssetRefused as exc:
+            raise HTTPException(502, f"asset refused: {exc}") from exc
 
     def editorial(uc: UseCases):
         if uc.editorial is None:

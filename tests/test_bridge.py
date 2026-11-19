@@ -113,3 +113,10 @@ def test_only_free_image_models(monkeypatch):
         bridge.check_image_model("openrouter/google/gemini-3-pro-image")
     monkeypatch.setenv("OPENCODE_ALLOW_PAID_IMAGES", "1")
     bridge.check_image_model("openrouter/google/gemini-3-pro-image")
+
+
+def test_health_declares_the_image_model(server):
+    import json as _json
+    import urllib.request
+    body = _json.loads(urllib.request.urlopen(f"http://127.0.0.1:{server[0]}/health").read())
+    assert body["image_model"] == "openrouter/x/y:free" and "token" not in str(body).lower()

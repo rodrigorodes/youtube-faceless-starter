@@ -11,8 +11,7 @@ from ..domain.ids import check_cache_key, check_id
 from ..domain.media import SIZE_FOR
 
 MAX_INPUT_BYTES = 20 * 1024 * 1024
-MAX_PIXELS = 50_000_000
-Image.MAX_IMAGE_PIXELS = MAX_PIXELS
+MAX_PIXELS = 25_000_000  # ~0,5 GB de RAM ao decodificar; checagem explícita (não altera o limite global do PIL)
 
 
 def video_dir(root: Path, project_id: str, video_id: str) -> Path:
@@ -30,6 +29,15 @@ class FileAssetStore:
     def __init__(self, root: Path):
         self.root = Path(root)
 
+    @staticmethod
+    def _valid(path: Path, size: tuple[int, int]) -> bool:
+        try:
+            with Image.open(path) as img:
+                img.load()
+                return img.format == "PNG" and img.size == size
+        except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+            return False
+
     def put(self, cache_key: str, data: bytes, aspect: str) -> str:
         key = check_cache_key(cache_key)
         size = SIZE_FOR.get(aspect)
@@ -37,15 +45,15 @@ class FileAssetStore:
             raise AssetRefused(f"unsupported aspect {aspect!r}")
         dest = cache_path(self.root, key).with_name(key + ".png")
         relative = dest.relative_to(self.root).as_posix()
-        if dest.exists():
-            return relative
+        if dest.exists() and self._valid(dest, size):
+            return relative  # cache hit só vale se o arquivo ainda abre e tem o tamanho do aspecto
         if not data or len(data) > MAX_INPUT_BYTES:
             raise AssetRefused("image is empty or larger than 20 MB")
         try:
             with Image.open(io.BytesIO(data)) as img:
                 if img.format not in ("PNG", "JPEG", "WEBP") or img.width * img.height > MAX_PIXELS:
                     raise AssetRefused("unsupported image format or too many pixels")
-                fitted = ImageOps.fit(img.convert("RGB"), size, method=Image.LANCZOS, centering=(0.5, 0.5))
+                fitted = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), size, method=Image.LANCZOS, centering=(0.5, 0.5))
         except AssetRefused:
             raise
         except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):

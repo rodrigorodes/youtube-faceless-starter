@@ -14,7 +14,7 @@ from .adapters.image_opencode import OpenCodeImage
 from .adapters.image_placeholder import PlaceholderImage
 from .adapters.image_stock import PexelsImage
 from .adapters.image_veo import VeoImage
-from .adapters.postgres.media_repo import PostgresAssetRepository
+from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.storage import FileAssetStore
 from .adapters.voice_piper import PiperVoice
 from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
@@ -99,6 +99,12 @@ class Studio:
         except psycopg.OperationalError as exc:
             raise ServiceUnavailable("studio database unavailable") from exc
 
+    def _connect_autocommit(self) -> psycopg.Connection:
+        try:  # sessão própria do lock de produção: sem transação aberta enquanto dura a geração
+            return psycopg.connect(self.settings.database_url, connect_timeout=3, options=CONNECT_OPTIONS, autocommit=True)
+        except psycopg.OperationalError as exc:
+            raise ServiceUnavailable("studio database unavailable") from exc
+
     def use_cases(self) -> UseCases | None:
         if self._use_cases is not None:
             return self._use_cases
@@ -144,7 +150,8 @@ class Studio:
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),
             produce=ProduceAssets(repo, scripts, assets, FileAssetStore(s.storage_root), guard, usage,
-                                  image_for=lambda project_id: provider_for("image", project_id)),
+                                  image_for=lambda project_id: provider_for("image", project_id),
+                                  lock=PostgresProductionLock(self._connect_autocommit)),
             list_assets=ListAssets(repo, scripts, assets))
         return UseCases.from_repo(repo, editorial, media)
 

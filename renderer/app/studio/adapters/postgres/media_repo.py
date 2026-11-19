@@ -1,4 +1,7 @@
 """Repositório Postgres de assets. `add` é idempotente por cache_key: em corrida, vence o primeiro e todos recebem o mesmo asset."""
+import contextlib
+from collections.abc import Callable, Iterator
+
 import psycopg
 from psycopg.rows import dict_row
 
@@ -38,7 +41,31 @@ class PostgresAssetRepository(_Base):
             cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE cache_key = %s", (asset.cache_key,))
             return _asset(cur.fetchone())
 
-    def link_scene(self, video_id: str, idx: int, asset_id: str) -> None:
+    def link_scene(self, video_id: str, idx: int, asset_id: str, image_prompt: str) -> bool:
         with _translated(), self._connect() as conn:
-            conn.execute("UPDATE studio.scenes SET asset_id = %s WHERE video_id = %s AND idx = %s",
-                         (check_id(asset_id), check_id(video_id), idx))
+            cur = conn.execute("UPDATE studio.scenes s SET asset_id = %s FROM studio.videos v "
+                               "WHERE s.video_id = v.id AND v.status = 'STORYBOARDED' AND s.video_id = %s AND s.idx = %s AND s.image_prompt = %s",
+                               (check_id(asset_id), check_id(video_id), idx, image_prompt))
+            return cur.rowcount == 1
+
+
+class PostgresProductionLock:
+    """Advisory lock de sessão por vídeo, numa conexão própria (autocommit). Não espera: sem o lock, entra com False.
+    Se a conexão cair no meio, o Postgres solta o lock sozinho."""
+
+    def __init__(self, connect_autocommit: Callable[[], psycopg.Connection]):
+        self._connect = connect_autocommit
+
+    @contextlib.contextmanager
+    def hold(self, video_id: str) -> Iterator[bool]:
+        with _translated():
+            conn = self._connect()
+        try:
+            with _translated():
+                got = conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", ("produce:" + check_id(video_id),)).fetchone()[0]
+            yield bool(got)
+        finally:
+            try:
+                conn.close()  # fechar a sessão solta o lock
+            except psycopg.Error:
+                pass
