@@ -16,6 +16,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Arquitetura e contratos (gerado)](docs/10-arquitetura.md)
 - [Validação real no Lenovo (roteiro)](docs/11-validacao-lenovo.md)
 - [Fluxo editorial: fontes, roteiro e checagem factual](docs/12-editorial.md)
+- [Storyboard e mídia: imagens por cena, cache, licença e custo](docs/13-midia.md)
 
 ## Pré-requisitos
 
