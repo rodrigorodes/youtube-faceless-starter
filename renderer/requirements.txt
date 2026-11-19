@@ -7,3 +7,4 @@ google-auth==2.40.3
 requests==2.32.4
 piper-tts==1.8.0
 numpy==2.5.5
+psycopg[binary]==3.2.9
