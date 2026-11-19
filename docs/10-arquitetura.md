@@ -49,3 +49,6 @@ stateDiagram-v2
 | `Publication` | `contracts/v1/publication.schema.json` |
 | `UsageEntry` | `contracts/v1/usageentry.schema.json` |
 | `QaReport` | `contracts/v1/qareport.schema.json` |
+| `SourceSnapshot` | `contracts/v1/sourcesnapshot.schema.json` |
+| `Claim` | `contracts/v1/claim.schema.json` |
+| `FactCheckReport` | `contracts/v1/factcheckreport.schema.json` |

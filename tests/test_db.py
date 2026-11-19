@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init"]
+    assert migrate(conn) == ["0001_init", "0002_editorial"]
     assert migrate(conn) == []
 
 
@@ -34,13 +34,13 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
     migrate(conn)
     for t in ("projects", "videos", "scripts", "scenes", "assets", "render_jobs", "publications",
-              "source_snapshots", "step_runs", "usage_ledger", "video_metrics"):
+              "source_snapshots", "step_runs", "usage_ledger", "video_metrics", "fact_checks"):
         assert table_exists(conn, t), t
 
 
@@ -79,3 +79,25 @@ def test_scene_index_and_cache_key_unique(conn):
     conn.execute(ins, ("1" * 32, V))
     with pytest.raises(psycopg.errors.UniqueViolation):
         conn.execute(ins, ("2" * 32, V))
+
+
+def test_fact_check_override_needs_reason_in_db(conn):
+    migrate(conn)
+    seed_video(conn)
+    ins = "INSERT INTO studio.fact_checks(id, video_id, passed, overridden, override_reason, report) VALUES (%s, %s, true, %s, %s, '{}')"
+    conn.execute(ins, ("1" * 32, V, False, None))
+    conn.execute(ins, ("2" * 32, V, True, "revisado"))
+    for reason in (None, "", "   "):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(ins, ("3" * 32, V, True, reason))
+        conn.rollback()
+
+
+def test_scene_claim_ids_and_snapshot_dedupe(conn):
+    migrate(conn)
+    seed_video(conn)
+    conn.execute("INSERT INTO studio.scenes(id, video_id, idx, narration, image_prompt, claim_ids) VALUES (%s, %s, 0, 'narração', 'prompt de imagem', '[\"abc\"]')", ("4" * 32, V))
+    snap = "INSERT INTO studio.source_snapshots(id, video_id, url, content_sha256, text) VALUES (%s, %s, 'https://x.example', %s, 't')"
+    conn.execute(snap, ("5" * 32, V, "a" * 64))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(snap, ("6" * 32, V, "a" * 64))

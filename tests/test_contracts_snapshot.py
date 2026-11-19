@@ -14,7 +14,7 @@ def test_committed_contracts_match_code():
 
 def test_every_entity_has_a_schema_and_diagram_lists_states():
     files = export_contracts.render_all()
-    for name in ("project", "video", "script", "scene", "asset", "renderjob", "publication", "usageentry", "qareport"):
+    for name in ("project", "video", "script", "scene", "asset", "renderjob", "publication", "usageentry", "qareport", "sourcesnapshot", "claim", "factcheckreport"):
         assert f"contracts/v1/{name}.schema.json" in files
     assert "stateDiagram-v2" in files["docs/10-arquitetura.md"]
 

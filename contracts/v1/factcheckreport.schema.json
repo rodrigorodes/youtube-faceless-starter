@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "SceneFactCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "idx": {
+          "minimum": 0,
+          "title": "Idx",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "unsupported": {
+          "items": {
+            "$ref": "#/$defs/UnsupportedItem"
+          },
+          "title": "Unsupported",
+          "type": "array"
+        }
+      },
+      "required": [
+        "idx"
+      ],
+      "title": "SceneFactCheck",
+      "type": "object"
+    },
+    "UnsupportedItem": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "number",
+            "name"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "UnsupportedItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "overridden": {
+      "default": false,
+      "title": "Overridden",
+      "type": "boolean"
+    },
+    "override_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Override Reason"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "scenes": {
+      "items": {
+        "$ref": "#/$defs/SceneFactCheck"
+      },
+      "title": "Scenes",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "passed"
+  ],
+  "title": "FactCheckReport",
+  "type": "object"
+}

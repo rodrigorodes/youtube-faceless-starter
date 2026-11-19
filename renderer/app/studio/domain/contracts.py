@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = 1
 
@@ -112,6 +112,7 @@ class Scene(_Model):
     caption: str = Field(default="", max_length=110)
     label: str = Field(default="", max_length=32)
     image_prompt: str = Field(min_length=10, max_length=500)
+    claim_ids: list[str] = Field(default_factory=list)
     asset_id: str | None = None
     duration_s: float | None = Field(default=None, ge=0)
 
@@ -158,6 +159,44 @@ class UsageEntry(_Model):
     cache_read_tokens: Tokens = None
     cache_write_tokens: Tokens = None
     cost_usd: Cost = 0.0
+
+
+class SourceSnapshot(_Model):
+    id: str
+    video_id: str
+    url: str
+    content_sha256: str
+    text: str
+    fetched_at: datetime | None = None
+
+
+class Claim(_Model):
+    id: str
+    snapshot_id: str
+    text: str
+
+
+class UnsupportedItem(_Model):
+    kind: Literal["number", "name"]
+    value: str
+
+
+class SceneFactCheck(_Model):
+    idx: int = Field(ge=0)
+    unsupported: list[UnsupportedItem] = Field(default_factory=list)
+
+
+class FactCheckReport(_Model):
+    passed: bool
+    overridden: bool = False
+    override_reason: str | None = None
+    scenes: list[SceneFactCheck] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _override_needs_reason(self):
+        if self.overridden and not (self.override_reason or "").strip():
+            raise ValueError("override requires a non-empty reason")
+        return self
 
 
 T = TypeVar("T", bound=_Model)
