@@ -2,15 +2,17 @@
 from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
+from ..application.render import RenderRefused
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Asset, FactCheckReport, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
@@ -19,7 +21,7 @@ from ..domain.states import InvalidTransition
 
 # Aprovar, rejeitar e publicar só pelos endpoints próprios (P05), que checam QA e aprovação humana.
 RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED, VideoStatus.FACT_CHECKED,
-                    VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY}
+                    VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
 # Retomar de FAILED não pode saltar etapas com gate; a retomada validada é a P06.
 POST_GATE = {VideoStatus.FACT_CHECKED, VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
 
@@ -97,6 +99,11 @@ class AssetsOut(BaseModel):
     scenes: list[SceneAssetOut]
 
 
+class RenderStatusOut(BaseModel):
+    job: RenderJob | None
+    qa_report: QaReport | None
+
+
 class TransitionIn(BaseModel):
     expected: VideoStatus
     new: VideoStatus
@@ -131,7 +138,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(502, str(exc)) from exc
         except (ScriptRejected, IdeasRejected) as exc:
             raise HTTPException(502, f"model output rejected: {exc}") from exc
-        except AssetRefused as exc:
+        except (AssetRefused, RenderRefused) as exc:
             raise HTTPException(502, f"asset refused: {exc}") from exc
 
     def editorial(uc: UseCases):
@@ -223,5 +230,33 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def list_assets(video_id: str):
         listed = run(lambda uc: media(uc).list_assets.execute(check_id(video_id)))
         return AssetsOut(scenes=[SceneAssetOut(idx=x.idx, asset=x.asset) for x in listed])
+
+    def rendering(uc: UseCases):
+        if uc.rendering is None:
+            raise HTTPException(503, "render services unavailable")
+        return uc.rendering
+
+    @router.post("/videos/{video_id}/render", status_code=202, response_model=RenderJob)
+    def start_render(video_id: str):
+        return run(lambda uc: rendering(uc).start.execute(check_id(video_id)))
+
+    @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)
+    def render_status(video_id: str):
+        job, qa = run(lambda uc: rendering(uc).get.execute(check_id(video_id)))
+        return RenderStatusOut(job=job, qa_report=qa)
+
+    def served(video_id: str, kind: str, media_type: str, filename: str):
+        path = run(lambda uc: rendering(uc).file.execute(check_id(video_id), kind))
+        if path is None:
+            raise HTTPException(404, "rendered file not available")
+        return FileResponse(path, media_type=media_type, filename=filename)
+
+    @router.get("/videos/{video_id}/file")
+    def video_file(video_id: str):
+        return served(video_id, "mp4", "video/mp4", f"{video_id}.mp4")
+
+    @router.get("/videos/{video_id}/subtitles")
+    def video_subtitles(video_id: str):
+        return served(video_id, "srt", "text/plain; charset=utf-8", f"{video_id}.srt")
 
     return router

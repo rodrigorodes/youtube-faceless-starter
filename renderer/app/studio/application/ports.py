@@ -159,4 +159,6 @@ class RenderStorage(Protocol):
     def work_dir(self, project_id: str, video_id: str, job_id: str) -> Path: ...
     def publish(self, project_id: str, video_id: str, mp4: Path, srt: str) -> str:
         """Move o MP4 e grava o .srt de forma atômica; devolve o caminho relativo do MP4."""
+    def final_path(self, project_id: str, video_id: str, kind: str) -> Path | None:
+        """Caminho do final.mp4 ou final.srt se o arquivo existir."""
     def cleanup(self, work_dir: Path) -> None: ...

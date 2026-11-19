@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,8 +15,11 @@ from .adapters.image_opencode import OpenCodeImage
 from .adapters.image_placeholder import PlaceholderImage
 from .adapters.image_stock import PexelsImage
 from .adapters.image_veo import VeoImage
+from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
-from .adapters.storage import FileAssetStore
+from .adapters.qa_ffmpeg import FfmpegQa
+from .adapters.render_ffmpeg import FfmpegRenderer
+from .adapters.storage import FileAssetStore, FileRenderStorage
 from .adapters.voice_piper import PiperVoice
 from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
@@ -24,6 +28,7 @@ from .adapters.text_demo import DemoText
 from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
+from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
 from .application.use_cases import ServiceUnavailable, UseCases
@@ -58,6 +63,7 @@ class Settings:
     pexels_key: str = ""
     paid_image_usd: float = 0.05        # estimativa por imagem de modelo não ':free' (o guard decide)
     veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
+    render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -66,7 +72,8 @@ class Settings:
                    _csv(env.get("STUDIO_SOURCE_ALLOWLIST"), DEFAULT_ALLOWLIST), _csv(env.get("STUDIO_ALLOW_NAMES"), DEFAULT_ALLOW_NAMES),
                    _cap(env.get("MAX_COST_USD_PER_VIDEO"), 0.0), _cap(env.get("MAX_COST_USD_PER_MONTH"), 15.0),
                    env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
-                   env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40))
+                   env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
+                   max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))))
 
 
 RETRY_SECONDS = 5.0
@@ -77,7 +84,7 @@ CONNECT_OPTIONS = "-c lock_timeout=5000 -c statement_timeout=15000"  # nenhuma c
 class Studio:
     """Inicializa o banco sob demanda. Sem banco, o app segue de pé em modo degradado."""
 
-    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None):
+    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None):
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
@@ -88,6 +95,9 @@ class Studio:
         register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
         register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
         register("voice", "piper", PiperVoice)
+        register("renderer", "ffmpeg", FfmpegRenderer)
+        self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
+        self._analyzer = analyzer or FfmpegQa()
         self._use_cases: UseCases | None = None
         self._lock = threading.Lock()
         self._retry_at = 0.0  # backoff após falha de inicialização
@@ -153,7 +163,14 @@ class Studio:
                                   image_for=lambda project_id: provider_for("image", project_id),
                                   lock=PostgresProductionLock(self._connect_autocommit)),
             list_assets=ListAssets(repo, scripts, assets))
-        return UseCases.from_repo(repo, editorial, media)
+        jobs = PostgresRenderJobRepository(connect)
+        jobs.fail_interrupted()  # job que ficou QUEUED/RUNNING num processo anterior não vai terminar: vira FAILED (retomada fina: P06)
+        files = FileRenderStorage(s.storage_root)
+        run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
+                        renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer)
+        rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
+                              get=GetRender(repo, jobs), file=GetRenderFile(repo, files))
+        return UseCases.from_repo(repo, editorial, media, rendering)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

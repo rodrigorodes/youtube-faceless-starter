@@ -3,6 +3,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, VideoStatus
 from ..domain.render import MAX_SECONDS, Cue, evaluate_qa, make_cues, scene_length, to_srt
@@ -100,6 +101,17 @@ class RunRender:
                 self.files.cleanup(work)
 
 
+class GetRenderFile:
+    SERVABLE = (VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED, VideoStatus.PUBLISHED)
+
+    def __init__(self, videos: VideoRepository, files: RenderStorage):
+        self.videos, self.files = videos, files
+
+    def execute(self, video_id: str, kind: str):
+        video = _require_video(self.videos, video_id)
+        return self.files.final_path(video.project_id, video.id, kind) if video.status in self.SERVABLE else None
+
+
 class GetRender:
     def __init__(self, videos: VideoRepository, jobs: RenderJobRepository):
         self.videos, self.jobs = videos, jobs
@@ -107,3 +119,10 @@ class GetRender:
     def execute(self, video_id: str) -> tuple[RenderJob | None, QaReport | None]:
         video = _require_video(self.videos, video_id)
         return self.jobs.latest(video_id), video.qa_report
+
+
+@dataclass(frozen=True)
+class Rendering:
+    start: StartRender
+    get: GetRender
+    file: GetRenderFile

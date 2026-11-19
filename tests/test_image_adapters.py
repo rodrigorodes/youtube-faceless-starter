@@ -258,7 +258,7 @@ def test_piper_voice_wraps_the_legacy_synthesis(tmp_path, monkeypatch):
     def fake(text, path):
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1), w.setsampwidth(2), w.setframerate(22050)
-            w.writeframes(b"\0\0" * 22050)
+            w.writeframes(b"".join(__import__("struct").pack("<h", int(8000 * __import__("math").sin(i / 5))) for i in range(22050)))
 
     monkeypatch.setattr(rich, "synthesize_speech", fake)
     assert PiperVoice("pt_BR-faber-medium").speak("Olá, mundo.", tmp_path / "a.wav") == pytest.approx(1.0, abs=0.01)
@@ -301,3 +301,18 @@ def test_pexels_invalid_url_does_not_crash_and_empty_credit_is_clean():
     photo = {**PHOTO, "photographer": "", "photographer_url": ""}
     r = pexels(photos=[photo])[0].generate("tema")
     assert "Foto de  " not in r.attribution and "()" not in r.attribution and "Pexels" in r.attribution
+
+
+def test_piper_voice_refuses_silent_output(tmp_path, monkeypatch):
+    import wave
+
+    from app import rich
+
+    def silent(text, path):
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(22050)
+            w.writeframes(b"\0\0" * 22050)
+
+    monkeypatch.setattr(rich, "synthesize_speech", silent)
+    with pytest.raises(RuntimeError, match="silence"):
+        PiperVoice("x").speak("Olá, mundo.", tmp_path / "a.wav")

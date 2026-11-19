@@ -101,6 +101,11 @@ class FileRenderStorage:
             tmp_srt.unlink(missing_ok=True)
         return (folder / "final.mp4").relative_to(self.root).as_posix()
 
+    def final_path(self, project_id: str, video_id: str, kind: str) -> Path | None:
+        name = {"mp4": "final.mp4", "srt": "final.srt"}.get(kind)
+        path = video_dir(self.root, project_id, video_id) / name if name else None
+        return path if path is not None and path.is_file() else None
+
     def cleanup(self, work_dir: Path) -> None:
         try:
             inside = (self.root / "projects").resolve() in Path(work_dir).resolve().parents and Path(work_dir).name != "projects"
@@ -108,3 +113,7 @@ class FileRenderStorage:
             inside = False
         if inside:  # nunca apaga fora da raiz de storage
             shutil.rmtree(work_dir, ignore_errors=True)
+            try:
+                Path(work_dir).parent.rmdir() if Path(work_dir).parent.name == "work" else None  # só se ficou vazia
+            except OSError:
+                pass
