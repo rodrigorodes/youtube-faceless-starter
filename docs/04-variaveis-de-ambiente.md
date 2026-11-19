@@ -9,12 +9,16 @@ Todas ficam no arquivo `.env` na raiz do projeto (copiado de `.env.example`). O 
 | `POSTGRES_PASSWORD` | **sim** | — | Senha do banco. O `docker compose` aborta se faltar. |
 | `N8N_ENCRYPTION_KEY` | **sim** | — | Chave que cifra as credenciais salvas no n8n. O `docker compose` aborta se faltar. |
 | `TZ` | não | `America/Sao_Paulo` | Fuso do n8n (também usado como `GENERIC_TIMEZONE`) |
-| `AI_PROVIDER` | não | `auto` | `auto` (Gemini se houver chave, senão demo), `demo`, `gemini` ou `vertex` |
+| `AI_PROVIDER` | não | `auto` | `auto` (Gemini se houver chave, senão demo), `demo`, `gemini`, `vertex` ou `opencode` |
 | `GEMINI_API_KEY` | não | vazio | Chave da Gemini API. Em `auto`, se definida o roteiro vem do Gemini; vazia = demonstração. |
 | `GEMINI_MODEL` | não | `gemini-2.5-flash` | Modelo usado na chamada do Gemini |
 | `VERTEX_PROJECT` | só com `vertex` | vazio | Projeto GCP **seu** (cobrança). Sem padrão de propósito. |
 | `VERTEX_LOCATION` | não | `global` | `global` ou região (ex.: `us-central1`) |
 | `VERTEX_MODEL` | não | `gemini-2.5-flash` | Modelo no Vertex |
+| `OPENCODE_BRIDGE_TOKEN` | só com `opencode` | vazio | Token (16+ caracteres) compartilhado entre renderer e bridge. Veja [07](07-openai-luna-oauth.md). |
+| `OPENCODE_MODEL` | não | `openai/gpt-6-luna` | Modelo do bridge: `provider/model[#variante]` |
+| `OPENCODE_BRIDGE_PORT` | não | `8787` | Porta do bridge no host |
+| `OPENCODE_BRIDGE_URL` | não | `http://host.docker.internal:8787` | Como o container alcança o bridge |
 | `GCP_CREDENTIALS_FILE` | só com o override | vazio | Caminho no host do JSON de ADC/service account (montado somente leitura). Veja [06-vertex-ai](06-vertex-ai.md). |
 
 Valores fixos no `docker-compose.yml` (não vêm do `.env`): `MAX_DURATION_SECONDS=60` (ainda **não é lido** pelo código; o limite real é `le=60` em `VideoRequest`), `OUTPUT_DIR=/data/output`, `JOB_DIR=/data/jobs`, `WEBHOOK_URL=http://localhost:5678/`, `N8N_HOST=localhost`, `N8N_PROTOCOL=http`.

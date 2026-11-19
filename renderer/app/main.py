@@ -51,12 +51,12 @@ def build_prompt(topic, style):
 
 
 def resolve_provider():
-    """AI_PROVIDER: auto (padrão: gemini se houver GEMINI_API_KEY, senão demo), demo, gemini ou vertex."""
+    """AI_PROVIDER: auto (padrão: gemini se houver GEMINI_API_KEY, senão demo), demo, gemini, vertex ou opencode."""
     provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
     if provider == "auto":
         return "gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "demo"
-    if provider not in ("demo", "gemini", "vertex"):
-        raise HTTPException(status_code=500, detail="Invalid AI_PROVIDER; use auto, demo, gemini or vertex")
+    if provider not in ("demo", "gemini", "vertex", "opencode"):
+        raise HTTPException(status_code=500, detail="Invalid AI_PROVIDER; use auto, demo, gemini, vertex or opencode")
     return provider
 
 
@@ -77,25 +77,47 @@ def vertex_access_token():
     return _vertex_credentials.token
 
 
-async def post_json(url, headers, payload):
-    async with httpx.AsyncClient(timeout=40) as client:
+async def post_json(url, headers, payload, timeout=40):
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
     return response.json()
 
 
 def parse_slides(data):
-    raw = data["candidates"][0]["content"]["parts"][0]["text"]
+    return parse_slides_text(data["candidates"][0]["content"]["parts"][0]["text"])
+
+
+def parse_slides_text(raw):
+    raw = raw.strip()
+    if raw.startswith("```"):  # modelos sem modo JSON costumam envolver em ```json
+        raw = raw.strip("`").removeprefix("json").strip()
     slides = json.loads(raw)
     if not isinstance(slides, list) or len(slides) != 4 or not all(isinstance(s, str) for s in slides):
         raise ValueError("Model returned an invalid slide list")
     return [s[:260] for s in slides]
 
 
+async def generate_with_opencode(prompt):
+    """Chama o bridge local (scripts/opencode-bridge.py), que usa o login OAuth do OpenCode."""
+    token = os.getenv("OPENCODE_BRIDGE_TOKEN", "").strip()
+    if not token:
+        raise HTTPException(status_code=500, detail="AI_PROVIDER=opencode requires OPENCODE_BRIDGE_TOKEN")
+    base = os.getenv("OPENCODE_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
+    try:
+        data = await post_json(f"{base}/generate", {"Authorization": f"Bearer {token}"}, {"prompt": prompt}, timeout=100)
+        return parse_slides_text(data["text"])
+    except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as exc:
+        status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
+        raise HTTPException(status_code=502, detail=f"OpenCode bridge failed: {type(exc).__name__}{status}; is scripts/opencode-bridge.py running?") from exc
+
+
 async def generate_script(topic, style):
     provider = resolve_provider()
     if provider == "demo":
         return [text.format(topic=topic) if "{topic}" in text else text for text in DEMO_SLIDES]
+    if provider == "opencode":
+        return await generate_with_opencode(build_prompt(topic, style))
     payload = {"contents": [{"role": "user", "parts": [{"text": build_prompt(topic, style)}]}], "generationConfig": {"responseMimeType": "application/json"}}
     if provider == "gemini":
         key = os.getenv("GEMINI_API_KEY", "").strip()

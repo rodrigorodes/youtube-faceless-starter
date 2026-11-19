@@ -18,7 +18,7 @@ OK = {"candidates": [{"content": {"parts": [{"text": SLIDES}]}}]}
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for name in ("AI_PROVIDER", "GEMINI_API_KEY", "VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
+    for name in ("AI_PROVIDER", "GEMINI_API_KEY", "VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL", "OPENCODE_BRIDGE_TOKEN", "OPENCODE_BRIDGE_URL"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -30,7 +30,7 @@ def run(coro):
 def capture(monkeypatch, response=OK, error=None):
     calls = []
 
-    async def fake(url, headers, payload):
+    async def fake(url, headers, payload, **kwargs):
         calls.append((url, headers, payload))
         if error:
             raise error
@@ -147,3 +147,37 @@ def test_vertex_access_token_refreshes_and_caches(monkeypatch):
     assert main.vertex_access_token() == "fresh-token"
     assert Creds.refreshes == 1
     assert seen["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
+
+
+def test_opencode_calls_bridge_with_bearer(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    calls = capture(monkeypatch, response={"text": SLIDES})
+    assert run(main.generate_script("t", "s")) == ["a", "b", "c", "d"]
+    url, headers, payload = calls[0]
+    assert url == "http://host.docker.internal:8787/generate"
+    assert headers == {"Authorization": "Bearer " + "t" * 20}
+    assert "Tema: t" in payload["prompt"]
+
+
+def test_opencode_accepts_markdown_fenced_json(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    capture(monkeypatch, response={"text": "```json\n" + SLIDES + "\n```"})
+    assert run(main.generate_script("t", "s")) == ["a", "b", "c", "d"]
+
+
+def test_opencode_requires_token(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    with pytest.raises(HTTPException) as e:
+        run(main.generate_script("t", "s"))
+    assert e.value.status_code == 500 and "OPENCODE_BRIDGE_TOKEN" in e.value.detail
+
+
+def test_opencode_bridge_down_is_502(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "opencode")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    capture(monkeypatch, error=httpx.ConnectError("refused"))
+    with pytest.raises(HTTPException) as e:
+        run(main.generate_script("t", "s"))
+    assert e.value.status_code == 502 and "bridge" in e.value.detail

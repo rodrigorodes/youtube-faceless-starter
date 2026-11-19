@@ -50,7 +50,11 @@ services:
       VERTEX_PROJECT: ${VERTEX_PROJECT:-}
       VERTEX_LOCATION: ${VERTEX_LOCATION:-global}
       VERTEX_MODEL: ${VERTEX_MODEL:-gemini-2.5-flash}
+      OPENCODE_BRIDGE_URL: ${OPENCODE_BRIDGE_URL:-http://host.docker.internal:8787}
+      OPENCODE_BRIDGE_TOKEN: ${OPENCODE_BRIDGE_TOKEN:-}
       MAX_DURATION_SECONDS: '60'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./storage:/data
 volumes:

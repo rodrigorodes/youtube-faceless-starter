@@ -10,6 +10,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Variáveis de ambiente](docs/04-variaveis-de-ambiente.md)
 - [O que foi validado (e o que não)](docs/05-validacao-realizada.md)
 - [Vertex AI como provider de roteiro](docs/06-vertex-ai.md)
+- [OpenAI Luna via OAuth (OpenCode)](docs/07-openai-luna-oauth.md)
 
 ## Pré-requisitos
 
