@@ -1,0 +1,104 @@
+{
+  "topic": "ADE 2026: destaques dos cinco dias do Amsterdam Dance Event",
+  "mode": "rich",
+  "style": "documentary",
+  "title": "ADE 2026: destaques dos 5 dias do Amsterdam Dance Event",
+  "description": "Destaques da programação anunciada do Amsterdam Dance Event 2026 (21 a 25 de outubro, em Amsterdã), dia a dia: Jean-Michel Jarre na abertura, Paul Kalkbrenner, instalação EINDER, DISCO no Wereldmuseum, Boris Brejcha, CamelPhat, Reinier Zonneveld e Dave Clarke.",
+  "tags": [
+    "ADE 2026",
+    "Amsterdam Dance Event",
+    "música eletrônica",
+    "Amsterdã",
+    "festival",
+    "techno",
+    "house"
+  ],
+  "sources": [
+    "https://amsterdam-dance-event.nl/en/news/amsterdam-dance-event-completes-program-for-landmark-30-years-ade-with-3-600-artists/2930003",
+    "https://amsterdam-dance-event.nl/en/news/amsterdam-dance-event-celebrates-30-years-ade-and-invites-electronic-music-legend-jean-michel-jarre-as-guest-of-honour/2804461",
+    "https://loveland.nl/ade/program/",
+    "https://iamsterdam.com/en/whats-on/amsterdam-dance-event-ade/cultural-tips"
+  ],
+  "scenes": [
+    {
+      "narration": "A programação do ADE 2026, em Amsterdã, celebrava trinta anos do festival, de vinte e um a vinte e cinco de outubro.",
+      "caption": "ADE 2026 • 30 anos",
+      "label": "21–25/10",
+      "image_prompt": "aerial view of Amsterdam canals at night with neon reflections and glowing city lights"
+    },
+    {
+      "narration": "Eram mais de três mil e seiscentos artistas, mais de mil e trezentos eventos e mais de trezentos locais pela cidade.",
+      "caption": "3.600+ artistas • 1.300+ eventos • 300+ locais",
+      "label": "",
+      "image_prompt": "wide shot of a city skyline at dusk with many venues glowing, abstract light trails"
+    },
+    {
+      "narration": "Na quarta, dia vinte e um, Jean-Michel Jarre abria o festival com o concerto de abertura no AFAS Live, marcando os cinquenta anos de Oxygène.",
+      "caption": "Jarre: concerto de abertura no AFAS Live",
+      "label": "QUA • 21/10",
+      "image_prompt": "immense concert arena with giant laser beams and light architecture, silhouettes of a crowd"
+    },
+    {
+      "narration": "Também na quarta, Kara-Lis Coverdale e Lia Kohl se apresentavam na pequena sala de recitais do Concertgebouw.",
+      "caption": "Coverdale e Kohl no Concertgebouw",
+      "label": "QUA • 21/10",
+      "image_prompt": "intimate classical concert hall small recital room with warm lights, rows of empty seats, ambient glow"
+    },
+    {
+      "narration": "Na quinta, o Theater Amsterdam recebia Paul Kalkbrenner ao vivo, e o Mediahaven abrigava a noite de Mau P.",
+      "caption": "Kalkbrenner ao vivo • Mau P no Mediahaven",
+      "label": "QUI • 22/10",
+      "image_prompt": "large theater with a live electronic music stage, synthesizers and machines lit by blue light"
+    },
+    {
+      "narration": "Na Centrale Markthal, a instalação EINDER, de Boris Acket, formava um céu artificial de tecidos, com o músico Djrum ao vivo por uma noite.",
+      "caption": "EINDER: um céu artificial de tecidos",
+      "label": "QUI • 22/10",
+      "image_prompt": "huge market hall with an artificial sky of billowing fabric panels lit in soft colors, installation art"
+    },
+    {
+      "narration": "Na sexta, dia vinte e três, Mahmut Orhan e convidados tocavam no Theater Amsterdam.",
+      "caption": "Mahmut Orhan & Friends",
+      "label": "SEX • 23/10",
+      "image_prompt": "packed club night with warm golden lights and dancing crowd silhouettes"
+    },
+    {
+      "narration": "No Wereldmuseum, a noite DISCO I'm coming out celebrava as origens do disco, com DJs, apresentações e palestras.",
+      "caption": "DISCO I'm coming out no Wereldmuseum",
+      "label": "SEX • 23/10",
+      "image_prompt": "glittering disco ball in a grand museum hall, mirrored light reflections on the walls"
+    },
+    {
+      "narration": "No sábado, dia vinte e quatro, Boris Brejcha apresentava o Fckng Serious e a CamelPhat levava o Experience ao Theater Amsterdam.",
+      "caption": "Brejcha e CamelPhat no Theater Amsterdam",
+      "label": "SÁB • 24/10",
+      "image_prompt": "futuristic stage with immersive audiovisual light show, geometric projections and haze"
+    },
+    {
+      "narration": "No Mediamatic, a noite The Future Sound of Nature, gratuita, sincronizava a música com cantos de baleia, gelo derretendo e pássaros.",
+      "caption": "The Future Sound of Nature (grátis)",
+      "label": "SÁB • 24/10",
+      "image_prompt": "calm waterfront community space at dusk with warm lights, plants and long dining tables, nature and music theme"
+    },
+    {
+      "narration": "No domingo, dia vinte e cinco, Reinier Zonneveld tocava por oito horas seguidas no Mediahaven.",
+      "caption": "Zonneveld: 8 horas ao vivo",
+      "label": "DOM • 25/10",
+      "image_prompt": "daytime industrial warehouse rave with sunlight through large windows and a dancing crowd"
+    },
+    {
+      "narration": "Para fechar a semana, Dave Clarke recebia convidados em uma sessão gratuita na loja de discos Concerto.",
+      "caption": "Sunday Selectors com Dave Clarke (grátis)",
+      "label": "DOM • 25/10",
+      "image_prompt": "cozy record store with shelves of vinyl records and a turntable, warm light"
+    },
+    {
+      "narration": "Esses foram alguns destaques da programação anunciada. As imagens são ilustrativas, geradas por inteligência artificial. As fontes estão na descrição.",
+      "caption": "Imagens ilustrativas geradas por IA",
+      "label": "ADE 2026",
+      "image_prompt": "abstract colorful light trails over a dark background, electronic music energy"
+    }
+  ],
+  "privacy": "private",
+  "category_id": "24"
+}

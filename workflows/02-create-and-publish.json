@@ -24,9 +24,9 @@
         "url": "http://renderer:8000/videos",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ topic: $json.body.topic, format: 'short', duration_seconds: Number($json.body.duration_seconds || 30), style: $json.body.style || 'documentary', context: $json.body.context || '', sources: $json.body.sources || [], footer: $json.body.footer || 'YOUTUBE FACELESS' }) }}",
+        "jsonBody": "={{ JSON.stringify({ topic: $json.body.topic, format: 'short', duration_seconds: Number($json.body.duration_seconds || 30), style: $json.body.style || 'documentary', context: $json.body.context || '', sources: $json.body.sources || [], footer: $json.body.footer || 'YOUTUBE FACELESS', mode: $json.body.mode, scenes: $json.body.scenes, scene_count: $json.body.scene_count, title: $json.body.title, description: $json.body.description, tags: $json.body.tags, music: $json.body.music }) }}",
         "options": {
-          "timeout": 240000
+          "timeout": 900000
         }
       },
       "id": "b2",

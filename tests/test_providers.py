@@ -213,3 +213,73 @@ def test_video_request_validates_sources():
         main.VideoRequest(topic="abc", sources=["javascript:alert(1)"])
     with pytest.raises(Exception):
         main.VideoRequest(topic="abc", sources=["https://a.com"] * 6)
+
+
+# ---------- modo rich ----------
+
+def test_storyboard_parse_valid_and_clamped():
+    scenes = [{"narration": f"Narração número {i} da cena", "caption": "c" * 200, "label": "QUA • 21/10", "image_prompt": "a stage"} for i in range(5)]
+    out = main.parse_storyboard_text('```json\n' + __import__("json").dumps({"title": " T ", "description": "d", "tags": ["a", 3], "scenes": scenes}) + '\n```', 5)
+    assert len(out["scenes"]) == 5 and len(out["scenes"][0]["caption"]) == 110 and out["title"] == "T" and out["tags"] == ["a"]
+
+
+@pytest.mark.parametrize("raw", ['{"scenes": []}', '{"scenes": [{"narration": "x"}]}', '[1,2,3]', '{"scenes": "no"}'])
+def test_storyboard_parse_rejects_invalid(raw):
+    with pytest.raises((ValueError, TypeError, AttributeError)):
+        main.parse_storyboard_text(raw, 5)
+
+
+def test_storyboard_requires_ai_provider(monkeypatch):
+    with pytest.raises(HTTPException) as e:
+        run(main.generate_storyboard("t", "s", "", 6))
+    assert e.value.status_code == 422
+
+
+def test_storyboard_prompt_forbids_real_people_and_requires_context():
+    prompt = main.build_storyboard_prompt("tema", "doc", "FATO X", 8)
+    assert "EXATAMENTE 8" in prompt and "PROIBIDO" in prompt and "SOMENTE" in prompt and "FATO X" in prompt
+
+
+def test_scene_model_limits():
+    main.Scene(narration="Uma fala válida", image_prompt="a nice stage with lights")
+    with pytest.raises(Exception):
+        main.Scene(narration="x", image_prompt="a nice stage with lights")
+    with pytest.raises(Exception):
+        main.VideoRequest(topic="abc", scenes=[{"narration": "Uma fala válida", "image_prompt": "a stage with lights"}] * 17)
+
+
+def test_fetch_image_placeholder(monkeypatch, tmp_path):
+    monkeypatch.setenv("IMAGE_PROVIDER", "placeholder")
+    dst = tmp_path / "i.png"
+    run(main.fetch_image("prompt", 2, dst))
+    from PIL import Image
+    assert Image.open(dst).size == (1080, 1920)
+
+
+def test_fetch_image_via_bridge_and_retry(monkeypatch, tmp_path):
+    import base64, io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (768, 1344), (200, 10, 90)).save(buf, "WEBP")
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    attempts = []
+
+    async def flaky(url, headers, payload, **kw):
+        attempts.append((url, payload["prompt"]))
+        if len(attempts) == 1:
+            raise httpx.ConnectError("boom")
+        return {"mime": "image/webp", "data": base64.b64encode(buf.getvalue()).decode()}
+
+    monkeypatch.setattr(main, "post_json", flaky)
+    dst = tmp_path / "i.png"
+    run(main.fetch_image("stage lights", 0, dst))
+    assert len(attempts) == 2 and attempts[0][0].endswith("/image") and "no text" in attempts[0][1]
+    assert Image.open(dst).size == (1080, 1920)
+
+
+def test_fetch_image_failure_is_502(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENCODE_BRIDGE_TOKEN", "t" * 20)
+    capture(monkeypatch, error=httpx.ConnectError("down"))
+    with pytest.raises(HTTPException) as e:
+        run(main.fetch_image("p", 3, tmp_path / "i.png"))
+    assert e.value.status_code == 502 and "scene 4" in e.value.detail

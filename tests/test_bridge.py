@@ -78,3 +78,38 @@ def test_parse_model():
     assert bridge.parse_model("openai/gpt-6-luna#low")["variant"] == "low"
     with pytest.raises(ValueError):
         bridge.parse_model("semprovider")
+
+
+# ---------- imagens ----------
+
+@pytest.fixture()
+def image_server():
+    seen = []
+
+    def fake_image(prompt, model, binary):
+        seen.append((prompt, model))
+        return {"mime": "image/webp", "data": "QUJD"}
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), bridge.make_handler(TOKEN, "openai/gpt-6-luna", "opencode", image_model="openrouter/x/y:free", image_fn=fake_image))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", seen
+    httpd.shutdown()
+
+
+def test_image_endpoint_ok_and_auth(image_server):
+    assert call(image_server[0], "/image", {"prompt": "stage"}, token=None)[0] == 401
+    assert call(image_server[0], "/image", {"prompt": "stage"}) == (200, {"mime": "image/webp", "data": "QUJD"})
+    assert image_server[1] == [("stage", "openrouter/x/y:free")]
+
+
+def test_image_prompt_limit(image_server):
+    assert call(image_server[0], "/image", {"prompt": "a" * 801})[0] == 400
+
+
+def test_only_free_image_models(monkeypatch):
+    monkeypatch.delenv("OPENCODE_ALLOW_PAID_IMAGES", raising=False)
+    bridge.check_image_model("openrouter/recraft/recraft-v4.1-flash-v2:free")
+    with pytest.raises(ValueError):
+        bridge.check_image_model("openrouter/google/gemini-3-pro-image")
+    monkeypatch.setenv("OPENCODE_ALLOW_PAID_IMAGES", "1")
+    bridge.check_image_model("openrouter/google/gemini-3-pro-image")

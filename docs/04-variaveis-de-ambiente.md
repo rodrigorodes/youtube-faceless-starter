@@ -17,6 +17,9 @@ Todas ficam no arquivo `.env` na raiz do projeto (copiado de `.env.example`). O 
 | `VERTEX_MODEL` | não | `gemini-2.5-flash` | Modelo no Vertex |
 | `OPENCODE_BRIDGE_TOKEN` | só com `opencode` | vazio | Token (16+ caracteres) compartilhado entre renderer e bridge. Veja [07](07-openai-luna-oauth.md). |
 | `OPENCODE_MODEL` | não | `openai/gpt-6-luna` | Modelo do bridge: `provider/model[#variante]` |
+| `OPENCODE_IMAGE_MODEL` | não | `openrouter/recraft/recraft-v4.1-flash-v2:free` | Modelo de imagem do modo rich; o bridge recusa os que não terminam em `:free` |
+| `OPENCODE_ALLOW_PAID_IMAGES` | não | (vazio) | `1` libera modelos de imagem pagos no bridge |
+| `IMAGE_PROVIDER` | não | `opencode` | `opencode` (via bridge) ou `placeholder` (degradê local) |
 | `OPENCODE_BRIDGE_PORT` | não | `8787` | Porta do bridge no host |
 | `OPENCODE_BRIDGE_URL` | não | `http://host.docker.internal:8787` | Como o container alcança o bridge |
 | `GCP_CREDENTIALS_FILE` | só com o override | vazio | Caminho no host do JSON de ADC/service account (montado somente leitura). Veja [06-vertex-ai](06-vertex-ai.md). |

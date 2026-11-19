@@ -12,6 +12,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Vertex AI como provider de roteiro](docs/06-vertex-ai.md)
 - [OpenAI Luna via OAuth (OpenCode)](docs/07-openai-luna-oauth.md)
 - [Publicar no YouTube (workflow V2)](docs/08-publicar-no-youtube.md)
+- [Modo rich: imagens, narração e música](docs/09-modo-rich-imagens-voz-musica.md)
 
 ## Pré-requisitos
 

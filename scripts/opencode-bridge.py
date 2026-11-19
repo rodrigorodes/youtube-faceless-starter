@@ -2,7 +2,8 @@
 """Bridge local: expõe geração de texto do OpenCode (login OAuth) ao renderer em Docker.
 
 - Roda NO HOST (não no container), escuta só em 127.0.0.1.
-- Usa o endpoint stateless /api/experimental/generate/text: sem agente, sem ferramentas, sem acesso a arquivos.
+- Usa endpoints stateless do OpenCode (generate/text e generate/image): sem agente, sem ferramentas, sem acesso a arquivos.
+- Imagens: só modelos gratuitos (id terminado em ":free"), para nunca gerar custo, salvo OPENCODE_ALLOW_PAID_IMAGES=1.
 - Os tokens OAuth ficam no OpenCode; este script nunca os lê.
 - Exige Authorization: Bearer <OPENCODE_BRIDGE_TOKEN>.
 Somente biblioteca padrão (Python 3.9+).
@@ -18,6 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 MAX_PROMPT = 4000
+MAX_IMAGE_PROMPT = 800
+DEFAULT_IMAGE_MODEL = "openrouter/recraft/recraft-v4.1-flash-v2:free"
 TIMEOUT_SECONDS = 90
 LOCK = threading.Semaphore(1)  # uma geração por vez (assinatura pessoal, sem fila)
 
@@ -59,7 +62,24 @@ def generate(prompt, model_ref, binary):
     return json.loads(proc.stdout)["data"]["text"]
 
 
-def make_handler(token, model_ref, binary, generate_fn=generate):
+def check_image_model(ref):
+    """Recusa modelos de imagem que possam cobrar, a menos que liberado explicitamente."""
+    parse_model(ref)
+    if not ref.split("#", 1)[0].endswith(":free") and os.environ.get("OPENCODE_ALLOW_PAID_IMAGES") != "1":
+        raise ValueError("OPENCODE_IMAGE_MODEL must be a ':free' model (set OPENCODE_ALLOW_PAID_IMAGES=1 to allow paid ones)")
+
+
+def generate_image(prompt, model_ref, binary):
+    body = json.dumps({"model": parse_model(model_ref), "prompt": prompt, "aspect": "9:16"})
+    proc = subprocess.run([binary, "api", "post", "/api/experimental/generate/image", "-d", body],
+                          capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+    if proc.returncode != 0:
+        raise RuntimeError("opencode api failed")
+    image = json.loads(proc.stdout)["data"]["images"][0]
+    return {"mime": image.get("mime", "image/png"), "data": image["data"]}
+
+
+def make_handler(token, model_ref, binary, generate_fn=generate, image_model=DEFAULT_IMAGE_MODEL, image_fn=generate_image):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # sem log de prompt/cabeçalhos
             pass
@@ -82,7 +102,7 @@ def make_handler(token, model_ref, binary, generate_fn=generate):
             self.reply(404, {"detail": "not found"})
 
         def do_POST(self):
-            if self.path != "/generate":
+            if self.path not in ("/generate", "/image"):
                 return self.reply(404, {"detail": "not found"})
             if not self.authorized():
                 return self.reply(401, {"detail": "unauthorized"})
@@ -91,14 +111,18 @@ def make_handler(token, model_ref, binary, generate_fn=generate):
                 if length <= 0 or length > 16384:
                     raise ValueError
                 prompt = json.loads(self.rfile.read(length))["prompt"]
-                if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_PROMPT:
+                limit = MAX_IMAGE_PROMPT if self.path == "/image" else MAX_PROMPT
+                if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > limit:
                     raise ValueError
             except (ValueError, KeyError, TypeError, json.JSONDecodeError):
-                return self.reply(400, {"detail": f"body must be JSON with 'prompt' (1-{MAX_PROMPT} chars)"})
+                return self.reply(400, {"detail": "body must be JSON with 'prompt' (1-%d chars)" % (MAX_IMAGE_PROMPT if self.path == "/image" else MAX_PROMPT)})
             if not LOCK.acquire(blocking=False):
                 return self.reply(429, {"detail": "busy: one generation at a time"})
             try:
-                self.reply(200, {"text": generate_fn(prompt, model_ref, binary)})
+                if self.path == "/image":
+                    self.reply(200, image_fn(prompt, image_model, binary))
+                else:
+                    self.reply(200, {"text": generate_fn(prompt, model_ref, binary)})
             except subprocess.TimeoutExpired:
                 self.reply(504, {"detail": "opencode timed out"})
             except Exception as exc:
@@ -119,9 +143,14 @@ def main():
     binary = shutil.which("opencode")
     if not binary:
         sys.exit("Comando 'opencode' não encontrado no PATH.")
+    image_model = os.environ.get("OPENCODE_IMAGE_MODEL", DEFAULT_IMAGE_MODEL)
+    try:
+        check_image_model(image_model)
+    except ValueError as exc:
+        sys.exit(str(exc))
     port = int(os.environ.get("OPENCODE_BRIDGE_PORT", "8787"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(token, model_ref, binary))
-    print(f"opencode-bridge em http://127.0.0.1:{port} (modelo {model_ref}). Ctrl+C para parar.")
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(token, model_ref, binary, image_model=image_model))
+    print(f"opencode-bridge em http://127.0.0.1:{port} (texto: {model_ref}; imagem: {image_model}). Ctrl+C para parar.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

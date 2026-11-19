@@ -52,6 +52,7 @@ services:
       VERTEX_MODEL: ${VERTEX_MODEL:-gemini-2.5-flash}
       OPENCODE_BRIDGE_URL: ${OPENCODE_BRIDGE_URL:-http://host.docker.internal:8787}
       OPENCODE_BRIDGE_TOKEN: ${OPENCODE_BRIDGE_TOKEN:-}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-opencode}
       MAX_DURATION_SECONDS: '60'
     extra_hosts:
       - "host.docker.internal:host-gateway"
