@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from ..domain.contracts import Project, Video, VideoFormat, VideoStatus
 from ..domain.states import assert_transition
+from .editorial import Editorial
 from .ports import VideoRepository
 
 
@@ -59,7 +60,8 @@ class UseCases:
     create_video: CreateVideo
     get_video: GetVideo
     transition_video: TransitionVideo
+    editorial: Editorial | None = None
 
     @classmethod
-    def from_repo(cls, repo: VideoRepository) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo))
+    def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial)

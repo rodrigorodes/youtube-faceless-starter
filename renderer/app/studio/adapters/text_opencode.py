@@ -5,6 +5,7 @@ O bridge não suporta saída estruturada, então `json_schema` é ignorado e a r
 """
 import httpx
 
+from ..application.config import ProviderNotFound
 from ..application.ports import ModelUnavailable, TextResult
 from ..domain.contracts import UsageEntry
 
@@ -15,7 +16,7 @@ class OpenCodeText:
     def __init__(self, model: str, token: str, base_url: str = "http://host.docker.internal:8787",
                  transport: httpx.BaseTransport | None = None, timeout: float = 100.0):
         if not (token or "").strip():
-            raise ValueError("opencode text provider requires OPENCODE_BRIDGE_TOKEN")
+            raise ProviderNotFound("opencode text provider requires OPENCODE_BRIDGE_TOKEN")
         self.model, self._token, self._base = model, token.strip(), base_url.rstrip("/")
         self._transport, self._timeout = transport, timeout
 

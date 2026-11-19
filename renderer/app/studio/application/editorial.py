@@ -1,5 +1,7 @@
 """Casos de uso editoriais: fontes, roteiro restrito a claims e checagem factual (gate determinístico)."""
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from ..domain.claims import extract_claims
@@ -164,9 +166,11 @@ def _fit_prompt(topic: str, claims: list[Claim], scene_count: int) -> list[Claim
 
 class GenerateScript:
     def __init__(self, videos: VideoRepository, snaps: SnapshotRepository, scripts: ScriptRepository,
-                 text_model: TextModel, guard: CostGuard, usage: UsageRepository):
+                 text_model: TextModel | None, guard: CostGuard, usage: UsageRepository,
+                 model_for: Callable[[str], TextModel] | None = None):
+        """`model_for(project_id)` escolhe o modelo pela configuração do projeto; sem ele vale `text_model`."""
         self.videos, self.snaps, self.scripts = videos, snaps, scripts
-        self.text_model, self.guard, self.usage = text_model, guard, usage
+        self.text_model, self.guard, self.usage, self.model_for = text_model, guard, usage, model_for
 
     def execute(self, video_id: str, scene_count: int = 6) -> Script:
         if not MIN_SCENES <= scene_count <= MAX_SCENES:
@@ -181,8 +185,9 @@ class GenerateScript:
         if not claims:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
         prompt = build_prompt(video.topic, claims, scene_count)
-        self.guard.check(video_id, self.text_model.cost_estimate(prompt))  # antes da chamada
-        result = self.text_model.complete(prompt, json_schema=_SCHEMA)
+        model = self.model_for(video.project_id) if self.model_for else self.text_model
+        self.guard.check(video_id, model.cost_estimate(prompt))  # antes da chamada
+        result = model.complete(prompt, json_schema=_SCHEMA)
         self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a resposta for recusada
         drafts = parse_drafts(result.text, {c.id for c in claims})
         cited = sorted({c for d in drafts for c in d.claim_ids})
@@ -231,3 +236,11 @@ class GetScript:
         _require_video(self.videos, video_id)
         script = self.scripts.latest(video_id)
         return None if script is None else (script, self.scripts.scenes(video_id))
+
+
+@dataclass(frozen=True)
+class Editorial:
+    ingest: IngestSource
+    generate: GenerateScript
+    get_script: GetScript
+    fact_check: RunFactCheck

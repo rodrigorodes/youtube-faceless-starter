@@ -2,10 +2,14 @@
 from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from ..application.config import ProviderNotFound
+from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
+from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Project, Video, VideoFormat, VideoStatus
+from ..domain.contracts import FactCheckReport, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.policy import CostRefused
 from ..domain.ids import InvalidId, check_id
 from ..domain.states import InvalidTransition
 
@@ -24,6 +28,38 @@ class VideoIn(BaseModel):
     project_id: str
     topic: str = Field(min_length=3, max_length=300)
     format: VideoFormat = VideoFormat.short
+
+
+class SourceIn(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+    text: str | None = Field(default=None, max_length=1_000_000)  # o caso de uso recusa acima de 200 mil
+
+
+class SourceOut(BaseModel):
+    id: str
+    url: str
+    content_sha256: str
+    chars: int
+
+
+class ScriptIn(BaseModel):
+    scene_count: int = Field(default=6, ge=2, le=20)
+
+
+class ScriptOut(BaseModel):
+    script: Script
+    scenes: list[Scene]
+
+
+class FactCheckIn(BaseModel):
+    override_reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("override_reason")
+    @classmethod
+    def _not_blank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("override_reason must not be blank")
+        return value
 
 
 class TransitionIn(BaseModel):
@@ -48,6 +84,23 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(422, str(exc)) from exc
         except ServiceUnavailable as exc:
             raise HTTPException(503, "studio database unavailable") from exc
+        except VideoNotFound as exc:
+            raise HTTPException(404, "video not found") from exc
+        except StateConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (SourceRefused, ProviderNotFound) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except CostRefused as exc:
+            raise HTTPException(403, f"cost cap: {exc}") from exc
+        except (SourceUnavailable, ModelUnavailable) as exc:
+            raise HTTPException(502, str(exc)) from exc
+        except ScriptRejected as exc:
+            raise HTTPException(502, f"model output rejected: {exc}") from exc
+
+    def editorial(uc: UseCases):
+        if uc.editorial is None:
+            raise HTTPException(503, "editorial services unavailable")
+        return uc.editorial
 
     @router.post("/projects", status_code=201, response_model=Project)
     def create_project(body: ProjectIn):
@@ -71,5 +124,33 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if not run(lambda uc: uc.transition_video.execute(check_id(video_id), body.expected, body.new)):
             raise HTTPException(409, "video is not in the expected state")
         return {"ok": True}
+
+    @router.post("/videos/{video_id}/sources", status_code=201, response_model=SourceOut)
+    def add_source(video_id: str, body: SourceIn):
+        def go(uc):
+            ing = editorial(uc).ingest
+            snap = ing.execute_url(check_id(video_id), body.url) if body.text is None else ing.execute_text(check_id(video_id), body.url, body.text)
+            return SourceOut(id=snap.id, url=snap.url, content_sha256=snap.content_sha256, chars=len(snap.text))
+        return run(go)
+
+    @router.post("/videos/{video_id}/script", status_code=201, response_model=ScriptOut)
+    def generate_script(video_id: str, body: ScriptIn):
+        def go(uc):
+            ed = editorial(uc)
+            ed.generate.execute(check_id(video_id), body.scene_count)
+            script, scenes = ed.get_script.execute(video_id)
+            return ScriptOut(script=script, scenes=scenes)
+        return run(go)
+
+    @router.get("/videos/{video_id}/script", response_model=ScriptOut)
+    def get_script(video_id: str):
+        found = run(lambda uc: editorial(uc).get_script.execute(check_id(video_id)))
+        if found is None:
+            raise HTTPException(404, "script not found")
+        return ScriptOut(script=found[0], scenes=found[1])
+
+    @router.post("/videos/{video_id}/fact-check", response_model=FactCheckReport)
+    def fact_check(video_id: str, body: FactCheckIn):
+        return run(lambda uc: editorial(uc).fact_check.execute(check_id(video_id), body.override_reason))
 
     return router
