@@ -184,3 +184,46 @@ def test_usage_is_recorded_in_the_ledger(conn, dsn, tmp_path):
     client.post(f"/studio/videos/{vid}/script", json={})
     conn.commit()
     assert conn.execute("SELECT count(*), max(provider) FROM studio.usage_ledger WHERE video_id=%s", (vid,)).fetchone() == (1, "demo")
+
+
+class IdeaText(BadText):
+    name = "ideas"
+
+    def complete(self, prompt, *, json_schema=None):
+        import re
+        topics = re.findall(r"^\d+\. (.+)$", prompt, re.M)
+        ideas = [{"topic": t, "relevance": 3 + (i == 1), "verifiability": 4, "visual": 3, "freshness": 3} for i, t in enumerate(topics)]
+        return TextResult(json.dumps({"ideas": ideas}), UsageEntry(step="ideas", provider="ideas", model=self.model, cost_usd=0))
+
+
+class Garbage(BadText):
+    def complete(self, prompt, *, json_schema=None):
+        return TextResult("isto não é JSON", UsageEntry(step="x", provider="garbage", model=self.model, cost_usd=0))
+
+
+register("text", "ideas", IdeaText)
+register("text", "garbage", Garbage)
+
+
+def test_score_ideas_ranks_and_records_usage(conn, dsn, tmp_path):
+    from app.studio.adapters.postgres.db import migrate
+    migrate(conn)
+    client = make_client(dsn, tmp_path, text="ideas:x")
+    r = client.post("/studio/ideas/score", json={"topics": ["Primeira ideia", "Segunda ideia"]})
+    assert r.status_code == 200
+    ranked = r.json()["ranked"]
+    assert [x["topic"] for x in ranked] == ["Segunda ideia", "Primeira ideia"] and ranked[0]["score"] > ranked[1]["score"]
+    conn.commit()
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE video_id IS NULL AND provider='ideas'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("body", [{"topics": []}, {"topics": ["ok"] * 21}, {"topics": ["  "]}, {"topics": ["a", "a"]}, {}])
+def test_score_ideas_validation_is_422(client, body):
+    assert client.post("/studio/ideas/score", json=body).status_code == 422
+
+
+def test_score_ideas_with_bad_model_is_502(conn, dsn, tmp_path):
+    from app.studio.adapters.postgres.db import migrate
+    migrate(conn)
+    client = make_client(dsn, tmp_path, text="garbage:x")
+    assert client.post("/studio/ideas/score", json={"topics": ["Uma ideia"]}).status_code == 502

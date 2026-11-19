@@ -6,10 +6,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
+from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import FactCheckReport, Project, Scene, Script, Video, VideoFormat, VideoStatus
 from ..domain.policy import CostRefused
+from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
 from ..domain.states import InvalidTransition
 
@@ -62,6 +64,21 @@ class FactCheckIn(BaseModel):
         return value
 
 
+class IdeasIn(BaseModel):
+    topics: list[str] = Field(min_length=1, max_length=MAX_TOPICS)
+    project_id: str | None = None
+
+
+class RankedOut(BaseModel):
+    topic: str
+    score: float
+    scores: IdeaScores
+
+
+class IdeasOut(BaseModel):
+    ranked: list[RankedOut]
+
+
 class TransitionIn(BaseModel):
     expected: VideoStatus
     new: VideoStatus
@@ -88,13 +105,13 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "video not found") from exc
         except StateConflict as exc:
             raise HTTPException(409, str(exc)) from exc
-        except (SourceRefused, ProviderNotFound) as exc:
+        except (SourceRefused, ProviderNotFound, IdeaInputRefused) as exc:
             raise HTTPException(422, str(exc)) from exc
         except CostRefused as exc:
             raise HTTPException(403, f"cost cap: {exc}") from exc
         except (SourceUnavailable, ModelUnavailable) as exc:
             raise HTTPException(502, str(exc)) from exc
-        except ScriptRejected as exc:
+        except (ScriptRejected, IdeasRejected) as exc:
             raise HTTPException(502, f"model output rejected: {exc}") from exc
 
     def editorial(uc: UseCases):
@@ -152,5 +169,16 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/videos/{video_id}/fact-check", response_model=FactCheckReport)
     def fact_check(video_id: str, body: FactCheckIn):
         return run(lambda uc: editorial(uc).fact_check.execute(check_id(video_id), body.override_reason))
+
+    @router.post("/ideas/score", response_model=IdeasOut)
+    def score_ideas(body: IdeasIn):
+        def go(uc):
+            ed = editorial(uc)
+            if ed.score_ideas is None:
+                raise HTTPException(503, "idea scoring unavailable")
+            project = check_id(body.project_id) if body.project_id else None
+            return IdeasOut(ranked=[RankedOut(topic=r.topic, score=r.score, scores=r.scores)
+                                    for r in ed.score_ideas.execute(body.topics, project)])
+        return run(go)
 
     return router

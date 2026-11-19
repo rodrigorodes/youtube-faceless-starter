@@ -1,6 +1,7 @@
 """Casos de uso editoriais: fontes, roteiro restrito a claims e checagem factual (gate determinístico)."""
 import json
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -8,6 +9,8 @@ from ..domain.claims import extract_claims
 from ..domain.contracts import Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem, VideoStatus
 from ..domain.facts import check_narration
 from ..domain.policy import check_cost
+if TYPE_CHECKING:
+    from .ideas import ScoreIdeas
 from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotRepository, SourceFetcher, TextModel,
                     UsageRepository, VideoRepository)
 
@@ -60,8 +63,10 @@ class CostGuard:
     def __init__(self, usage: UsageRepository, cap_video: float, cap_month: float):
         self.usage, self.cap_video, self.cap_month = usage, cap_video, cap_month
 
-    def check(self, video_id: str, estimate: float | None) -> None:
-        check_cost(estimate, self.usage.spent_video(video_id), self.cap_video, self.usage.spent_month(), self.cap_month)
+    def check(self, video_id: str | None, estimate: float | None) -> None:
+        """Sem vídeo (ex.: pontuar ideias), só o teto do vídeo em zero e o mensal valem para gasto pago."""
+        spent = self.usage.spent_video(video_id) if video_id else 0.0
+        check_cost(estimate, spent, self.cap_video, self.usage.spent_month(), self.cap_month)
 
 
 def _require_video(videos: VideoRepository, video_id: str):
@@ -244,3 +249,4 @@ class Editorial:
     generate: GenerateScript
     get_script: GetScript
     fact_check: RunFactCheck
+    score_ideas: "ScoreIdeas | None" = None

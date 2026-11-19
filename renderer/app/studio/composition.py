@@ -16,6 +16,7 @@ from .adapters.postgres.repo import PostgresVideoRepository
 from .adapters.text_demo import DemoText
 from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
+from .application.ideas import ScoreIdeas
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
 from .application.use_cases import ServiceUnavailable, UseCases
 
@@ -104,19 +105,21 @@ class Studio:
         repo, snaps, scripts = PostgresVideoRepository(connect), PostgresSnapshotRepository(connect), PostgresScriptRepository(connect)
         usage, checks = PostgresUsageRepository(connect), PostgresFactCheckRepository(connect)
 
-        def text_for(project_id: str):
-            project = repo.get_project(project_id)
+        def text_for(project_id: str | None):
+            project = repo.get_project(project_id) if project_id else None
             try:
                 spec = ProjectConfig.resolve(project.config if project else {}, self.environ).text
             except ValueError as exc:
                 raise ProviderNotFound(str(exc)) from exc
             return build("text", spec)
 
+        guard = CostGuard(usage, s.max_cost_video, s.max_cost_month)
         editorial = Editorial(
             ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
-            generate=GenerateScript(repo, snaps, scripts, None, CostGuard(usage, s.max_cost_video, s.max_cost_month), usage, model_for=text_for),
+            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for),
             get_script=GetScript(repo, scripts),
-            fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)))
+            fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
+            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for))
         return UseCases.from_repo(repo, editorial)
 
     def ping(self) -> bool:
