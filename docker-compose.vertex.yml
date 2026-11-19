@@ -1,0 +1,9 @@
+# Override opcional: monta a credencial do Google Cloud (somente leitura) no renderer.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.vertex.yml up -d --build
+# Requer AI_PROVIDER=vertex, VERTEX_PROJECT e GCP_CREDENTIALS_FILE no .env.
+services:
+  renderer:
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-credentials.json
+    volumes:
+      - ${GCP_CREDENTIALS_FILE:?Set GCP_CREDENTIALS_FILE in .env (path to ADC or service-account JSON)}:/secrets/gcp-credentials.json:ro

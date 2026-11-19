@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -39,26 +40,89 @@ def wrap(draw, text, font, max_width):
         lines.append(current)
     return lines
 
+DEMO_SLIDES = ["{topic}", "Uma pergunta interessante para explorar.", "Entenda os pontos principais e descubra novas perspectivas.", "Qual é a sua opinião? Compartilhe nos comentários."]
+_vertex_credentials = None
+
+
+def build_prompt(topic, style):
+    return ("Escreva exatamente 4 frases curtas em português do Brasil para slides de um Short informativo. "
+            "Sem alegações factuais não verificadas. Responda APENAS JSON array de 4 strings. "
+            f"Tema: {topic}. Estilo: {style}.")
+
+
+def resolve_provider():
+    """AI_PROVIDER: auto (padrão: gemini se houver GEMINI_API_KEY, senão demo), demo, gemini ou vertex."""
+    provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
+    if provider == "auto":
+        return "gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "demo"
+    if provider not in ("demo", "gemini", "vertex"):
+        raise HTTPException(status_code=500, detail="Invalid AI_PROVIDER; use auto, demo, gemini or vertex")
+    return provider
+
+
+def vertex_endpoint(project, location, model):
+    host = "aiplatform.googleapis.com" if location == "global" else f"{location}-aiplatform.googleapis.com"
+    return f"https://{host}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent"
+
+
+def vertex_access_token():
+    """Token OAuth via Application Default Credentials (bloqueante; chamar em thread)."""
+    global _vertex_credentials
+    import google.auth
+    from google.auth.transport.requests import Request
+    if _vertex_credentials is None:
+        _vertex_credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    if not _vertex_credentials.valid:
+        _vertex_credentials.refresh(Request())
+    return _vertex_credentials.token
+
+
+async def post_json(url, headers, payload):
+    async with httpx.AsyncClient(timeout=40) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+    return response.json()
+
+
+def parse_slides(data):
+    raw = data["candidates"][0]["content"]["parts"][0]["text"]
+    slides = json.loads(raw)
+    if not isinstance(slides, list) or len(slides) != 4 or not all(isinstance(s, str) for s in slides):
+        raise ValueError("Model returned an invalid slide list")
+    return [s[:260] for s in slides]
+
+
 async def generate_script(topic, style):
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not key:
-        return [f"{topic}", "Uma pergunta interessante para explorar.", "Entenda os pontos principais e descubra novas perspectivas.", "Qual é a sua opinião? Compartilhe nos comentários."]
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    prompt = ("Escreva exatamente 4 frases curtas em português do Brasil para slides de um Short informativo. "
-              "Sem alegações factuais não verificadas. Responda APENAS JSON array de 4 strings. "
-              f"Tema: {topic}. Estilo: {style}.")
+    provider = resolve_provider()
+    if provider == "demo":
+        return [text.format(topic=topic) if "{topic}" in text else text for text in DEMO_SLIDES]
+    payload = {"contents": [{"role": "user", "parts": [{"text": build_prompt(topic, style)}]}], "generationConfig": {"responseMimeType": "application/json"}}
+    if provider == "gemini":
+        key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not key:
+            raise HTTPException(status_code=500, detail="AI_PROVIDER=gemini requires GEMINI_API_KEY")
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {"x-goog-api-key": key}
+        label = "Gemini"
+    else:
+        project = os.getenv("VERTEX_PROJECT", "").strip()
+        if not project:
+            raise HTTPException(status_code=500, detail="AI_PROVIDER=vertex requires VERTEX_PROJECT")
+        location = os.getenv("VERTEX_LOCATION", "global").strip() or "global"
+        model = os.getenv("VERTEX_MODEL", "gemini-2.5-flash")
+        url = vertex_endpoint(project, location, model)
+        label = "Vertex"
+        try:
+            token = await asyncio.to_thread(vertex_access_token)
+        except Exception as exc:  # google.auth.exceptions.* (DefaultCredentials, Refresh)
+            raise HTTPException(status_code=502, detail=f"Vertex auth failed: {type(exc).__name__}; check Application Default Credentials") from exc
+        headers = {"Authorization": f"Bearer {token}"}
     try:
-        async with httpx.AsyncClient(timeout=40) as client:
-            response = await client.post(endpoint, headers={"x-goog-api-key": key}, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"responseMimeType": "application/json"}})
-            response.raise_for_status()
-        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        slides = json.loads(raw)
-        if not isinstance(slides, list) or len(slides) != 4 or not all(isinstance(s, str) for s in slides):
-            raise ValueError("Gemini returned an invalid slide list")
-        return [s[:260] for s in slides]
-    except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Gemini failed: {type(exc).__name__}; check API key, model and quota") from exc
+        return parse_slides(await post_json(url, headers, payload))
+    except (httpx.HTTPError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+        status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
+        raise HTTPException(status_code=502, detail=f"{label} failed: {type(exc).__name__}{status}; check credentials, project, model and quota") from exc
 
 
 def make_slide(text, path, index):

@@ -9,6 +9,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Configuração no Windows](docs/03-configuracao-windows.md)
 - [Variáveis de ambiente](docs/04-variaveis-de-ambiente.md)
 - [O que foi validado (e o que não)](docs/05-validacao-realizada.md)
+- [Vertex AI como provider de roteiro](docs/06-vertex-ai.md)
 
 ## Pré-requisitos
 
