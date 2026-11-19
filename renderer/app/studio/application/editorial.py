@@ -11,6 +11,7 @@ from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotR
 
 MAX_SOURCE_CHARS = 200_000
 MIN_SCENES, MAX_SCENES = 2, 20
+MAX_PROMPT_CHARS = 3900  # o bridge recusa prompt acima de 4000 caracteres
 
 
 class VideoNotFound(LookupError):
@@ -27,6 +28,10 @@ class StateConflict(RuntimeError):
 
 class ScriptRejected(ValueError):
     pass
+
+
+class SourceUnavailable(RuntimeError):
+    """A fonte não pôde ser baixada (rede, HTTP de erro): a API responde 502."""
 
 
 def host_allowed(url: str, allowlist: tuple[str, ...] | list[str]) -> bool:
@@ -107,7 +112,7 @@ _SCHEMA = {"type": "object", "required": ["scenes"], "properties": {"scenes": {"
                    "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}}}}}}}
 
 
-def _prompt(topic: str, claims: list[Claim], scene_count: int) -> str:
+def build_prompt(topic: str, claims: list[Claim], scene_count: int) -> str:
     facts = "\n".join(f"[{c.id}] {c.text}" for c in claims)
     return (
         f"Escreva o roteiro de um vídeo curto em português do Brasil sobre: {topic}.\n"
@@ -119,9 +124,10 @@ def _prompt(topic: str, claims: list[Claim], scene_count: int) -> str:
     )
 
 
-def _parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
+def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
     try:
-        data = json.loads(raw)
+        start, end = raw.find("{"), raw.rfind("}")  # tolera texto ou cerca ```json ao redor
+        data = json.loads(raw[start:end + 1])
         scenes = data["scenes"]
     except (ValueError, KeyError, TypeError) as exc:
         raise ScriptRejected("model output is not the expected JSON") from exc
@@ -146,6 +152,16 @@ def _parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
     return drafts
 
 
+def _fit_prompt(topic: str, claims: list[Claim], scene_count: int) -> list[Claim]:
+    """Mantém, na ordem, as claims que cabem no limite de prompt (só elas valem como claim_ids)."""
+    kept: list[Claim] = []
+    for claim in claims:
+        if len(build_prompt(topic, kept + [claim], scene_count)) > MAX_PROMPT_CHARS:
+            break
+        kept.append(claim)
+    return kept
+
+
 class GenerateScript:
     def __init__(self, videos: VideoRepository, snaps: SnapshotRepository, scripts: ScriptRepository,
                  text_model: TextModel, guard: CostGuard, usage: UsageRepository):
@@ -161,11 +177,14 @@ class GenerateScript:
         claims = _claims(self.snaps.list(video_id))
         if not claims:
             raise SourceRefused("no sources with checkable claims: add sources first")
-        prompt = _prompt(video.topic, claims, scene_count)
+        claims = _fit_prompt(video.topic, claims, scene_count)
+        if not claims:
+            raise SourceRefused("topic and claims do not fit the model prompt limit")
+        prompt = build_prompt(video.topic, claims, scene_count)
         self.guard.check(video_id, self.text_model.cost_estimate(prompt))  # antes da chamada
         result = self.text_model.complete(prompt, json_schema=_SCHEMA)
         self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a resposta for recusada
-        drafts = _parse_drafts(result.text, {c.id for c in claims})
+        drafts = parse_drafts(result.text, {c.id for c in claims})
         cited = sorted({c for d in drafts for c in d.claim_ids})
         script = self.scripts.save_and_advance(video_id, "\n".join(d.narration for d in drafts), drafts, cited,
                                                video.status, VideoStatus.SCRIPTED)
@@ -202,3 +221,13 @@ class RunFactCheck:
         if not self.checks.save(video_id, report, advance=report.passed):
             raise StateConflict("video state changed during the fact-check")
         return report
+
+
+class GetScript:
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository):
+        self.videos, self.scripts = videos, scripts
+
+    def execute(self, video_id: str):
+        _require_video(self.videos, video_id)
+        script = self.scripts.latest(video_id)
+        return None if script is None else (script, self.scripts.scenes(video_id))

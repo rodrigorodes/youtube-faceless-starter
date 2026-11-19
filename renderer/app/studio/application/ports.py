@@ -28,6 +28,10 @@ class RenderSpec:
     options: dict = field(default_factory=dict)
 
 
+class ModelUnavailable(RuntimeError):
+    """Provedor de modelo indisponível ou com resposta inutilizável (a API responde 502)."""
+
+
 class VideoRepository(Protocol):
     def create_project(self, name: str, niche: str = "", language: str = "pt-BR") -> Project: ...
     def get_project(self, project_id: str) -> Project | None: ...
@@ -87,6 +91,7 @@ class ScriptRepository(Protocol):
                          expected: VideoStatus, new: VideoStatus) -> Script | None:
         """Grava roteiro (versão +1) e cenas e move o estado numa transação; None se o estado não for o esperado."""
     def scenes(self, video_id: str) -> list[Scene]: ...
+    def latest(self, video_id: str) -> Script | None: ...
 
 
 class FactCheckRepository(Protocol):

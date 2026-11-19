@@ -90,13 +90,14 @@ class Text:
     name = "fake"
 
     def __init__(self, payload, cost=0.0):
-        self.payload, self.cost, self.calls = payload, cost, 0
+        self.payload, self.cost, self.calls, self.prompts = payload, cost, 0, []
 
     def cost_estimate(self, prompt):
         return self.cost
 
     def complete(self, prompt, *, json_schema=None):
         self.calls += 1
+        self.prompts.append(prompt)
         raw = self.payload if isinstance(self.payload, str) else json.dumps(self.payload)
         return TextResult(text=raw, usage=UsageEntry(step="script", provider="fake", model="m", cost_usd=0))
 
@@ -294,3 +295,18 @@ def test_allow_names_reaches_the_check(world):
     assert not checker(world).execute(V).passed
     world["videos"].status = VideoStatus.SCRIPTED
     assert checker(world, frozenset({"amsterda"})).execute(V).passed
+
+
+def test_generate_accepts_json_inside_code_fence(world):
+    seed(world)
+    fenced = "Claro! Aqui está:\n```json\n" + json.dumps(good_payload()) + "\n```\n"
+    assert generator(world, fenced).execute(V, 4).version == 1
+
+
+def test_prompt_fits_the_bridge_limit_and_only_offered_claims_are_valid(world):
+    long_source = "\n".join(f"Event {i} happens in Amsterdam during the festival week with {100 + i} guests and many more details here." for i in range(60))
+    IngestSource(Fetcher(), world["snaps"], world["videos"], ALLOW).execute_text(V, "https://amsterdam-dance-event.nl/x", long_source)
+    gen = generator(world, good_payload(ids=["x"]))
+    with pytest.raises(ScriptRejected):
+        gen.execute(V, 4)
+    assert len(gen.text_model.prompts[0]) <= 4000
