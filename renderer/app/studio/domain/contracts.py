@@ -37,6 +37,7 @@ class AssetKind(str, Enum):
     voice = "voice"
     music = "music"
     clip = "clip"
+    video = "video"
     thumbnail = "thumbnail"
 
 

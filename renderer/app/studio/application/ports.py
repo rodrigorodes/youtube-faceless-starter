@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from ..domain.contracts import Asset, FactCheckReport, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.render import Cue
+from ..domain.contracts import Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,14 @@ class ImageResult:
 @dataclass(frozen=True)
 class RenderSpec:
     scenes: list[Scene]
-    narration_wav: Path
-    music_wav: Path | None
+    images: list[Path]            # PNG de cada cena, na mesma ordem
+    speech_wavs: list[Path]       # fala de cada cena
+    scene_seconds: list[float]    # duração de cada cena (quadros inteiros)
+    cues: list[Cue]               # legendas com tempo absoluto no vídeo
     format: VideoFormat = VideoFormat.short
-    options: dict = field(default_factory=dict)
+    music: bool = True
+    disclosure: str = "Ilustração gerada por IA"
+    work_dir: Path | None = None  # onde o renderer grava intermediários
 
 
 class ModelUnavailable(RuntimeError):
@@ -129,3 +134,29 @@ class AssetStore(Protocol):
 class ProductionLock(Protocol):
     def hold(self, video_id: str) -> "contextlib.AbstractContextManager[bool]":
         """Exclusão mútua da produção de um vídeo; entra com False se outra execução já a detém (não espera)."""
+
+
+class QaAnalyzer(Protocol):
+    def analyze(self, path: Path) -> dict:
+        """Métricas do arquivo: duration_s, width, height, has_audio, integrated_lufs, silence_ratio, black_ratio."""
+
+
+class RenderJobRepository(Protocol):
+    def enqueue(self, video_id: str, input_hash: str) -> tuple[RenderJob, bool]:
+        """Cria job QUEUED; se já existe um QUEUED/RUNNING para o vídeo, devolve esse (False)."""
+    def get(self, job_id: str) -> RenderJob | None: ...
+    def latest(self, video_id: str) -> RenderJob | None: ...
+    def start(self, job_id: str) -> bool:
+        """QUEUED → RUNNING numa operação só; False se outro executor pegou."""
+    def fail(self, job_id: str, error: str) -> None: ...
+    def complete(self, job_id: str, asset: Asset, qa: QaReport) -> bool:
+        """Numa transação: job SUCCEEDED, qa_report no vídeo e estado → RENDERED (→ AWAITING_APPROVAL se qa.passed).
+        False se o estado do vídeo mudou."""
+
+
+class RenderStorage(Protocol):
+    def image_path(self, relative: str) -> Path: ...
+    def work_dir(self, project_id: str, video_id: str, job_id: str) -> Path: ...
+    def publish(self, project_id: str, video_id: str, mp4: Path, srt: str) -> str:
+        """Move o MP4 e grava o .srt de forma atômica; devolve o caminho relativo do MP4."""
+    def cleanup(self, work_dir: Path) -> None: ...

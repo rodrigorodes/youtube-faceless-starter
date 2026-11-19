@@ -1,6 +1,7 @@
 """Layout de pastas em disco. Todo ID é validado antes de virar caminho."""
 import io
 import os
+import shutil
 import uuid
 from pathlib import Path
 
@@ -66,3 +67,44 @@ class FileAssetStore:
         finally:
             tmp.unlink(missing_ok=True)
         return relative
+
+
+class FileRenderStorage:
+    """Arquivos do render: intermediários em `work/<job>` (descartáveis) e saída em `final.mp4`/`final.srt`, publicada de forma atômica."""
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+
+    def image_path(self, relative: str) -> Path:
+        path = (self.root / relative)
+        if Path(relative).is_absolute() or ".." in Path(relative).parts or self.root.resolve() not in path.resolve().parents:
+            raise ValueError("asset path escapes the storage root")
+        return path
+
+    def work_dir(self, project_id: str, video_id: str, job_id: str) -> Path:
+        path = video_dir(self.root, project_id, video_id) / "work" / check_id(job_id)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def publish(self, project_id: str, video_id: str, mp4: Path, srt: str) -> str:
+        folder = video_dir(self.root, project_id, video_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        token = uuid.uuid4().hex
+        tmp_mp4, tmp_srt = folder / f"final.{token}.mp4.tmp", folder / f"final.{token}.srt.tmp"
+        try:
+            shutil.copyfile(mp4, tmp_mp4)
+            tmp_srt.write_text(srt, encoding="utf-8")
+            os.replace(tmp_srt, folder / "final.srt")
+            os.replace(tmp_mp4, folder / "final.mp4")
+        finally:
+            tmp_mp4.unlink(missing_ok=True)
+            tmp_srt.unlink(missing_ok=True)
+        return (folder / "final.mp4").relative_to(self.root).as_posix()
+
+    def cleanup(self, work_dir: Path) -> None:
+        try:
+            inside = (self.root / "projects").resolve() in Path(work_dir).resolve().parents and Path(work_dir).name != "projects"
+        except OSError:
+            inside = False
+        if inside:  # nunca apaga fora da raiz de storage
+            shutil.rmtree(work_dir, ignore_errors=True)
