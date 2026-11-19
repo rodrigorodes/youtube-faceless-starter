@@ -4,6 +4,7 @@ Cada salto (URL inicial e cada redirect) é revalidado: só http(s), host na all
 todos os endereços resolvidos precisam ser públicos. Limite conhecido: o httpx resolve o nome de novo ao conectar
 (janela de DNS rebinding); a allowlist restrita a domínios do próprio evento é a defesa principal.
 """
+import codecs
 import ipaddress
 import socket
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from ..application.editorial import SourceRefused, SourceUnavailable, host_allow
 from ..application.ports import FetchedPage
 
 _TEXT_TYPES = {"text/html", "application/xhtml+xml", "text/plain"}
+_CHARSETS = {"utf-8", "ascii", "iso8859-1", "iso8859-15", "cp1252", "utf-16", "utf-16-le", "utf-16-be"}
 _REDIRECTS = {301, 302, 303, 307, 308}
 _SKIP = {"script", "style", "noscript", "template"}
 _BLOCK = {"p", "div", "br", "li", "ul", "ol", "tr", "table", "section", "article", "header", "footer", "title",
@@ -84,7 +86,7 @@ class HttpxFetcher:
     def fetch(self, url: str) -> FetchedPage:
         current = url
         with httpx.Client(transport=self.transport, timeout=self.timeout, follow_redirects=False,
-                          headers={"User-Agent": USER_AGENT}) as client:
+                          headers={"User-Agent": USER_AGENT}, trust_env=False) as client:  # proxy do ambiente anularia a checagem de IP
             for _ in range(self.max_redirects + 1):
                 self._check(current)
                 try:
@@ -93,7 +95,10 @@ class HttpxFetcher:
                             location = response.headers.get("location")
                             if not location:
                                 raise SourceUnavailable("redirect without location")
-                            current = urljoin(current, location)
+                            target = urljoin(current, location)
+                            if urlsplit(current).scheme == "https" and urlsplit(target).scheme != "https":
+                                raise SourceRefused("redirect would downgrade https to http")
+                            current = target
                             continue
                         if response.status_code != 200:
                             raise SourceUnavailable(f"source returned HTTP {response.status_code}")
@@ -109,8 +114,10 @@ class HttpxFetcher:
                 except httpx.HTTPError as exc:
                     raise SourceUnavailable(f"could not fetch the source ({type(exc).__name__})") from exc
                 try:
+                    if codecs.lookup(charset).name not in _CHARSETS:  # idna, punycode, rot13… não são páginas de texto
+                        raise LookupError(charset)
                     raw = bytes(buffer[: self.max_bytes]).decode(charset, errors="replace")
-                except LookupError:
+                except (LookupError, UnicodeError):
                     raw = bytes(buffer[: self.max_bytes]).decode("utf-8", errors="replace")
                 text = html_to_text(raw) if ctype != "text/plain" else _clean(raw)
                 if not text:

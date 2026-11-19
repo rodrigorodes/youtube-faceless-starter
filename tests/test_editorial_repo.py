@@ -95,11 +95,11 @@ REPORT_BAD = FactCheckReport(passed=False, scenes=[SceneFactCheck(idx=0, unsuppo
 
 def test_fact_check_advances_only_from_scripted(env):
     v = env["video"].id
-    assert env["checks"].save(v, REPORT_OK, advance=True) is False  # ainda IDEA: nada gravado
+    assert env["checks"].save(v, REPORT_OK, advance=True, script_version=1) is False  # ainda IDEA: nada gravado
     assert env["conn"].execute("SELECT count(*) FROM studio.fact_checks").fetchone()[0] == 0
     env["scripts"].save_and_advance(v, "t", DRAFTS, [], S.IDEA, S.SCRIPTED)
-    assert env["checks"].save(v, REPORT_BAD, advance=False) is True and status(env) == "SCRIPTED"
-    assert env["checks"].save(v, REPORT_OK, advance=True) is True and status(env) == "FACT_CHECKED"
+    assert env["checks"].save(v, REPORT_BAD, advance=False, script_version=1) is True and status(env) == "SCRIPTED"
+    assert env["checks"].save(v, REPORT_OK, advance=True, script_version=1) is True and status(env) == "FACT_CHECKED"
     env["conn"].commit()
     assert env["conn"].execute("SELECT count(*) FROM studio.fact_checks WHERE video_id=%s", (v,)).fetchone()[0] == 2
 
@@ -108,7 +108,7 @@ def test_fact_check_override_is_persisted_with_reason(env):
     v = env["video"].id
     env["scripts"].save_and_advance(v, "t", DRAFTS, [], S.IDEA, S.SCRIPTED)
     report = FactCheckReport(passed=True, overridden=True, override_reason="conferido na fonte impressa", scenes=REPORT_BAD.scenes)
-    assert env["checks"].save(v, report, advance=True) is True
+    assert env["checks"].save(v, report, advance=True, script_version=1) is True
     env["conn"].commit()
     row = env["conn"].execute("SELECT passed, overridden, override_reason FROM studio.fact_checks WHERE video_id=%s", (v,)).fetchone()
     assert row == (True, True, "conferido na fonte impressa")
@@ -130,3 +130,16 @@ def test_dead_connection_becomes_service_unavailable(dsn):
     closed.close()
     with pytest.raises(ServiceUnavailable):
         PostgresUsageRepository(lambda: closed).spent_month()
+
+
+def test_fact_check_refuses_when_the_script_changed_after_it_was_read(env):
+    v = env["video"].id
+    env["scripts"].save_and_advance(v, "t1", DRAFTS, [], S.IDEA, S.SCRIPTED)
+    env["scripts"].save_and_advance(v, "t2", DRAFTS, [], S.SCRIPTED, S.SCRIPTED)  # v2 chegou depois da leitura da v1
+    assert env["checks"].save(v, REPORT_OK, advance=True, script_version=1) is False
+    assert status(env) == "SCRIPTED"
+    env["conn"].commit()
+    assert env["conn"].execute("SELECT count(*) FROM studio.fact_checks").fetchone()[0] == 0
+    assert env["checks"].save(v, REPORT_OK, advance=True, script_version=2) is True
+    env["conn"].commit()
+    assert env["conn"].execute("SELECT script_version FROM studio.fact_checks WHERE video_id=%s", (v,)).fetchone()[0] == 2

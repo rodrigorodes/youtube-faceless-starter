@@ -25,7 +25,7 @@ class OpenCodeText:
 
     def complete(self, prompt: str, *, json_schema: dict | None = None) -> TextResult:
         try:
-            with httpx.Client(transport=self._transport, timeout=self._timeout) as client:
+            with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
                 response = client.post(f"{self._base}/generate", headers={"Authorization": f"Bearer {self._token}"}, json={"prompt": prompt})
                 response.raise_for_status()
                 text = response.json()["text"]

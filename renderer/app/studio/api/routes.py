@@ -17,7 +17,9 @@ from ..domain.states import InvalidTransition
 
 
 # Aprovar, rejeitar e publicar só pelos endpoints próprios (P05), que checam QA e aprovação humana.
-RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED}
+RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBLISHED, VideoStatus.FACT_CHECKED}
+# Retomar de FAILED não pode saltar etapas com gate; a retomada validada é a P06.
+POST_GATE = {VideoStatus.FACT_CHECKED, VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
 
 
 class ProjectIn(BaseModel):
@@ -136,8 +138,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.post("/videos/{video_id}/transition")
     def transition(video_id: str, body: TransitionIn):
-        if body.new in RESERVED_TARGETS:
-            raise HTTPException(403, "approve/reject/publish are reserved for the dedicated endpoints (P05)")
+        if body.new in RESERVED_TARGETS or (body.expected == VideoStatus.FAILED and body.new in POST_GATE):
+            raise HTTPException(403, "this transition is reserved for the dedicated endpoints (fact-check, approve, reject, publish, resume)")
         if not run(lambda uc: uc.transition_video.execute(check_id(video_id), body.expected, body.new)):
             raise HTTPException(409, "video is not in the expected state")
         return {"ok": True}
@@ -155,7 +157,10 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def go(uc):
             ed = editorial(uc)
             ed.generate.execute(check_id(video_id), body.scene_count)
-            script, scenes = ed.get_script.execute(video_id)
+            found = ed.get_script.execute(video_id)
+            if found is None:
+                raise HTTPException(409, "script disappeared while generating")
+            script, scenes = found
             return ScriptOut(script=script, scenes=scenes)
         return run(go)
 

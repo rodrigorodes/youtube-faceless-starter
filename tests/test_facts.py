@@ -90,3 +90,38 @@ def test_allow_names_for_exonyms():
 def test_empty_sources_flag_everything_checkable():
     assert check_narration("Eram trinta artistas.", []) == [Unsupported("number", "30")]
     assert check_narration("Sem fatos aqui.", []) == []
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("dois milhões de pessoas", {"2000000"}), ("quatro milhões", {"4000000"}), ("três bilhões", {"3000000000"}),
+    ("um milhão", {"1000000"}), ("um bilhão", {"1000000000"}), ("meio milhão", {"500000"}),
+    ("uma dúzia", {"12"}), ("meia dúzia", {"6"}), ("5k", {"5000"}), ("5 K ingressos", {"5000"}),
+    ("2 milhões", {"2000000"}), ("1,5 milhão", {"1500000"}), ("2 bilhões", {"2000000000"}),
+    ("milhões de pessoas", {"1000000"}), ("dois palcos", {"2"}), ("um concerto", set()),
+    ("duzentos e cinquenta mil", {"250000"}),
+])
+def test_scale_words_are_numbers(text, expected):
+    assert numbers_in(text) == expected
+
+
+def test_invented_scale_is_flagged_even_if_the_small_number_exists():
+    src = ["São 2 palcos e 4 dias, 5 mil, 3 artistas, 1 sala"]
+    assert check_narration("Foram dois milhões de pessoas.", src) == [Unsupported("number", "2000000")]
+    assert check_narration("Foram três bilhões de ouvintes.", src) == [Unsupported("number", "3000000000")]
+    assert check_narration("Um milhão de fãs.", src) == [Unsupported("number", "1000000")]
+    assert check_narration("Foram dois palcos e cinco mil pessoas.", src) == []
+
+
+def test_huge_digit_strings_do_not_crash():
+    assert numbers_in("9" * 5000) == {"9" * 5000}
+
+
+def test_name_after_abbreviation_or_quote_is_checked():
+    assert {"silva", "costa"} <= proper_nouns_in("O Dr. Silva abriu. Convidado: Prof. Costa.")
+    assert "silva" in proper_nouns_in("\u201cSilva\u201d disse que sim")
+    assert proper_nouns_in("Quem chegou? Jarre abriu.") == set()  # limite documentado: capitalizada sozinha no início
+
+
+def test_letters_without_decomposition_match_the_source():
+    assert check_narration("No palco, R\u00f8dh\u00e5d tocou", ["R\u00f8dh\u00e5d played the closing set"]) == []
+    assert normalize("Stra\u00dfe \u0141\u00f3d\u017a \u00c6on") == "strasse lodz aeon"

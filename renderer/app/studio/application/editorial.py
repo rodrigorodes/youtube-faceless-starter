@@ -1,5 +1,6 @@
 """Casos de uso editoriais: fontes, roteiro restrito a claims e checagem factual (gate determinístico)."""
 import json
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from urllib.parse import urlsplit
 
 from ..domain.claims import extract_claims
 from ..domain.contracts import Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem, VideoStatus
-from ..domain.facts import check_narration
+from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
 if TYPE_CHECKING:
     from .ideas import ScoreIdeas
@@ -39,24 +40,32 @@ class SourceUnavailable(RuntimeError):
     """A fonte não pôde ser baixada (rede, HTTP de erro): a API responde 502."""
 
 
-def host_allowed(url: str, allowlist: tuple[str, ...] | list[str]) -> bool:
-    """Só http(s), sem credenciais na URL; o host precisa ser um domínio da lista ou subdomínio dele."""
+_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*")
+
+
+def _http_host(url: str) -> str | None:
+    """Host em minúsculas de uma URL http(s) bem formada (ASCII estrito, porta 80/443, sem credenciais), ou None.
+    A regex estrita evita hosts que parsers diferentes leem de formas diferentes (`evil.com\\.dominio`)."""
+    if not isinstance(url, str) or any(c in url for c in "\\\r\n\t\x00 "):
+        return None
     try:
         parts = urlsplit(url)
-        host = (parts.hostname or "").lower()
+        host, port = (parts.hostname or "").lower(), parts.port
     except ValueError:
-        return False
-    if parts.scheme not in ("http", "https") or not host or "@" in parts.netloc:
-        return False
-    return any(host == d.lower() or host.endswith("." + d.lower()) for d in allowlist)
+        return None
+    if parts.scheme not in ("http", "https") or "@" in parts.netloc or port not in (None, 80, 443):
+        return None
+    return host if _HOST.fullmatch(host) else None
+
+
+def host_allowed(url: str, allowlist: tuple[str, ...] | list[str]) -> bool:
+    """Só http(s) bem formado, sem credenciais; o host precisa ser um domínio da lista ou subdomínio dele."""
+    host = _http_host(url)
+    return host is not None and any(host == d.lower() or host.endswith("." + d.lower()) for d in allowlist)
 
 
 def _is_http(url: str) -> bool:
-    try:
-        parts = urlsplit(url)
-        return parts.scheme in ("http", "https") and bool(parts.hostname) and "@" not in parts.netloc
-    except ValueError:
-        return False
+    return _http_host(url) is not None
 
 
 class CostGuard:
@@ -136,7 +145,7 @@ def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
         start, end = raw.find("{"), raw.rfind("}")  # tolera texto ou cerca ```json ao redor
         data = json.loads(raw[start:end + 1])
         scenes = data["scenes"]
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, RecursionError) as exc:
         raise ScriptRejected("model output is not the expected JSON") from exc
     if not isinstance(scenes, list) or not MIN_SCENES <= len(scenes) <= MAX_SCENES:
         raise ScriptRejected(f"expected {MIN_SCENES}-{MAX_SCENES} scenes")
@@ -152,6 +161,10 @@ def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
             raise ScriptRejected(f"scene {i}: image_prompt must have 10-500 characters")
         if not (isinstance(caption, str) and isinstance(label, str) and isinstance(cited, list) and all(isinstance(c, str) for c in cited)):
             raise ScriptRejected(f"scene {i}: caption/label/claim_ids have the wrong type")
+        if "\x00" in narration + prompt + caption + label + "".join(cited):
+            raise ScriptRejected(f"scene {i}: NUL byte in text")
+        if not cited:
+            raise ScriptRejected(f"scene {i}: claim_ids is required (cite the facts the scene uses)")
         unknown = [c for c in cited if c not in valid_ids]
         if unknown:
             raise ScriptRejected(f"scene {i}: unknown claim ids {unknown}")
@@ -214,21 +227,23 @@ class RunFactCheck:
         video = _require_video(self.videos, video_id)
         if video.status != VideoStatus.SCRIPTED:
             raise StateConflict(f"fact-check needs state SCRIPTED, got {video.status.value}")
-        snapshots, scenes = self.snaps.list(video_id), self.scripts.scenes(video_id)
-        if not snapshots or not scenes:
+        snapshots, script = self.snaps.list(video_id), self.scripts.latest(video_id)  # a versão é lida ANTES das cenas
+        scenes = self.scripts.scenes(video_id)
+        if not snapshots or not scenes or script is None:
             raise SourceRefused("nothing to check: sources and scenes are required")
         by_id = {c.id: c.text for c in _claims(snapshots)}
         all_texts = [s.text for s in snapshots]
         flagged: list[SceneFactCheck] = []
         for scene in scenes:
             texts = [by_id[c] for c in scene.claim_ids if c in by_id] if scene.claim_ids else all_texts
-            issues = check_narration(f"{scene.narration}\n{scene.caption}", texts, self.allow_names)
+            issues = check_narration(f"{scene.narration}\n{scene.caption}\n{scene.label}", texts, self.allow_names)  # tudo que aparece na tela
+            issues += [i for i in check_names(scene.image_prompt, texts, self.allow_names) if i not in issues]  # sem pessoas reais no prompt
             if issues:
                 flagged.append(SceneFactCheck(idx=scene.idx, unsupported=[UnsupportedItem(kind=i.kind, value=i.value) for i in issues]))
         override = override_reason.strip() if override_reason is not None else None
         report = FactCheckReport(passed=not flagged or override is not None, overridden=bool(flagged) and override is not None,
                                  override_reason=override if flagged else None, scenes=flagged)
-        if not self.checks.save(video_id, report, advance=report.passed):
+        if not self.checks.save(video_id, report, advance=report.passed, script_version=script.version):
             raise StateConflict("video state changed during the fact-check")
         return report
 

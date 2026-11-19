@@ -21,7 +21,7 @@ class DemoText:
     def complete(self, prompt: str, *, json_schema: dict | None = None) -> TextResult:
         claims = _CLAIM.findall(prompt)
         count = int(m.group(1)) if (m := _COUNT.search(prompt)) else 4
-        scenes = [{"narration": claims[i % len(claims)][1], "caption": "", "label": f"FATO {i + 1}",
+        scenes = [{"narration": claims[i % len(claims)][1], "caption": "", "label": "FATO",
                    "image_prompt": "abstract colorful light trails on a dark stage background, no people",
                    "claim_ids": [claims[i % len(claims)][0]]} for i in range(count)] if claims else []
         return TextResult(text=json.dumps({"scenes": scenes}, ensure_ascii=False),

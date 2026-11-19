@@ -44,7 +44,7 @@ def _parse(raw: str, topics: list[str]) -> dict[str, IdeaScores]:
             if topic not in topics or topic in parsed:
                 raise ValueError(f"unexpected or duplicate topic {topic!r}")
             parsed[topic] = IdeaScores(**{k: v for k, v in entry.items() if k != "topic"})
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:  # ValidationError é ValueError
+    except (ValueError, KeyError, TypeError, AttributeError, RecursionError) as exc:  # ValidationError é ValueError
         raise IdeasRejected(f"model output is not a valid rubric ({type(exc).__name__})") from None
     if set(parsed) != set(topics):
         raise IdeasRejected("model output does not cover every topic")

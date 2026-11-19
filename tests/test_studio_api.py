@@ -94,8 +94,16 @@ def test_nul_byte_is_422_not_500(client):
     assert client.post("/studio/projects", json={"name": "a\u0000b"}).status_code == 422
 
 
-@pytest.mark.parametrize("target", ["APPROVED", "REJECTED", "PUBLISHED"])
+@pytest.mark.parametrize("target", ["APPROVED", "REJECTED", "PUBLISHED", "FACT_CHECKED"])
 def test_generic_endpoint_cannot_approve_reject_or_publish(client, video_id, target):
     r = client.post(f"/studio/videos/{video_id}/transition", json={"expected": "AWAITING_APPROVAL", "new": target})
     assert r.status_code == 403
     assert client.get(f"/studio/videos/{video_id}").json()["status"] == "IDEA"
+
+
+@pytest.mark.parametrize("target", ["FACT_CHECKED", "STORYBOARDED", "ASSETS_READY", "RENDERED"])
+def test_failed_video_cannot_jump_past_the_gate(client, video_id, target):
+    assert client.post(f"/studio/videos/{video_id}/transition", json={"expected": "IDEA", "new": "FAILED"}).status_code == 200
+    r = client.post(f"/studio/videos/{video_id}/transition", json={"expected": "FAILED", "new": target})
+    assert r.status_code == 403 and client.get(f"/studio/videos/{video_id}").json()["status"] == "FAILED"
+    assert client.post(f"/studio/videos/{video_id}/transition", json={"expected": "FAILED", "new": "IDEA"}).status_code == 200

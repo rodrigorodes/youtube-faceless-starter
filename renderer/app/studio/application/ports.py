@@ -95,8 +95,9 @@ class ScriptRepository(Protocol):
 
 
 class FactCheckRepository(Protocol):
-    def save(self, video_id: str, report: FactCheckReport, advance: bool) -> bool:
-        """Grava o relatório; com advance, move SCRIPTED→FACT_CHECKED na mesma transação (False se o estado mudou)."""
+    def save(self, video_id: str, report: FactCheckReport, advance: bool, script_version: int) -> bool:
+        """Grava o relatório da versão do roteiro checada. Com advance, move SCRIPTED→FACT_CHECKED na mesma transação;
+        False se o estado mudou ou se existe roteiro mais novo que o checado."""
 
 
 class UsageRepository(Protocol):

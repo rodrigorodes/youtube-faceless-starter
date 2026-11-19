@@ -32,11 +32,16 @@ resposta do modelo fora do formato (nada é gravado) · `503` banco indisponíve
 
 ## Como a checagem factual funciona
 
-O gate é **determinístico**, sem LLM. Cada cena cita `claim_ids`: frases verificáveis (com número ou nome próprio)
-extraídas do texto da fonte. Para cada cena, **todo número e todo nome próprio da narração e da legenda precisa
-aparecer nas claims citadas** (ou em todas as fontes, se a cena não citar nenhuma). Reprova o que não aparecer.
+O gate é **determinístico**, sem LLM. Cada cena **precisa** citar `claim_ids` (roteiro sem citação é recusado):
+frases verificáveis (com número ou nome próprio) extraídas do texto da fonte. Para cada cena, **todo número e todo
+nome próprio da narração, da legenda e do rótulo (`label`, que aparece na tela) precisa aparecer nas claims
+citadas**; no `image_prompt` checam-se os nomes próprios (nada de pessoa real). Reprova o que não aparecer.
+Cada relatório grava a **versão do roteiro** que checou; se o roteiro for regerado durante a checagem, ela falha
+com `409` em vez de aprovar a versão nova sem tê-la lido.
 
 - Números equivalentes casam: `3.600`, `3,600`, `3600`, `três mil e seiscentos`, `1,5 mil`, `vinte e um`.
+  Escalas contam: `dois milhões`, `um bilhão`, `meio milhão`, `uma dúzia`, `5k` viram `2000000`, `1000000000`, `500000`, `12`, `5000`.
+- Abreviatura não encerra frase (`Dr. Silva`, `Prof. Costa`); nome logo após aspas ou travessão é checado.
 - Acentos são ignorados (`Oxygène` = `oxygene`); hífen separa nomes (`Jean-Michel` → `jean`, `michel`).
 - Exônimos em português não existem na fonte em inglês (`Amsterdã`): entram em `STUDIO_ALLOW_NAMES` (padrão `amsterda`).
 - **Override humano**: exige motivo não vazio; o relatório mantém a lista de itens sem fonte e `overridden: true`.
@@ -45,6 +50,8 @@ aparecer nas claims citadas** (ou em todas as fontes, se a cena não citar nenhu
 ### Limites conhecidos
 - Uma palavra capitalizada **sozinha no início da frase** não é checada como nome próprio (não há léxico para
   separá-la de uma palavra comum). Se vier seguida de outra capitalizada, as duas são checadas.
+- Nomes com menos de 3 letras (`DJ`, `Jo`) ou em minúsculas não são checados. Numerais romanos (`XXI`) e ordinais por
+  extenso (`terceiro dia`) não viram número. Palavras fora da tabela de números por extenso (0–999, mil, milhão, bilhão) também não.
 - A checagem prova que número e nome existem na fonte citada, **não** que a frase os usa corretamente (ex.: trocar
   `3.600 artistas` por `3.600 eventos`). Leia o roteiro antes de aprovar; a aprovação humana é a P05.
 - O prompt cabe em ~3.900 caracteres (limite do bridge): só as primeiras claims entram quando a fonte é longa.
@@ -53,6 +60,7 @@ aparecer nas claims citadas** (ou em todas as fontes, se a cena não citar nenhu
 - Allowlist por sufixo de domínio em `STUDIO_SOURCE_ALLOWLIST` (padrão `amsterdam-dance-event.nl`); `evil-…` e
   `….evil.com` não passam. Só `http(s)`, sem credenciais na URL.
 - Antes de conectar, todo endereço resolvido precisa ser público (recusa loopback, rede privada, link-local, `100.64/10`).
+- Só host ASCII bem formado e porta 80/443; redirect de `https` para `http` é recusado. O ambiente (`HTTP(S)_PROXY`) é ignorado.
 - Até 3 redirects, cada um revalidado. Só `text/html`, `text/plain`, `application/xhtml+xml`; leitura cortada em 2 MB.
 - Limite: o `httpx` resolve o nome de novo ao conectar (janela de DNS rebinding). A allowlist estreita é a defesa principal.
 - Sites com Cloudflare ou captcha podem recusar: cole o texto oficial (`text`).
@@ -67,7 +75,10 @@ aparecer nas claims citadas** (ou em todas as fontes, se a cena não citar nenhu
 ## Dados
 Tabelas `source_snapshots` (texto + sha256 + data; mesma página com o mesmo conteúdo não duplica), `scripts` (versões),
 `scenes` (substituídas a cada novo roteiro), `fact_checks` (todo relatório, inclusive os reprovados e os overrides).
-Gerações concorrentes no mesmo vídeo são serializadas pelo bloqueio da linha: uma vence, a outra recebe `409`.
+Gerações concorrentes são serializadas pelo bloqueio da linha: de `IDEA`, uma vence e a outra recebe `409`; em
+`SCRIPTED`, regerar é permitido e cada chamada cria a versão seguinte (e gasta uma chamada de modelo).
+O teto de custo é conferido antes da chamada e o gasto gravado depois: várias regerações simultâneas passam juntas pelo
+teto (hoje os provedores custam 0). O teto mensal é global, não por projeto.
 
 ## Verificado (stack real)
 URL real da ADE buscada com redirect; fora da allowlist, `127.0.0.1` e `file://` recusados (422); roteiro por LLM

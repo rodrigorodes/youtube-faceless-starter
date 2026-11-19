@@ -25,6 +25,9 @@ def test_weights_sum_to_a_five_point_scale():
 def test_scores_outside_the_scale_are_refused(bad):
     with pytest.raises(ValueError):
         IdeaScores(relevance=bad, verifiability=3, visual=3, freshness=3)
+
+
+def test_unknown_field_is_refused():
     with pytest.raises(ValidationError):
         IdeaScores(relevance=3, verifiability=3, visual=3, freshness=3, extra=1)
 
@@ -119,3 +122,9 @@ def test_cost_guard_blocks_before_calling_the_model():
 def test_fenced_json_is_accepted():
     use, *_ = make("```json\n" + json.dumps({"ideas": [item("A", 4, 4, 4, 4)]}) + "\n```")
     assert use.execute(["A"])[0].topic == "A"
+
+
+def test_deeply_nested_model_output_is_rejected_not_a_crash():
+    use, *_ = make("{" + '{"a":' * 100000 + "1" + "}" * 100000)
+    with pytest.raises(IdeasRejected):
+        use.execute(["A"])

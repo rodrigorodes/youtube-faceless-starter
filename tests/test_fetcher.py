@@ -142,3 +142,56 @@ def test_empty_page_is_refused():
     fetcher, _ = make(lambda r: httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><script>x</script></html>"))
     with pytest.raises(SourceRefused, match="empty"):
         fetcher.fetch("https://amsterdam-dance-event.nl/x")
+
+
+def test_ipv4_mapped_ipv6_private_is_refused():
+    fetcher, calls = make(ok, resolver=ip("::ffff:10.0.0.1"))
+    with pytest.raises(SourceRefused, match="private"):
+        fetcher.fetch("https://amsterdam-dance-event.nl/x")
+    assert calls == []
+
+
+@pytest.mark.parametrize("url", ["https://amsterdam-dance-event.nl:abc/x", "https://amsterdam-dance-event.nl:99999/x", "https://amsterdam-dance-event.nl:22/x"])
+def test_invalid_or_unusual_ports_are_refused_not_500(url):
+    fetcher, calls = make(ok)
+    with pytest.raises(SourceRefused):
+        fetcher.fetch(url)
+    assert calls == []
+
+
+@pytest.mark.parametrize("charset", ["idna", "punycode", "undefined", "nao-existe"])
+def test_weird_charset_falls_back_to_utf8(charset):
+    fetcher, _ = make(lambda r: httpx.Response(200, headers={"content-type": f"text/plain; charset={charset}"}, content="ADE 30 anos".encode()))
+    assert fetcher.fetch("https://amsterdam-dance-event.nl/x").text == "ADE 30 anos"
+
+
+def test_https_to_http_downgrade_is_refused():
+    fetcher, calls = make(lambda r: httpx.Response(302, headers={"location": "http://amsterdam-dance-event.nl/x"}))
+    with pytest.raises(SourceRefused, match="downgrade"):
+        fetcher.fetch("https://amsterdam-dance-event.nl/x")
+    assert len(calls) == 1
+
+
+def test_redirect_without_location_is_unavailable():
+    fetcher, _ = make(lambda r: httpx.Response(302))
+    with pytest.raises(SourceUnavailable):
+        fetcher.fetch("https://amsterdam-dance-event.nl/x")
+
+
+def test_reading_stops_early_instead_of_loading_everything():
+    read = []
+
+    def stream():
+        for _ in range(1000):
+            read.append(1)
+            yield b"abcd " * 100
+
+    fetcher, _ = make(lambda r: httpx.Response(200, headers={"content-type": "text/plain"}, content=stream()), max_bytes=1000)
+    assert len(fetcher.fetch("https://amsterdam-dance-event.nl/x").text) <= 1000
+    assert len(read) < 50
+
+
+def test_proxy_environment_is_ignored(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+    fetcher, calls = make(ok)
+    assert fetcher.fetch("https://amsterdam-dance-event.nl/x").text and len(calls) == 1

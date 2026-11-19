@@ -73,16 +73,20 @@ class PostgresScriptRepository(_Base):
 
 
 class PostgresFactCheckRepository(_Base):
-    def save(self, video_id: str, report: FactCheckReport, advance: bool) -> bool:
+    def save(self, video_id: str, report: FactCheckReport, advance: bool, script_version: int) -> bool:
         with _translated(), self._connect() as conn:
             if advance:
                 row = conn.execute("SELECT status FROM studio.videos WHERE id = %s FOR UPDATE", (check_id(video_id),)).fetchone()
                 if row is None or row[0] != VideoStatus.SCRIPTED.value:
                     return False
+                newest = conn.execute("SELECT MAX(version) FROM studio.scripts WHERE video_id = %s", (video_id,)).fetchone()[0]
+                if newest != script_version:  # o roteiro foi regerado depois da leitura: este relatório não vale para ele
+                    return False
                 conn.execute("UPDATE studio.videos SET status = %s, updated_at = now() WHERE id = %s", (VideoStatus.FACT_CHECKED.value, video_id))
-            conn.execute("INSERT INTO studio.fact_checks(id, video_id, passed, overridden, override_reason, report) VALUES (%s, %s, %s, %s, %s, %s)",
+            conn.execute("INSERT INTO studio.fact_checks(id, video_id, passed, overridden, override_reason, report, script_version) "
+                         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                          (uuid.uuid4().hex, check_id(video_id), report.passed, report.overridden, report.override_reason,
-                          Jsonb(report.model_dump(mode="json"))))
+                          Jsonb(report.model_dump(mode="json")), script_version))
             return True
 
 

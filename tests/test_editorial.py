@@ -58,13 +58,19 @@ class Scripts:
     def scenes(self, video_id):
         return list(self._scenes)
 
+    def latest(self, video_id):
+        return Script(id="s" * 32, video_id=video_id, version=len(self.saved), text="", claim_ids=[]) if self.saved else None
+
 
 class Checks:
     def __init__(self, videos):
-        self.videos, self.reports = videos, []
+        self.videos, self.reports, self.versions, self.scripts = videos, [], [], None
 
-    def save(self, video_id, report, advance):
+    def save(self, video_id, report, advance, script_version):
+        self.versions.append(script_version)
         if advance:
+            if self.scripts is not None and script_version != len(self.scripts.saved):
+                return False  # o roteiro mudou depois da leitura (regeração concorrente)
             if self.videos.status != VideoStatus.SCRIPTED:
                 return False
             self.videos.status = VideoStatus.FACT_CHECKED
@@ -114,7 +120,10 @@ class Fetcher:
 @pytest.fixture()
 def world():
     videos = Videos()
-    return {"videos": videos, "snaps": Snapshots(), "scripts": Scripts(videos), "checks": Checks(videos), "usage": Usage()}
+    scripts = Scripts(videos)
+    checks = Checks(videos)
+    checks.scripts = scripts
+    return {"videos": videos, "snaps": Snapshots(), "scripts": scripts, "checks": checks, "usage": Usage()}
 
 
 def claim_ids():
@@ -143,6 +152,11 @@ def seed(world):
     ("https://evil-amsterdam-dance-event.nl/x", False), ("https://amsterdam-dance-event.nl.evil.com/x", False),
     ("https://amsterdam-dance-event.nl@evil.com/x", False), ("file:///etc/passwd", False), ("ftp://amsterdam-dance-event.nl/", False),
     ("https:///x", False), ("not a url", False),
+    ("https://evil.com\\.amsterdam-dance-event.nl/", False), ("https://evil.com%5c.amsterdam-dance-event.nl/", False),
+    ("https://ev il.amsterdam-dance-event.nl/", False), ("https://amsterdam-dance-event.nl:22/x", False),
+    ("https://amsterdam-dance-event.nl:abc/x", False), ("https://amsterdam-dance-event.nl:99999/x", False),
+    ("https://amsterdam-dance-event.nl:443/x", True), ("http://amsterdam-dance-event.nl:80/x", True),
+    ("https://exämple.amsterdam-dance-event.nl/", False), ("https://amsterdam-dance-event.nl./x", False),
 ])
 def test_allowlist(url, ok):
     assert host_allowed(url, ALLOW) is ok
@@ -255,16 +269,18 @@ def test_fact_check_uses_only_cited_claims(world):
     ids = claim_ids()  # ids[0] = frase do 3,600; ids[1] = frase do Jarre/21/50
     scripted(world, ["Jean-Michel Jarre abriu o festival em vinte e um de outubro."], ids=ids)  # cita só a frase dos 3,600
     report = checker(world).execute(V)
-    assert not report.passed  # Jarre/21 só existem na outra frase, que a cena não citou
+    flagged = {i.value for s in report.scenes for i in s.unsupported}
+    assert not report.passed and {"jarre", "21"} <= flagged  # existem só na outra frase, que a cena não citou
 
 
 def test_fact_check_also_checks_captions(world):
     seed(world)
-    payload = good_payload(["Eram mais de três mil e seiscentos artistas."] * 2, claim_ids())
+    payload = good_payload(["Eram mais de três mil e seiscentos artistas."] * 2, claim_ids()[:1])
     for scene in payload["scenes"]:
         scene["caption"] = "No palco: Madonna"
     generator(world, payload).execute(V, 4)
-    assert not checker(world).execute(V).passed
+    report = checker(world).execute(V)
+    assert not report.passed and {i.value for s in report.scenes for i in s.unsupported} == {"madonna"}
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "\n"])
@@ -310,3 +326,79 @@ def test_prompt_fits_the_bridge_limit_and_only_offered_claims_are_valid(world):
     with pytest.raises(ScriptRejected):
         gen.execute(V, 4)
     assert len(gen.text_model.prompts[0]) <= 4000
+
+
+# ---------- achados da revisão ----------
+def test_fact_check_is_bound_to_the_script_version_it_read(world):
+    scripted(world, ["Eram mais de três mil e seiscentos artistas.", "Jean-Michel Jarre abriu o festival no AFAS Live."], ids=claim_ids())
+    original_scenes = world["scripts"].scenes
+
+    def scenes_then_regenerate(video_id):  # regeração concorrente depois da leitura
+        found = original_scenes(video_id)
+        generator(world, good_payload()).execute(V, 4)
+        return found
+
+    world["scripts"].scenes = scenes_then_regenerate
+    with pytest.raises(StateConflict):
+        checker(world).execute(V)
+    assert world["videos"].status == VideoStatus.SCRIPTED and world["checks"].reports == []
+
+
+def test_fact_check_passes_the_checked_version_to_the_repository(world):
+    scripted(world, ["Eram mais de três mil e seiscentos artistas.", "Jean-Michel Jarre abriu o festival no AFAS Live."], ids=claim_ids())
+    checker(world).execute(V)
+    assert world["checks"].versions == [1]
+
+
+def test_label_and_image_prompt_are_checked(world):
+    seed(world)
+    payload = good_payload(["Eram mais de três mil e seiscentos artistas."] * 2, claim_ids())
+    payload["scenes"][0]["label"] = "QUA 24/10"
+    payload["scenes"][1]["image_prompt"] = "portrait of Madonna on a stage with lights"
+    generator(world, payload).execute(V, 4)
+    report = checker(world).execute(V)
+    flagged = {i.value for s in report.scenes for i in s.unsupported}
+    assert {"24", "madonna"} <= flagged
+
+
+@pytest.mark.parametrize("scene", [
+    {"narration": "Narração suficiente aqui", "image_prompt": "wide stage with colorful lights"},
+    {"narration": "Narração suficiente aqui", "image_prompt": "wide stage with colorful lights", "claim_ids": []},
+    {"narration": "Narração suficiente aqui\u0000", "image_prompt": "wide stage with colorful lights", "claim_ids": ["__ID__"]},
+    {"narration": "Narração suficiente aqui", "image_prompt": "wide stage with colorful lights", "claim_ids": ["__ID__"], "label": "a\u0000"},
+])
+def test_every_scene_must_cite_claims_and_have_no_nul(world, scene):
+    seed(world)
+    cid = claim_ids()[0]
+    scene = json.loads(json.dumps(scene).replace("__ID__", cid))
+    with pytest.raises(ScriptRejected):
+        generator(world, {"scenes": [scene] * 2}).execute(V, 4)
+    assert world["scripts"].saved == []
+
+
+def test_deeply_nested_model_output_is_rejected_not_a_crash(world):
+    seed(world)
+    with pytest.raises(ScriptRejected):
+        generator(world, "{" + '{"a":' * 100000 + "1" + "}" * 100000).execute(V, 4)
+
+
+def test_prompt_cut_claims_are_not_valid_ids(world):
+    long_source = "\n".join(f"Event {i} happens in Amsterdam during the festival week with {100 + i} guests and many more details here." for i in range(60))
+    IngestSource(Fetcher(), world["snaps"], world["videos"], ALLOW).execute_text(V, "https://amsterdam-dance-event.nl/x", long_source)
+    from app.studio.application.editorial import _claims
+    all_ids = [c.id for c in _claims(world["snaps"].list(V))]
+    gen = generator(world, "placeholder")
+    gen.text_model.payload = good_payload(ids=[all_ids[-1]])  # existe na fonte, mas foi cortada do prompt
+    with pytest.raises(ScriptRejected, match="unknown claim ids"):
+        gen.execute(V, 4)
+
+
+def test_per_video_cap_accumulates_through_generate(world):
+    seed(world)
+    world["usage"].video = 0.9
+    gen = generator(world, good_payload(), cost=0.2, cap_video=1.0)
+    with pytest.raises(CostRefused, match="per-video"):
+        gen.execute(V, 4)
+    assert gen.text_model.calls == 0
+    ok = generator(world, good_payload(), cost=0.05, cap_video=1.0)
+    assert ok.execute(V, 4).version == 1

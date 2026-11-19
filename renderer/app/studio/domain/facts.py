@@ -19,19 +19,26 @@ _WORDS = {
     "oitocentos": 800, "novecentos": 900,
 }
 _ARTICLE_UNITS = {"um": 1, "uma": 1}  # só contam dentro de um número composto ("vinte e um")
-_MULT = {"mil": 1000, "milhao": 1_000_000, "milhoes": 1_000_000}
+_BIG = {"milhao": 10**6, "milhoes": 10**6, "bilhao": 10**9, "bilhoes": 10**9}
+_MULT = {"mil": 1000, "k": 1000, **_BIG}  # após dígitos ("5k", "2 milhões")
+_HALF_ONE = {"um": Decimal(1), "uma": Decimal(1), "meio": Decimal("0.5"), "meia": Decimal("0.5")}
+_DOZEN = {"duzia", "duzias"}
 _TOKEN = re.compile(r"\d+(?:[.,]\d+)*|[a-z]+")
 _THOUSANDS = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
 _DECIMAL = re.compile(r"\d+[.,]\d+")
 
 
+_FOLD = str.maketrans({"ø": "o", "đ": "d", "ð": "d", "ł": "l", "ß": "ss", "æ": "ae", "œ": "oe", "þ": "th"})
+
+
 def normalize(text: str) -> str:
     folded = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
-    return " ".join(folded.lower().split())
+    return " ".join(folded.lower().translate(_FOLD).split())
 
 
 def _fmt(value: Decimal) -> str:
-    return str(int(value)) if value == value.to_integral_value() else format(value.normalize(), "f")
+    text = format(value, "f")  # exato (sem normalize/arredondamento do contexto) e sem int(): número gigante não estoura
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _digit_values(token: str) -> list[Decimal]:
@@ -88,34 +95,68 @@ def numbers_in(text: str) -> set[str]:
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
         if token[0].isdigit():
             values = _digit_values(token)
-            if len(values) == 1 and i + 1 < len(tokens) and tokens[i + 1] in _MULT:
-                values = [values[0] * _MULT[tokens[i + 1]]]
+            if len(values) == 1 and nxt in _MULT:
+                values = [values[0] * _MULT[nxt]]
                 i += 1
             found.update(_fmt(v) for v in values)
             i += 1
+        elif token in _HALF_ONE and nxt in _BIG:  # "um milhão", "meio milhão"
+            found.add(_fmt(_HALF_ONE[token] * _BIG[nxt]))
+            i += 2
+        elif token in ("um", "uma", "meia") and nxt in _DOZEN:  # "uma dúzia", "meia dúzia"
+            found.add(_fmt(_HALF_ONE[token] * 12))
+            i += 2
         elif token in _WORDS or token == "mil":  # "um/uma" sozinhos não iniciam número
             value, i = _parse_run(tokens, i)
-            found.add(str(value))
+            scale = _BIG.get(tokens[i], 1) if i < len(tokens) else 1
+            if scale > 1:
+                i += 1
+            found.add(_fmt(Decimal(value) * scale))
+        elif token in _BIG:  # escala sem número: "milhões de pessoas"
+            found.add(str(_BIG[token]))
+            i += 1
         else:
             i += 1
     return found
 
 
-_SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
+_SENTENCE = re.compile(r"(\n+|(?<=[.!?])\s+)")
 _WORD = re.compile(r"[^\W\d_]+")
+_ABBREVIATIONS = {"dr", "dra", "prof", "profa", "sr", "sra", "srta", "st", "mr", "mrs", "ms", "dj", "vs", "av", "eng", "ex"}
+
+
+def _ends_with_abbreviation(sentence: str) -> bool:
+    words = sentence.split()
+    return bool(words) and words[-1].endswith(".") and words[-1][:-1].lower() in _ABBREVIATIONS
+
+
+def _sentences(text: str) -> list[str]:
+    """Quebra em frases sem separar "Dr. Silva": abreviatura seguida de ponto não encerra a frase."""
+    parts = _SENTENCE.split(text)  # [trecho, separador, trecho, ...]
+    sentences: list[str] = []
+    for k in range(0, len(parts), 2):
+        separator = parts[k - 1] if k else ""
+        if sentences and "\n" not in separator and _ends_with_abbreviation(sentences[-1]):
+            sentences[-1] += " " + parts[k]
+        else:
+            sentences.append(parts[k])
+    return sentences
 
 
 def proper_nouns_in(text: str) -> set[str]:
     names: set[str] = set()
-    for sentence in _SENTENCE.split(text):
+    for sentence in _sentences(text):
+        stripped = sentence.lstrip()
+        opens_with_letter = bool(stripped) and stripped[0].isalpha()  # aspas/travessão: a 1ª palavra não é "início de frase"
         words = _WORD.findall(sentence.replace("-", " "))
         for index, word in enumerate(words):
             if len(word) < 3 or not word[0].isupper():
                 continue
             starts_name = index == 0 and len(words) > 1 and words[1][0].isupper()
-            if index > 0 or starts_name:
+            if index > 0 or starts_name or not opens_with_letter:
                 names.add(normalize(word))
     return names
 
@@ -136,3 +177,12 @@ def check_narration(narration: str, source_texts: list[str], allow_names: frozen
     issues = [Unsupported("number", n) for n in sorted(numbers_in(narration) - source_numbers, key=lambda x: (len(x), x))]
     issues += [Unsupported("name", n) for n in sorted(proper_nouns_in(narration)) if n not in source_words and n not in allowed]
     return issues
+
+
+def check_names(text: str, source_texts: list[str], allow_names: frozenset[str] = frozenset()) -> list[Unsupported]:
+    """Só nomes próprios (ex.: image_prompt, onde números como "9:16" não são fatos)."""
+    source_words: set[str] = set()
+    for source in source_texts:
+        source_words |= set(re.findall(r"[a-z]+", normalize(source)))
+    allowed = {normalize(name) for name in allow_names}
+    return [Unsupported("name", n) for n in sorted(proper_nouns_in(text)) if n not in source_words and n not in allowed]
