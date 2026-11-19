@@ -1,0 +1,9 @@
+{
+  "topic": "Teste de fumaça do estúdio",
+  "mode": "rich",
+  "title": "Teste de fumaça",
+  "scenes": [
+    {"narration": "Primeira cena de teste do estúdio.", "caption": "Cena 1", "image_prompt": "abstract light trails on a dark background"},
+    {"narration": "Segunda cena de teste do estúdio.", "caption": "Cena 2", "image_prompt": "abstract light trails on a dark background"}
+  ]
+}
