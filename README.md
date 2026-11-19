@@ -15,6 +15,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Modo rich: imagens, narração e música](docs/09-modo-rich-imagens-voz-musica.md)
 - [Arquitetura e contratos (gerado)](docs/10-arquitetura.md)
 - [Validação real no Lenovo (roteiro)](docs/11-validacao-lenovo.md)
+- [Fluxo editorial: fontes, roteiro e checagem factual](docs/12-editorial.md)
 
 ## Pré-requisitos
 

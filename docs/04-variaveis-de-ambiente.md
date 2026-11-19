@@ -19,9 +19,11 @@ Todas ficam no arquivo `.env` na raiz do projeto (copiado de `.env.example`). O 
 | `OPENCODE_MODEL` | não | `openai/gpt-6-luna` | Modelo do bridge: `provider/model[#variante]` |
 | `OPENCODE_IMAGE_MODEL` | não | `openrouter/recraft/recraft-v4.1-flash-v2:free` | Modelo de imagem do modo rich; o bridge recusa os que não terminam em `:free` |
 | `OPENCODE_ALLOW_PAID_IMAGES` | não | (vazio) | `1` libera modelos de imagem pagos no bridge |
-| `STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER` | não | `opencode:openai/gpt-6-luna`, `opencode:openrouter/recraft/recraft-v4.1-flash-v2:free`, `piper:pt_BR-faber-medium`, `ffmpeg:rich` | Provedor padrão de cada porta (`<provedor>:<modelo>`); o `config` do projeto sobrescreve. Reservadas: os adaptadores entram na P03/P04 |
+| `STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER` | não | `opencode:openai/gpt-6-luna`, `opencode:openrouter/recraft/recraft-v4.1-flash-v2:free`, `piper:pt_BR-faber-medium`, `ffmpeg:rich` | Provedor padrão de cada porta (`<provedor>:<modelo>`); o `config` do projeto sobrescreve. Em uso: `STUDIO_TEXT` (`opencode`, `demo`). Reservadas: imagem, voz e renderer entram na P03/P04 |
 | `STUDIO_DATABASE_URL` | não | montada pelo compose | Banco do schema `studio`; sem ela o `/studio` responde 503 e o `/videos` segue normal |
-| `MAX_COST_USD_PER_VIDEO`, `MAX_COST_USD_PER_MONTH` | não | `0`, `15` | Tetos de gasto com provedores pagos (a aplicação dos tetos entra na P03) |
+| `MAX_COST_USD_PER_VIDEO`, `MAX_COST_USD_PER_MONTH` | não | `0`, `15` | Tetos de gasto com provedores pagos; o `CostGuard` recusa antes de cada chamada de modelo do fluxo editorial |
+| `STUDIO_SOURCE_ALLOWLIST` | não | `amsterdam-dance-event.nl` | Domínios (vírgula) de onde o estúdio busca fontes; subdomínios incluídos |
+| `STUDIO_ALLOW_NAMES` | não | `amsterda` | Nomes próprios aceitos mesmo ausentes da fonte (exônimos em português) |
 | `IMAGE_PROVIDER` | não | `opencode` | `opencode` (via bridge) ou `placeholder` (degradê local) |
 | `OPENCODE_BRIDGE_PORT` | não | `8787` | Porta do bridge no host |
 | `OPENCODE_BRIDGE_URL` | não | `http://host.docker.internal:8787` | Como o container alcança o bridge |
