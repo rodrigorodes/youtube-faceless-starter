@@ -17,6 +17,7 @@ from .adapters.image_stock import PexelsImage
 from .adapters.image_veo import VeoImage
 from .adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository
 from .adapters.postgres.analytics_repo import PostgresAnalyticsRepository
+from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
@@ -179,16 +180,18 @@ class Studio:
                                   lock=PostgresProductionLock(self._connect_autocommit)),
             list_assets=ListAssets(repo, scripts, assets))
         jobs = PostgresRenderJobRepository(connect)
+        steps = PostgresStepRepository(connect)
         files = FileRenderStorage(s.storage_root)
         # Restrição: um processo só. Job QUEUED/RUNNING de um processo anterior não vai terminar: vira FAILED e `work/` é limpo
         # (retomada fina: P06). Com várias réplicas isto derrubaria jobs vivos de outro processo.
         jobs.fail_interrupted()
+        steps.fail_interrupted_render()
         try:
             files.sweep_work()
         except OSError:
             pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
-                        renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer)
+                         renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer, steps=steps)
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)

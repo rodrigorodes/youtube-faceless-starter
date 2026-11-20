@@ -127,6 +127,19 @@ def status(client, vid):
     return client.get(f"/studio/videos/{vid}").json()["status"]
 
 
+def test_render_failure_records_correlated_step_run(migrated, dsn, tmp_path):
+    client, studio = make_client(dsn, tmp_path, renderer="boom:x")
+    try:
+        vid = ready_video(client)
+        response = client.post(f"/studio/videos/{vid}/render")
+        assert response.status_code == 202
+        rows = migrated.execute("SELECT step, status, input_hash FROM studio.step_runs WHERE video_id=%s", (vid,)).fetchall()
+        assert len(rows) == 1 and rows[0][0:2] == ("render", "FAILED")
+        assert len(rows[0][2]) == 64
+    finally:
+        studio.shutdown()
+
+
 def test_full_render_short_produces_playable_files_and_moves_to_awaiting_approval(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = ready_video(client)
@@ -220,6 +233,27 @@ def test_jobs_left_running_by_a_previous_process_are_failed_on_startup(migrated,
     assert job["status"] == "FAILED" and "restart" in job["error"]
     assert restarted.post(f"/studio/videos/{vid}/render").status_code == 202  # e dá para tentar de novo
     assert restarted.get(f"/studio/videos/{vid}/render").json()["job"]["status"] == "SUCCEEDED"
+
+
+def test_interrupted_render_step_is_failed_and_resume_reuses_scene_assets(migrated, dsn, tmp_path):
+    from app.studio.adapters.postgres.step_repo import PostgresStepRepository
+    import psycopg
+    deferred = Deferred()
+    client, first = make_client(dsn, tmp_path, executor=deferred)
+    vid = ready_video(client)
+    before = client.get(f"/studio/videos/{vid}/assets").json()
+    job = client.post(f"/studio/videos/{vid}/render").json()
+    steps = PostgresStepRepository(lambda: psycopg.connect(dsn))
+    run_id = steps.begin(vid, "render", job["input_hash"], reusable=False)
+    resumed, second = make_client(dsn, tmp_path)
+    try:
+        assert resumed.post(f"/studio/videos/{vid}/resume").status_code == 202
+        rows = migrated.execute("SELECT status FROM studio.step_runs WHERE id=%s", (run_id,)).fetchone()
+        assert rows[0] == "FAILED"
+        assert resumed.get(f"/studio/videos/{vid}/assets").json() == before
+        assert resumed.get(f"/studio/videos/{vid}/render").json()["job"]["status"] == "SUCCEEDED"
+    finally:
+        second.shutdown()
 
 
 def test_generic_transition_cannot_fake_a_render(migrated, dsn, tmp_path):

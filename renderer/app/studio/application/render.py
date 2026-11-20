@@ -9,6 +9,7 @@ from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, VideoStatu
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, evaluate_qa, make_cues, scene_length, to_srt
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
+from .observability import run_step
 from .ports import (AssetRepository, QaAnalyzer, RenderJobRepository, Renderer, RenderSpec, RenderStorage, ScriptRepository,
                     VideoRepository, Voice)
 
@@ -56,9 +57,11 @@ class StartRender:
 
 class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
-                 files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], analyzer: QaAnalyzer):
+                 files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], analyzer: QaAnalyzer,
+                 steps=None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.analyzer = voice_for, renderer_for, analyzer
+        self.steps = steps
 
     def execute(self, job_id: str) -> None:
         """Roda um job. Nunca levanta (a exceção iria para um Future que ninguém lê): qualquer falha vira job FAILED
@@ -69,12 +72,18 @@ class RunRender:
             if job is None or not self.jobs.start(job_id):
                 return
             try:
-                video = _require_video(self.videos, job.video_id)
-                if video.status not in (VideoStatus.ASSETS_READY, VideoStatus.RENDERED):
-                    raise RenderRefused(f"video state changed to {video.status.value}")
-                pairs = _scenes_with_assets(self.videos, self.scripts, self.assets, job.video_id)
-                work = self.files.work_dir(video.project_id, video.id, job_id)
-                self._render(job, video, pairs, work)
+                def render():
+                    nonlocal work
+                    video = _require_video(self.videos, job.video_id)
+                    if video.status not in (VideoStatus.ASSETS_READY, VideoStatus.RENDERED):
+                        raise RenderRefused(f"video state changed to {video.status.value}")
+                    pairs = _scenes_with_assets(self.videos, self.scripts, self.assets, job.video_id)
+                    work = self.files.work_dir(video.project_id, video.id, job_id)
+                    self._render(job, video, pairs, work)
+                if self.steps is None:
+                    render()
+                else:
+                    run_step(self.steps, job.video_id, "render", job.input_hash, render, reusable=False)
             except RenderRefused as exc:
                 self._fail(job_id, str(exc), work)
             except Exception as exc:  # voz, ffmpeg, disco, banco

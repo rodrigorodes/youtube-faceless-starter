@@ -22,9 +22,9 @@ def retry_transient(operation, *, attempts=3, sleep=time.sleep, random_value=ran
             sleep(min(30.0, 2**attempt) * random_value())
 
 
-def run_step(repo, video_id, step, input_hash, operation):
+def run_step(repo, video_id, step, input_hash, operation, *, reusable=True):
     """Run an independently reusable step; operation must persist its own output."""
-    run_id = repo.begin(video_id, step, input_hash)
+    run_id = repo.begin(video_id, step, input_hash, reusable=reusable)
     if run_id is None:
         return False
     attempt = repo.attempt(run_id)

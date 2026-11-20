@@ -1,0 +1,183 @@
+{
+  "name": "04 - Analytics daily (readonly)",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c1",
+      "name": "Prepare queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Configure local/YouTube video pairs before enabling. Never put credentials here.\nconst mappings = [];\nconst seen = new Set();\nconst today = new Date();\nconst end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 3));\nconst start = new Date(end.getTime() - 13 * 86400000);\nconst iso = d => d.toISOString().slice(0, 10);\nreturn mappings.map(m => {\n  if (!/^[0-9a-f]{32}$/.test(m.video_id) || !/^[A-Za-z0-9_-]{11}$/.test(m.youtube_id) || seen.has(m.video_id)) throw new Error('invalid or duplicate video mapping');\n  seen.add(m.video_id);\n  return {json: {...m, start: iso(start), end: iso(end)}};\n});"
+      }
+    },
+    {
+      "id": "h1",
+      "name": "Read analytics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "name": "youtube_analytics_readonly"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "https://youtubeanalytics.googleapis.com/v2/reports",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ids",
+              "value": "channel==MINE"
+            },
+            {
+              "name": "startDate",
+              "value": "={{ $json.start }}"
+            },
+            {
+              "name": "endDate",
+              "value": "={{ $json.end }}"
+            },
+            {
+              "name": "dimensions",
+              "value": "day"
+            },
+            {
+              "name": "filters",
+              "value": "={{ \"video==\" + $json.youtube_id }}"
+            },
+            {
+              "name": "metrics",
+              "value": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained"
+            },
+            {
+              "name": "maxResults",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "oAuth2Api"
+      }
+    },
+    {
+      "id": "c2",
+      "name": "Normalize reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const inputs = $input.all();\nconst queries = $('Prepare queries').all();\nif (inputs.length !== queries.length) throw new Error('report count mismatch');\nconst mapping = {views:'views', estimatedMinutesWatched:'estimated_minutes_watched', averageViewDuration:'average_view_duration_s', averageViewPercentage:'average_view_percentage', likes:'likes', comments:'comments', shares:'shares', subscribersGained:'subscribers_gained'};\nconst out = [];\nfor (let i=0; i<inputs.length; i++) {\n  const report=inputs[i].json, q=queries[i].json;\n  if (!Array.isArray(report.columnHeaders)) throw new Error('missing column headers');\n  const names=report.columnHeaders.map(x=>x.name);\n  if (!names.includes('day') || !names.includes('views') || new Set(names).size !== names.length) throw new Error('invalid columns');\n  if (report.rows !== undefined && !Array.isArray(report.rows)) throw new Error('invalid rows');\n  const days=new Set();\n  for (const row of (report.rows || [])) {\n    if (!Array.isArray(row) || row.length !== names.length) throw new Error('invalid row');\n    const day=row[names.indexOf('day')];\n    if (typeof day !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(day) || day < q.start || day > q.end || days.has(day)) throw new Error('invalid day');\n    days.add(day);\n    const metric={video_id:q.video_id, date:day};\n    for (let j=0; j<names.length; j++) if (mapping[names[j]]) {\n      const value=row[j];\n      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error('invalid metric');\n      metric[mapping[names[j]]]=value;\n    }\n    out.push({json:metric});\n  }\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "h2",
+      "name": "Store metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://renderer:8000/studio/analytics/metrics",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily": {
+      "main": [
+        [
+          {
+            "node": "Prepare queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare queries": {
+      "main": [
+        [
+          {
+            "node": "Read analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read analytics": {
+      "main": [
+        [
+          {
+            "node": "Normalize reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize reports": {
+      "main": [
+        [
+          {
+            "node": "Store metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  },
+  "pinData": {},
+  "tags": []
+}

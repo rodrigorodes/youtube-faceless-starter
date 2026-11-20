@@ -8,7 +8,7 @@ from .repo import _translated
 
 
 class PostgresStepRepository(_Base):
-    def begin(self, video_id: str, step: str, input_hash: str) -> str | None:
+    def begin(self, video_id: str, step: str, input_hash: str, *, reusable: bool = True) -> str | None:
         if not step or len(step) > 100 or not re.fullmatch(r"[0-9a-f]{64}", input_hash):
             raise ValueError("invalid step or input hash")
         with _translated(), self._connect() as conn:
@@ -17,7 +17,7 @@ class PostgresStepRepository(_Base):
                 raise ValueError("video not found")
             if conn.execute("SELECT 1 FROM studio.step_runs WHERE video_id=%s AND step=%s AND status='RUNNING'", (video_id, step)).fetchone():
                 raise RuntimeError("step already running")
-            if conn.execute("SELECT 1 FROM studio.step_runs WHERE video_id=%s AND step=%s AND input_hash=%s AND status='SUCCEEDED'",
+            if reusable and conn.execute("SELECT 1 FROM studio.step_runs WHERE video_id=%s AND step=%s AND input_hash=%s AND status='SUCCEEDED'",
                             (video_id, step, input_hash)).fetchone():
                 return None
             run_id = uuid.uuid4().hex
@@ -25,6 +25,12 @@ class PostgresStepRepository(_Base):
                          "VALUES (%s,%s,%s,(SELECT COALESCE(MAX(attempt),0)+1 FROM studio.step_runs WHERE video_id=%s AND step=%s),'RUNNING',%s)",
                          (run_id, video_id, step, video_id, step, input_hash))
             return run_id
+
+    def fail_interrupted_render(self) -> int:
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("UPDATE studio.step_runs SET status='FAILED', error_class='Interrupted', "
+                               "finished_at=now() WHERE step='render' AND status='RUNNING'")
+            return cur.rowcount
 
     def finish(self, run_id: str, succeeded: bool) -> bool:
         with _translated(), self._connect() as conn:
