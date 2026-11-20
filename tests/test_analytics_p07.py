@@ -1,0 +1,85 @@
+import sys
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+
+
+@pytest.fixture
+def analytics(conn, dsn):
+    import psycopg
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.analytics_repo import PostgresAnalyticsRepository
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.domain.contracts import VideoFormat
+
+    migrate(conn)
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    project = videos.create_project("canal")
+    video = videos.create_video(project.id, "tema", VideoFormat.short)
+    return PostgresAnalyticsRepository(connect), video.id
+
+
+def test_daily_upsert_and_aggregate_report_preserve_missing_values(analytics):
+    from app.studio.application.analytics import DailyMetric
+
+    repo, video = analytics
+    day = date(2026, 11, 10)
+    repo.upsert(DailyMetric(video_id=video, date=day, views=4, likes=None))
+    repo.upsert(DailyMetric(video_id=video, date=day, views=9, likes=None))
+    repo.upsert(DailyMetric(video_id=video, date=date(2026, 11, 11), views=3, likes=1))
+    report = repo.weekly(date(2026, 11, 9), date(2026, 11, 15))
+    assert len(report) == 1
+    assert report[0]["views"] == 12 and report[0]["likes"] == 1
+    assert report[0]["days"] == [day, date(2026, 11, 11)]
+    assert report[0]["sample_small"] is True
+    assert report[0]["suggestion"] is None
+
+
+def test_invalid_metrics_are_rejected():
+    from app.studio.application.analytics import DailyMetric
+
+    with pytest.raises(ValueError):
+        DailyMetric(video_id="a" * 32, date=date(2026, 11, 10), views=-1)
+    with pytest.raises(ValueError):
+        DailyMetric(video_id="a" * 32, date=date(2026, 11, 10), average_view_duration_s=float("nan"))
+
+
+def test_sufficient_sample_produces_exploratory_suggestion_with_provenance(analytics):
+    from app.studio.application.analytics import DailyMetric
+
+    repo, video = analytics
+    day = date(2026, 11, 10)
+    repo.upsert(DailyMetric(video_id=video, date=day, views=120))
+    row = repo.weekly(day, day)[0]
+    assert row["sample_small"] is False
+    assert row["suggestion"]["topic"] == "tema"
+    assert row["suggestion"]["evidence"] == [{"video_id": video, "date": day}]
+
+
+def test_unknown_view_counts_prevent_suggestion(analytics):
+    from app.studio.application.analytics import DailyMetric
+
+    repo, video = analytics
+    first, second = date(2026, 11, 10), date(2026, 11, 11)
+    repo.upsert(DailyMetric(video_id=video, date=first, views=120))
+    repo.upsert(DailyMetric(video_id=video, date=second, views=None))
+    row = repo.weekly(first, second)[0]
+    assert row["suggestion"] is None
+
+
+def test_composition_exposes_analytics_and_resume(conn, dsn, tmp_path):
+    from app.studio.composition import Settings, Studio
+
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path))
+    try:
+        use_cases = studio.use_cases()
+        assert use_cases is not None
+        assert callable(use_cases.analytics.upsert)
+        assert callable(use_cases.analytics.weekly)
+        assert callable(use_cases.resume.execute)
+    finally:
+        studio.shutdown()

@@ -16,6 +16,7 @@ from .adapters.image_placeholder import PlaceholderImage
 from .adapters.image_stock import PexelsImage
 from .adapters.image_veo import VeoImage
 from .adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository
+from .adapters.postgres.analytics_repo import PostgresAnalyticsRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
@@ -30,6 +31,8 @@ from .adapters.text_demo import DemoText
 from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
+from .application.analytics import Analytics
+from .application.observability import Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
@@ -195,7 +198,8 @@ class Studio:
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
             preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files))
-        return UseCases.from_repo(repo, editorial, media, rendering, publishing)
+        return UseCases.from_repo(repo, editorial, media, rendering, publishing,
+                                  Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

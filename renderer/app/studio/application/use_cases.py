@@ -8,6 +8,8 @@ from .media import Media
 from .publishing import Publishing
 from .render import Rendering
 from .ports import VideoRepository
+from .analytics import Analytics
+from .observability import Resume
 
 
 class ProjectNotFound(LookupError):
@@ -65,8 +67,11 @@ class UseCases:
     media: Media | None = None
     rendering: Rendering | None = None
     publishing: Publishing | None = None
+    analytics: Analytics | None = None
+    resume: Resume | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
-                  rendering: Rendering | None = None, publishing: Publishing | None = None) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing)
+                  rendering: Rendering | None = None, publishing: Publishing | None = None,
+                  analytics: Analytics | None = None, resume: Resume | None = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume)
