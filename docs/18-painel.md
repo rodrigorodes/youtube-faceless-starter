@@ -66,3 +66,18 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 - **Content Security Policy (CSP):** A página usa CSP estrita protegida por `nonce` aleatório a cada requisição, sem `unsafe-inline` e com `Cache-Control: no-store`.
 - **Segredos protegidos:** A URL temporária de upload do YouTube (`upload_uri`), tokens de autenticação e caminhos internos do sistema de arquivos nunca são enviados nem exibidos no painel.
 - **Aprovação atômica:** O painel apenas visualiza o estado; a decisão formal de aprovação ocorre na tela de prévia, que envia o ID do render inspecionado para validação atômica no banco de dados.
+
+## Interface (menu lateral)
+
+O painel usa menu lateral fixo (Painel, Temas em Alta, Vídeos, Novo Vídeo, API Docs, n8n),
+barra superior com o filtro de período e o card do teto mensal no rodapé do menu. Os campos
+de formulário (inputs, selects, textareas) têm estilo próprio, com foco visível. O tema segue
+o modo claro/escuro do sistema. A prévia de aprovação usa o mesmo visual.
+
+![Painel](images/painel-dashboard.png)
+![Formulário de novo vídeo](images/painel-form-novo-video.png)
+![Detalhe do vídeo](images/painel-detalhe-video.png)
+![Prévia e aprovação](images/painel-preview.png)
+
+A CSP libera `<style>` e `<script>` só com nonce; atributos `style=""` são permitidos
+(`style-src-attr`) por serem apenas de apresentação, com todo texto escapado.

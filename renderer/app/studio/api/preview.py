@@ -8,19 +8,138 @@ from ..domain.contracts import VideoStatus
 e = lambda value: html.escape(str(value), quote=True)  # noqa: E731
 
 CSS = """
-:root { color-scheme: light dark; --gap: 1rem; font-family: system-ui, sans-serif; line-height: 1.5; }
-body { margin: 0 auto; padding: 1rem; max-width: 70rem; }
-h1 { font-size: 1.5rem; margin-block: .5rem; } h2 { font-size: 1.15rem; margin-block: 1.25rem .5rem; }
-.layout { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-items: start; }
-video { width: 100%; max-height: 80vh; background: #000; border-radius: .5rem; }
-.badge { display: inline-block; padding: .1rem .6rem; border-radius: 1rem; border: 1px solid currentColor; font-size: .85rem; }
-.ok { color: #0a7d33; } .bad { color: #b3261e; }
-@media (prefers-color-scheme: dark) { .ok { color: #5fd28a; } .bad { color: #ff8a80; } }
-label { display: block; font-weight: 600; margin-block-start: .75rem; } .hint { font-weight: 400; font-size: .85rem; opacity: .8; }
-input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem; }
-button { font: inherit; padding: .6rem 1.2rem; margin: .75rem .5rem 0 0; cursor: pointer; min-block-size: 2.75rem; }
-:where(a, button, input, textarea, video):focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
-table { border-collapse: collapse; } th, td { text-align: start; padding: .2rem .8rem .2rem 0; }
+:root {
+  color-scheme: light dark;
+  --bg: #0b0f17;
+  --surface: #151c28;
+  --surface-hover: #1c2638;
+  --border: #222e40;
+  --border-hover: #32435e;
+  --text: #f0f4f8;
+  --text-muted: #8897a8;
+  --primary: #2f81f7;
+  --primary-hover: #4c94ff;
+  --primary-focus: rgba(47, 129, 247, 0.28);
+  --input-bg: #0d131d;
+  --input-focus-bg: #111824;
+  --ok: #3fb950;
+  --ok-bg: rgba(63, 185, 80, 0.14);
+  --bad: #f85149;
+  --bad-bg: rgba(248, 81, 73, 0.14);
+  --warn: #e3b341;
+  --warn-bg: rgba(227, 179, 65, 0.14);
+  --gap: 1.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fb;
+    --surface: #ffffff;
+    --surface-hover: #f7fafc;
+    --border: #dbe2ec;
+    --border-hover: #cbd5e1;
+    --text: #1a202c;
+    --text-muted: #64748b;
+    --primary: #0969da;
+    --primary-hover: #085cc1;
+    --primary-focus: rgba(9, 105, 218, 0.22);
+    --input-bg: #ffffff;
+    --input-focus-bg: #ffffff;
+    --ok: #1a7f37;
+    --ok-bg: rgba(26, 127, 55, 0.12);
+    --bad: #cf222e;
+    --bad-bg: rgba(207, 34, 46, 0.12);
+    --warn: #9a6700;
+    --warn-bg: rgba(154, 103, 0, 0.12);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); padding: 1.5rem; margin: 0 auto; max-width: 80rem; }
+header { margin-bottom: 1.25rem; }
+h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0.35rem; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: var(--text); }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.layout { display: grid; gap: var(--gap); grid-template-columns: minmax(18rem, 26rem) 1fr; align-items: start; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+video { width: 100%; max-height: 80vh; background: #000; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+
+.badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; background: var(--surface); border: 1px solid var(--border); margin-right: 0.35rem; }
+.ok { color: var(--ok); }
+.bad { color: var(--bad); }
+
+label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-top: 0.85rem; margin-bottom: 0.25rem; }
+.hint { font-weight: 400; font-size: 0.78rem; opacity: 0.8; }
+
+input, textarea {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+input:hover, textarea:hover { border-color: var(--border-hover); }
+input:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-focus);
+  background: var(--input-focus-bg);
+}
+
+button {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  min-height: 42px;
+  margin-top: 0.85rem;
+  margin-right: 0.5rem;
+  transition: all 0.15s ease;
+}
+button#approve {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+button#approve:hover {
+  background: var(--primary-hover);
+  box-shadow: 0 2px 6px var(--primary-focus);
+}
+button#reject {
+  background: var(--surface);
+  color: var(--bad);
+  border-color: var(--border);
+}
+button#reject:hover {
+  background: var(--bad-bg);
+  border-color: var(--bad);
+}
+button:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 0.5rem; }
+th, td { text-align: start; padding: 0.45rem 0.85rem; font-size: 0.82rem; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; font-weight: 600; }
+tr:last-child th, tr:last-child td { border-bottom: none; }
+
+ol, ul { padding-left: 1.25rem; font-size: 0.875rem; color: var(--text); }
+li { margin-bottom: 0.35rem; }
+
+section[aria-label="Detalhes"] { display: flex; flex-direction: column; gap: 1rem; }
+section[aria-label="Detalhes"] .card-panel { margin-top: 0 !important; }
+.card-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
 """
 
 JS = """
@@ -55,30 +174,36 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
     base = f"/studio/videos/{v.id}"
     reviewable = v.status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED)
     qa_failed = p.qa is not None and not p.qa.passed
-    parts = [f"<h1>{e(p.default_title)}</h1>",
-             f'<p><span class="badge">{e(v.status.value)}</span> <span class="badge">{e(v.format.value)}</span> Tema: {e(v.topic)}</p>']
+    header_parts = [
+        '<div style="font-size: 0.82rem; margin-bottom: 0.35rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>',
+        f"<h1>{e(p.default_title)}</h1>",
+        f'<p><span class="badge">{e(v.status.value)}</span> <span class="badge">{e(v.format.value)}</span> <span style="font-size: 0.85rem; color: var(--text-muted);">Tema: {e(v.topic)}</span></p>'
+    ]
     player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file?output_asset_id={e(p.output_asset_id)}"><track kind="captions" srclang="pt-BR" label="Português" '
-              f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="bad" role="alert">Sem arquivo de vídeo renderizado.</p>'
-    qa = "<p>Sem relatório de QA.</p>"
+              f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="bad" role="alert" style="padding: 2rem; background: var(--surface); border-radius: 8px; text-align: center;">Sem arquivo de vídeo renderizado.</p>'
+    qa = "<p style='color: var(--text-muted); font-size: 0.85rem;'>Sem relatório de QA.</p>"
     if p.qa is not None:
         rows = "".join(f"<tr><th scope='row'>{e(k)}</th><td>{e(val)}</td></tr>" for k, val in sorted(p.qa.metrics.items()))
         fails = "".join(f"<li>{e(f)}</li>" for f in p.qa.failures)
-        qa = (f'<p class="{"ok" if p.qa.passed else "bad"}"><strong>QA {"aprovado" if p.qa.passed else "REPROVADO"}</strong></p>'
-              f"{f'<ul>{fails}</ul>' if fails else ''}<table><caption class='hint'>Métricas medidas</caption>{rows}</table>")
+        qa = (f'<p class="{"ok" if p.qa.passed else "bad"}" style="font-weight: 600; font-size: 0.9rem;">QA {"aprovado" if p.qa.passed else "REPROVADO"}</p>'
+              f"{f'<ul style=\"color: var(--bad); margin: 0.35rem 0;\">{fails}</ul>' if fails else ''}<table><caption class='hint' style='display:none;'>Métricas medidas</caption>{rows}</table>")
     scenes = "".join(f"<li>{('<strong>' + e(s.label) + '</strong> ') if s.label else ''}{e(s.narration)}</li>" for s in p.scenes)
     sources = "".join(f'<li><a href="{e(u)}" rel="noopener noreferrer" target="_blank">{e(u)}</a></li>' for u in p.sources if u.startswith(("https://", "http://")))
     credits = "".join(f"<li>{e(c)}</li>" for c in p.credits)
-    side = [f"<h2>Qualidade (QA)</h2>{qa}", f"<h2>Roteiro narrado</h2><ol>{scenes}</ol>",
-            f"<h2>Fontes</h2><ul>{sources or '<li>Nenhuma registrada.</li>'}</ul>"]
+    side = [
+        f"<div class='card-panel'><h2>Qualidade (QA)</h2>{qa}</div>",
+        f"<div class='card-panel' style='margin-top: 1rem;'><h2>Roteiro narrado</h2><ol>{scenes}</ol></div>",
+        f"<div class='card-panel' style='margin-top: 1rem;'><h2>Fontes</h2><ul>{sources or '<li>Nenhuma registrada.</li>'}</ul></div>"
+    ]
     if credits:
-        side.append(f"<h2>Créditos de imagem</h2><ul>{credits}</ul>")
+        side.append(f"<div class='card-panel' style='margin-top: 1rem;'><h2>Créditos de imagem</h2><ul>{credits}</ul></div>")
     review = ""
     if reviewable:
         override = ""
         if qa_failed:
             override = ('<label for="override_reason">O QA reprovou. Para aprovar mesmo assim, explique o motivo '
                         '<span class="hint">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea>')
-        review = (f'<h2>Decisão</h2><form id="review" data-base="{base}" data-output-asset-id="{e(p.output_asset_id or "")}" onsubmit="return false">'
+        review = (f"<div class='card-panel' style='margin-top: 1rem;'><h2>Decisão de Aprovação</h2><form id=\"review\" data-base=\"{base}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
                   f'<label for="title">Título <span class="hint">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
                   f'<input id="title" maxlength="100" value="{e(p.default_title)}">'
                   f'<label for="description">Descrição <span class="hint">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'
@@ -86,10 +211,10 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
                   f'<label for="tags">Tags <span class="hint">(separadas por vírgula, até 15)</span></label><input id="tags" value="{e(", ".join(v.tags))}">'
                   f'<label for="publish_at">Agendar publicação <span class="hint">(opcional; o vídeo sobe privado e o YouTube publica no horário; '
                   f'mínimo 15 minutos à frente)</span></label><input id="publish_at" type="datetime-local">'
-                  f'{override}<button type="button" id="approve">Aprovar</button>'
-                  f'<label for="reject_reason">Motivo da rejeição <span class="hint">(opcional)</span></label><textarea id="reject_reason" rows="2" maxlength="500"></textarea>'
-                  f'<button type="button" id="reject">Rejeitar</button><output id="result" role="status" aria-live="polite"></output></form>'
-                  f'<script nonce="{nonce}">{JS}</script>')
+                  f'{override}<div style="margin-top: 0.5rem;"><button type="button" id="approve">Aprovar Vídeo</button></div>'
+                  f'<label for="reject_reason" style="margin-top: 1.25rem;">Motivo da rejeição <span class="hint">(opcional)</span></label><textarea id="reject_reason" rows="2" maxlength="500"></textarea>'
+                  f'<div><button type="button" id="reject">Rejeitar</button></div><output id="result" role="status" aria-live="polite" style="display: block; margin-top: 0.75rem; font-weight: 600; font-size: 0.85rem;"></output></form>'
+                  f'<script nonce="{nonce}">{JS}</script></div>')
     else:
         who = ""
         if p.approval:
@@ -101,11 +226,11 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
             link = (f' <a href="https://www.youtube.com/watch?v={e(p.publication.youtube_video_id)}" rel="noopener noreferrer" target="_blank">abrir no YouTube</a>'
                     if p.publication.youtube_video_id else "")
             who += f"<p>Publicação: <span class=\"badge\">{e(p.publication.status.value)}</span>{link}{(' — ' + e(p.publication.error)) if p.publication.error else ''}</p>"
-        review = f"<h2>Decisão</h2>{who or '<p>Este vídeo não está em revisão.</p>'}"
+        review = f"<div class='card-panel' style='margin-top: 1rem;'><h2>Decisão</h2>{who or '<p>Este vídeo não está em revisão.</p>'}</div>"
     doc = (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-           f"<title>Prévia: {e(p.default_title)}</title><style nonce=\"{nonce}\">{CSS}</style></head><body><main>{''.join(parts)}"
+           f"<title>Prévia: {e(p.default_title)}</title><style nonce=\"{nonce}\">{CSS}</style></head><body><main><header>{''.join(header_parts)}</header>"
            f'<div class="layout"><section aria-label="Vídeo">{player}</section><section aria-label="Detalhes">{"".join(side)}{review}</section></div></main></body></html>')
-    headers = {"Content-Security-Policy": f"default-src 'none'; media-src 'self'; img-src 'self'; style-src 'nonce-{nonce}'; script-src 'nonce-{nonce}'; "
+    headers = {"Content-Security-Policy": f"default-src 'none'; media-src 'self'; img-src 'self'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-{nonce}'; "
                                           "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
-               "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store"}
+               "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
     return doc, headers

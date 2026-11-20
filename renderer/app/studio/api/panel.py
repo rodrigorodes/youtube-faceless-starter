@@ -12,72 +12,393 @@ e = lambda value: html.escape(str(value if value is not None else ""), quote=Tru
 CSS = """
 :root {
   color-scheme: light dark;
-  --bg: #0f141c;
-  --surface: #18202c;
-  --surface-hover: #1e2838;
-  --border: #283548;
-  --text: #e6edf3;
-  --text-muted: #8b9baa;
+  --bg: #0b0f17;
+  --sidebar: #101520;
+  --sidebar-hover: #171f2e;
+  --surface: #141b27;
+  --surface-hover: #1b2434;
+  --surface-elevated: #1e293a;
+  --border: #222d3e;
+  --border-hover: #33445c;
+  --text: #f0f4f8;
+  --text-muted: #8897a8;
+  --text-faint: #5a6878;
   --primary: #2f81f7;
+  --primary-hover: #4c94ff;
+  --primary-focus: rgba(47, 129, 247, 0.28);
+  --input-bg: #0d131d;
+  --input-focus-bg: #111824;
   --ok: #3fb950;
-  --ok-bg: rgba(63, 185, 80, 0.15);
-  --warn: #d29922;
-  --warn-bg: rgba(210, 153, 34, 0.15);
+  --ok-bg: rgba(63, 185, 80, 0.14);
+  --warn: #e3b341;
+  --warn-bg: rgba(227, 179, 65, 0.14);
   --bad: #f85149;
-  --bad-bg: rgba(248, 81, 73, 0.15);
+  --bad-bg: rgba(248, 81, 73, 0.14);
   --info: #58a6ff;
-  --info-bg: rgba(88, 166, 255, 0.15);
+  --info-bg: rgba(88, 166, 255, 0.14);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
 }
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f6f8fa;
+    --bg: #f5f7fb;
+    --sidebar: #ffffff;
+    --sidebar-hover: #edf2f7;
     --surface: #ffffff;
-    --surface-hover: #f3f4f6;
-    --border: #d0d7de;
-    --text: #1f2328;
-    --text-muted: #656d76;
+    --surface-hover: #f7fafc;
+    --surface-elevated: #ffffff;
+    --border: #dbe2ec;
+    --border-hover: #cbd5e1;
+    --text: #1a202c;
+    --text-muted: #64748b;
+    --text-faint: #94a3b8;
     --primary: #0969da;
+    --primary-hover: #085cc1;
+    --primary-focus: rgba(9, 105, 218, 0.22);
+    --input-bg: #ffffff;
+    --input-focus-bg: #ffffff;
     --ok: #1a7f37;
+    --ok-bg: rgba(26, 127, 55, 0.12);
     --warn: #9a6700;
+    --warn-bg: rgba(154, 103, 0, 0.12);
     --bad: #cf222e;
+    --bad-bg: rgba(207, 34, 46, 0.12);
     --info: #0969da;
+    --info-bg: rgba(9, 105, 218, 0.12);
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); padding: 1.25rem; }
-.container { max-width: 75rem; margin: 0 auto; }
-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1rem; margin-bottom: 1.5rem; }
-h1 { font-size: 1.25rem; font-weight: 700; }
-h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; }
+body { background: var(--bg); color: var(--text); min-height: 100vh; }
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  width: 250px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 1.25rem 1rem;
+  flex-shrink: 0;
+  z-index: 10;
+}
+@media (max-width: 860px) {
+  .app-layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+}
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, #1f6feb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 2px 6px rgba(47, 129, 247, 0.3);
+}
+.brand-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.2;
+}
+.brand-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.nav-item svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  flex-shrink: 0;
+}
+.nav-item:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-item.active {
+  background: var(--surface-hover);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.budget-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  margin-bottom: 0.75rem;
+}
+.budget-bar {
+  background: var(--border);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  margin: 0.35rem 0 0.25rem;
+}
+.budget-fill {
+  background: var(--primary);
+  height: 100%;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.content-body {
+  padding: 1.75rem;
+  max-width: 80rem;
+  width: 100%;
+}
+
+h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.5rem; }
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.btn {
-  display: inline-block; padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600;
-  border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  cursor: pointer; min-height: 44px; min-width: 44px; line-height: 1.8; text-align: center;
+
+label, .form-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
 }
-.btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+input, select, textarea {
+  box-sizing: border-box;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+select,
+textarea {
+  width: 100%;
+  display: block;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.5;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):hover,
+select:hover,
+textarea:hover {
+  border-color: var(--border-hover);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-focus);
+  background: var(--input-focus-bg);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238897a8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+  cursor: pointer;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  min-height: 40px;
+  min-width: 40px;
+  line-height: 1.4;
+  text-align: center;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  box-shadow: 0 2px 6px var(--primary-focus);
+}
 .btn:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
-.grid-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
-.card-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 0.25rem; }
-.card-value { font-size: 1.5rem; font-weight: 700; }
-.card-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
+.grid-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.card-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+.card-value {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.card-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
 
-.filter-bar { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; }
-.filter-link { padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
-.filter-link.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.filter-bar {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.82rem;
+  background: var(--input-bg);
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.filter-link {
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.filter-link:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.filter-link.active {
+  background: var(--surface-hover);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
 
-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 1.5rem; }
-th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
-th { background: rgba(0,0,0,0.05); color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+th, td {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+th {
+  background: rgba(0,0,0,0.12);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--surface-hover); }
 
-.pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+.pill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .pill-PENDING { background: var(--border); color: var(--text-muted); }
 .pill-IN_PRODUCTION { background: var(--info-bg); color: var(--info); border: 1px solid var(--info); }
 .pill-AWAITING_APPROVAL { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
@@ -86,22 +407,241 @@ tr:hover td { background: var(--surface-hover); }
 .pill-FAILED { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); }
 .pill-REJECTED { background: var(--bad-bg); color: var(--bad); }
 
-.warning { background: var(--warn-bg); color: var(--warn); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
-.empty { text-align: center; padding: 2rem; color: var(--text-muted); }
+.warning {
+  background: var(--warn-bg);
+  color: var(--warn);
+  padding: 0.85rem 1.15rem;
+  border-radius: 8px;
+  border: 1px solid rgba(227, 179, 65, 0.25);
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+}
+.empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-muted);
+}
 
 .timeline { list-style: none; padding-left: 1.5rem; position: relative; }
 .timeline-item { position: relative; margin-bottom: 1.25rem; }
-.timeline-dot { position: absolute; left: -1.5rem; top: 0.2rem; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+.timeline-dot {
+  position: absolute;
+  left: -1.5rem;
+  top: 0.25rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-focus);
+}
 .timeline-title { font-weight: 600; font-size: 0.875rem; }
 .timeline-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem; }
 .layout-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.25rem; }
+
+details summary::-webkit-details-marker { display: none !important; }
+
+/* Creation Form Section */
+.new-video-section {
+  margin-bottom: 1.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.new-video-section[open] {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.new-video-summary {
+  display: block;
+  padding: 0.85rem 1.25rem;
+  background: var(--surface);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.new-video-summary-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.new-video-section[open] .new-video-summary {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-hover);
+}
+.new-video-form {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+.form-feedback {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Trending Section */
+.trends-card {
+  margin-bottom: 1.75rem;
+  background: linear-gradient(180deg, rgba(47, 129, 247, 0.05) 0%, var(--surface) 100%);
+}
+.trends-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.trends-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+}
+.trends-source {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--input-bg);
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.trend-item {
+  padding: 1.15rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.trend-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  width: 100%;
+}
+.trend-topic-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.trend-badges {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.chip-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.evidence-list {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+.evidence-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  width: 100%;
+}
+.evidence-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evidence-views {
+  color: var(--info);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-left: 1.5rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Topic Groups / Videos Details */
+.topic-group-card {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1.15rem;
+}
+.topic-group-summary {
+  display: block;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+  user-select: none;
+  list-style: none;
+}
+.topic-group-summary-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.topic-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.topic-group-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.topic-group-cost {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.action-buttons {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.btn-compact {
+  min-height: 32px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+}
 """
 
 
 def _headers(nonce: str) -> dict[str, str]:
     return {
         "Content-Security-Policy": (
-            f"default-src 'none'; style-src 'nonce-{nonce}'; script-src 'nonce-{nonce}'; "
+            f"default-src 'none'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-{nonce}'; "
             "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         ),
         "Cache-Control": "no-store",
@@ -125,35 +665,47 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
     project_options = "".join(f'<option value="{e(p[0])}">{e(p[1])}</option>' for p in view.projects)
     create_form_html = f"""
-      <details style="margin-bottom: 1.5rem;" id="new-video-section">
-        <summary class="btn btn-primary" style="display: inline-block; list-style: none; margin-bottom: 0.75rem;">+ Novo Vídeo</summary>
-        <form id="create-video-form" class="card" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.75rem; max-width: 32rem;">
-          <div>
-            <label for="new-video-project" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Projeto</label>
-            <select id="new-video-project" name="project_id" style="width: 100%; padding: 0.4rem;" required>
-              {project_options}
-            </select>
+      <details class="new-video-section" id="new-video-section">
+        <summary class="new-video-summary">
+          <div class="new-video-summary-inner">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span class="btn btn-primary btn-compact">+ Novo Vídeo</span>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Criar vídeo a partir de tema ou tendência</span>
+            </div>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Clique para expandir</span>
+          </div>
+        </summary>
+        <form id="create-video-form" class="new-video-form">
+          <div class="form-grid-2">
+            <div>
+              <label for="new-video-project">Projeto</label>
+              <select id="new-video-project" name="project_id" required>
+                {project_options}
+              </select>
+            </div>
+            <div>
+              <label for="new-video-format">Formato</label>
+              <select id="new-video-format" name="format">
+                <option value="short">Short (vertical 1080x1920)</option>
+                <option value="long">Long (horizontal 1920x1080)</option>
+              </select>
+            </div>
           </div>
           <div>
-            <label for="new-video-topic" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Tema (3 a 300 caracteres)</label>
-            <input id="new-video-topic" name="topic" minlength="3" maxlength="300" style="width: 100%; padding: 0.4rem; font: inherit;" placeholder="Ex: ADE Lineup 2026 Revelado" required>
+            <label for="new-video-topic">Tema <span style="font-weight: 400; opacity: 0.75;">(3 a 300 caracteres)</span></label>
+            <input type="text" id="new-video-topic" name="topic" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
           </div>
-          <div>
-            <label for="new-video-format" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Formato</label>
-            <select id="new-video-format" name="format" style="width: 100%; padding: 0.4rem;">
-              <option value="short">Short (vertical 1080x1920)</option>
-              <option value="long">Long (horizontal 1920x1080)</option>
-            </select>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="btn-create-video">Criar Vídeo</button>
+            <div id="create-video-feedback" class="form-feedback"></div>
           </div>
-          <button type="submit" class="btn btn-primary" id="btn-create-video" style="align-self: flex-start;">Criar Vídeo</button>
-          <div id="create-video-feedback" style="font-size: 0.85rem;"></div>
         </form>
       </details>
     """
 
     if view.trends_status == "never_collected" or not view.trends:
         trends_html = f"""
-          <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card" style="margin-bottom: 1.75rem;" id="trending-section">
             <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem;">🔥 Temas em Alta nos Últimos {days} Dias</div>
             <div style="font-size: 0.85rem; color: var(--text-muted);">Ainda não há coleta de tendências registrada para o período selecionado.</div>
           </div>
@@ -168,40 +720,47 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                 ev_title = e(ev.get("title", ""))
                 ev_chan = e(ev.get("channel", ""))
                 ev_views = f"{int(ev['views']):,} views".replace(",", ".") if ev.get("views") is not None else ""
-                ev_list.append(f"<li>{ev_title} ({ev_chan}) — {ev_views}</li>")
-            ev_html = f'<ul style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; padding-left: 1.25rem;">{"".join(ev_list)}</ul>' if ev_list else ""
+                ev_list.append(
+                    f"<div role='listitem' class='evidence-item'>"
+                    f"<div class='evidence-title'><span style='color: var(--primary); font-size: 0.75rem; flex-shrink: 0;'>▶</span> <strong style='color: var(--text);'>{ev_title}</strong> <span style='color: var(--text-muted);'>· {ev_chan}</span></div>"
+                    f"<div class='evidence-views'>{ev_views}</div>"
+                    f"</div>"
+                )
+            ev_html = f'<div role="list" class="evidence-list">{"".join(ev_list)}</div>' if ev_list else ""
 
             btn_create = (
-                f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}">Criar Vídeo deste Tema</button>'
+                f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}" style="white-space: nowrap;">Criar Vídeo deste Tema</button>'
                 if t.create_action else ""
             )
 
-            metric_badge = f'<span style="font-weight: 600; color: var(--info);">{e(t.metric_text)}</span>' if t.metric_text else ""
+            metric_badge = f'<span class="chip-metric" style="color: var(--info); font-weight: 600;">📊 {e(t.metric_text)}</span>' if t.metric_text else ""
             completed_count = t.counts.get(Stage.COMPLETED, 0)
             in_prod_count = t.counts.get(Stage.IN_PRODUCTION, 0)
 
             items_html.append(f"""
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <div>
-                  <div style="font-weight: 600; font-size: 1rem;">{e(t.topic)}</div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                    <span>📊 {metric_badge}</span>
-                    <span>🎬 {completed_count} concluídos · {in_prod_count} em produção</span>
-                    <span>💰 Custo: {e(t.cost_text)}</span>
+              <div class="trend-item">
+                <div class="trend-top-row">
+                  <div>
+                    <div class="trend-topic-name">{e(t.topic)}</div>
+                    <div class="trend-badges">
+                      {metric_badge}
+                      <span class="chip-metric">🎬 {completed_count} concluídos · {in_prod_count} em produção</span>
+                      <span class="chip-metric">💰 Custo: {e(t.cost_text)}</span>
+                    </div>
                   </div>
-                  {ev_html}
+                  <div style="flex-shrink: 0;">{btn_create}</div>
                 </div>
-                <div>{btn_create}</div>
+                {ev_html}
               </div>
             """)
 
         trends_html = f"""
-          <div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(180deg, rgba(47, 129, 247, 0.05) 0%, var(--surface) 100%);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-              <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center;">
+          <div class="card trends-card" id="trending-section">
+            <div class="trends-header">
+              <div class="trends-title">
                 <span>🔥 Temas em Alta nos Últimos {days} Dias</span>{stale_badge}
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">
+              <div class="trends-source">
                 Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
               </div>
             </div>
@@ -218,18 +777,18 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             for v in g.videos:
                 actions_html = []
                 if "preview" in v.actions:
-                    actions_html.append(f'<a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Ver Prévia</a>')
+                    actions_html.append(f'<a class="btn btn-primary btn-compact" href="/studio/videos/{e(v.id)}/preview">Ver Prévia</a>')
                 if "progress" in v.actions:
-                    actions_html.append(f'<a class="btn" href="/studio/panel/videos/{e(v.id)}">Ver Progresso</a>')
+                    actions_html.append(f'<a class="btn btn-compact" href="/studio/panel/videos/{e(v.id)}">Ver Progresso</a>')
 
                 date_str = v.updated_at.strftime("%d/%m %H:%M")
                 rows.append(f"""
                   <tr>
                     <td><strong>{e(v.topic)}</strong></td>
                     <td><span class="pill pill-{e(v.stage.value)}">{e(v.stage.value)}</span></td>
-                    <td>{e(v.cost_text)}</td>
-                    <td>{date_str}</td>
-                    <td>{' '.join(actions_html)}</td>
+                    <td style="font-variant-numeric: tabular-nums;">{e(v.cost_text)}</td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">{date_str}</td>
+                    <td><div class="action-buttons">{' '.join(actions_html)}</div></td>
                   </tr>
                 """)
 
@@ -237,7 +796,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Tema</th>
+                    <th scope="col" style="width: 40%;">Tema</th>
                     <th scope="col">Etapa</th>
                     <th scope="col">Custo</th>
                     <th scope="col">Atualizado</th>
@@ -250,15 +809,22 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               </table>
             """
             topic_blocks.append(f"""
-              <details open class="card" style="margin-bottom: 1rem;">
-                <summary style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-weight: 600;">
-                  <span>{e(g.label)} <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">({len(g.videos)} vídeo{'s' if len(g.videos) > 1 else ''})</span></span>
-                  <span style="font-size: 0.85rem; color: var(--text-muted);">{e(g.cost_text)}</span>
+              <details open class="card topic-group-card">
+                <summary class="topic-group-summary">
+                  <div class="topic-group-summary-inner">
+                    <div class="topic-group-title">
+                      <span class="topic-group-label">{e(g.label)}</span>
+                      <span class="chip-metric" style="font-size: 0.72rem;">{len(g.videos)} vídeo{'s' if len(g.videos) > 1 else ''}</span>
+                    </div>
+                    <span class="topic-group-cost">{e(g.cost_text)}</span>
+                  </div>
                 </summary>
                 {table_html}
               </details>
             """)
         body_html = "".join(topic_blocks)
+
+    pct_width = min(100.0, max(0.0, view.month.percent or 0.0))
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -269,49 +835,105 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div>
-        <h1>FACELESS STUDIO</h1>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">Painel Operacional de Produção</div>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🎬</div>
+        <div>
+          <div class="brand-title">FACELESS STUDIO</div>
+          <div class="brand-sub">Pipeline de Vídeos</div>
+        </div>
       </div>
-      <div class="filter-bar">
-        <span>Período:</span>
-        {filters_html}
+      <nav class="nav-menu">
+        <a class="nav-item active" href="/studio/panel">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span>Painel</span>
+        </a>
+        <a class="nav-item" href="#trending-section">
+          <svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+          <span>Temas em Alta</span>
+        </a>
+        <a class="nav-item" href="#videos-section">
+          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+          <span>Vídeos</span>
+        </a>
+        <a class="nav-item" href="#new-video-section" id="nav-btn-new-video">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          <span>Novo Vídeo</span>
+        </a>
+        <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span>API Docs</span>
+        </a>
+        <a class="nav-item" href="http://localhost:5678" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          <span>n8n Workflows</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="budget-card">
+          <div style="font-weight: 600; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Teto Mensal</div>
+          <div style="font-size: 0.85rem; font-weight: 700; margin-top: 0.15rem;">{e(view.month.text)}</div>
+          <div class="budget-bar">
+            <div class="budget-fill" style="width: {pct_width:.1f}%;"></div>
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text-muted);">Teto: US$ {view.month.cap_usd:.2f}</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem;">
+          <span style="color: var(--ok); font-size: 0.85rem;">●</span>
+          <span>Docker Local / Saudável</span>
+        </div>
       </div>
-    </header>
+    </aside>
 
-    <div class="grid-summary">
-      <div class="card">
-        <div class="card-label">Em Produção</div>
-        <div class="card-value" style="color: var(--info);">{view.totals.get(Stage.IN_PRODUCTION, 0)}</div>
-        <div class="card-sub">Jobs de render/mídia ativos</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Aguardando Aprovação</div>
-        <div class="card-value" style="color: var(--warn);">{view.totals.get(Stage.AWAITING_APPROVAL, 0)}</div>
-        <div class="card-sub">Exigem revisão humana</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Concluídos</div>
-        <div class="card-value" style="color: var(--ok);">{view.totals.get(Stage.COMPLETED, 0)}</div>
-        <div class="card-sub">No período selecionado</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Gasto no Mês vs Teto</div>
-        <div class="card-value">{e(view.month.text)}</div>
-        <div class="card-sub">Teto mensal: US$ {view.month.cap_usd:.2f}</div>
-      </div>
-    </div>
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <h1>Painel Operacional</h1>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Produção, validação editorial e custos</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="filter-bar">
+            <span style="padding-left: 0.4rem; color: var(--text-muted);">Período:</span>
+            {filters_html}
+          </div>
+        </div>
+      </header>
 
-    {create_form_html}
+      <div class="content-body">
+        <div class="grid-summary">
+          <div class="card">
+            <div class="card-label">Em Produção</div>
+            <div class="card-value" style="color: var(--info);">{view.totals.get(Stage.IN_PRODUCTION, 0)}</div>
+            <div class="card-sub">Jobs de render/mídia ativos</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Aguardando Aprovação</div>
+            <div class="card-value" style="color: var(--warn);">{view.totals.get(Stage.AWAITING_APPROVAL, 0)}</div>
+            <div class="card-sub">Exigem revisão humana</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Concluídos</div>
+            <div class="card-value" style="color: var(--ok);">{view.totals.get(Stage.COMPLETED, 0)}</div>
+            <div class="card-sub">No período selecionado</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Gasto no Mês vs Teto</div>
+            <div class="card-value">{e(view.month.text)}</div>
+            <div class="card-sub">Teto mensal: US$ {view.month.cap_usd:.2f}</div>
+          </div>
+        </div>
 
-    {trends_html}
+        {create_form_html}
 
-    {warning_html}
+        {trends_html}
 
-    <h2>Vídeos</h2>
-    {body_html}
+        {warning_html}
+
+        <h2 id="videos-section">Vídeos</h2>
+        {body_html}
+      </div>
+    </main>
   </div>
   <script nonce="{nonce}">
     const form = document.getElementById('create-video-form');
@@ -358,6 +980,21 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         }}
       }});
     }});
+    const navBtnNew = document.getElementById('nav-btn-new-video');
+    if (navBtnNew) {{
+      navBtnNew.addEventListener('click', (ev) => {{
+        ev.preventDefault();
+        const details = document.getElementById('new-video-section');
+        const input = document.getElementById('new-video-topic');
+        if (details) {{
+          details.open = true;
+          details.scrollIntoView({{ behavior: 'smooth' }});
+        }}
+        if (input) {{
+          setTimeout(() => input.focus(), 200);
+        }}
+      }});
+    }}
   </script>
 </body>
 </html>"""
@@ -406,7 +1043,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
     if view.publication:
         pub_err = f'<div style="color: var(--bad);">{e(view.publication.error)}</div>' if view.publication.error else ""
         pub_status_html = f"""
-          <div class="card" style="margin-top: 1rem;">
+          <div class="card" style="margin-top: 1.25rem;">
             <div class="card-label">Publicação</div>
             <div>Status: <span class="pill pill-{e(view.publication.status.value)}">{e(view.publication.status.value)}</span> (tentativa {view.publication.attempt})</div>
             {pub_err}
@@ -422,48 +1059,84 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div>
-        <div style="font-size: 0.85rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>
-        <h1>{e(v.topic)}</h1>
-        <div style="margin-top: 0.25rem;">
-          <span class="pill pill-{e(view.stage.value)}">{e(view.stage.value)}</span>
-          <span style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.5rem;">Custo: {e(view.cost_text)}</span>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🎬</div>
+        <div>
+          <div class="brand-title">FACELESS STUDIO</div>
+          <div class="brand-sub">Pipeline de Vídeos</div>
         </div>
       </div>
-      <div>
-        <a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Abrir Prévia e Aprovar</a>
+      <nav class="nav-menu">
+        <a class="nav-item" href="/studio/panel">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span>Painel</span>
+        </a>
+        <a class="nav-item active" href="#">
+          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+          <span>Detalhe do Vídeo</span>
+        </a>
+        <a class="nav-item" href="/studio/videos/{e(v.id)}/preview">
+          <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span>Abrir Prévia</span>
+        </a>
+        <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          <span>API Docs</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.25rem;">ID do Vídeo:</div>
+        <div style="font-family: monospace; font-size: 0.72rem; word-break: break-all; color: var(--text);">{e(v.id)}</div>
       </div>
-    </header>
+    </aside>
 
-    <div class="layout-detail">
-      <div class="card">
-        <h2>Linha do Tempo dos Passos</h2>
-        <ul class="timeline">
-          {''.join(steps_html)}
-        </ul>
-        {render_err_html}
-        {pub_status_html}
-      </div>
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>
+          <h1>{e(v.topic)}</h1>
+          <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span class="pill pill-{e(view.stage.value)}">{e(view.stage.value)}</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Custo do vídeo: {e(view.cost_text)}</span>
+          </div>
+        </div>
+        <div>
+          <a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Abrir Prévia e Aprovar</a>
+        </div>
+      </header>
 
-      <div class="card">
-        <h2>Registro de Uso de Modelos</h2>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Passo</th>
-              <th scope="col">Provedor</th>
-              <th scope="col">Modelo</th>
-              <th scope="col">Custo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {''.join(usage_html)}
-          </tbody>
-        </table>
+      <div class="content-body">
+        <div class="layout-detail">
+          <div class="card">
+            <h2>Linha do Tempo dos Passos</h2>
+            <ul class="timeline">
+              {''.join(steps_html)}
+            </ul>
+            {render_err_html}
+            {pub_status_html}
+          </div>
+
+          <div class="card">
+            <h2>Registro de Uso de Modelos</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Passo</th>
+                  <th scope="col">Provedor</th>
+                  <th scope="col">Modelo</th>
+                  <th scope="col">Custo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {''.join(usage_html)}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   </div>
 </body>
 </html>"""
