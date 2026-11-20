@@ -73,6 +73,18 @@ def free():
     return CostConfirmation.free(reference="provider:piper", confirmed_by="studio")
 
 
+def estimate(amount):
+    from app.studio.application.budget import CostConfirmation
+
+    return CostConfirmation.estimate(Decimal(str(amount)), reference="estimate:image", confirmed_by="studio:image")
+
+
+def charge(amount):
+    from app.studio.application.budget import ChargeEvidence
+
+    return ChargeEvidence(Decimal(str(amount)), reference="invoice:42", declared_by="billing:adapter")
+
+
 def begin(repo, key, video=VIDEO, amount="0.60", monthly="1", video_limit="1"):
     return repo.begin(key, video, Decimal(amount), Decimal(monthly), Decimal(video_limit))
 
@@ -85,6 +97,7 @@ def row_counts(conn):
 def test_migration_creates_paid_operations_table(conn):
     applied = migrate(conn)
     assert "0017_paid_operations" in applied
+    assert "0019_ledger_estimate_and_attribution" in applied
     assert conn.execute("SELECT to_regclass('studio.paid_operations') IS NOT NULL").fetchone()[0]
 
 
@@ -274,3 +287,117 @@ def test_repository_connection_checks_the_disposable_proof(paid_db, monkeypatch,
     with pytest.raises(ValueError, match="proof"):
         begin(repo, "unsafe")
     assert row_counts(conn) == (0, 0)
+
+
+# ---------------------------------------------------------------- policy: ESTIMATE, attribution, stale reservations
+
+
+def test_confirm_estimate_counts_as_approximate_spend_and_is_not_unknown(paid_db):
+    from app.studio.application.budget import BeginResult, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.6", monthly="1") == BeginResult.CREATED
+    repo.confirm("k1", entry(0.6, provider="opencode"), estimate(0.6))
+    assert repo.state("k1") == PaidOperationState.CONFIRMED
+    assert conn.execute("SELECT cost_confirmation_kind FROM studio.usage_ledger").fetchone()[0] == "ESTIMATE"
+    assert row_counts(conn) == (1, 0)
+    # a estimativa conta como gasto aproximado no mês: 0.6 + 0.4 cabe, 0.6 + 0.4 + 0.01 não cabe
+    assert begin(repo, "k2", amount="0.4", monthly="1") == BeginResult.CREATED
+    assert begin(repo, "k3", amount="0.01", monthly="1") == BeginResult.DENIED
+
+
+def test_reconcile_actual_replaces_the_estimate_with_evidence(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.3", monthly="10") == BeginResult.CREATED
+    repo.confirm("k1", entry(0.3, provider="opencode"), estimate(0.3))
+    assert repo.settlement("k1").kind == "ESTIMATE"
+
+    repo.reconcile_actual("k1", Decimal("0.5"), reference="invoice:42", confirmed_by="billing:ops")
+    kind, cost, confirmed = conn.execute(
+        "SELECT cost_confirmation_kind, cost_usd, cost_confirmed_amount FROM studio.usage_ledger").fetchone()
+    assert (kind, cost, confirmed) == ("ACTUAL", Decimal("0.500000"), Decimal("0.500000"))
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger").fetchone()[0] == 1  # troca, não duplica
+    settlement = repo.settlement("k1")
+    assert (settlement.kind, settlement.amount_usd) == ("ACTUAL", Decimal("0.500000"))
+    updated_kind, updated_amount = conn.execute(
+        "SELECT confirmed_kind, confirmed_amount_usd FROM studio.paid_operations WHERE idempotency_key = 'k1'").fetchone()
+    assert (updated_kind, updated_amount) == ("ACTUAL", Decimal("0.500000"))
+
+
+def test_reconcile_actual_only_applies_to_an_estimate(paid_db):
+    from app.studio.application.budget import BeginResult, CostConfirmationError, InvalidOperationTransition, UnknownPaidOperation
+
+    repo, _ = paid_db
+    assert begin(repo, "actual", amount="0.3") == BeginResult.CREATED
+    repo.confirm("actual", entry(0.3), actual(0.3))
+    with pytest.raises(InvalidOperationTransition):
+        repo.reconcile_actual("actual", Decimal("0.4"), reference="invoice", confirmed_by="billing:ops")
+    with pytest.raises(UnknownPaidOperation):
+        repo.reconcile_actual("missing", Decimal("0.4"), reference="invoice", confirmed_by="billing:ops")
+    assert begin(repo, "estimate", video=OTHER_VIDEO, amount="0.3") == BeginResult.CREATED
+    repo.confirm("estimate", entry(0.3, provider="opencode"), estimate(0.3))
+    with pytest.raises(CostConfirmationError):
+        repo.reconcile_actual("estimate", Decimal("0"), reference="invoice", confirmed_by="billing:ops")
+    with pytest.raises(ValueError):
+        repo.reconcile_actual("estimate", Decimal("0.4"), reference="  ", confirmed_by="billing:ops")
+
+
+def test_previous_month_reservation_does_not_block_the_current_month_and_is_reported(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    conn.execute(
+        "INSERT INTO studio.budget_reservations(idempotency_key, video_id, amount_usd, monthly_limit_usd, video_limit_usd, created_at) "
+        "VALUES ('old', %s, 1, 1, 10, date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - interval '1 day')",
+        (VIDEO,))
+    conn.commit()
+    # a reserva antiga não consome o teto mensal atual (mas continua no teto por vídeo, conservador)
+    assert begin(repo, "new", amount="0.6", monthly="1", video_limit="10") == BeginResult.CREATED
+    pending = repo.pending_reconciliation()
+    assert [(p.idempotency_key, p.reason) for p in pending] == [("old", "stale_reservation")]
+    assert pending[0].amount_usd == Decimal("1")
+
+
+def test_uncertain_operation_is_reported_for_reconciliation(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, _ = paid_db
+    assert begin(repo, "k1", amount="0.3") == BeginResult.CREATED
+    repo.mark_uncertain("k1", "ambiguous")
+    pending = repo.pending_reconciliation()
+    assert [(p.idempotency_key, p.reason) for p in pending] == [("k1", "uncertain_operation")]
+
+
+def test_finite_legacy_cost_counts_but_nan_is_still_unknown(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd) "
+                 "VALUES (%s, 'text', 'legacy', 'm', 0.4)", (VIDEO,))
+    conn.commit()
+    # linha legada finita conta pelo valor gravado; não marca o mês inteiro como desconhecido
+    assert begin(repo, "after-finite", amount="0.6", monthly="1", video_limit="10") == BeginResult.CREATED
+    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd) "
+                 "VALUES (%s, 'text', 'broken', 'm', 'NaN')", (VIDEO,))
+    conn.commit()
+    assert begin(repo, "blocked", amount="0.01", monthly="100", video_limit="100") == BeginResult.DENIED
+    reasons = {row.reason for row in repo.pending_reconciliation()}
+    assert {"legacy_unconfirmed_ledger", "unknown_ledger_cost"} <= reasons  # reportados, não silenciados
+
+
+def test_unattributed_operation_uses_only_the_monthly_limit(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, _ = paid_db
+    assert repo.begin("project-1", None, Decimal("0.6"), Decimal("1"), Decimal("0")) == BeginResult.CREATED
+    assert repo.begin("project-2", None, Decimal("0.5"), Decimal("1"), Decimal("0")) == BeginResult.DENIED
+
+
+def test_settlement_is_none_while_the_operation_is_not_confirmed(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, _ = paid_db
+    assert begin(repo, "k1", amount="0.3") == BeginResult.CREATED
+    assert repo.settlement("k1") is None

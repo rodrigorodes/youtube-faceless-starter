@@ -2,11 +2,13 @@
 
 A reserva (tabela `budget_reservations`) bloqueia orçamento enquanto activa. Uma operação paga é a
 intenção persistida ligada a essa reserva; só o chamador que obtém `CREATED` executa o provedor.
-Confirmar (com custo real declarado) ou liberar remove a reserva; um resultado ambíguo mantém a
-reserva e exige reconciliação explícita antes de nova execução da mesma chave.
+Confirmar remove a reserva registrando `ACTUAL` (cobrança comprovada), `ESTIMATE` (valor aproximado,
+sujeito a reconciliação) ou `FREE` (zero); liberar remove a reserva sem gasto. Um resultado ambíguo
+mantém a reserva e exige reconciliação explícita antes de nova execução da mesma chave.
 """
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Protocol
@@ -89,7 +91,11 @@ class PreEffectFailure(ModelUnavailable):
 
 @dataclass(frozen=True)
 class CostConfirmation:
-    """Declaração estruturada do custo: `ACTUAL` positivo ou `FREE` zero, com evidência e responsável."""
+    """Declaração estruturada do custo: `ACTUAL` (cobrança comprovada), `ESTIMATE` (valor aproximado) ou `FREE`.
+
+    `ACTUAL` só deve ser emitido com evidência de cobrança; a porta `provider_settlement` exige
+    `ChargeEvidence` para isso. `ESTIMATE` conta como gasto aproximado e exige reconciliação.
+    """
 
     kind: str
     amount_usd: Decimal
@@ -97,12 +103,12 @@ class CostConfirmation:
     confirmed_by: str
 
     def __post_init__(self) -> None:
-        if self.kind not in ("ACTUAL", "FREE"):
-            raise ValueError("confirmation kind must be ACTUAL or FREE")
+        if self.kind not in ("ACTUAL", "ESTIMATE", "FREE"):
+            raise ValueError("confirmation kind must be ACTUAL, ESTIMATE or FREE")
         if not isinstance(self.amount_usd, Decimal) or not self.amount_usd.is_finite() or self.amount_usd < 0:
             raise ValueError("confirmed amount must be a finite non-negative Decimal")
-        if self.kind == "ACTUAL" and self.amount_usd <= 0:
-            raise ValueError("ACTUAL confirmation requires a positive amount")
+        if self.kind in ("ACTUAL", "ESTIMATE") and self.amount_usd <= 0:
+            raise ValueError(f"{self.kind} confirmation requires a positive amount")
         if self.kind == "FREE" and self.amount_usd != 0:
             raise ValueError("FREE confirmation requires a zero amount")
         if not isinstance(self.reference, str) or not self.reference.strip():
@@ -115,8 +121,40 @@ class CostConfirmation:
         return cls("ACTUAL", _as_amount(amount_usd), reference, confirmed_by)
 
     @classmethod
+    def estimate(cls, amount_usd: Decimal, *, reference: str, confirmed_by: str) -> "CostConfirmation":
+        return cls("ESTIMATE", _as_amount(amount_usd), reference, confirmed_by)
+
+    @classmethod
     def free(cls, *, reference: str, confirmed_by: str) -> "CostConfirmation":
         return cls("FREE", Decimal("0"), reference, confirmed_by)
+
+
+@dataclass(frozen=True)
+class ChargeEvidence:
+    """Evidência de cobrança declarada pelo adapter: valor cobrado, referência e quem declara."""
+
+    amount_usd: Decimal
+    reference: str
+    declared_by: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.amount_usd, Decimal) or not self.amount_usd.is_finite() or self.amount_usd <= 0:
+            raise ValueError("charge evidence amount must be a positive finite Decimal")
+        if not isinstance(self.reference, str) or not self.reference.strip():
+            raise ValueError("charge evidence reference is required")
+        if not isinstance(self.declared_by, str) or not self.declared_by.strip():
+            raise ValueError("charge evidence author is required")
+
+
+@dataclass(frozen=True)
+class PendingReconciliation:
+    """Operação antiga ou incerta que precisa de decisão humana; não bloqueia o mês corrente por si só."""
+
+    idempotency_key: str
+    video_id: str | None
+    amount_usd: Decimal
+    reason: str  # "stale_reservation" | "uncertain_operation"
+    created_at: datetime
 
 
 def _as_amount(value) -> Decimal:
@@ -140,23 +178,41 @@ def paid_key(kind: str, *parts: object) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def provider_settlement(entry: UsageEntry, *, actor: str = "studio:provider-reported") -> tuple[UsageEntry, CostConfirmation]:
-    """Confirma o custo declarado pelo próprio provedor no `UsageEntry` (ACTUAL se positivo, FREE se zero)."""
+def provider_settlement(entry: UsageEntry, *, settled_by: str, charge: ChargeEvidence | None = None) -> tuple[UsageEntry, CostConfirmation]:
+    """Encerra o custo declarado pelo provedor no `UsageEntry`.
+
+    Com `charge` (evidência de cobrança do adapter) é `ACTUAL` e vale o valor cobrado; sem evidência,
+    zero é `FREE` e positivo é `ESTIMATE` (valor aproximado, sujeito a reconciliação).
+    `settled_by` nomeia explicitamente o ator/processo que encerra a operação (não um literal sintético).
+    """
+    if not isinstance(settled_by, str) or not settled_by.strip():
+        raise ValueError("settled_by must name the process that settles the operation")
+    if charge is not None:
+        amount = _as_amount(charge.amount_usd)
+        charged_entry = entry.model_copy(update={"cost_usd": float(amount)})
+        return charged_entry, CostConfirmation.actual(amount, reference=charge.reference, confirmed_by=charge.declared_by)
     amount = _as_amount(entry.cost_usd)
     reference = f"provider:{entry.provider}:{entry.model}"
     if amount == 0:
-        return entry, CostConfirmation.free(reference=reference, confirmed_by=actor)
-    return entry, CostConfirmation.actual(amount, reference=reference, confirmed_by=actor)
+        return entry, CostConfirmation.free(reference=reference, confirmed_by=settled_by)
+    return entry, CostConfirmation.estimate(amount, reference=reference, confirmed_by=settled_by)
 
 
 class PaidOperationRepository(Protocol):
-    def begin(self, key: str, video_id: str, estimate_usd: Decimal, monthly_limit_usd: Decimal,
+    def begin(self, key: str, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
               video_limit_usd: Decimal) -> BeginResult:
-        """Reserva + registra a intenção atomicamente. Só `CREATED` autoriza a execução externa."""
+        """Reserva + registra a intenção atomicamente. Só `CREATED` autoriza a execução externa.
+
+        `video_id` pode ser `None` (operação de projeto, ex.: pontuar ideias): só o teto mensal se aplica.
+        """
         ...
 
     def confirm(self, key: str, entry: UsageEntry, confirmation: CostConfirmation) -> None:
-        """Numa transação: grava o lançamento confirmado no ledger, confirma a operação e libera a reserva."""
+        """Numa transação: grava o lançamento (ACTUAL/ESTIMATE/FREE) no ledger, confirma e libera a reserva."""
+        ...
+
+    def reconcile_actual(self, key: str, charged_usd: Decimal, *, reference: str, confirmed_by: str) -> None:
+        """Troca um ESTIMATE confirmado por ACTUAL com a cobrança comprovada (reconciliação humana)."""
         ...
 
     def release(self, key: str, reason: str) -> None:
@@ -168,6 +224,14 @@ class PaidOperationRepository(Protocol):
         ...
 
     def state(self, key: str) -> PaidOperationState | None:
+        ...
+
+    def settlement(self, key: str) -> CostConfirmation | None:
+        """Confirmação registrada de uma operação CONFIRMED, ou None."""
+        ...
+
+    def pending_reconciliation(self) -> list[PendingReconciliation]:
+        """Reservas de meses anteriores e operações UNCERTAIN que exigem decisão explícita."""
         ...
 
 
@@ -197,7 +261,7 @@ class PaidOperationGuard:
         self.monthly_limit_usd = _require_amount(monthly_limit_usd, "monthly limit")
         self.video_limit_usd = _require_amount(video_limit_usd, "video limit")
 
-    def reserve(self, key: str, video_id: str, estimate_usd: Decimal) -> BeginResult:
+    def reserve(self, key: str, video_id: str | None, estimate_usd: Decimal) -> BeginResult:
         estimate_usd = _require_amount(estimate_usd, "estimate")
         result = self.repo.begin(key, video_id, estimate_usd, self.monthly_limit_usd, self.video_limit_usd)
         if result is BeginResult.CREATED:
@@ -217,32 +281,64 @@ class PaidOperationGuard:
     def confirm(self, key: str, entry: UsageEntry, confirmation: CostConfirmation) -> None:
         self.repo.confirm(key, entry, confirmation)
 
+    def reconcile_actual(self, key: str, charged_usd: Decimal, *, reference: str, confirmed_by: str) -> None:
+        self.repo.reconcile_actual(key, charged_usd, reference=reference, confirmed_by=confirmed_by)
+
     def release(self, key: str, reason: str) -> None:
         self.repo.release(key, reason)
 
     def mark_uncertain(self, key: str, reason: str) -> None:
         self.repo.mark_uncertain(key, reason)
 
-    def run(self, key: str, video_id: str, estimate_usd: Decimal, call, settle):
+    def pending_reconciliation(self) -> list[PendingReconciliation]:
+        return self.repo.pending_reconciliation()
+
+    def run(self, key: str, video_id: str | None, estimate_usd: Decimal, call, settle, *,
+            validate=None, allow_free_replay: bool = False):
         """Reserva, executa `call` uma única vez e encerra o estado conforme o resultado.
 
-        `settle(result)` devolve `(UsageEntry, CostConfirmation)` ou `None` quando o custo não é
-        confirmável — nesse caso a operação fica incerta e bloqueada.
+        `validate(result)` roda depois da chamada paga e antes de encerrar o custo; se levantar, a
+        operação fica UNCERTAIN (dinheiro pago, saída inutilizável). `settle(result)` devolve
+        `(UsageEntry, CostConfirmation)`; `None` também fica UNCERTAIN. Falha ambígua mantém a reserva.
+        Com `allow_free_replay`, uma operação já CONFIRMED como FREE é reexecutada sem nova cobrança.
         """
-        self.reserve(key, video_id, estimate_usd)
+        try:
+            self.reserve(key, video_id, estimate_usd)
+        except OperationSettled:
+            if allow_free_replay and self._confirmed_free(key):
+                return call()  # gratuidade já comprovada: reexecutar não cobra
+            raise
         try:
             result = call()
         except PreEffectFailure as exc:
             self.repo.release(key, f"pre-effect failure: {type(exc).__name__}: {str(exc)[:200]}")
             raise
-        except BaseException as exc:  # resultado ambíguo: pode ter havido efeito externo pago
+        except (KeyboardInterrupt, SystemExit):
+            raise  # não engolir: a reserva fica RESERVED e exige reconciliação explícita
+        except Exception as exc:  # resultado ambíguo: pode ter havido efeito externo pago
             self.repo.mark_uncertain(key, f"ambiguous failure: {type(exc).__name__}: {str(exc)[:200]}")
             raise
+        if validate is None:
+            output = result
+        else:
+            try:
+                output = validate(result)
+            except PreEffectFailure as exc:
+                self.repo.release(key, f"pre-effect validation failure: {type(exc).__name__}: {str(exc)[:200]}")
+                raise
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:  # pago, mas a saída não serve: exige reconciliação, nunca ACTUAL silencioso
+                self.repo.mark_uncertain(key, f"paid result rejected: {type(exc).__name__}: {str(exc)[:200]}")
+                raise
         try:
             settlement = settle(result)
-        except PreEffectFailure:
+        except PreEffectFailure as exc:
+            self.repo.release(key, f"pre-effect settlement failure: {type(exc).__name__}: {str(exc)[:200]}")
             raise
-        except BaseException as exc:  # custo ilegível/não confirmável: manter incerto, nunca presumir zero
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:  # custo ilegível/não confirmável: manter incerto, nunca presumir zero
             self.repo.mark_uncertain(key, f"unconfirmable result: {type(exc).__name__}: {str(exc)[:200]}")
             raise
         if settlement is None:
@@ -250,4 +346,8 @@ class PaidOperationGuard:
             raise OperationUncertain(f"paid operation {key} has no confirmable cost")
         entry, confirmation = settlement
         self.repo.confirm(key, entry, confirmation)
-        return result
+        return output
+
+    def _confirmed_free(self, key: str) -> bool:
+        settlement = self.repo.settlement(key)
+        return settlement is not None and settlement.kind == "FREE"

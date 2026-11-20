@@ -39,15 +39,18 @@ class FakeLedger:
     def __init__(self, deny=False, reserved=None):
         self.states = dict(reserved or {})
         self.events = []
+        self.settlements = {}
+        self.created = []
         self.deny = deny
 
     def begin(self, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd):
-        self.events.append(("begin", key, estimate_usd))
+        self.events.append(("begin", key, estimate_usd, video_id))
         if self.deny:
             return BeginResult.DENIED
         state = self.states.get(key)
         if state is None:
             self.states[key] = PaidOperationState.RESERVED
+            self.created.append(key)
             return BeginResult.CREATED
         return {PaidOperationState.RESERVED: BeginResult.IN_PROGRESS,
                 PaidOperationState.CONFIRMED: BeginResult.CONFIRMED,
@@ -57,6 +60,7 @@ class FakeLedger:
     def confirm(self, key, entry, confirmation):
         assert self.states[key] in (PaidOperationState.RESERVED, PaidOperationState.UNCERTAIN)
         self.states[key] = PaidOperationState.CONFIRMED
+        self.settlements[key] = confirmation
         self.events.append(("confirm", key, confirmation.kind, confirmation.amount_usd))
 
     def release(self, key, reason):
@@ -71,6 +75,12 @@ class FakeLedger:
 
     def state(self, key):
         return self.states.get(key)
+
+    def settlement(self, key):
+        return self.settlements.get(key)
+
+    def pending_reconciliation(self):
+        return []
 
     def only_key(self):
         return next(iter(self.states))
@@ -102,7 +112,7 @@ def test_denied_does_not_execute_the_paid_call():
     with pytest.raises(BudgetDenied):
         guard(ledger).run("k", V, Decimal("0.5"), lambda: calls.append(1), settle=lambda _: free_settlement())
     assert calls == []
-    assert ledger.events == [("begin", "k", Decimal("0.5"))]
+    assert ledger.events == [("begin", "k", Decimal("0.5"), V)]
 
 
 def test_in_progress_does_not_execute_a_second_call():
@@ -302,7 +312,7 @@ def test_generate_script_routes_through_the_paid_guard():
     gen.execute(V)
     assert model.calls == 1
     assert ledger.state(ledger.only_key()) is PaidOperationState.CONFIRMED
-    assert ("confirm", ledger.only_key(), "ACTUAL", Decimal("0.25")) in ledger.events
+    assert ("confirm", ledger.only_key(), "ESTIMATE", Decimal("0.25")) in ledger.events
     assert usage.entries == []  # o guard é dono da escrita confirmada no ledger
 
 
@@ -399,7 +409,7 @@ def test_produce_assets_routes_images_through_the_paid_guard():
                             image_for=lambda project_id: model, lock=_Lock(), paid=guard(ledger))
     produce.execute(V)
     assert model.calls == 1
-    assert ("confirm", ledger.only_key(), "ACTUAL", Decimal("0.05")) in ledger.events
+    assert ("confirm", ledger.only_key(), "ESTIMATE", Decimal("0.05")) in ledger.events
     assert usage.entries == []
 
 
@@ -510,3 +520,249 @@ def test_run_render_routes_voice_through_the_paid_guard(tmp_path):
     assert len([e for e in ledger.events if e[0] == "begin"]) == len(_RenderScripts.TEXTS)
     assert all(state is PaidOperationState.CONFIRMED for state in ledger.states.values())
     assert usage.entries == []
+
+
+# ---------------------------------------------------------------- cost policy: ESTIMATE vs ACTUAL
+
+
+def test_provider_settlement_never_promotes_an_estimate_to_actual():
+    from app.studio.application.budget import ChargeEvidence, provider_settlement
+
+    entry = UsageEntry(step="image", provider="opencode", model="m", cost_usd=0.05)
+    _, confirmation = provider_settlement(entry, settled_by="studio:image:opencode")
+    assert confirmation.kind == "ESTIMATE"
+    assert confirmation.amount_usd == Decimal("0.05")
+    assert confirmation.confirmed_by == "studio:image:opencode"
+
+
+def test_provider_settlement_accepts_actual_only_with_charge_evidence():
+    from app.studio.application.budget import ChargeEvidence, provider_settlement
+
+    entry = UsageEntry(step="image", provider="paid", model="m", cost_usd=0.05)
+    evidence = ChargeEvidence(Decimal("0.06"), reference="invoice:123", declared_by="billing:adapter")
+    charged_entry, confirmation = provider_settlement(entry, settled_by="studio:image:paid", charge=evidence)
+    assert confirmation.kind == "ACTUAL"
+    assert confirmation.amount_usd == Decimal("0.06")  # vale o valor cobrado, não a estimativa
+    assert confirmation.reference == "invoice:123"
+    assert confirmation.confirmed_by == "billing:adapter"
+    assert charged_entry.cost_usd == 0.06  # o ledger registra o valor cobrado
+
+
+def test_provider_settlement_requires_an_explicit_actor():
+    from app.studio.application.budget import provider_settlement
+
+    entry = UsageEntry(step="text", provider="demo", model="local", cost_usd=0.0)
+    with pytest.raises(TypeError):
+        provider_settlement(entry)
+    with pytest.raises(ValueError):
+        provider_settlement(entry, settled_by="   ")
+
+
+def test_provider_settlement_zero_is_free():
+    from app.studio.application.budget import provider_settlement
+
+    entry = UsageEntry(step="voice", provider="piper", model="local", cost_usd=0.0)
+    _, confirmation = provider_settlement(entry, settled_by="studio:voice:piper")
+    assert confirmation.kind == "FREE"
+
+
+# ---------------------------------------------------------------- guard: validate / failures
+
+
+def test_invalid_paid_output_stays_uncertain_not_confirmed():
+    ledger = FakeLedger()
+    paid = guard(ledger)
+
+    def reject(_):
+        raise ValueError("unusable paid output")
+
+    with pytest.raises(ValueError):
+        paid.run("k", V, Decimal("0.5"), lambda: "paid", validate=reject, settle=lambda _: free_settlement(0.5))
+    assert ledger.state("k") is PaidOperationState.UNCERTAIN
+    assert not any(event[0] == "confirm" for event in ledger.events)
+
+
+def test_pre_effect_failure_during_settlement_releases():
+    ledger = FakeLedger()
+
+    def settle(_):
+        raise PreEffectFailure("no charge occurred")
+
+    with pytest.raises(PreEffectFailure):
+        guard(ledger).run("k", V, Decimal("0.5"), lambda: "ok", settle=settle)
+    assert ledger.state("k") is PaidOperationState.RELEASED
+
+
+def test_unconfirmable_settlement_marks_uncertain():
+    ledger = FakeLedger()
+
+    def settle(_):
+        raise ValueError("no usable cost")
+
+    with pytest.raises(ValueError):
+        guard(ledger).run("k", V, Decimal("0.5"), lambda: "ok", settle=settle)
+    assert ledger.state("k") is PaidOperationState.UNCERTAIN
+
+
+def test_keyboard_interrupt_is_not_swallowed_and_keeps_the_reservation():
+    ledger = FakeLedger()
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        guard(ledger).run("k", V, Decimal("0.5"), interrupted, settle=lambda _: free_settlement())
+    assert ledger.state("k") is PaidOperationState.RESERVED  # reconciliação explícita, não UNCERTAIN automático
+
+
+def test_confirmed_free_operation_can_replay_without_charging():
+    ledger = FakeLedger()
+    calls = []
+    paid = guard(ledger)
+    paid.run("k", V, Decimal("0"), lambda: calls.append(1), settle=lambda _: free_settlement(0.0))
+    paid.run("k", V, Decimal("0"), lambda: calls.append(1), settle=lambda _: free_settlement(0.0), allow_free_replay=True)
+    assert calls == [1, 1]  # reexecutou sem nova reserva e sem cobrança
+    assert ledger.created == ["k"]  # nenhuma segunda reserva criada
+
+
+def test_confirmed_estimate_operation_cannot_replay_for_free():
+    ledger = FakeLedger()
+    calls = []
+    paid = guard(ledger)
+    paid.run("k", V, Decimal("0.5"), lambda: calls.append(1), settle=lambda _: free_settlement(0.5))
+    with pytest.raises(OperationSettled):
+        paid.run("k", V, Decimal("0.5"), lambda: calls.append(1), settle=lambda _: free_settlement(0.5), allow_free_replay=True)
+    assert calls == [1]
+
+
+# ---------------------------------------------------------------- invalid paid results: script and image
+
+
+def test_invalid_script_after_a_successful_paid_call_stays_uncertain():
+    from app.studio.application.editorial import ScriptRejected
+
+    videos, snaps, scripts, usage = _Videos(), _Snapshots(), None, _Usage()
+    scripts = _Scripts(videos)
+    snaps.add(V, "https://amsterdam-dance-event.nl/x", SOURCE)
+    ledger = FakeLedger()
+    model = _Text({"scenes": []}, cost=0.25)  # saída inválida (< 2 cenas) mas a chamada paga ocorreu
+    gen = GenerateScript(videos, snaps, scripts, model, CostGuard(usage, 0.0, 15.0), usage, paid=guard(ledger))
+    with pytest.raises(ScriptRejected):
+        gen.execute(V)
+    assert model.calls == 1
+    assert ledger.state(ledger.only_key()) is PaidOperationState.UNCERTAIN
+    assert not any(event[0] == "confirm" for event in ledger.events)
+
+
+def test_invalid_image_after_a_successful_paid_call_stays_uncertain():
+    from app.studio.application.media import AssetRefused, ProduceAssets
+
+    class _BadImage(_Image):
+        def generate(self, prompt, *, aspect="9:16"):
+            self.calls += 1
+            return ImageResult(data=b"img", mime="image/png", license="", attribution="", source_url="",
+                               usage=UsageEntry(step="image", provider=self.name, model=self.model, cost_usd=self.cost))
+
+    usage, model, ledger = _Usage(), _BadImage(cost=0.05), FakeLedger()
+    produce = ProduceAssets(_MediaVideos(), _MediaScripts(), _Assets(), _Store(), CostGuard(usage, 0.0, 15.0), usage,
+                            image_for=lambda project_id: model, lock=_Lock(), paid=guard(ledger))
+    with pytest.raises(AssetRefused):
+        produce.execute(V)
+    assert model.calls == 1
+    assert ledger.state(ledger.only_key()) is PaidOperationState.UNCERTAIN
+    assert not any(event[0] == "confirm" for event in ledger.events)
+
+
+# ---------------------------------------------------------------- ideas and voice through the guard
+
+
+class _IdeaText:
+    name, model = "fake", "m"
+
+    def __init__(self, cost=0.10):
+        self.cost, self.calls = cost, 0
+
+    def cost_estimate(self, prompt):
+        return self.cost
+
+    def complete(self, prompt):
+        import re
+
+        self.calls += 1
+        topics = re.findall(r"^\d+\. (.+)$", prompt, re.M)
+        return TextResult(text=json.dumps({"ideas": [{"topic": t, "relevance": 5, "verifiability": 5, "visual": 5,
+                                                       "freshness": 5} for t in topics]}),
+                          usage=UsageEntry(step="ideas", provider=self.name, model=self.model, cost_usd=self.cost))
+
+
+def test_score_ideas_routes_through_the_paid_guard_without_a_video():
+    from app.studio.application.ideas import ScoreIdeas
+
+    usage, model, ledger = _Usage(), _IdeaText(0.10), FakeLedger()
+    ranked = ScoreIdeas(model, CostGuard(usage, 0.0, 15.0), usage, paid=guard(ledger, monthly="15")).execute(["tema A", "tema B"])
+    assert len(ranked) == 2 and model.calls == 1
+    assert ("confirm", ledger.only_key(), "ESTIMATE", Decimal("0.1")) in ledger.events
+    assert ledger.events[0][3] is None  # operação de projeto, sem vídeo
+    assert usage.entries == []
+
+
+class _TwoJobs:
+    def __init__(self):
+        self.jobs = {f"{job_id}" * 32: RenderJob(id=f"{job_id}" * 32, video_id=V, status=JobStatus.QUEUED, attempt=job_id,
+                                                 input_hash="a" * 64)
+                     for job_id in (1, 2)}
+
+    def get(self, job_id):
+        return self.jobs[job_id]
+
+    def start(self, job_id):
+        job = self.jobs[job_id]
+        if job.status != JobStatus.QUEUED:
+            return False
+        self.jobs[job_id] = job.model_copy(update={"status": JobStatus.RUNNING})
+        return True
+
+    def alive(self, job_id):
+        return True
+
+    def complete(self, job_id, asset, qa):
+        self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.SUCCEEDED})
+        return True
+
+    def fail(self, job_id, error):
+        self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.FAILED, "error": error})
+
+
+class _PaidVoice(_Voice):
+    model = "paid"
+
+    def cost_estimate(self, text):
+        return 0.10
+
+
+def test_two_jobs_with_the_same_narration_do_not_charge_twice(tmp_path):
+    from app.studio.application.render import RunRender
+
+    usage, voice, ledger, jobs = _Usage(), _PaidVoice(), FakeLedger(), _TwoJobs()
+    run = RunRender(_RenderVideos(), _RenderScripts(), _RenderAssets(), jobs, _Files(tmp_path),
+                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), analyzer=_Analyzer(),
+                    paid=guard(ledger, monthly="15", video="15"))
+    run.execute(f"{1}" * 32)
+    assert len(voice.calls) == len(_RenderScripts.TEXTS)
+    run.execute(f"{2}" * 32)  # retry: a mesma narração já foi paga (ESTIMATE), não pode cobrar de novo
+    assert len(voice.calls) == len(_RenderScripts.TEXTS)
+    assert jobs.jobs[f"{2}" * 32].status is JobStatus.FAILED
+    assert all(state is PaidOperationState.CONFIRMED for state in ledger.states.values())
+
+
+def test_free_voice_retry_reexecutes_without_a_second_charge(tmp_path):
+    from app.studio.application.render import RunRender
+
+    usage, voice, ledger, jobs = _Usage(), _Voice(), FakeLedger(), _TwoJobs()
+    run = RunRender(_RenderVideos(), _RenderScripts(), _RenderAssets(), jobs, _Files(tmp_path),
+                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), analyzer=_Analyzer(),
+                    paid=guard(ledger, monthly="15", video="15"))
+    run.execute(f"{1}" * 32)
+    run.execute(f"{2}" * 32)
+    assert len(voice.calls) == 2 * len(_RenderScripts.TEXTS)  # Piper grátis: reexecuta, sem nova reserva
+    assert len(ledger.created) == len(_RenderScripts.TEXTS)

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Res
 from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
+from ..application.budget import BudgetDenied, InvalidOperationTransition, OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation
 from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
@@ -312,6 +313,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(400, str(exc)) from exc
         except YouTubeApiError as exc:
             raise HTTPException(502, str(exc)) from exc
+        except BudgetDenied as exc:
+            raise HTTPException(403, "budget denied: cost cap or unknown cost blocks the operation") from exc
+        except (OperationInProgress, OperationSettled, OperationUncertain, InvalidOperationTransition) as exc:
+            raise HTTPException(409, "paid operation is already in progress or awaiting reconciliation") from exc
+        except UnknownPaidOperation as exc:
+            raise HTTPException(404, "paid operation not found") from exc
 
     def editorial(uc: UseCases):
         if uc.editorial is None:

@@ -21,12 +21,13 @@ class RenderRefused(ValueError):
 
 
 def _voice_settlement(voice: Voice, text: str, seconds: float):
-    """Confirma o custo da voz: grátis só quando comprovadamente zero; estimativa positiva é incerta."""
+    """Encerra o custo da voz: FREE se comprovadamente zero, ACTUAL só com evidência de cobrança, senão ESTIMATE."""
     estimate = getattr(voice, "cost_estimate", None)
-    if callable(estimate) and Decimal(str(estimate(text))) != 0:
-        return None  # a voz não informa custo real: não presumir ACTUAL a partir de estimativa
-    entry = UsageEntry(step="voice", provider=voice.name, model=getattr(voice, "model", "") or "local", cost_usd=0.0)
-    return provider_settlement(entry)
+    amount = Decimal(str(estimate(text))) if callable(estimate) else Decimal("0")
+    entry = UsageEntry(step="voice", provider=voice.name, model=getattr(voice, "model", "") or "local", cost_usd=float(amount))
+    charge = getattr(voice, "charge_evidence", None)
+    evidence = charge(text, seconds) if callable(charge) else None
+    return provider_settlement(entry, settled_by=f"studio:voice:{voice.name}", charge=evidence)
 
 
 def _scenes_with_assets(videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, video_id: str):
@@ -124,13 +125,15 @@ class RunRender:
             if self.paid is None:
                 seconds.append(voice.speak(scene.narration, wav))
             else:
-                key = paid_key("voice", video.id, job.id, scene.idx, voice.name, scene.narration)
+                # chave por conteúdo (texto + voz + modelo), não por job: retentativa da mesma narração não cobra de novo
+                key = paid_key("voice", video.id, scene.idx, voice.name, getattr(voice, "model", ""), scene.narration)
                 estimate = getattr(voice, "cost_estimate", None)
                 amount = Decimal(str(estimate(scene.narration))) if callable(estimate) else Decimal("0")
                 seconds.append(self.paid.run(
                     key, video.id, amount,
                     call=lambda s=scene, w=wav: voice.speak(s.narration, w),
-                    settle=lambda secs, t=scene.narration: _voice_settlement(voice, t, secs)))
+                    settle=lambda secs, t=scene.narration: _voice_settlement(voice, t, secs),
+                    allow_free_replay=True))
             wavs.append(wav)
         lengths = [scene_length(s) for s in seconds]
         total, limit = sum(lengths), MAX_SECONDS[video.format]

@@ -154,22 +154,28 @@ def test_uncommitted_ledger_write_serializes_before_reservation(budget_db):
         assert future.result(timeout=5) == "DENIED"
 
 
-def test_unknown_zero_cost_blocks_new_reservation_but_not_idempotent_replay(budget_db):
+def test_finite_legacy_zero_is_not_unknown_but_nan_still_blocks(budget_db):
     repo, conn = budget_db
     assert reserve(repo, "existing") == "CREATED"
     conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model) "
                  "VALUES (%s, 'text', 'opencode', 'unspecified')", ("b" * 32,))
     conn.commit()
-    assert reserve(repo, "new", amount="0.01", monthly="100", video_limit="100") == "DENIED"
+    # valor finito (zero) conta pelo gravado e é pendência de reconciliação; não derruba o mês
+    assert reserve(repo, "new", amount="0.01", monthly="100", video_limit="100") == "CREATED"
     assert reserve(repo, "existing") == "EXISTING"
+    conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_usd) "
+                 "VALUES ('text', 'unknown', 'model', 'NaN')")
+    conn.commit()
+    assert reserve(repo, "nan", amount="0.01", monthly="100", video_limit="100") == "DENIED"
 
 
-def test_positive_estimate_without_confirmation_blocks_reservation(budget_db):
+def test_positive_legacy_cost_counts_as_provisional_spend(budget_db):
     repo, conn = budget_db
     conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_usd) "
                  "VALUES ('image', 'opencode', 'model', 0.05)")
     conn.commit()
-    assert reserve(repo, "estimated", monthly="100", video_limit="100") == "DENIED"
+    assert reserve(repo, "estimated", amount="0.01", monthly="0.06", video_limit="100") == "CREATED"
+    assert reserve(repo, "over", amount="0.01", monthly="0.05", video_limit="100") == "DENIED"
 
 
 def test_legacy_zero_evidence_alone_does_not_confirm_free(budget_db):
@@ -177,7 +183,9 @@ def test_legacy_zero_evidence_alone_does_not_confirm_free(budget_db):
     conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_zero_evidence) "
                  "VALUES ('text', 'demo', 'local', 'legacy note')")
     conn.commit()
-    assert reserve(repo, "legacy-free", monthly="100", video_limit="100") == "DENIED"
+    # não é promovido a confirmado; o valor finito zero conta como zero e é reportado
+    assert conn.execute("SELECT cost_confirmation_kind FROM studio.usage_ledger").fetchone()[0] is None
+    assert reserve(repo, "legacy-free", monthly="100", video_limit="100") == "CREATED"
 
 
 def test_explicit_confirmed_paid_cost_allows_reservation(budget_db):
@@ -197,12 +205,14 @@ def test_manual_reconciliation_confirms_same_amount_without_rewriting_history(bu
         "VALUES ('image', 'opencode', 'model', 0.2) RETURNING id"
     ).fetchone()[0]
     conn.commit()
-    assert reserve(repo, "before", monthly="10") == "DENIED"
+    assert reserve(repo, "before", amount="0.8", monthly="1", video_limit="10") == "CREATED"  # 0.2 finito conta
     conn.execute("UPDATE studio.usage_ledger SET cost_confirmation_kind = 'ACTUAL', cost_confirmed_amount = 0.2, "
                  "cost_confirmation_reference = 'invoice 1', cost_confirmed_by = 'reviewer', cost_confirmed_at = now() "
                  "WHERE id = %s AND cost_usd = 0.2 AND cost_confirmation_kind IS NULL", (ledger_id,))
     conn.commit()
-    assert reserve(repo, "after", monthly="10") == "CREATED"
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger").fetchone()[0] == 1  # não duplica
+    assert conn.execute("SELECT cost_confirmation_kind FROM studio.usage_ledger").fetchone()[0] == "ACTUAL"
+    assert reserve(repo, "after", amount="0.01", monthly="1", video_limit="10") == "DENIED"  # 0.2 gasto + 0.8 reservado
 
 
 @pytest.mark.parametrize(("kind", "cost", "confirmed", "reference", "actor"), [
@@ -259,7 +269,7 @@ def test_nan_ledger_cost_is_unknown(budget_db):
     assert reserve(repo, "nan", monthly="100", video_limit="100") == "DENIED"
 
 
-def test_migration_preserves_legacy_zero_as_unknown(conn, dsn, tmp_path):
+def test_migration_does_not_promote_legacy_cost_to_confirmed(conn, dsn, tmp_path):
     from app.studio.adapters.postgres.budget_repo import PostgresBudgetRepository
 
     for path in MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql"):
@@ -276,13 +286,15 @@ def test_migration_preserves_legacy_zero_as_unknown(conn, dsn, tmp_path):
     conn.commit()
     applied = migrate(conn)
     assert "0015_ledger_cost_confirmation" in applied  # migra o legado sem promover zeros
-    assert "0017_paid_operations" in applied
+    assert "0019_ledger_estimate_and_attribution" in applied
     assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE cost_confirmation_kind IS NULL").fetchone()[0] == 2
     conn.commit()
     repo = PostgresBudgetRepository(
         lambda: verified_test_connect(dsn, os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"])
     )
-    assert reserve(repo, "legacy", monthly="100", video_limit="100") == "DENIED"
+    # o positivo legado conta pelo valor gravado (não é desconhecido nem vira ACTUAL)
+    assert reserve(repo, "legacy", amount="0.95", monthly="1", video_limit="10") == "CREATED"
+    assert reserve(repo, "legacy-over", amount="0.01", monthly="1", video_limit="10") == "DENIED"
 
 
 def test_unattributed_ledger_spend_and_unknown_cost_affect_global_budget(budget_db):
@@ -292,18 +304,20 @@ def test_unattributed_ledger_spend_and_unknown_cost_affect_global_budget(budget_
                  "VALUES ('text', 'paid', 'model', 0.8, 'ACTUAL', 0.8, 'invoice', 'reviewer', now())")
     conn.commit()
     assert reserve(repo, "global-spend", amount="0.21", video_limit="10") == "DENIED"
-    conn.execute("INSERT INTO studio.usage_ledger(step, provider, model) VALUES ('text', 'unknown', 'model')")
+    conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_usd) "
+                 "VALUES ('text', 'unknown', 'model', 'NaN')")
     conn.commit()
     assert reserve(repo, "global-unknown", amount="0.01", monthly="100", video_limit="100") == "DENIED"
 
 
-def test_old_unknown_cost_only_blocks_its_own_video(budget_db):
+def test_old_nan_cost_only_blocks_its_own_video(budget_db):
     repo, conn = budget_db
-    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, created_at) "
-                 "VALUES (%s, 'text', 'unknown', 'model', "
+    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd, created_at) "
+                 "VALUES (%s, 'text', 'unknown', 'model', 'NaN', "
                  "date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - interval '1 second')",
                  ("b" * 32,))
     conn.commit()
+    # NaN continua desconhecido e bloqueia o vídeo; fora do mês atual não contamina outro vídeo
     assert reserve(repo, "old-unknown", monthly="100", video_limit="100") == "DENIED"
     assert reserve(repo, "other-video", video="c" * 32) == "CREATED"
 

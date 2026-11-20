@@ -5,7 +5,8 @@ from decimal import Decimal
 import psycopg
 
 from ...application.budget import (BeginResult, CostConfirmation, CostConfirmationError, IdempotencyConflict,
-                                   InvalidOperationTransition, PaidOperationState, ReservationResult, UnknownPaidOperation)
+                                   InvalidOperationTransition, PaidOperationState, PendingReconciliation,
+                                   ReservationResult, UnknownPaidOperation)
 from ...domain.contracts import UsageEntry
 from ...domain.ids import check_id
 from .repo import _translated
@@ -28,9 +29,15 @@ def _validate_amounts(*values) -> None:
             raise ValueError("budget values must be finite non-negative Decimal")
 
 
-def _reserve_within(conn: psycopg.Connection, key: str, video_id: str, amount: Decimal,
+def _reserve_within(conn: psycopg.Connection, key: str, video_id: str | None, amount: Decimal,
                     monthly_limit: Decimal, video_limit: Decimal) -> ReservationResult:
-    """Insere a reserva se couber no orçamento; assume que o lock da transação já foi adquirido."""
+    """Insere a reserva se couber no orçamento; assume que o lock da transação já foi adquirido.
+
+    O teto mensal soma gasto confirmado/estimado do mês corrente e reservas do mês corrente. Reservas
+    de meses anteriores não consomem o mês atual (ficam em `pending_reconciliation`). Só custo `NaN`
+    torna o valor realmente desconhecido; linha legada finita conta pelo valor gravado. Reserva sem
+    vídeo (None) só é limitada pelo teto mensal.
+    """
     previous = conn.execute(
         "SELECT video_id, amount_usd, monthly_limit_usd, video_limit_usd "
         "FROM studio.budget_reservations WHERE idempotency_key = %s", (key,)
@@ -40,27 +47,27 @@ def _reserve_within(conn: psycopg.Connection, key: str, video_id: str, amount: D
             raise IdempotencyConflict("idempotency key already used")
         return ReservationResult.EXISTING
     permitted = conn.execute(
-        """WITH spent AS (
-            SELECT COALESCE(SUM(cost_usd) FILTER (
-                WHERE created_at >= date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-                  AND created_at < (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'
-            ), 0) AS month, COALESCE(SUM(cost_usd) FILTER (WHERE video_id = %s), 0) AS video,
-            COALESCE(BOOL_OR(
-                (cost_usd = 'NaN'::numeric OR cost_confirmation_kind IS NULL)
-                AND (video_id = %s OR
-                    (created_at >= date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-                     AND created_at < (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'))
-            ), false) AS unknown
-            FROM studio.usage_ledger
+        """WITH bounds AS (
+            SELECT date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start,
+                   (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC' AS finish
+        ), spent AS (
+            SELECT COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
+                   COALESCE(SUM(cost_usd) FILTER (WHERE video_id = %(video)s), 0) AS video,
+                   COALESCE(BOOL_OR(
+                       cost_usd = 'NaN'::numeric
+                       AND (video_id = %(video)s OR (created_at >= b.start AND created_at < b.finish))
+                   ), false) AS unknown
+            FROM studio.usage_ledger, bounds b
         ), reserved AS (
-            SELECT COALESCE(SUM(amount_usd), 0) AS month,
-                   COALESCE(SUM(amount_usd) FILTER (WHERE video_id = %s), 0) AS video
-            FROM studio.budget_reservations
+            SELECT COALESCE(SUM(amount_usd) FILTER (WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
+                   COALESCE(SUM(amount_usd) FILTER (WHERE video_id = %(video)s), 0) AS video
+            FROM studio.budget_reservations, bounds b
         )
-        SELECT NOT spent.unknown AND spent.month + reserved.month + %s <= %s
-           AND spent.video + reserved.video + %s <= %s
+        SELECT NOT spent.unknown
+           AND spent.month + reserved.month + %(amount)s <= %(monthly)s
+           AND (%(video)s::text IS NULL OR spent.video + reserved.video + %(amount)s <= %(video_limit)s)
         FROM spent, reserved""",
-        (video_id, video_id, video_id, amount, monthly_limit, amount, video_limit),
+        {"video": video_id, "amount": amount, "monthly": monthly_limit, "video_limit": video_limit},
     ).fetchone()[0]
     if not permitted:
         return ReservationResult.DENIED
@@ -94,11 +101,12 @@ class PostgresPaidOperationRepository:
     def __init__(self, connect: Callable[[], psycopg.Connection]):
         self._connect = connect
 
-    def begin(self, key: str, video_id: str, estimate_usd: Decimal, monthly_limit_usd: Decimal,
+    def begin(self, key: str, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
               video_limit_usd: Decimal) -> BeginResult:
         if not isinstance(key, str) or not key.strip():
             raise ValueError("idempotency key is required")
-        check_id(video_id)
+        if video_id is not None:
+            check_id(video_id)
         _validate_amounts(estimate_usd, monthly_limit_usd, video_limit_usd)
         with _translated(), self._connect() as conn:
             _lock_budget(conn)
@@ -176,6 +184,79 @@ class PostgresPaidOperationRepository:
         with _translated(), self._connect() as conn:
             row = conn.execute("SELECT state FROM studio.paid_operations WHERE idempotency_key = %s", (key,)).fetchone()
             return None if row is None else PaidOperationState(row[0])
+
+    def settlement(self, key: str) -> CostConfirmation | None:
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("idempotency key is required")
+        with _translated(), self._connect() as conn:
+            row = conn.execute(
+                "SELECT confirmed_kind, confirmed_amount_usd, cost_confirmation_reference, cost_confirmed_by "
+                "FROM studio.paid_operations po JOIN studio.usage_ledger ul ON ul.id = po.ledger_id "
+                "WHERE po.idempotency_key = %s AND po.state = 'CONFIRMED'", (key,)
+            ).fetchone()
+            if row is None or row[0] is None:
+                return None
+            return CostConfirmation(row[0], row[1], row[2], row[3])
+
+    def reconcile_actual(self, key: str, charged_usd: Decimal, *, reference: str, confirmed_by: str) -> None:
+        """Troca o ESTIMATE gravado por ACTUAL com a cobrança comprovada, numa transação."""
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("idempotency key is required")
+        _validate_amounts(charged_usd)
+        if charged_usd == 0:
+            raise CostConfirmationError("ACTUAL reconciliation requires a positive charged amount")
+        confirmation = CostConfirmation.actual(charged_usd, reference=reference, confirmed_by=confirmed_by)
+        with _translated(), self._connect() as conn:
+            _lock_budget(conn)
+            row = conn.execute(
+                "SELECT state, confirmed_kind, ledger_id FROM studio.paid_operations "
+                "WHERE idempotency_key = %s FOR UPDATE", (key,)
+            ).fetchone()
+            if row is None:
+                raise UnknownPaidOperation(key)
+            state, kind, ledger_id = row
+            if state != "CONFIRMED" or kind != "ESTIMATE" or ledger_id is None:
+                raise InvalidOperationTransition("only an ESTIMATE confirmation can be reconciled to ACTUAL")
+            updated = conn.execute(
+                "UPDATE studio.usage_ledger SET cost_usd = %s, cost_confirmation_kind = 'ACTUAL', "
+                "cost_confirmed_amount = %s, cost_confirmation_reference = %s, cost_confirmed_by = %s, cost_confirmed_at = now() "
+                "WHERE id = %s AND cost_confirmation_kind = 'ESTIMATE'",
+                (confirmation.amount_usd, confirmation.amount_usd, confirmation.reference, confirmation.confirmed_by, ledger_id),
+            )
+            if updated.rowcount != 1:
+                raise InvalidOperationTransition("estimate ledger row changed during reconciliation")
+            conn.execute(
+                "UPDATE studio.paid_operations SET confirmed_kind = 'ACTUAL', confirmed_amount_usd = %s, updated_at = now() "
+                "WHERE idempotency_key = %s", (confirmation.amount_usd, key),
+            )
+
+    def pending_reconciliation(self) -> list[PendingReconciliation]:
+        """Reservas de meses anteriores, operações UNCERTAIN e lançamentos legados não confirmados.
+
+        Nada disso bloqueia o mês corrente por si só (exceto NaN, que continua desconhecido); é a lista
+        que exige decisão explícita.
+        """
+        with _translated(), self._connect() as conn:
+            rows = conn.execute(
+                """WITH bounds AS (
+                       SELECT date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start
+                   )
+                   SELECT br.idempotency_key, br.video_id, br.amount_usd, 'stale_reservation', br.created_at
+                   FROM studio.budget_reservations br, bounds b WHERE br.created_at < b.start
+                   UNION ALL
+                   SELECT po.idempotency_key, po.video_id, po.estimate_usd, 'uncertain_operation', po.created_at
+                   FROM studio.paid_operations po, bounds b
+                   WHERE po.state = 'UNCERTAIN'
+                     AND NOT EXISTS (SELECT 1 FROM studio.budget_reservations br2, bounds b2
+                                     WHERE br2.idempotency_key = po.idempotency_key AND br2.created_at < b2.start)
+                   UNION ALL
+                   SELECT 'ledger:' || ul.id::text, ul.video_id, ul.cost_usd,
+                          CASE WHEN ul.cost_usd = 'NaN'::numeric THEN 'unknown_ledger_cost'
+                               ELSE 'legacy_unconfirmed_ledger' END, ul.created_at
+                   FROM studio.usage_ledger ul
+                   WHERE ul.cost_confirmation_kind IS NULL
+                   ORDER BY 5""").fetchall()
+        return [PendingReconciliation(row[0], row[1], row[2], row[3], row[4]) for row in rows]
 
     def _settle_without_cost(self, key: str, reason: str, target: PaidOperationState, allow_from_uncertain: bool) -> None:
         if not isinstance(key, str) or not key.strip():

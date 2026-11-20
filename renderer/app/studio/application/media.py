@@ -86,9 +86,19 @@ class ProduceAssets:
             self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a imagem for recusada
         else:
             op_key = paid_key("image", video_id, key)
+
+            def _validated(res):
+                # imagem paga e inutilizável não pode encerrar o custo: valida antes de confirmar
+                if not res.license.strip():
+                    raise AssetRefused("image without a registered license")
+                if res.mime not in ALLOWED_MIME:
+                    raise AssetRefused(f"unsupported image mime {res.mime!r}")
+                return res
+
             result = self.paid.run(op_key, video_id, Decimal(str(estimate)),
                                    call=lambda: model.generate(prompt, aspect=aspect),
-                                   settle=lambda res: provider_settlement(res.usage))
+                                   validate=_validated,
+                                   settle=lambda res: provider_settlement(res.usage, settled_by=f"studio:image:{model.name}"))
         if not result.license.strip():
             raise AssetRefused("image without a registered license")
         if result.mime not in ALLOWED_MIME:

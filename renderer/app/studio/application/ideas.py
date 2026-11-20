@@ -2,8 +2,10 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 
 from ..domain.rubric import IdeaScores, score
+from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import CostGuard
 from .ports import TextModel, UsageRepository
 
@@ -60,8 +62,9 @@ def _parse(raw: str, topics: list[str]) -> dict[str, IdeaScores]:
 
 class ScoreIdeas:
     def __init__(self, text_model: TextModel | None, guard: CostGuard, usage: UsageRepository,
-                 model_for: Callable[[str | None], TextModel] | None = None):
+                 model_for: Callable[[str | None], TextModel] | None = None, paid: PaidOperationGuard | None = None):
         self.text_model, self.guard, self.usage, self.model_for = text_model, guard, usage, model_for
+        self.paid = paid
 
     def execute(self, topics: list[str], project_id: str | None = None) -> list[RankedIdea]:
         return self._execute(topics, project_id, video_id=None, max_topic_chars=MAX_TOPIC_CHARS)
@@ -75,9 +78,17 @@ class ScoreIdeas:
             raise IdeaInputRefused(f"topics must be unique, non-empty and up to {max_topic_chars} characters")
         prompt = _prompt(topics)
         model = self.model_for(project_id) if self.model_for else self.text_model
-        self.guard.check(video_id, model.cost_estimate(prompt))
-        result = model.complete(prompt)
-        self.usage.record(video_id, result.usage)
+        estimate = model.cost_estimate(prompt)
+        if self.paid is None:
+            self.guard.check(video_id, estimate)
+            result = model.complete(prompt)
+            self.usage.record(video_id, result.usage)
+        else:
+            # escopo de projeto (sem vídeo): reserva só limitada pelo teto mensal
+            key = paid_key("ideas", video_id or "", project_id or "", getattr(model, "model", ""), model.name, prompt)
+            result = self.paid.run(key, video_id, Decimal(str(estimate)),
+                                   call=lambda: model.complete(prompt),
+                                   settle=lambda res: provider_settlement(res.usage, settled_by=f"studio:ideas:{model.name}"))
         parsed = _parse(result.text, topics)
         ranked = [RankedIdea(t, score(parsed[t]), parsed[t]) for t in topics]
         return sorted(ranked, key=lambda r: -r.score)  # sorted é estável: empate mantém a ordem enviada

@@ -210,7 +210,7 @@ class Studio:
             generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for, paid=paid_guard),
             get_script=GetScript(repo, scripts),
             fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
-            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for))
+            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard))
         assets = PostgresAssetRepository(connect)
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),

@@ -218,12 +218,15 @@ class GenerateScript:
             self.guard.check(video_id, estimate)  # antes da chamada
             result = model.complete(prompt, json_schema=_SCHEMA)
             self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a resposta for recusada
+            drafts = parse_drafts(result.text, {c.id for c in claims})
         else:
             key = paid_key("script", video_id, getattr(model, "model", ""), model.name, prompt)
-            result = self.paid.run(key, video_id, _usd(estimate),
+            claim_ids = {c.id for c in claims}
+            # valida a saída ANTES de encerrar o custo: roteiro inválido vira UNCERTAIN, não ACTUAL
+            drafts = self.paid.run(key, video_id, _usd(estimate),
                                    call=lambda: model.complete(prompt, json_schema=_SCHEMA),
-                                   settle=lambda res: provider_settlement(res.usage))
-        drafts = parse_drafts(result.text, {c.id for c in claims})
+                                   validate=lambda res: parse_drafts(res.text, claim_ids),
+                                   settle=lambda res: provider_settlement(res.usage, settled_by=f"studio:script:{model.name}"))
         cited = sorted({c for d in drafts for c in d.claim_ids})
         script = self.scripts.save_and_advance(video_id, "\n".join(d.narration for d in drafts), drafts, cited,
                                                video.status, VideoStatus.SCRIPTED)
