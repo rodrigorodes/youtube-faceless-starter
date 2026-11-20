@@ -8,3 +8,8 @@ class ServiceUnavailable(RuntimeError):
 class InvalidInput(ValueError):
     """Dado recusado pela persistência (ex.: byte NUL em texto)."""
 
+
+class ProjectNotFound(LookupError):
+    pass
+
+

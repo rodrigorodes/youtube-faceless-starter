@@ -8,15 +8,13 @@ from .media import Media
 from .publishing import Publishing
 from .render import Rendering
 from .panel import BuildPanel
-from .ports import VideoRepository
+from .ports import TrendRepository, VideoRepository
+from .trends import IngestTrends
 from .analytics import Analytics
 from .observability import Resume
 
 
-class ProjectNotFound(LookupError):
-    pass
-
-from .errors import InvalidInput, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
+from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
 
 
 class CreateProject:
@@ -67,10 +65,13 @@ class UseCases:
     analytics: Analytics | None = None
     resume: Resume | None = None
     panel: BuildPanel | None = None
+    ingest_trends: IngestTrends | None = None
+    trends_repo: TrendRepository | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
                   rendering: Rendering | None = None, publishing: Publishing | None = None,
                   analytics: Analytics | None = None, resume: Resume | None = None,
-                  panel: BuildPanel | None = None) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume, panel)
+                  panel: BuildPanel | None = None, ingest_trends: IngestTrends | None = None,
+                  trends_repo: TrendRepository | None = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo)

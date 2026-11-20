@@ -20,6 +20,7 @@ from ..application.media import AssetRefused
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.render import RenderRefused
 from ..domain.publish import InvalidPublishData, srt_to_vtt
+from ..domain.trends import TrendItem, TrendRefused
 from .preview import render_preview
 from .panel import render_panel, render_video
 from ..application.ports import ModelUnavailable
@@ -133,6 +134,11 @@ class FactCheckIn(BaseModel):
 class IdeasIn(BaseModel):
     topics: list[str] = Field(min_length=1, max_length=MAX_TOPICS)
     project_id: str | None = None
+
+
+class TrendsIn(BaseModel):
+    project_id: str
+    items: list[TrendItem] = Field(min_length=1, max_length=50)
 
 
 class RankedOut(BaseModel):
@@ -261,7 +267,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "video not found") from exc
         except StateConflict as exc:
             raise HTTPException(409, str(exc)) from exc
-        except (SourceRefused, ProviderNotFound, IdeaInputRefused) as exc:
+        except (SourceRefused, ProviderNotFound, IdeaInputRefused, TrendRefused) as exc:
             raise HTTPException(422, str(exc)) from exc
         except CostRefused as exc:
             raise HTTPException(403, f"cost cap: {exc}") from exc
@@ -428,6 +434,17 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "analytics services unavailable")
             return uc.analytics.weekly(start, end)
         return run(weekly)
+
+    @router.post("/trends", status_code=202)
+    def ingest_trends(body: TrendsIn, request: Request):
+        auth = request.headers.get("authorization", "")
+        if not auth.lower().startswith("bearer "):
+            raise HTTPException(403, "worker authentication required")
+        def ingest(uc):
+            if uc.ingest_trends is None:
+                raise HTTPException(503, "trends services unavailable")
+            return {"stored": uc.ingest_trends.execute(check_id(body.project_id), body.items)}
+        return run(ingest)
 
     @router.get("/panel/data")
     def panel_data(days: int = 7, project_id: str | None = None):
