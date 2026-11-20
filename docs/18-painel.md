@@ -47,21 +47,25 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 - **Publicação:** Exibe o status da tentativa de upload e eventuais mensagens de erro de rede.
 
 ### 6. Seção de Temas em Alta e Pilares de Conteúdo
-- **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`) ou coleta sob demanda acionada diretamente no painel.
-- **Pilares de Conteúdo (Categorias):**
-  - Barra de pílulas (*chips*) no topo da seção: **Todas (N)**, cada pilar com seu contador de tópicos correspondentes e o botão de atalho **+ Novo Pilar**.
-  - O clique em uma pílula filtra os tópicos na tela instantaneamente, destacando apenas os temas pertencentes ao pilar escolhido.
-  - Cada cartão de tema exibe o distintivo com o pilar associado (ex.: `🏷️ Festivais & Lineups`).
-- **Ações Rápidas na Barra:**
-  - **🔄 Buscar Agora:** Dispara atualização sob demanda via YouTube Data API v3 (`POST /studio/projects/{id}/trends/refresh`), trazendo evidências e visualizações recentes sem esperar o agendamento noturno.
+- **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`) ou coleta sob demanda acionada diretamente no painel. O radar unifica tendências de **Em Alta Brasil**, **Em Alta Mundo** (`chart=mostPopular`) e buscas temáticas por pilares de conteúdo.
+- **Pílulas de Filtro (Estilo Oficial do YouTube):**
+  - Barra de pílulas arredondadas (*chips/pills*) com visual fiel ao YouTube: **🔥 Todas (N)**, atalhos rápidos de região **🇧🇷 Em Alta Brasil (N)** e **🌍 Em Alta Mundo (N)**, cada pilar de categoria com seu contador e o botão de atalho **+ Novo Pilar**.
+  - O clique em uma pílula filtra os tópicos na tela instantaneamente via JavaScript (sem recarregar a página), destacando apenas os temas correspondentes.
+- **Cards de Tendência no Estilo YouTube Dark:**
+  - **Miniaturas 16:9:** Exibição da thumbnail oficial do vídeo (`hqdefault.jpg`) com proporção 16:9, cantos arredondados e overlay de play (`▶`) ao passar o mouse.
+  - **Links Diretos para o YouTube:** Links para assistir ao vídeo oficial tanto clicando na miniatura, no título (com ícone `↗`) quanto pelo botão de ação `▶ Assistir no YouTube` (abertura segura com `target="_blank"` e `rel="noopener noreferrer"`).
+  - **Badges e Metadados:** Badges com destaque de região (`🇧🇷 Em Alta Brasil` / `🌍 Em Alta Mundo`), visualizações formatadas (`📊 X.XXX.XXX visualizações`), status dos vídeos no pipeline (`🎬 N concluídos · M em produção`) e custo acumulado. Abaixo do título, exibe o nome do canal (`📺`), contagem de views e data de publicação.
+  - **Evidências:** Painel expansível com detalhes das evidências e contagem de views individuais.
+- **Ações Rápidas e Interatividade:**
+  - **🔄 Buscar Agora:** Dispara atualização sob demanda via YouTube Data API v3 (`POST /studio/projects/{id}/trends/refresh`), trazendo vídeos em alta e métricas recentes. Exibe indicador de carregamento animado (spinner giratório), desativa o botão durante a requisição para evitar chamadas duplicadas e apresenta feedback de sucesso/erro em tempo real.
   - **⚙️ Gerenciar Categorias:** Abre o modal de gerenciamento de pilares para cadastrar novos pilares, ajustar termos de busca curados (até 10 por pilar) ou remover pilares existentes.
-- **Verificabilidade:** Cada tema exibe a fonte oficial (`YouTube Data API`), o link direto, a data/hora da consulta e as visualizações agregadas dos principais vídeos da janela.
-- **Status do Período:**
+- **Criar Vídeo deste Tema:**
+  - O botão `✨ Criar Vídeo deste Tema` preenche automaticamente o campo de tema no formulário `+ Novo Vídeo`, abre o formulário caso esteja fechado e realiza uma rolagem suave (*smooth scroll*) com foco imediato no campo de tema para o operador revisar o projeto e formato antes de iniciar a produção.
+- **Verificabilidade e Status:**
+  - Cada tema exibe a fonte oficial (`YouTube Brasil (Em Alta)`, `YouTube Global (Em Alta)` ou `YouTube Data API`), o link direto e a data/hora da consulta.
   - Se a consulta estiver dentro da janela do filtro, exibe os tópicos normalmente.
   - Se a última consulta for mais antiga que o filtro, exibe a etiqueta `Desatualizado`.
-  - Se ainda não houve ingestão, exibe `Ainda não há coleta de tendências registrada para o período selecionado.` (sem inventar dados).
-- **Criar Vídeo deste Tema:**
-  - O botão preenche automaticamente o campo de tema no formulário `+ Novo Vídeo` e abre o formulário para o operador revisar o projeto e formato antes de criar.
+  - Se ainda não houve ingestão, exibe `Ainda não há coleta de tendências registrada para o período selecionado.` (sem dados fictícios).
 
 ### 7. Gerenciamento de Pilares de Conteúdo (Modal)
 - O modal permite definir os eixos editoriais estratégicos do canal.

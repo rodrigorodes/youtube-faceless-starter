@@ -21,14 +21,22 @@ Se qualquer item do lote violar esses critérios, o lote inteiro é recusado (`T
 - A cota diária gratuita padrão da Google Cloud Console é de **10.000 unidades/dia** por projeto.
 - Essa cota é **compartilhada** entre a coleta e a publicação de vídeos:
   - `videos.insert` (upload de vídeo): **1.600 unidades** por tentativa.
-  - `search.list` (pesquisa de vídeos em alta na janela): **100 unidades** por consulta.
+  - `search.list` (pesquisa de vídeos por palavra-chave na janela): **100 unidades** por consulta.
+  - `videos.list` com `chart=mostPopular` (Em Alta Brasil e Em Alta Mundo): **apenas 1 unidade** por chamada de até 50 vídeos.
   - `videos.list` (estatísticas de visualização): **1 unidade** por lote de até 50 vídeos.
 
-### 2. Teto e Moderação de Uso
-- O workflow diário de tendências limita-se a **no máximo 10 consultas curadas por dia** (≈ 1.010 unidades de cota).
-- Isso preserva cerca de **9.000 unidades diárias**, garantindo margem para até 5 uploads diários sem esgotar a cota (`quotaExceeded`).
+### 2. Radar de Tendências: Em Alta Brasil e Mundo (Alta Eficiência)
+Para enriquecer a esteira sem consumir a cota de 100 unidades do `search.list`, o Studio incorpora a coleta de tendências gerais por região:
+- **Em Alta Brasil:** `videos.list` com `chart=mostPopular` e `regionCode=BR`. Custo: **1 unidade de cota**.
+- **Em Alta Mundo:** `videos.list` com `chart=mostPopular` e `regionCode=US` (global). Custo: **1 unidade de cota**.
+- **Fonte Oficial e Hosts Autorizados:** Os itens coletados via `chart=mostPopular` utilizam `source_name = "YouTube Brasil (Em Alta)"` ou `"YouTube Global (Em Alta)"` e `source_url = "https://www.youtube.com/feed/trending"`. O host `www.youtube.com` faz parte dos hosts permitidos no domínio (`STUDIO_TREND_SOURCES`).
+- O endpoint unificado `POST /studio/projects/{id}/trends/refresh` busca simultaneamente as paradas de Brasil, Mundo e os termos curados de cada pilar de conteúdo com resiliência a falhas parciais.
 
-### 3. Parâmetros das Consultas
+### 3. Teto e Moderação de Uso
+- A combinação de **Em Alta (2 unidades no total)** com as consultas curadas de pilares mantém o consumo diário tipicamente abaixo de **500 unidades**.
+- Isso preserva mais de **9.500 unidades diárias**, garantindo margem segura para múltiplos uploads diários sem esgotar a cota (`quotaExceeded`).
+
+### 4. Parâmetros das Consultas de Pilares
 - `q`: Termo de busca curado no projeto (ex.: `"ADE lineup"`, `"Amsterdam Dance Event"`).
 - `type`: `video`
 - `order`: `viewCount`
@@ -92,3 +100,13 @@ As operações de categorias são autenticadas por `STUDIO_WORKER_TOKEN` (Bearer
 - **Atualizado:** Consulta realizada dentro da janela do filtro selecionado.
 - **Desatualizado (stale):** Se a última consulta bem-sucedida for mais antiga que o período selecionado (ex.: consulta de 10 dias atrás para um filtro de 7 dias), o painel exibe um aviso explícito de que os dados estão desatualizados.
 - **Sem Coleta:** Se nunca houve ingestão ou se a cota foi atingida, o painel exibe `"Ainda não há coleta de tendências"` — nunca dados fictícios.
+
+---
+
+## Experiência Visual do Radar (Padrão YouTube)
+
+O painel adota os padrões de interface oficiais do YouTube para garantir usabilidade ágil e familiaridade ao operador:
+- **Cards no Estilo YouTube Dark:** Cards em fundo escuro (`#0f0f0f` / `#1f1f1f`) com miniaturas 16:9 (`hqdefault.jpg`), badges informativas de região (`🇧🇷 Em Alta Brasil`, `🌍 Em Alta Mundo`), contadores formatados de views, e links diretos para assistir ao vídeo oficial no YouTube (`▶ Assistir no YouTube`).
+- **Pílulas Arredondadas de Filtro:** Filtros rápidos no formato de pílulas oficiais do YouTube no topo da seção (`Todas`, `Em Alta Brasil`, `Em Alta Mundo` e pilares de conteúdo), permitindo alternar instantaneamente a visualização sem recarregar a página.
+- **Feedback Interativo:** Durante a atualização sob demanda (`🔄 Buscar Agora`), o painel exibe um indicador animado de carregamento (*spinner* giratório), desabilitando o botão para prevenir disparos duplicados.
+- **Criação Direta com Scroll Suave:** O botão `✨ Criar Vídeo deste Tema` preenche o tema selecionado no formulário de novo vídeo, abre a seção recolhida e realiza rolagem suave com foco imediato no campo.
