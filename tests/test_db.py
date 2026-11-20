@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends"]
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories"]
     assert migrate(conn) == []
 
 
@@ -34,13 +34,14 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
     migrate(conn)
     for t in ("projects", "videos", "scripts", "scenes", "assets", "render_jobs", "publications",
-              "source_snapshots", "step_runs", "usage_ledger", "video_metrics", "fact_checks", "trend_topics"):
+              "source_snapshots", "step_runs", "usage_ledger", "video_metrics", "fact_checks", "trend_topics",
+              "project_categories"):
         assert table_exists(conn, t), t
 
 
@@ -112,3 +113,55 @@ def test_asset_license_blank_rejected_and_credits_stored(conn):
             conn.execute(ins, ("2" * 32, "b" * 64, lic, "", ""))
         conn.rollback()
         migrate(conn)
+
+
+def test_project_categories_constraints_and_trend_link(conn):
+    migrate(conn)
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'p') ON CONFLICT DO NOTHING", (P,))
+    cat_id = "1" * 32
+    conn.execute(
+        "INSERT INTO studio.project_categories(id, project_id, name, queries) VALUES (%s, %s, %s, %s)",
+        (cat_id, P, "Tech", ["AI", "Python"])
+    )
+    # duplicate (project_id, name) should fail
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(
+            "INSERT INTO studio.project_categories(id, project_id, name) VALUES (%s, %s, %s)",
+            ("2" * 32, P, "Tech")
+        )
+    conn.rollback()
+    migrate(conn)
+
+    # Empty name should fail
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'p') ON CONFLICT DO NOTHING", (P,))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO studio.project_categories(id, project_id, name) VALUES (%s, %s, %s)",
+            ("3" * 32, P, "")
+        )
+    conn.rollback()
+    migrate(conn)
+
+    # Re-insert cat
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'p') ON CONFLICT DO NOTHING", (P,))
+    conn.execute(
+        "INSERT INTO studio.project_categories(id, project_id, name, queries) VALUES (%s, %s, %s, %s)",
+        (cat_id, P, "Tech", ["AI"])
+    )
+    # trend topic can link to category_id
+    trend_id = "4" * 32
+    conn.execute(
+        """INSERT INTO studio.trend_topics(
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, category_id
+        ) VALUES (%s, %s, 'AI News', 'ai_news', 'yt', 'https://youtube.com', now(), now(), now(), %s)""",
+        (trend_id, P, cat_id)
+    )
+    row = conn.execute("SELECT category_id FROM studio.trend_topics WHERE id = %s", (trend_id,)).fetchone()
+    assert row[0] == cat_id
+
+    # deleting category should set category_id to NULL
+    conn.execute("DELETE FROM studio.project_categories WHERE id = %s", (cat_id,))
+    row = conn.execute("SELECT category_id FROM studio.trend_topics WHERE id = %s", (trend_id,)).fetchone()
+    assert row[0] is None
+
