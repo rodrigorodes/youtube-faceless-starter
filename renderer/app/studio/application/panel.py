@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from ..domain.categories import ProjectCategory
+from ..domain.contracts import VideoFormat
 from ..domain.panel import CostSummary, Stage, classify, cost_text, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
@@ -31,6 +32,7 @@ class VideoItem:
     cost_text: str
     updated_at: datetime
     actions: list[str]
+    format: VideoFormat = VideoFormat.short
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,7 @@ class BuildPanel:
                 cost_text=cost_text(c_summary),
                 updated_at=r.updated_at,
                 actions=actions,
+                format=r.format,
             )
             key = topic_key(r.topic)
             grouped_videos[key].append((r, st, c_summary, item))

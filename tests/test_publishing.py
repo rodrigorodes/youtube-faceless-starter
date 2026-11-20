@@ -395,3 +395,25 @@ def test_preview_does_not_offer_revision_when_render_file_is_missing(tmp_path):
     v = Videos(S.RENDERED, QaReport(passed=False, failures=["audio"]))
     preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path, exists=False)).execute(V)
     assert not preview.has_file and preview.output_asset_id is None
+
+
+def test_preview_page_renders_sidebar_navigation(tmp_path):
+    from app.studio.api.preview import render_preview
+    v = Videos(S.AWAITING_APPROVAL, QaReport(passed=True))
+    preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path)).execute(V)
+    html_doc, _ = render_preview(preview)
+    assert '<aside class="sidebar">' in html_doc
+    assert '<div class="app-layout">' in html_doc
+    assert '<main class="main-content">' in html_doc
+    assert 'href="/studio/panel"' in html_doc
+    assert 'href="/studio/panel#trending-section"' in html_doc
+    assert 'href="/studio/panel#videos-section"' in html_doc
+    assert 'href="/studio/panel#new-video-section"' in html_doc
+    assert 'href="/docs"' in html_doc
+    assert 'href="http://localhost:5678"' in html_doc
+    assert "TETO MENSAL" in html_doc or "Teto Mensal" in html_doc
+    assert "Painel / Prévia do Vídeo" in html_doc
+    assert "Voltar ao Painel" in html_doc
+    assert "--bg: #0f0f0f" in html_doc
+    assert "--surface: #181818" in html_doc
+

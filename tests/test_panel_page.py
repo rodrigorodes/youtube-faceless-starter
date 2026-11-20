@@ -556,6 +556,63 @@ def test_panel_has_project_selector_and_create_project_modal(client_env):
     assert r2.text.count(f'value="{p_id_2}" selected') >= 2
 
 
+def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Workflow Modern Cards Video", VideoFormat.short)
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    # Funnel cards with colored borders
+    assert "grid-summary" in r.text
+    assert "border-left: 4px solid var(--info)" in r.text or "border-left: 4px solid #38bdf8" in r.text
+    assert "border-left: 4px solid var(--warn)" in r.text or "border-left: 4px solid #fbbf24" in r.text
+    assert "border-left: 4px solid var(--ok)" in r.text or "border-left: 4px solid #4ade80" in r.text
+    assert "border-left: 4px solid #a78bfa" in r.text
+    assert "Jobs de render/áudio ativos" in r.text
+    assert "Exigem revisão humana" in r.text
+    assert "Concluídos / Publicados" in r.text or "CONCLUÍDOS / PUBLICADOS" in r.text
+
+    # Modern video cards
+    assert "video-sample-card" in r.text
+    assert "video-thumb-sample" in r.text
+    assert "Workflow Modern Cards Video" in r.text
+    assert "Short" in r.text
+    assert "Ver Progresso" in r.text
+
+
+def test_preview_page_has_unified_sidebar_layout(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Preview Sidebar Video", VideoFormat.short)
+    conn.execute(
+        "UPDATE studio.videos SET status = 'AWAITING_APPROVAL' WHERE id = %s",
+        (v.id,),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/videos/{v.id}/preview", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert '<aside class="sidebar">' in r.text
+    assert '<div class="app-layout">' in r.text
+    assert '<main class="main-content">' in r.text
+    assert 'href="/studio/panel"' in r.text
+    assert 'href="/studio/panel#trending-section"' in r.text
+    assert 'href="/studio/panel#videos-section"' in r.text
+    assert 'href="/studio/panel#new-video-section"' in r.text
+    assert 'href="/docs"' in r.text
+    assert 'href="http://localhost:5678"' in r.text
+    assert "TETO MENSAL" in r.text or "Teto Mensal" in r.text
+    assert "Painel / Prévia do Vídeo" in r.text
+    assert "Voltar ao Painel" in r.text
+
+
+
 
 
 

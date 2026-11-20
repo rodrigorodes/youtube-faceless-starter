@@ -5,9 +5,20 @@ import html
 import secrets
 
 from ..application.panel import PanelView, VideoDetailView
+from ..domain.contracts import VideoFormat
 from ..domain.panel import Stage, is_known_cost
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
+
+STAGE_LABELS = {
+    Stage.PENDING: "Pendente",
+    Stage.IN_PRODUCTION: "Em Produção",
+    Stage.AWAITING_APPROVAL: "Aguardando Aprovação",
+    Stage.APPROVED: "Aprovado",
+    Stage.COMPLETED: "Concluído",
+    Stage.FAILED: "Falha",
+    Stage.REJECTED: "Rejeitado",
+}
 
 CSS = """
 :root {
@@ -439,6 +450,82 @@ tr:hover td { background: var(--surface-hover); }
 .timeline-title { font-weight: 600; font-size: 0.875rem; }
 .timeline-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem; }
 .layout-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.25rem; }
+
+/* Modern Video Sample Cards */
+.video-sample-card {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.video-sample-card:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+.video-thumb-sample {
+  width: 120px;
+  height: 68px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background: #121212;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.video-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #606060;
+}
+.video-sample-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+.video-sample-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.video-sample-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.video-sample-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .video-sample-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .video-thumb-sample {
+    width: 100%;
+    height: auto;
+  }
+}
 
 details summary::-webkit-details-marker { display: none !important; }
 
@@ -1230,7 +1317,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     else:
         topic_blocks = []
         for g in view.topics:
-            rows = []
+            cards = []
             for v in g.videos:
                 actions_html = []
                 if "preview" in v.actions:
@@ -1238,45 +1325,53 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                 if "progress" in v.actions:
                     actions_html.append(f'<a class="btn btn-compact" href="/studio/panel/videos/{e(v.id)}">Ver Progresso</a>')
 
+                fmt_label = "Short" if getattr(v, "format", VideoFormat.short) == VideoFormat.short else "Long"
                 date_str = v.updated_at.strftime("%d/%m %H:%M")
-                rows.append(f"""
-                  <tr>
-                    <td><strong>{e(v.topic)}</strong></td>
-                    <td><span class="pill pill-{e(v.stage.value)}">{e(v.stage.value)}</span></td>
-                    <td style="font-variant-numeric: tabular-nums;">{e(v.cost_text)}</td>
-                    <td style="color: var(--text-muted); font-size: 0.82rem;">{date_str}</td>
-                    <td><div class="action-buttons">{' '.join(actions_html)}</div></td>
-                  </tr>
+                stage_label = STAGE_LABELS.get(v.stage, v.stage.value)
+
+                cards.append(f"""
+                  <div class="video-sample-card">
+                    <div class="video-thumb-sample">
+                      <div class="video-thumb-placeholder">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#606060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="2" y="4" width="20" height="16" rx="4"></rect>
+                          <polygon points="10 8 16 12 10 16 10 8" fill="#606060"></polygon>
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="video-sample-body">
+                      <div>
+                        <span class="pill pill-{e(v.stage.value)}">{e(stage_label)}</span>
+                      </div>
+                      <div class="video-sample-title">{e(v.topic)}</div>
+                      <div class="video-sample-meta">
+                        <span>{e(fmt_label)}</span>
+                        <span>·</span>
+                        <span>{date_str}</span>
+                        <span>·</span>
+                        <span style="font-variant-numeric: tabular-nums;">{e(v.cost_text)}</span>
+                      </div>
+                    </div>
+                    <div class="video-sample-actions">
+                      {' '.join(actions_html)}
+                    </div>
+                  </div>
                 """)
 
-            table_html = f"""
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col" style="width: 40%;">Tema</th>
-                    <th scope="col">Etapa</th>
-                    <th scope="col">Custo</th>
-                    <th scope="col">Atualizado</th>
-                    <th scope="col">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {''.join(rows)}
-                </tbody>
-              </table>
-            """
             topic_blocks.append(f"""
-              <details open class="card topic-group-card">
-                <summary class="topic-group-summary">
-                  <div class="topic-group-summary-inner">
-                    <div class="topic-group-title">
-                      <span class="topic-group-label">{e(g.label)}</span>
+              <details open class="card topic-group-card" style="margin-bottom: 1.25rem;">
+                <summary class="topic-group-summary" style="cursor: pointer; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: 0.85rem;">
+                  <div class="topic-group-summary-inner" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="topic-group-title" style="display: flex; align-items: center; gap: 0.6rem;">
+                      <span class="topic-group-label" style="font-weight: 700; font-size: 1rem;">{e(g.label)}</span>
                       <span class="chip-metric" style="font-size: 0.72rem;">{len(g.videos)} vídeo{'s' if len(g.videos) > 1 else ''}</span>
                     </div>
-                    <span class="topic-group-cost">{e(g.cost_text)}</span>
+                    <span class="topic-group-cost" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">{e(g.cost_text)}</span>
                   </div>
                 </summary>
-                {table_html}
+                <div class="topic-group-videos" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  {''.join(cards)}
+                </div>
               </details>
             """)
         body_html = "".join(topic_blocks)
@@ -1462,22 +1557,22 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
       <div class="content-body">
         <div class="grid-summary">
-          <div class="card">
+          <div class="card" style="border-left: 4px solid var(--info);">
             <div class="card-label">Em Produção</div>
             <div class="card-value" style="color: var(--info);">{view.totals.get(Stage.IN_PRODUCTION, 0)}</div>
-            <div class="card-sub">Jobs de render/mídia ativos</div>
+            <div class="card-sub">Jobs de render/áudio ativos</div>
           </div>
-          <div class="card">
+          <div class="card" style="border-left: 4px solid var(--warn);">
             <div class="card-label">Aguardando Aprovação</div>
             <div class="card-value" style="color: var(--warn);">{view.totals.get(Stage.AWAITING_APPROVAL, 0)}</div>
             <div class="card-sub">Exigem revisão humana</div>
           </div>
-          <div class="card">
-            <div class="card-label">Concluídos</div>
+          <div class="card" style="border-left: 4px solid var(--ok);">
+            <div class="card-label">Concluídos / Publicados</div>
             <div class="card-value" style="color: var(--ok);">{view.totals.get(Stage.COMPLETED, 0)}</div>
             <div class="card-sub">No período selecionado</div>
           </div>
-          <div class="card">
+          <div class="card" style="border-left: 4px solid #a78bfa;">
             <div class="card-label">Gasto no Mês vs Teto</div>
             <div class="card-value">{e(view.month.text)}</div>
             <div class="card-sub">Teto mensal: US$ {view.month.cap_usd:.2f}</div>
