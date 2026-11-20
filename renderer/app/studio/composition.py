@@ -22,6 +22,8 @@ from .adapters.postgres.panel_repo import PostgresPanelRepository
 from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
+from .adapters.postgres.category_repo import PostgresCategoryRepository
+from .adapters.youtube_trends import fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
@@ -38,6 +40,7 @@ from .application.ideas import ScoreIdeas
 from .application.analytics import Analytics
 from .application.panel import BuildPanel
 from .application.trends import IngestTrends
+from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
@@ -78,6 +81,7 @@ class Settings:
     veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
     render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
     trend_hosts: tuple[str, ...] = ("www.googleapis.com",)
+    token_env_path: Path = Path("credentials/token.env")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -88,7 +92,8 @@ class Settings:
                    env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
                    env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
-                   _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com",)))
+                   _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com",)),
+                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")))
 
 
 RETRY_SECONDS = 5.0
@@ -99,10 +104,11 @@ CONNECT_OPTIONS = "-c lock_timeout=5000 -c statement_timeout=15000"  # nenhuma c
 class Studio:
     """Inicializa o banco sob demanda. Sem banco, o app segue de pé em modo degradado."""
 
-    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None):
+    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None):
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
+        self._youtube_fetcher = youtube_fetcher
         self.bridge_alerts = BridgeAlerts()
         register("text", "opencode", lambda model: OpenCodeText(model, settings.bridge_token, settings.bridge_url))
         register("text", "demo", DemoText)
@@ -221,10 +227,25 @@ class Studio:
             preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files))
         trend_repo = PostgresTrendRepository(connect)
         ingest_trends = IngestTrends(trend_repo, repo, s.trend_hosts)
+        category_repo = PostgresCategoryRepository(connect)
+        list_categories = ListCategories(category_repo, repo)
+        save_category = SaveCategory(category_repo, repo)
+        delete_category = DeleteCategory(category_repo)
+        refresh_trends = RefreshTrends(
+            repo=category_repo,
+            ingest=ingest_trends,
+            token_env_path=s.token_env_path,
+            videos_repo=repo,
+            fetcher=self._youtube_fetcher or fetch_youtube_trends,
+            environ=self.environ,
+        )
         panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
-                                  panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo)
+                                  panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
+                                  categories_repo=category_repo, list_categories=list_categories,
+                                  save_category=save_category, delete_category=delete_category,
+                                  refresh_trends=refresh_trends)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

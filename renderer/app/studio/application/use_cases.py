@@ -8,10 +8,11 @@ from .media import Media
 from .publishing import Publishing
 from .render import Rendering
 from .panel import BuildPanel
-from .ports import TrendRepository, VideoRepository
+from .ports import CategoryRepository, TrendRepository, VideoRepository
 from .trends import IngestTrends
 from .analytics import Analytics
 from .observability import Resume
+from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -67,11 +68,23 @@ class UseCases:
     panel: BuildPanel | None = None
     ingest_trends: IngestTrends | None = None
     trends_repo: TrendRepository | None = None
+    categories_repo: CategoryRepository | None = None
+    list_categories: ListCategories | None = None
+    save_category: SaveCategory | None = None
+    delete_category: DeleteCategory | None = None
+    refresh_trends: RefreshTrends | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
                   rendering: Rendering | None = None, publishing: Publishing | None = None,
                   analytics: Analytics | None = None, resume: Resume | None = None,
                   panel: BuildPanel | None = None, ingest_trends: IngestTrends | None = None,
-                  trends_repo: TrendRepository | None = None) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo)
+                  trends_repo: TrendRepository | None = None,
+                  categories_repo: CategoryRepository | None = None,
+                  list_categories: ListCategories | None = None,
+                  save_category: SaveCategory | None = None,
+                  delete_category: DeleteCategory | None = None,
+                  refresh_trends: RefreshTrends | None = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
+                   editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
+                   categories_repo, list_categories, save_category, delete_category, refresh_trends)

@@ -1,4 +1,6 @@
 """Portas (interfaces) que os adaptadores implementam. Só dependem do domínio."""
+from __future__ import annotations
+
 import contextlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -8,6 +10,7 @@ from typing import Protocol
 
 from ..domain.render import Cue
 from ..domain.trends import TrendItem
+from ..domain.categories import ProjectCategory
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
@@ -291,5 +294,12 @@ class TrendRepository(Protocol):
     def upsert(self, project_id: str, items: list[TrendItem]) -> int: ...
     def list(self, project_id: str | None, since: datetime) -> list[TrendRecord]: ...
     def last_collected_at(self, project_id: str | None) -> datetime | None: ...
+
+
+class CategoryRepository(Protocol):
+    def list(self, project_id: str) -> list[ProjectCategory]: ...
+    def get(self, category_id: str) -> ProjectCategory | None: ...
+    def save(self, project_id: str, name: str, queries: list[str], category_id: str | None = None) -> ProjectCategory: ...
+    def delete(self, category_id: str) -> bool: ...
 
 

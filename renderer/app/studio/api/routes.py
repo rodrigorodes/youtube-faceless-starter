@@ -21,6 +21,8 @@ from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.render import RenderRefused
 from ..domain.publish import InvalidPublishData, srt_to_vtt
 from ..domain.trends import TrendItem, TrendRefused
+from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
+from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_video
 from ..application.ports import ModelUnavailable
@@ -246,6 +248,25 @@ class TransitionIn(BaseModel):
     new: VideoStatus
 
 
+class CategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    queries: list[str] = Field(default_factory=list)
+    id: str | None = None
+
+
+class CategoryOut(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    queries: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class TrendRefreshIn(BaseModel):
+    queries: list[str] | None = None
+
+
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
     router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard), Depends(_authenticate)])
 
@@ -283,6 +304,14 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, str(exc)) from exc
         except (AssetRefused, RenderRefused) as exc:
             raise HTTPException(502, f"asset refused: {exc}") from exc
+        except DuplicateCategoryName as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except CategoryNameInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except MissingApiKey as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except YouTubeApiError as exc:
+            raise HTTPException(502, str(exc)) from exc
 
     def editorial(uc: UseCases):
         if uc.editorial is None:
@@ -292,6 +321,54 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/projects", status_code=201, response_model=Project)
     def create_project(body: ProjectIn):
         return run(lambda uc: uc.create_project.execute(body.name, body.niche, body.language))
+
+    @router.get("/projects/{project_id}/categories", response_model=list[CategoryOut])
+    def list_categories(project_id: str):
+        def go(uc):
+            if uc.list_categories is None:
+                raise HTTPException(503, "category services unavailable")
+            return uc.list_categories.execute(check_id(project_id))
+        return run(go)
+
+    @router.post("/projects/{project_id}/categories", status_code=201, response_model=CategoryOut)
+    def save_category(project_id: str, body: CategoryIn):
+        def go(uc):
+            if uc.save_category is None:
+                raise HTTPException(503, "category services unavailable")
+            return uc.save_category.execute(
+                check_id(project_id),
+                body.name,
+                body.queries,
+                category_id=check_id(body.id) if body.id else None,
+            )
+        return run(go)
+
+    @router.delete("/projects/{project_id}/categories/{category_id}")
+    def delete_category(project_id: str, category_id: str):
+        def go(uc):
+            if uc.delete_category is None:
+                raise HTTPException(503, "category services unavailable")
+            p_id = check_id(project_id)
+            c_id = check_id(category_id)
+            if uc.categories_repo is not None:
+                cat = uc.categories_repo.get(c_id)
+                if cat is None or cat.project_id != p_id:
+                    raise HTTPException(404, "category not found")
+            deleted = uc.delete_category.execute(c_id)
+            if not deleted:
+                raise HTTPException(404, "category not found")
+            return {"deleted": True}
+        return run(go)
+
+    @router.post("/projects/{project_id}/trends/refresh")
+    def refresh_trends(project_id: str, body: TrendRefreshIn | None = None):
+        def go(uc):
+            if uc.refresh_trends is None:
+                raise HTTPException(503, "trends services unavailable")
+            queries = body.queries if body else None
+            stored = uc.refresh_trends.execute(check_id(project_id), queries)
+            return {"stored": stored}
+        return run(go)
 
     @router.post("/videos", status_code=201, response_model=Video)
     def create_video(body: VideoIn):
