@@ -34,6 +34,9 @@
   superior; 100 é um limiar operacional arbitrário, não significância
   estatística. Quando falta algum dia no intervalo ou alguma contagem de
   visualizações, o agregado é marcado incompleto e não gera sugestão.
+- A sugestão editorial aceita o tema completo do vídeo (até 300 caracteres)
+  e associa eventual uso do modelo ao vídeo para verificar seu teto de gasto.
+  A rota genérica de pontuação de ideias mantém o limite de 150 caracteres.
 - `POST /studio/ideas/from-analytics` recebe `video_id`, `start` e `end`
   (intervalo de até sete dias). Para o vídeo escolhido, pontua o tema
   exploratório elegível pela rubrica P02 com o provedor do projeto e os tetos

@@ -196,3 +196,45 @@ def test_analytics_scoring_respects_cost_cap():
     with pytest.raises(CostRefused):
         use.execute_analytics(rows, "a" * 32, "b" * 32)
     assert text.calls == 0 and usage.entries == []
+
+
+def test_analytics_scores_full_valid_video_topic_and_records_video_usage():
+    topic = "x" * 300
+    video_id = "a" * 32
+    use, text, usage = make({"ideas": [item(topic, 4, 4, 4, 4)]})
+    rows = [{"video_id": video_id, "views_complete": True, "sample_small": False,
+             "suggestion": {"topic": topic, "note": "Explorar", "evidence": []}}]
+    assert use.execute_analytics(rows, video_id, "b" * 32)[0].idea.topic == topic
+    assert text.calls == 1 and usage.entries[0][0] == video_id
+
+
+def test_analytics_cost_guard_accounts_for_prior_video_spend():
+    video_id = "a" * 32
+    use, text, usage = make({"ideas": [item("Tema", 4, 4, 4, 4)]}, cost=0.5, cap_video=1.0)
+    usage.spent_video = lambda value: 0.6 if value == video_id else 0.0
+    rows = [{"video_id": video_id, "views_complete": True, "sample_small": False,
+             "suggestion": {"topic": "Tema", "note": "Explorar", "evidence": []}}]
+    with pytest.raises(CostRefused):
+        use.execute_analytics(rows, video_id, "b" * 32)
+    assert text.calls == 0 and usage.entries == []
+
+
+def test_repeated_analytics_calls_accumulate_the_video_budget():
+    class PaidText(Text):
+        def complete(self, prompt, *, json_schema=None):
+            result = super().complete(prompt, json_schema=json_schema)
+            return TextResult(result.text, result.usage.model_copy(update={"cost_usd": 0.4}))
+
+    video_id = "a" * 32
+    usage = Usage()
+    usage.spent_video = lambda vid: sum(entry.cost_usd for key, entry in usage.entries if key == vid)
+    usage.spent_month = lambda: sum(entry.cost_usd for _, entry in usage.entries)
+    text = PaidText({"ideas": [item("Tema", 4, 4, 4, 4)]}, cost=0.4)
+    use = ScoreIdeas(text, CostGuard(usage, 0.9, 15), usage)
+    rows = [{"video_id": video_id, "views_complete": True, "sample_small": False,
+             "suggestion": {"topic": "Tema", "note": "Explorar", "evidence": []}}]
+    use.execute_analytics(rows, video_id, "b" * 32)
+    use.execute_analytics(rows, video_id, "b" * 32)
+    with pytest.raises(CostRefused):
+        use.execute_analytics(rows, video_id, "b" * 32)
+    assert text.calls == 2 and usage.spent_video(video_id) == pytest.approx(0.8)
