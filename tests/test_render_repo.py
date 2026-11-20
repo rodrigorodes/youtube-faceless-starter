@@ -102,3 +102,47 @@ def test_complete_refuses_when_state_or_job_changed(env):
 
 def test_video_kind_is_accepted_by_the_database(env):
     assert env["assets"].add(video_asset()).kind == AssetKind.video
+
+
+def test_alive_requires_running_job_and_a_renderable_video(env):
+    v = env["video"].id
+    job, _ = env["jobs"].enqueue(v, "h" * 64)
+    assert env["jobs"].alive(job.id) is False  # QUEUED ainda não é dono de nada
+    env["jobs"].start(job.id)
+    assert env["jobs"].alive(job.id) is True
+    env["conn"].execute("UPDATE studio.videos SET status='APPROVED' WHERE id=%s", (v,))
+    env["conn"].commit()
+    assert env["jobs"].alive(job.id) is False
+    env["conn"].execute("UPDATE studio.videos SET status='ASSETS_READY' WHERE id=%s", (v,))
+    env["jobs"].fail(job.id, "x")
+    env["conn"].commit()
+    assert env["jobs"].alive(job.id) is False
+
+
+def test_latest_output_is_the_asset_of_the_newest_succeeded_job(env):
+    v = env["video"].id
+    assert env["jobs"].latest_output(v) is None
+    job, _ = env["jobs"].enqueue(v, "h" * 64)
+    env["jobs"].start(job.id)
+    first = env["assets"].add(video_asset("1" * 64))
+    env["jobs"].complete(job.id, first, QaReport(passed=False, failures=["x"]))
+    assert env["jobs"].latest_output(v).id == first.id
+    job2, _ = env["jobs"].enqueue(v, "i" * 64)
+    env["jobs"].start(job2.id)
+    assert env["jobs"].latest_output(v).id == first.id  # render em andamento não troca o arquivo servido
+    second = env["assets"].add(video_asset("2" * 64).model_copy(update={"id": "8" * 32}))
+    env["jobs"].complete(job2.id, second, QaReport(passed=True))
+    assert env["jobs"].latest_output(v).id == second.id
+
+
+def test_enqueue_reaps_a_stale_active_job_but_not_a_fresh_one(env):
+    v = env["video"].id
+    job, _ = env["jobs"].enqueue(v, "h" * 64)
+    env["jobs"].start(job.id)
+    assert env["jobs"].enqueue(v, "h" * 64) == (env["jobs"].get(job.id), False)  # recente: continua ativo
+    env["conn"].execute("UPDATE studio.render_jobs SET started_at = now() - interval '3 hours' WHERE id=%s", (job.id,))
+    env["conn"].commit()
+    again, created = env["jobs"].enqueue(v, "h" * 64)
+    assert created and again.id != job.id
+    old = env["jobs"].get(job.id)
+    assert old.status == JobStatus.FAILED and "stale" in old.error

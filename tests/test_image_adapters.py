@@ -316,3 +316,30 @@ def test_piper_voice_refuses_silent_output(tmp_path, monkeypatch):
     monkeypatch.setattr(rich, "synthesize_speech", silent)
     with pytest.raises(RuntimeError, match="silence"):
         PiperVoice("x").speak("Olá, mundo.", tmp_path / "a.wav")
+
+
+def test_piper_voice_serializes_synthesis_across_threads(tmp_path, monkeypatch):
+    import math
+    import struct
+    import threading
+    import time
+    import wave
+
+    from app import rich
+
+    active, peak = [0], [0]
+
+    def slow(text, path):
+        active[0] += 1
+        peak[0] = max(peak[0], active[0])
+        time.sleep(0.05)
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(22050)
+            w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i / 5))) for i in range(2205)))
+        active[0] -= 1
+
+    monkeypatch.setattr(rich, "synthesize_speech", slow)
+    threads = [threading.Thread(target=PiperVoice("x").speak, args=("Olá, mundo.", tmp_path / f"{i}.wav")) for i in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert peak[0] == 1  # o modelo do Piper é global e não é seguro em paralelo

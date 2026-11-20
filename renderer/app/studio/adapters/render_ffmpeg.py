@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ... import rich
 from ..application.ports import RenderSpec
 from ..domain.contracts import VideoFormat
-from ..domain.render import FADE_S, FPS, SIZE, Cue
+from ..domain.render import FADE_S, FPS, NARRATION_FILE, SIZE, Cue
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 _LAYOUT = {  # margens que respeitam a interface dos Shorts (vertical) e a área segura do vídeo horizontal
@@ -66,6 +66,11 @@ def _run(cmd: list[str], timeout: int = 600) -> None:
         raise RuntimeError("ffmpeg timed out") from None
 
 
+def _scene_enable(start: float, end: float) -> str:
+    """Intervalo semiaberto [a, b): dois trechos contíguos nunca aparecem juntos no mesmo quadro."""
+    return f"gte(t,{start:.3f})*lt(t,{end:.3f})"
+
+
 def _scene(fmt: VideoFormat, image: Path, static: Path, cues: list[tuple[Cue, Path]], seconds: float, index: int, out: Path) -> None:
     """Ken Burns + selo + legendas com `enable` por trecho + fades; os tempos das legendas são relativos à cena."""
     w, h = SIZE[fmt]
@@ -83,7 +88,7 @@ def _scene(fmt: VideoFormat, image: Path, static: Path, cues: list[tuple[Cue, Pa
              "[b0][1:v]overlay=0:0:format=auto[o1]"]
     last = "o1"
     for n, (cue, _) in enumerate(cues, start=2):
-        parts.append(f"[{last}][{n}:v]overlay=0:0:format=auto:enable='between(t,{cue.start:.3f},{cue.end:.3f})'[o{n}]")
+        parts.append(f"[{last}][{n}:v]overlay=0:0:format=auto:enable='{_scene_enable(cue.start, cue.end)}'[o{n}]")
         last = f"o{n}"
     parts.append(f"[{last}]fade=t=in:st=0:d={FADE_S},fade=t=out:st={max(0.0, seconds - FADE_S):.3f}:d={FADE_S}[v]")
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(image), "-i", str(static)]
@@ -104,7 +109,7 @@ class FfmpegRenderer:
         work = Path(spec.work_dir or Path(out_path).parent)
         work.mkdir(parents=True, exist_ok=True)
         fmt = spec.format
-        narration = work / "narration.wav"
+        narration = work / NARRATION_FILE
         lengths = rich.build_narration_track(spec.speech_wavs, narration)
         if any(abs(a - b) > 0.05 for a, b in zip(lengths, spec.scene_seconds)):
             raise RuntimeError("narration track does not match the planned scene lengths")
@@ -128,11 +133,20 @@ class FfmpegRenderer:
             _scene(fmt, image, static, pngs, seconds, i, mp4)
             mp4s.append(mp4)
             offset += seconds
-        _run_assemble = rich.assemble
-        try:
-            _run_assemble(mp4s, narration, music, work / "concat.txt", out_path)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError("ffmpeg failed: " + (exc.stderr or b"").decode("utf-8", "replace").strip()[-300:]) from None
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("ffmpeg timed out") from None
+        self._assemble(mp4s, narration, music, work, out_path, total)
         return Path(out_path)
+
+    @staticmethod
+    def _assemble(mp4s, narration: Path, music: Path, work: Path, out_path: Path, total: float) -> None:
+        """Mesma mixagem do modo rich (ducking + loudnorm), com timeout proporcional à duração do vídeo."""
+        timeout = int(300 + 3 * total)
+        concat, silent = work / "concat.txt", work / "video_only.mp4"
+        concat.write_text("".join(f"file '{Path(p).as_posix()}'\n" for p in mp4s), encoding="utf-8")
+        _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(silent)], timeout)
+        mix = ("[1:a]aresample=44100,pan=stereo|c0=c0|c1=c0,asplit=2[nar][nsc];"
+               "[2:a]volume=0.40,pan=stereo|c0=c0|c1=c0[mus];"
+               "[mus][nsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
+               "[duck][nar]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
+        _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(silent), "-i", str(narration), "-i", str(music),
+              "-filter_complex", mix, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+              "-shortest", "-movflags", "+faststart", str(out_path)], timeout)

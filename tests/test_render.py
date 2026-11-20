@@ -6,7 +6,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.application.editorial import StateConflict, VideoNotFound  # noqa: E402
-from app.studio.application.render import GetRender, RenderRefused, RunRender, StartRender  # noqa: E402
+from app.studio.application.render import GetRender, GetRenderFile, RenderRefused, RunRender, StartRender  # noqa: E402
+from app.studio.application.use_cases import ServiceUnavailable  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
     Asset, AssetKind, JobStatus, QaReport, RenderJob, Scene, Video, VideoFormat, VideoStatus,
 )
@@ -52,6 +53,9 @@ class Jobs:
         self.videos, self.jobs, self.calls = videos, {}, []
         self.fail_complete = False
         self.qa = None
+        self.output = None
+        self.alive_flag = True
+        self.fail_raises = False
 
     def enqueue(self, video_id, input_hash):
         for job in self.jobs.values():
@@ -74,13 +78,23 @@ class Jobs:
         self.jobs[job_id] = job.model_copy(update={"status": JobStatus.RUNNING})
         return True
 
+    def alive(self, job_id):
+        return self.alive_flag
+
+    def latest_output(self, video_id):
+        return self.output
+
     def fail(self, job_id, error):
+        if self.fail_raises:
+            raise ConnectionError("banco caiu")
+        self.last_error = error
         self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.FAILED, "error": error})
 
     def complete(self, job_id, asset, qa):
         if self.fail_complete:
             return False
         self.qa = qa
+        self.output = asset
         self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.SUCCEEDED, "output_asset_id": asset.id})
         self.videos.status = S.AWAITING_APPROVAL if qa.passed else S.RENDERED
         return True
@@ -98,9 +112,16 @@ class Files:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    def publish(self, project_id, video_id, mp4, srt):
+    def publish(self, project_id, video_id, job_id, mp4, srt):
         self.published.append((mp4.read_bytes(), srt))
-        return f"projects/{project_id}/videos/{video_id}/final.mp4"
+        self.job_ids = getattr(self, "job_ids", []) + [job_id]
+        return f"projects/{project_id}/videos/{video_id}/final-{job_id}.mp4"
+
+    def resolve(self, relative, kind):
+        return self.tmp / relative if kind == "mp4" else self.tmp / relative.replace(".mp4", ".srt")
+
+    def prune(self, project_id, video_id, keep):
+        self.pruned = getattr(self, "pruned", []) + [keep]
 
     def cleanup(self, work_dir):
         self.cleaned.append(work_dir)
@@ -138,8 +159,10 @@ class Analyzer:
     def __init__(self, **over):
         self.over = over
 
-    def analyze(self, path):
-        base = dict(duration_s=None, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.2, black_ratio=0.0)
+    def analyze(self, path, narration=None):
+        self.narration_seen = narration
+        base = dict(duration_s=None, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.2, black_ratio=0.0,
+                    narration_lufs=-18.0, narration_silence_ratio=0.1)
         return {**base, **self.over}
 
 
@@ -220,7 +243,8 @@ def test_run_success_passes_everything_to_renderer_and_advances(tmp_path):
     assert spec.disclosure == "Ilustração gerada por IA"
     assert w["jobs"].jobs[job.id].status == JobStatus.SUCCEEDED and w["videos"].status == S.AWAITING_APPROVAL and w["jobs"].qa.passed
     assert w["files"].published[0][0] == b"mp4" and "-->" in w["files"].published[0][1] and w["files"].cleaned
-    assert w["assets"].added[0].kind == AssetKind.video and w["assets"].added[0].path.endswith("final.mp4")
+    assert w["assets"].added[0].kind == AssetKind.video and w["assets"].added[0].path.endswith(f"final-{job.id}.mp4")
+    assert w["files"].pruned and w["files"].pruned[-1] == w["assets"].added[0].path  # só o arquivo atual sobrevive
 
 
 def test_qa_failure_keeps_video_rendered_with_the_report(tmp_path):
@@ -289,3 +313,74 @@ def test_get_render_returns_latest_job_and_qa(tmp_path):
     w["videos"].exists = False
     with pytest.raises(VideoNotFound):
         GetRender(w["videos"], w["jobs"]).execute(V)
+
+
+# ---------- achados da revisão ----------
+def test_silent_narration_fails_qa_even_if_the_mix_has_music(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    analyzer = Analyzer(duration_s=expected(2.0, 3), narration_lufs=None)
+    run, *_ = runner(w, analyzer=analyzer)
+    run.execute(job.id)
+    assert not w["jobs"].qa.passed and any("narration" in f for f in w["jobs"].qa.failures) and w["videos"].status == S.RENDERED
+    assert analyzer.narration_seen is not None and analyzer.narration_seen.name == "narration.wav"
+
+
+def test_run_never_raises_even_when_recording_the_failure_fails(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    w["jobs"].fail_raises = True
+    run, *_ = runner(w, renderer=Renderer(fail=True))
+    run.execute(job.id)  # não pode levantar (a exceção iria para um Future que ninguém lê)
+    assert w["files"].cleaned
+
+
+def test_run_does_not_raise_when_the_repository_is_down_at_the_start(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    w["jobs"].get = lambda job_id: (_ for _ in ()).throw(ConnectionError("banco caiu"))
+    run, *_ = runner(w)
+    run.execute(job.id)
+
+
+def test_enqueue_failure_marks_the_job_failed_and_reports_unavailable(tmp_path):
+    w = world(tmp_path)
+    def boom(job_id):
+        raise RuntimeError("executor encerrado")
+    starter_ = StartRender(w["videos"], w["scripts"], w["assets"], w["jobs"], enqueue=boom)
+    with pytest.raises(ServiceUnavailable):
+        starter_.execute(V)
+    assert list(w["jobs"].jobs.values())[0].status == JobStatus.FAILED
+    assert starter(w).execute(V).status == JobStatus.QUEUED  # o vídeo não ficou travado
+
+
+def test_nothing_is_published_when_the_job_lost_ownership(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    w["jobs"].alive_flag = False
+    run, *_ = runner(w)
+    run.execute(job.id)
+    assert w["files"].published == [] and w["jobs"].jobs[job.id].status == JobStatus.FAILED
+
+
+def test_error_text_does_not_leak_the_work_directory(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    class Leaky(Renderer):
+        def render(self, spec, out_path):
+            raise RuntimeError(f"ffmpeg failed: cannot open {spec.work_dir}/scene_000.mp4")
+    run, *_ = runner(w, renderer=Leaky())
+    run.execute(job.id)
+    error = w["jobs"].jobs[job.id].error
+    assert str(tmp_path) not in error and "<work>" in error
+
+
+def test_file_is_resolved_from_the_latest_output_asset_not_from_a_fixed_name(tmp_path):
+    w = world(tmp_path, S.AWAITING_APPROVAL)
+    reader = GetRenderFile(w["videos"], w["jobs"], w["files"])
+    assert reader.execute(V, "mp4") is None  # ainda sem asset de saída
+    w["jobs"].output = Asset(id="9" * 32, kind=AssetKind.video, cache_key="d" * 64, path="projects/p/videos/v/final-abc.mp4", provider="ffmpeg", model="ffmpeg", license="g")
+    assert reader.execute(V, "mp4") == tmp_path / "projects/p/videos/v/final-abc.mp4" and reader.execute(V, "srt").name == "final-abc.srt"
+    for status in (S.ASSETS_READY, S.FAILED, S.IDEA):
+        w["videos"].status = status
+        assert reader.execute(V, "mp4") is None

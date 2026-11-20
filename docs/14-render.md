@@ -21,12 +21,12 @@ Erros: `404` vídeo inexistente · `409` estado errado (precisa `ASSETS_READY`, 
 - **Legenda**: a **narração** dividida em trechos (até 42 caracteres, quebrando em frase, vírgula e palavra), com o tempo de cada trecho
   proporcional ao seu tamanho dentro da duração da fala (sem alinhamento forçado por modelo). Queimada no vídeo e exportada em `.srt`.
   O campo `caption` do roteiro não é mais desenhado: a legenda é o que foi narrado e checado pelo gate factual.
-- Arquivos em `storage/projects/<projeto>/videos/<vídeo>/final.mp4|final.srt` (escrita atômica; intermediários em `work/` são apagados).
+- Arquivos em `storage/projects/<projeto>/videos/<vídeo>/final-<job>.mp4|.srt` (escrita atômica; intermediários em `work/` são apagados).
   O MP4 é registrado como `Asset(kind=video)`.
 
 ## QA (`qa_report`)
 Medido com `ffprobe`, `ebur128`, `silencedetect` e `blackdetect`; a decisão é do domínio (`domain/render.py`). **Reprova** quando:
-sem faixa de áudio · áudio mudo (< −45 LUFS) ou estourado (> −9 LUFS) · mais de 60% em silêncio · mais de 30% preto ·
+sem faixa de áudio · áudio mudo (< −45 LUFS) ou estourado (> −9 LUFS) · narração isolada muda ou quase toda em silêncio · mais de 60% em silêncio · mais de 30% preto ·
 duração fora do limite (**short 175 s**, **long 1200 s**) ou menor que 2 s · duração diferente da planejada (> 1 s) · resolução errada ·
 métrica ausente (falha fechada). Um vídeo que passaria do limite de duração **nem é renderizado**: o job falha com a causa.
 
@@ -42,6 +42,18 @@ A P05 (aprovação) decide o que fazer com um vídeo `RENDERED` que reprovou no 
 `RENDER_CONCURRENCY` (padrão 1, máximo 4) limita os renders simultâneos; o resto espera na fila. Só existe **um job ativo por vídeo** (índice único
 parcial no banco). Se o renderer reiniciar com jobs `QUEUED`/`RUNNING`, eles viram `FAILED` ("interrupted by a restart") na subida e o `POST /render` tenta de novo.
 O `/transition` genérico recusa `RENDERED` e `AWAITING_APPROVAL` (403): só o render chega lá.
+
+## Robustez (revisão)
+- **A narração é medida isolada.** A trilha musical enche a mistura final, então LUFS e silêncio do vídeo não provam que há fala. O QA mede
+  `narration.wav` (`narration_lufs`, `narration_silence_ratio`); métrica ausente reprova.
+- **Um arquivo por job**: `final-<job>.mp4/.srt`. Render novo nunca sobrescreve o que está sendo servido; `GET /file` e `/subtitles` servem o asset do
+  render bem-sucedido mais recente e só então os de render anteriores são apagados. Antes de publicar, confere-se que o job ainda está `RUNNING` e o vídeo ainda aceita render.
+- **`RunRender.execute` nunca levanta.** Falha de voz, ffmpeg, disco ou banco vira job `FAILED` (o texto do erro troca o caminho do `work` por `<work>`).
+  Falha ao enfileirar marca o job como `FAILED` e responde `503`. Job ativo há mais de 3 h sem terminar é encerrado como `stale` no próximo `POST /render`.
+- **Restrição de um processo só:** a subida marca como `FAILED` todo job `QUEUED/RUNNING` e apaga `work/*`. Com várias réplicas ou `--workers N`
+  isso derrubaria jobs vivos de outro processo (precisaria de dono/heartbeat; fica para a P06). No desligamento o executor não espera (`cancel_futures`).
+- A síntese do Piper é serializada por lock (o modelo é global); mesmo com `RENDER_CONCURRENCY` > 1 só uma voz sintetiza por vez.
+- Timeout da montagem final proporcional à duração (300 s + 3 s por segundo de vídeo).
 
 ## Limites conhecidos
 - O hash da entrada do job considera formato, narração, selo e assets (não a voz nem o renderer); não há reaproveitamento de vídeo já pronto.

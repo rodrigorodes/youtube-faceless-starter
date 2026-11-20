@@ -10,6 +10,7 @@ FADE_S = 0.25
 LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
 MAX_SECONDS = {VideoFormat.short: 175, VideoFormat.long: 1200}  # Shorts permitem até 180 s; folga de 5 s
 SIZE = {VideoFormat.short: (1080, 1920), VideoFormat.long: (1920, 1080)}
+NARRATION_FILE = "narration.wav"  # trilha de voz que o renderer deixa em work_dir; o QA mede só ela
 MIN_SECONDS = 2.0
 EXPECTED_TOLERANCE_S = 1.0
 MIN_LUFS, MAX_LUFS = -45.0, -9.0  # abaixo: mudo; acima: estourado (o loudnorm mira -16)
@@ -108,7 +109,8 @@ def to_srt(cues: list[Cue]) -> str:
     return "\n".join(f"{i}\n{to_srt_time(c.start)} --> {to_srt_time(c.end)}\n{c.text}\n" for i, c in enumerate(cues, 1))
 
 
-_REQUIRED = ("duration_s", "expected_s", "width", "height", "has_audio", "integrated_lufs", "silence_ratio", "black_ratio")
+_REQUIRED = ("duration_s", "expected_s", "width", "height", "has_audio", "integrated_lufs", "silence_ratio", "black_ratio",
+             "narration_lufs", "narration_silence_ratio")
 
 
 def evaluate_qa(metrics: dict, fmt: VideoFormat) -> QaReport:
@@ -124,6 +126,11 @@ def evaluate_qa(metrics: dict, fmt: VideoFormat) -> QaReport:
             failures.append(f"audio is silent (integrated loudness {lufs} LUFS)")
         elif lufs > MAX_LUFS:
             failures.append(f"audio too loud (integrated loudness {lufs} LUFS)")
+        n_lufs = metrics["narration_lufs"]
+        if n_lufs is None or n_lufs < MIN_LUFS:  # a trilha musical enche a mistura final: só a voz isolada prova que há fala
+            failures.append(f"narration is silent (loudness {n_lufs} LUFS)")
+        elif metrics["narration_silence_ratio"] > MAX_SILENCE_RATIO:
+            failures.append(f"narration has too much silence ({metrics['narration_silence_ratio']:.0%})")
         if metrics["has_audio"] and metrics["silence_ratio"] > MAX_SILENCE_RATIO:
             failures.append(f"too much silence ({metrics['silence_ratio']:.0%} of the video)")
         if metrics["black_ratio"] > MAX_BLACK_RATIO:

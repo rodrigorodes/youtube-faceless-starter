@@ -130,8 +130,16 @@ class Studio:
                 except (ServiceUnavailable, psycopg.Error):
                     self._retry_at = time.monotonic() + RETRY_SECONDS
                     return None
-                self._use_cases = self._wire()
+                try:
+                    self._use_cases = self._wire()
+                except (ServiceUnavailable, psycopg.Error):  # o banco caiu entre a migração e a limpeza de jobs: tenta de novo depois
+                    self._retry_at = time.monotonic() + RETRY_SECONDS
+                    return None
         return self._use_cases
+
+    def shutdown(self) -> None:
+        """Não espera render em andamento (o SIGTERM não pode travar por minutos); o job fica para o reaper/próxima subida."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _wire(self) -> UseCases:
         s, connect = self.settings, self._connect
@@ -164,12 +172,18 @@ class Studio:
                                   lock=PostgresProductionLock(self._connect_autocommit)),
             list_assets=ListAssets(repo, scripts, assets))
         jobs = PostgresRenderJobRepository(connect)
-        jobs.fail_interrupted()  # job que ficou QUEUED/RUNNING num processo anterior não vai terminar: vira FAILED (retomada fina: P06)
         files = FileRenderStorage(s.storage_root)
+        # Restrição: um processo só. Job QUEUED/RUNNING de um processo anterior não vai terminar: vira FAILED e `work/` é limpo
+        # (retomada fina: P06). Com várias réplicas isto derrubaria jobs vivos de outro processo.
+        jobs.fail_interrupted()
+        try:
+            files.sweep_work()
+        except OSError:
+            pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
                         renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer)
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
-                              get=GetRender(repo, jobs), file=GetRenderFile(repo, files))
+                              get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         return UseCases.from_repo(repo, editorial, media, rendering)
 
     def ping(self) -> bool:

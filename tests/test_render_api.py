@@ -63,6 +63,8 @@ class NoSound:
     def render(self, spec, out_path):
         import subprocess
         from app.studio.domain.render import SIZE
+        import shutil as _sh
+        _sh.copyfile(spec.speech_wavs[0], spec.work_dir / "narration.wav")  # a voz existe; só o vídeo final sai sem faixa de áudio
         w, h = SIZE[spec.format]
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size={w}x{h}:rate=25", "-t", f"{sum(spec.scene_seconds):.2f}",
                         "-pix_fmt", "yuv420p", str(out_path)], check=True)
@@ -223,3 +225,24 @@ def test_generic_transition_cannot_fake_a_render(migrated, dsn, tmp_path):
     for new in ("RENDERED", "AWAITING_APPROVAL"):
         assert client.post(f"/studio/videos/{vid}/transition", json={"expected": "ASSETS_READY", "new": new}).status_code == 403
     assert status(client, vid) == "ASSETS_READY"
+
+
+def test_shutdown_does_not_wait_and_startup_sweeps_leftover_work_dirs(migrated, dsn, tmp_path):
+    leftover = tmp_path / "projects" / ("1" * 32) / "videos" / ("2" * 32) / "work" / ("a" * 32)
+    leftover.mkdir(parents=True)
+    (leftover / "x.wav").write_bytes(b"x")
+    client, studio = make_client(dsn, tmp_path)
+    assert studio.use_cases() is not None and not leftover.exists() and (tmp_path / "projects" / ("1" * 32)).exists()
+    studio.shutdown()  # não levanta nem espera
+
+
+def test_startup_cleanup_failing_does_not_break_the_app_and_retries_later(migrated, dsn, tmp_path, monkeypatch):
+    import psycopg
+
+    from app.studio.adapters.postgres.render_repo import PostgresRenderJobRepository
+    monkeypatch.setattr(PostgresRenderJobRepository, "fail_interrupted", lambda self: (_ for _ in ()).throw(psycopg.OperationalError("caiu")))
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path), environ={"STUDIO_TEXT": "demo:x"}, executor=SyncExecutor())
+    assert studio.use_cases() is None  # degradado, sem exceção
+    monkeypatch.undo()
+    studio._retry_at = 0.0
+    assert studio.use_cases() is not None

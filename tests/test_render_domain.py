@@ -59,7 +59,8 @@ def test_limits_by_format():
     assert MAX_SECONDS[VideoFormat.short] == 175 and MAX_SECONDS[VideoFormat.long] > 175
 
 
-GOOD = dict(duration_s=30.0, expected_s=30.0, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.2, black_ratio=0.0)
+GOOD = dict(duration_s=30.0, expected_s=30.0, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.2, black_ratio=0.0,
+            narration_lufs=-18.0, narration_silence_ratio=0.15)
 
 
 def qa(fmt=VideoFormat.short, **kw):
@@ -76,6 +77,9 @@ def test_good_video_passes_and_keeps_metrics():
     ({"integrated_lufs": None}, "silent"),
     ({"integrated_lufs": -60.0}, "silent"),
     ({"silence_ratio": 0.9}, "silence"),
+    ({"narration_lufs": None}, "narration"),
+    ({"narration_lufs": -60.0}, "narration"),
+    ({"narration_silence_ratio": 0.95}, "narration"),
     ({"black_ratio": 0.5}, "black"),
     ({"duration_s": 200.0, "expected_s": 200.0}, "duration"),
     ({"duration_s": 1.0, "expected_s": 1.0}, "duration"),

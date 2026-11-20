@@ -116,41 +116,80 @@ def test_qa_rejects_unreadable_files(tmp_path):
         FfmpegQa().analyze(bad)
 
 
-def test_end_to_end_rendered_video_passes_qa_and_a_mute_one_fails(tmp_path):
-    fmt = VideoFormat.short
-    good = tmp_path / "good"
-    good.mkdir()
-    spec = spec_for(good)
-    out = FfmpegRenderer("rich").render(spec, good / "work" / "final.mp4")
-    total = sum(spec.scene_seconds)
-    qa = evaluate_qa({**FfmpegQa().analyze(out), "expected_s": total}, fmt)
+def analyze_job(out, spec):
+    metrics = FfmpegQa().analyze(out, narration=spec.work_dir / "narration.wav")
+    return evaluate_qa({**metrics, "expected_s": sum(spec.scene_seconds)}, spec.format)
+
+
+def test_end_to_end_rendered_video_passes_qa(tmp_path):
+    spec = spec_for(tmp_path)
+    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    qa = analyze_job(out, spec)
     assert qa.passed, qa.failures
-    mute = tmp_path / "mute"
-    mute.mkdir()
-    spec2 = spec_for(mute, amplitude=0.0, music=False)
-    out2 = FfmpegRenderer("rich").render(spec2, mute / "work" / "final.mp4")
-    qa2 = evaluate_qa({**FfmpegQa().analyze(out2), "expected_s": sum(spec2.scene_seconds)}, fmt)
-    assert not qa2.passed and any("silent" in f for f in qa2.failures)
+    assert qa.metrics["narration_lufs"] is not None and qa.metrics["narration_lufs"] > -45
+
+
+@pytest.mark.parametrize("music", [True, False])
+def test_muted_narration_fails_qa_with_or_without_the_music_track(tmp_path, music):
+    spec = spec_for(tmp_path, amplitude=0.0, music=music)
+    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    qa = analyze_job(out, spec)
+    assert not qa.passed and any("narration" in f for f in qa.failures), qa
+    if music:
+        assert qa.metrics["integrated_lufs"] > -45  # a mistura final tem trilha: só a medição da narração pega o defeito
+
+
+def test_qa_without_a_narration_file_reports_no_narration_metrics(tmp_path):
+    metrics = FfmpegQa().analyze(lavfi(tmp_path, "ok.mp4", "testsrc=size=1080x1920:rate=25", "sine=frequency=440:sample_rate=44100"))
+    assert "narration_lufs" not in metrics  # e o domínio reprova (métrica ausente)
+    assert not evaluate_qa({**metrics, "expected_s": metrics["duration_s"]}, VideoFormat.short).passed
+
+
+def test_adjacent_cues_never_share_a_frame(tmp_path):
+    from app.studio.adapters.render_ffmpeg import _scene_enable
+    assert _scene_enable(1.0, 2.0) == "gte(t,1.000)*lt(t,2.000)"
 
 
 # ---------- storage ----------
-PID, VID = "1" * 32, "2" * 32
+PID, VID, JOB, JOB2 = "1" * 32, "2" * 32, "a" * 32, "b" * 32
 
 
-def test_storage_publish_is_atomic_relative_and_cleanup_removes_only_the_work_dir(tmp_path):
+def test_storage_publish_is_per_job_atomic_and_cleanup_removes_only_the_work_dir(tmp_path):
     storage = FileRenderStorage(tmp_path)
-    work = storage.work_dir(PID, VID, "a" * 32)
+    work = storage.work_dir(PID, VID, JOB)
     mp4 = work / "final.mp4"
     mp4.write_bytes(b"MP4")
-    rel = storage.publish(PID, VID, mp4, "1\n00:00:00,000 --> 00:00:01,000\nOlá\n")
-    assert rel == f"projects/{PID}/videos/{VID}/final.mp4" and (tmp_path / rel).read_bytes() == b"MP4"
-    assert (tmp_path / rel).with_suffix(".srt").read_text(encoding="utf-8").startswith("1\n")
+    rel = storage.publish(PID, VID, JOB, mp4, "1\n00:00:00,000 --> 00:00:01,000\nOlá\n")
+    assert rel == f"projects/{PID}/videos/{VID}/final-{JOB}.mp4" and (tmp_path / rel).read_bytes() == b"MP4"
+    assert storage.resolve(rel, "srt").read_text(encoding="utf-8").startswith("1\n") and storage.resolve(rel, "mp4") == tmp_path / rel
     storage.cleanup(work)
-    assert not work.exists() and (tmp_path / rel).exists()
-    mp4.parent.mkdir(parents=True, exist_ok=True)
-    mp4.write_bytes(b"NEW")
-    storage.publish(PID, VID, mp4, "x")
-    assert (tmp_path / rel).read_bytes() == b"NEW" and not [p for p in (tmp_path / rel).parent.iterdir() if p.suffix == ".tmp"]
+    assert not work.exists() and not work.parent.exists() and (tmp_path / rel).exists()
+    work2 = storage.work_dir(PID, VID, JOB2)
+    (work2 / "final.mp4").write_bytes(b"NEW")
+    rel2 = storage.publish(PID, VID, JOB2, work2 / "final.mp4", "x")
+    assert (tmp_path / rel).read_bytes() == b"MP4" and (tmp_path / rel2).read_bytes() == b"NEW"  # render novo não toca no anterior
+    assert not [p for p in (tmp_path / rel).parent.iterdir() if p.suffix == ".tmp"]
+    storage.prune(PID, VID, keep=rel2)
+    assert not (tmp_path / rel).exists() and storage.resolve(rel, "srt") is None and (tmp_path / rel2).exists()
+
+
+def test_storage_resolve_refuses_anything_outside_the_video_files(tmp_path):
+    storage = FileRenderStorage(tmp_path)
+    assert storage.resolve("../../etc/passwd", "mp4") is None and storage.resolve("/etc/passwd", "mp4") is None
+    assert storage.resolve("cache/ab/x.png", "mp4") is None  # só final-*.mp4 dentro de projects/
+    assert storage.resolve(f"projects/{PID}/videos/{VID}/final-{JOB}.mp4", "mp4") is None  # arquivo inexistente
+    assert storage.resolve(f"projects/{PID}/videos/{VID}/final-{JOB}.mp4", "exe") is None
+
+
+def test_cleanup_only_removes_work_job_directories_and_sweep_clears_leftovers(tmp_path):
+    storage = FileRenderStorage(tmp_path)
+    folder = tmp_path / "projects" / PID / "videos" / VID
+    folder.mkdir(parents=True)
+    (folder / "final-x.mp4").write_bytes(b"MP4")
+    storage.cleanup(folder)  # pasta do vídeo, não é work/<job>: não apaga
+    assert (folder / "final-x.mp4").exists()
+    storage.work_dir(PID, VID, JOB), storage.work_dir(PID, VID, JOB2)
+    assert storage.sweep_work() == 2 and not (folder / "work").exists() and (folder / "final-x.mp4").exists()
 
 
 def test_storage_refuses_traversal_and_foreign_cleanup(tmp_path):

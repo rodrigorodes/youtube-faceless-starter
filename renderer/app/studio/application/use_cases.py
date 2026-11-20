@@ -12,13 +12,11 @@ from .ports import VideoRepository
 class ProjectNotFound(LookupError):
     pass
 
+from .errors import ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
+
 
 class InvalidInput(ValueError):
     """Dado recusado pela persistência (ex.: byte NUL em texto)."""
-
-
-class ServiceUnavailable(RuntimeError):
-    """Persistência indisponível (traduzida pelos adaptadores; a API responde 503)."""
 
 
 class CreateProject:

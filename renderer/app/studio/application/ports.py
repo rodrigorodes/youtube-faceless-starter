@@ -137,17 +137,23 @@ class ProductionLock(Protocol):
 
 
 class QaAnalyzer(Protocol):
-    def analyze(self, path: Path) -> dict:
-        """Métricas do arquivo: duration_s, width, height, has_audio, integrated_lufs, silence_ratio, black_ratio."""
+    def analyze(self, path: Path, narration: Path | None = None) -> dict:
+        """Métricas do arquivo: duration_s, width, height, has_audio, integrated_lufs, silence_ratio, black_ratio e,
+        se `narration` (WAV só com a voz) for dado, narration_lufs e narration_silence_ratio."""
 
 
 class RenderJobRepository(Protocol):
     def enqueue(self, video_id: str, input_hash: str) -> tuple[RenderJob, bool]:
-        """Cria job QUEUED; se já existe um QUEUED/RUNNING para o vídeo, devolve esse (False)."""
+        """Cria job QUEUED; se já existe um QUEUED/RUNNING recente para o vídeo, devolve esse (False). Job ativo há
+        horas sem progresso é encerrado como FAILED (stale) antes."""
     def get(self, job_id: str) -> RenderJob | None: ...
     def latest(self, video_id: str) -> RenderJob | None: ...
+    def latest_output(self, video_id: str) -> Asset | None:
+        """Asset do vídeo final do job SUCCEEDED mais recente (é ele que a API serve)."""
     def start(self, job_id: str) -> bool:
         """QUEUED → RUNNING numa operação só; False se outro executor pegou."""
+    def alive(self, job_id: str) -> bool:
+        """O job ainda está RUNNING e o vídeo ainda pode receber render (conferir antes de publicar arquivos)."""
     def fail(self, job_id: str, error: str) -> None: ...
     def complete(self, job_id: str, asset: Asset, qa: QaReport) -> bool:
         """Numa transação: job SUCCEEDED, qa_report no vídeo e estado → RENDERED (→ AWAITING_APPROVAL se qa.passed).
@@ -157,8 +163,11 @@ class RenderJobRepository(Protocol):
 class RenderStorage(Protocol):
     def image_path(self, relative: str) -> Path: ...
     def work_dir(self, project_id: str, video_id: str, job_id: str) -> Path: ...
-    def publish(self, project_id: str, video_id: str, mp4: Path, srt: str) -> str:
-        """Move o MP4 e grava o .srt de forma atômica; devolve o caminho relativo do MP4."""
-    def final_path(self, project_id: str, video_id: str, kind: str) -> Path | None:
-        """Caminho do final.mp4 ou final.srt se o arquivo existir."""
+    def publish(self, project_id: str, video_id: str, job_id: str, mp4: Path, srt: str) -> str:
+        """Grava `final-<job>.mp4/.srt` (arquivo próprio do job: um render novo nunca sobrescreve o servido);
+        devolve o caminho relativo do MP4."""
+    def resolve(self, relative: str, kind: str) -> Path | None:
+        """Caminho do MP4 ou do .srt de um asset de vídeo, se existir e estiver dentro dos arquivos finais."""
+    def prune(self, project_id: str, video_id: str, keep: str) -> None:
+        """Apaga os finais de renders anteriores, mantendo só `keep`."""
     def cleanup(self, work_dir: Path) -> None: ...

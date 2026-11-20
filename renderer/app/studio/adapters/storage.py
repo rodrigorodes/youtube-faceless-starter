@@ -11,6 +11,11 @@ from ..application.media import AssetRefused
 from ..domain.ids import check_cache_key, check_id
 from ..domain.media import SIZE_FOR
 
+import re
+
+_FINAL = re.compile(r"final-[0-9a-f]{32}\.mp4")
+_FINAL_ANY = re.compile(r"final-[0-9a-f]{32}\.(mp4|srt)")
+
 MAX_INPUT_BYTES = 20 * 1024 * 1024
 MAX_PIXELS = 25_000_000  # ~0,5 GB de RAM ao decodificar; checagem explícita (não altera o limite global do PIL)
 
@@ -86,34 +91,70 @@ class FileRenderStorage:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def publish(self, project_id: str, video_id: str, mp4: Path, srt: str) -> str:
+    def publish(self, project_id: str, video_id: str, job_id: str, mp4: Path, srt: str) -> str:
+        """Arquivo próprio do job (`final-<job>.mp4/.srt`): render novo nunca sobrescreve o que está sendo servido.
+        O .srt vai primeiro; o .mp4 (que o asset aponta) só aparece quando o par está completo."""
         folder = video_dir(self.root, project_id, video_id)
         folder.mkdir(parents=True, exist_ok=True)
+        job = check_id(job_id)
         token = uuid.uuid4().hex
-        tmp_mp4, tmp_srt = folder / f"final.{token}.mp4.tmp", folder / f"final.{token}.srt.tmp"
+        tmp_mp4, tmp_srt = folder / f"{token}.mp4.tmp", folder / f"{token}.srt.tmp"
         try:
             shutil.copyfile(mp4, tmp_mp4)
             tmp_srt.write_text(srt, encoding="utf-8")
-            os.replace(tmp_srt, folder / "final.srt")
-            os.replace(tmp_mp4, folder / "final.mp4")
+            os.replace(tmp_srt, folder / f"final-{job}.srt")
+            os.replace(tmp_mp4, folder / f"final-{job}.mp4")
         finally:
             tmp_mp4.unlink(missing_ok=True)
             tmp_srt.unlink(missing_ok=True)
-        return (folder / "final.mp4").relative_to(self.root).as_posix()
+        return (folder / f"final-{job}.mp4").relative_to(self.root).as_posix()
 
-    def final_path(self, project_id: str, video_id: str, kind: str) -> Path | None:
-        name = {"mp4": "final.mp4", "srt": "final.srt"}.get(kind)
-        path = video_dir(self.root, project_id, video_id) / name if name else None
-        return path if path is not None and path.is_file() else None
+    def resolve(self, relative: str, kind: str) -> Path | None:
+        if kind not in ("mp4", "srt") or Path(relative).is_absolute() or ".." in Path(relative).parts:
+            return None
+        mp4 = self.root / relative
+        try:
+            inside = (self.root / "projects").resolve() in mp4.resolve().parents
+        except OSError:
+            return None
+        if not inside or not _FINAL.fullmatch(mp4.name) or mp4.parent.parent.name != "videos":
+            return None
+        path = mp4 if kind == "mp4" else mp4.with_suffix(".srt")
+        return path if path.is_file() else None
+
+    def prune(self, project_id: str, video_id: str, keep: str) -> None:
+        folder = video_dir(self.root, project_id, video_id)
+        keep_name = Path(keep).name
+        if not folder.is_dir():
+            return
+        for f in folder.iterdir():
+            if _FINAL_ANY.fullmatch(f.name) and f.stem != Path(keep_name).stem:
+                f.unlink(missing_ok=True)
+
+    def sweep_work(self) -> int:
+        """Na subida: apaga `work/<job>` que um processo anterior deixou (render interrompido). Devolve quantos."""
+        removed = 0
+        for work in (self.root / "projects").glob("*/videos/*/work/*"):
+            if work.is_dir():
+                shutil.rmtree(work, ignore_errors=True)
+                removed += 1
+        for folder in (self.root / "projects").glob("*/videos/*/work"):
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+        return removed
 
     def cleanup(self, work_dir: Path) -> None:
+        """Só apaga `projects/<p>/videos/<v>/work/<job>`; qualquer outro caminho é ignorado."""
+        path = Path(work_dir)
         try:
-            inside = (self.root / "projects").resolve() in Path(work_dir).resolve().parents and Path(work_dir).name != "projects"
+            ok = path.parent.name == "work" and path.parent.parent.parent.name == "videos" and (self.root / "projects").resolve() in path.resolve().parents
         except OSError:
-            inside = False
-        if inside:  # nunca apaga fora da raiz de storage
-            shutil.rmtree(work_dir, ignore_errors=True)
+            ok = False
+        if ok:
+            shutil.rmtree(path, ignore_errors=True)
             try:
-                Path(work_dir).parent.rmdir() if Path(work_dir).parent.name == "work" else None  # só se ficou vazia
+                path.parent.rmdir()  # só se ficou vazia
             except OSError:
                 pass

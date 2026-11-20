@@ -25,6 +25,7 @@ studio = Studio(Settings.from_env())  # estado de domínio (Postgres); opcional:
 async def lifespan(_app):
     await asyncio.to_thread(studio.use_cases)  # migra o schema studio; falha não derruba o app
     yield
+    await asyncio.to_thread(studio.shutdown)
 
 
 app = FastAPI(title="Faceless Renderer MVP", version="0.3.0", lifespan=lifespan)
