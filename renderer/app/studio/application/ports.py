@@ -184,7 +184,7 @@ class ApprovalRepository(Protocol):
 
 class PublicationRepository(Protocol):
     def claim(self, lease_seconds: int, max_attempts: int) -> Publication | None:
-        """Reivindica atomicamente um vídeo APPROVED sem publicação, ou com lease vencido (UPLOADING/PENDING), e abre o lease."""
+        """Reivindica atomicamente um vídeo APPROVED sem publicação prévia; nunca retoma tentativa ambígua."""
     def get(self, video_id: str) -> Publication | None: ...
     def get_by_id(self, publication_id: str) -> Publication | None: ...
     def set_upload_uri(self, publication_id: str, attempt: int, uri: str, replace: bool) -> Publication | None:
@@ -196,7 +196,7 @@ class PublicationRepository(Protocol):
     def release(self, publication_id: str, attempt: int, error: str) -> bool:
         """Falha transitória: solta o lease para a próxima reivindicação repetir."""
     def fail(self, publication_id: str, attempt: int, error: str) -> bool:
-        """Falha definitiva (4xx): FAILED até `retry` manual."""
+        """Registra falha; não prova que não houve efeito externo."""
     def retry(self, video_id: str) -> Publication | None:
         """FAILED → PENDING, preservando sessão e número monotônico de tentativas."""
 

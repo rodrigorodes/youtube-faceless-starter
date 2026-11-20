@@ -91,6 +91,28 @@ def test_concurrent_approvals_decide_exactly_once(env):
 
 
 # ---------- fila ----------
+@pytest.mark.parametrize("state", ["expired", "released", "failed", "pending"])
+def test_started_publication_is_never_reclaimed_without_reconciliation(env, state):
+    vid = env["make"]("APPROVED")
+    pub = env["pubs"].claim(60, 5)
+    assert env["pubs"].set_upload_uri(pub.id, pub.attempt, URI, False)
+    if state == "expired":
+        env["conn"].execute("UPDATE studio.publications SET lease_until = now() - interval '1 second' WHERE id=%s", (pub.id,))
+        env["conn"].commit()
+    elif state == "released":
+        assert env["pubs"].release(pub.id, pub.attempt, "timeout")
+    elif state == "failed":
+        assert env["pubs"].fail(pub.id, pub.attempt, "failure")
+        assert env["pubs"].retry(vid) is None
+    else:
+        env["conn"].execute("UPDATE studio.publications SET status='PENDING', lease_until=NULL WHERE id=%s", (pub.id,))
+        env["conn"].commit()
+    assert env["pubs"].claim(60, 5) is None
+    current = env["pubs"].get_by_id(pub.id)
+    assert current.attempt == 1 and current.upload_uri == URI
+    assert current.status == (PublicationStatus.FAILED if state == "failed" else PublicationStatus.PENDING if state == "pending" else PublicationStatus.UPLOADING)
+
+
 def test_claim_only_takes_approved_videos_and_opens_a_lease(env):
     assert env["pubs"].claim(1800, 5) is None
     env["make"]("AWAITING_APPROVAL")
@@ -104,39 +126,14 @@ def test_claim_only_takes_approved_videos_and_opens_a_lease(env):
     assert env["pubs"].claim(1800, 5) is None  # lease vigente: ninguém mais pega
 
 
-def test_expired_lease_is_reclaimed_keeping_the_upload_session(env):
+def test_expired_lease_preserves_the_upload_session(env):
     vid = env["make"]("APPROVED")
     pub = env["pubs"].claim(1800, 5)
-    assert env["pubs"].set_upload_uri(pub.id, 1, URI, False).upload_uri == URI
+    assert env["pubs"].set_upload_uri(pub.id, 1, URI, False)
     env["conn"].execute("UPDATE studio.publications SET lease_until = now() - interval '1 minute' WHERE id=%s", (pub.id,))
     env["conn"].commit()
-    again = env["pubs"].claim(1800, 5)
-    assert again.id == pub.id and again.attempt == 2 and again.upload_uri == URI  # retoma a mesma publicação, com a sessão
-    assert env["conn"].execute("SELECT count(*) FROM studio.publications WHERE video_id=%s", (vid,)).fetchone()[0] == 1
-
-
-def test_retry_preserves_session_and_never_reuses_attempt_number(env):
-    vid = env["make"]("APPROVED")
-    pub = env["pubs"].claim(1800, 5)
-    env["pubs"].set_upload_uri(pub.id, pub.attempt, URI, False)
-    assert env["pubs"].fail(pub.id, pub.attempt, "temporary authorization issue")
-    retried = env["pubs"].retry(vid)
-    assert retried.upload_uri == URI
-    again = env["pubs"].claim(1800, 5)
-    assert again.attempt > pub.attempt
-    assert not env["pubs"].fail(pub.id, pub.attempt, "stale failure")
-
-
-def test_attempts_are_capped_and_the_publication_fails_for_good(env):
-    env["make"]("APPROVED")
-    for expected in (1, 2, 3):
-        pub = env["pubs"].claim(60, 3)
-        assert pub.attempt == expected
-        env["conn"].execute("UPDATE studio.publications SET lease_until = now() - interval '1 second'")
-        env["conn"].commit()
-    assert env["pubs"].claim(60, 3) is None
-    final = env["pubs"].get_by_id(pub.id)
-    assert final.status == PublicationStatus.FAILED and "too many" in final.error
+    assert env["pubs"].claim(1800, 5) is None
+    assert env["pubs"].get(vid).upload_uri == URI
 
 
 def test_two_workers_never_get_the_same_video(env):
@@ -148,7 +145,7 @@ def test_two_workers_never_get_the_same_video(env):
     assert len([g for g in got if g]) == 1
 
 
-def test_concurrent_reclaims_grant_only_one_new_attempt(env):
+def test_concurrent_reclaims_grant_no_new_attempt(env):
     env["make"]("APPROVED")
     first = env["pubs"].claim(1800, 5)
     env["conn"].execute("UPDATE studio.publications SET lease_until = now() - interval '1 second' WHERE id=%s", (first.id,))
@@ -170,7 +167,7 @@ def test_concurrent_reclaims_grant_only_one_new_attempt(env):
         thread.join(timeout=10)
     assert not errors and all(not thread.is_alive() for thread in threads)
     winners = [pub for pub in got if pub]
-    assert len(winners) == 1 and winners[0].attempt == 2
+    assert winners == []
 
 
 def test_upload_uri_only_for_the_current_attempt_and_never_replaced(env):
@@ -207,19 +204,17 @@ def test_same_youtube_id_cannot_belong_to_two_videos(env):
 def test_release_fail_retry_and_thumbnail(env):
     vid = env["make"]("APPROVED")
     pub = env["pubs"].claim(1800, 5)
-    assert env["pubs"].release(pub.id, 9, "x") is False and env["pubs"].release(pub.id, 1, "HTTP 503") is True
-    again = env["pubs"].claim(1800, 5)  # lease liberado: dá para repetir já
-    assert again.attempt == 2 and again.error is None
-    assert env["pubs"].mark_thumbnail(pub.id) is False  # ainda não enviado
-    assert env["pubs"].fail(pub.id, 2, "HTTP 403 quotaExceeded") is True and env["pubs"].fail(pub.id, 2, "de novo") is False
-    assert env["pubs"].claim(1800, 5) is None  # FAILED fica parado até o retry manual
-    retried = env["pubs"].retry(vid)
-    assert retried.status == PublicationStatus.PENDING and retried.attempt == 2 and retried.upload_uri is None and retried.error is None
+    assert env["pubs"].release(pub.id, 9, "x") is False
+    assert env["pubs"].release(pub.id, 1, "HTTP 503") is True
+    assert env["pubs"].claim(1800, 5) is None
+    assert env["pubs"].mark_thumbnail(pub.id) is False
+    assert env["pubs"].fail(pub.id, 1, "HTTP 403") is True
+    assert env["pubs"].fail(pub.id, 1, "again") is False
     assert env["pubs"].retry(vid) is None
-    again = env["pubs"].claim(1800, 5)
-    assert again.id == pub.id and again.attempt == 3
-    env["pubs"].mark_uploaded(again.id, "oNQ2KN37sfQ")
-    assert env["pubs"].mark_thumbnail(again.id) is True and env["pubs"].get(vid).thumbnail_set is True
+    assert env["pubs"].claim(1800, 5) is None
+    env["pubs"].mark_uploaded(pub.id, "oNQ2KN37sfQ")
+    assert env["pubs"].mark_thumbnail(pub.id) is True
+    assert env["pubs"].get(vid).thumbnail_set is True
 
 
 def test_bad_youtube_id_is_refused_by_the_database(env):

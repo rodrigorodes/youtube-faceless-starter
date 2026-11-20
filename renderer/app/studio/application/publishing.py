@@ -108,7 +108,7 @@ class ClaimPublication:
         output = self.jobs.latest_output(video.id)
         path = self.files.resolve(output.path, "mp4") if output else None
         if path is None:
-            self.pubs.fail(pub.id, pub.attempt, "the rendered file is missing")  # nada a enviar: retomar só com render novo + retry
+            self.pubs.fail(pub.id, pub.attempt, "the rendered file is missing")
             return None
         credits, sources = credits_and_sources(self.scripts, self.assets, self.snaps, video.id)
         description = build_description(video.description, credits, sources, synthetic=True)
@@ -176,7 +176,7 @@ class RetryPublication:
         _require_video(self.videos, video_id)
         pub = self.pubs.retry(video_id)
         if pub is None:
-            raise StateConflict("there is no FAILED publication to retry")
+            raise StateConflict("automatic retry disabled; human reconciliation required")
         return pub
 
 

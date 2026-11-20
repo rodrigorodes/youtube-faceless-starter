@@ -64,7 +64,7 @@ def test_full_flow_approve_twice_publishes_once_and_records_the_id(migrated, dsn
     assert YT in client.get(f"/studio/videos/{vid}/preview").text
 
 
-def test_killed_uploader_is_resumed_from_the_same_publication_and_session(migrated, dsn, tmp_path):
+def test_expired_uploader_is_not_resumed_and_session_is_preserved(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = rendered(client)
     client.post(f"/studio/videos/{vid}/approve")
@@ -72,8 +72,8 @@ def test_killed_uploader_is_resumed_from_the_same_publication_and_session(migrat
     client.post(f"/studio/publications/{pub['id']}/upload-uri", json={"attempt": 1, "upload_uri": URI})
     migrated.execute("UPDATE studio.publications SET lease_until = now() - interval '1 second'")  # o n8n "morreu": o lease vence
     migrated.commit()
-    again = client.post("/studio/publications/claim").json()["item"]["publication"]
-    assert again["id"] == pub["id"] and again["attempt"] == 2 and again["upload_uri"] == URI
+    assert client.post("/studio/publications/claim").json() == {"item": None}
+    assert migrated.execute("SELECT upload_uri FROM studio.publications WHERE id=%s", (pub["id"],)).fetchone()[0] == URI
     assert migrated.execute("SELECT count(*) FROM studio.publications").fetchone()[0] == 1
 
 
@@ -83,16 +83,13 @@ def test_failure_reports(migrated, dsn, tmp_path):
     client.post(f"/studio/videos/{vid}/approve")
     pid = client.post("/studio/publications/claim").json()["item"]["publication"]["id"]
     assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "HTTP 503", "retryable": True}).json()["status"] == "UPLOADING"
-    again = client.post("/studio/publications/claim").json()["item"]["publication"]
-    assert again["attempt"] == 2
-    assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "velha", "retryable": True}).status_code == 409  # tentativa antiga
-    assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "velha", "retryable": False}).status_code == 409
-    failed = client.post(f"/studio/publications/{pid}/failed", json={"attempt": 2, "error": "HTTP 403 quotaExceeded", "retryable": False})
+    assert client.post("/studio/publications/claim").json() == {"item": None}
+    assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 2, "error": "wrong attempt", "retryable": False}).status_code == 409
+    failed = client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "HTTP 403 quotaExceeded", "retryable": False})
     assert failed.json()["status"] == "FAILED" and failed.json()["error"] == "HTTP 403 quotaExceeded"
     assert client.post("/studio/publications/claim").json() == {"item": None}
-    assert client.post(f"/studio/videos/{vid}/publication/retry").json()["status"] == "PENDING"
     assert client.post(f"/studio/videos/{vid}/publication/retry").status_code == 409
-    assert client.post("/studio/publications/claim").json()["item"]["publication"]["attempt"] == 3
+    assert client.post("/studio/publications/claim").json() == {"item": None}
 
 
 def test_inputs_are_validated(migrated, dsn, tmp_path):
