@@ -198,6 +198,18 @@ class PostgresProductionRunRepository:
             row = _one(conn, f"SELECT {_RUN_COLS} FROM studio.production_runs WHERE run_id = %s", (run_id,))
             return _run(row) if row is not None else None
 
+    def list_stages(self, run_id: str) -> tuple[StageExecution, ...]:
+        """Etapas do run na ordem do DAG (a mesma de `create_run`); vazio se o run não existe.
+
+        Leitura pura: não abre transação de escrita nem trava linhas (a projeção de status é
+        somente-leitura). A ordem usa a posição topológica do DAG injetado.
+        """
+        run_id = check_id(run_id)
+        order = {stage: index for index, stage in enumerate(self._dag.topological_order())}
+        with _translated(), _production_errors(), self._connect() as conn:
+            rows = _all(conn, f"SELECT {_STAGE_COLS} FROM studio.stage_executions WHERE run_id = %s", (run_id,))
+        return tuple(sorted((_stage(row) for row in rows), key=lambda stage: order[stage.stage_id]))
+
     # -- etapas: claim, heartbeat, conclusão e falha -----------------------
 
     def claim_stage(self, run_id: str, stage_id: ProductionStage, owner: str,
