@@ -13,41 +13,51 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 
 ## O que a Tela Apresenta
 
-### 1. Resumo Operacional
-- **Em Produção:** Contagem de vídeos com jobs de renderização ou passos de IA em execução.
-- **Aguardando Aprovação:** Vídeos que já foram renderizados e estão prontos para inspeção humana.
-- **Concluídos:** Vídeos aprovados ou já publicados no YouTube no período.
-- **Custo no Mês vs Teto:** Soma dos custos conhecidos de IA no mês corrente em comparação ao teto do projeto (padrão US$ 15,00).
+### 1. Seletor Global de Canal/Projeto e Cadastro Rápido
+- **Seletor no Cabeçalho (Topbar):** Dropdown global com todos os projetos cadastrados (`project_id`), permitindo alternar instantaneamente o contexto da esteira e das métricas sem sair da página.
+- **Cadastro In-Page de Novo Projeto:**
+  - O seletor inclui a opção `+ Novo Projeto...`, que abre um modal ágil na própria tela.
+  - O modal envia requisição `POST /studio/projects` via fetch com nome do canal e teto de gastos mensal (`monthly_budget_usd`).
+  - Ao salvar com sucesso, o novo projeto é selecionado automaticamente e o painel recarrega seus dados limpos.
 
-### 2. Filtro de Período
-- Links rápidos no cabeçalho: **7 dias** (padrão), **14 dias** e **30 dias**. Funciona via parâmetro de URL (`?days=7`), sem depender de JavaScript.
+### 2. Esteira de Produção (Workflow Pipeline Funnel)
+- Cards visuais de funil destacam a evolução dos vídeos pelas etapas do workflow:
+  - **Na Fila / Pendente:** Vídeos criados aguardando processamento.
+  - **Em Produção:** Roteiro, imagens, áudio ou renderização FFmpeg em andamento.
+  - **Aguardando Aprovação:** Vídeos renderizados prontos para inspeção humana.
+  - **Aprovados:** Vídeos aprovados pelo operador, aguardando agendamento/publicação.
+  - **Concluídos:** Vídeos publicados no YouTube com sucesso no período.
+  - **Atenção / Falhas:** Casos de falha ou rejeição que requerem intervenção.
+- Cada estágio exibe contagem ativa, badge de status e atalho de visualização rápida.
 
-### 3. Tabela de Vídeos e Temas
-- Vídeos com variações do mesmo assunto são agrupados automaticamente pela chave normalizada do tema.
-- **Etapas observáveis:**
-  - `PENDING`: Vídeo criado, aguardando início dos passos.
-  - `IN_PRODUCTION`: Roteiro, imagens, áudio ou renderização FFmpeg em andamento.
-  - `AWAITING_APPROVAL`: Render concluído com QA aprovado (ou reprovado), pronto para revisão humana.
-  - `APPROVED`: Aprovado pelo operador, aguardando publicação pelo n8n.
-  - `COMPLETED`: Publicado com sucesso no YouTube.
-  - `FAILED`: Falha em algum passo ou na publicação.
-  - `REJECTED`: Rejeitado formalmente pelo operador.
-- **Ações disponíveis por linha:**
-  - **Ver Prévia:** Abre a página `/studio/videos/{id}/preview` com player de vídeo, legendas, checagem de fatos e os botões de aprovar/rejeitar vinculados atomicamente ao render visualizado.
+### 3. Resumo Operacional e Teto Orçamentário
+- **Custo no Mês vs Teto:** Soma dos custos conhecidos de IA no mês corrente em comparação ao teto do projeto ativo (padrão US$ 15,00), com barra de progresso visual de consumo do orçamento.
+- **Status do Pipeline:** Indicadores consolidados do volume de produção atual.
+
+### 4. Filtro de Período
+- Links rápidos no cabeçalho: **7 dias** (padrão), **14 dias** e **30 dias**. Funciona via parâmetro de URL (`?days=7`), mantendo o estado limpo e direto.
+
+### 5. Cards de Vídeos e Temas (Visual Moderno)
+- Vídeos com variações do mesmo assunto são agrupados pela chave normalizada do tema.
+- **Cards e Linhas Modernizadas:** Apresentam formato do vídeo (`short` vertical ou `long` horizontal), badge de status de pipeline colorido no padrão YouTube Studio, estimativa de custos de IA e ações diretas:
+  - **Ver Prévia:** Abre a página unificada `/studio/videos/{id}/preview` com player de vídeo, legendas, checagem de fatos e os botões de aprovar/rejeitar vinculados atomicamente ao render visualizado.
   - **Ver Progresso:** Abre `/studio/panel/videos/{id}` para ver a linha do tempo de execução dos passos.
 
-### 4. Criando Vídeos pelo Painel
+### 6. Criando Vídeos pelo Painel
 - Clique no botão **+ Novo Vídeo** para expandir o formulário.
-- Selecione o projeto, digite o tema (3 a 300 caracteres) e escolha o formato (`short` vertical ou `long` horizontal).
+- Selecione o projeto (pré-seleciona o projeto ativo), digite o tema (3 a 300 caracteres) e escolha o formato (`short` vertical ou `long` horizontal).
 - O envio cria o registro na API (`POST /studio/videos`) e recarrega a lista.
 
-### 5. Tela de Detalhe e Progresso (`/studio/panel/videos/{id}`)
+### 7. Tela de Detalhe e Progresso (`/studio/panel/videos/{id}`)
 - **Linha do Tempo dos Passos:** Exibe cada execução de passo (`script`, `storyboard`, `render`), o status (`SUCCEEDED`, `FAILED`), a data/hora e o erro detalhado se houver.
 - **Auditoria de Custos:** Lista todas as chamadas de IA registradas para o vídeo (passo, provedor, modelo e custo em dólares).
 - **Publicação:** Exibe o status da tentativa de upload e eventuais mensagens de erro de rede.
 
-### 6. Seção de Temas em Alta e Pilares de Conteúdo
+### 8. Radar de Temas em Alta Compacto com Expansão Interativa
 - **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`) ou coleta sob demanda acionada diretamente no painel. O radar unifica tendências de **Em Alta Brasil**, **Em Alta Mundo** (`chart=mostPopular`) e buscas temáticas por pilares de conteúdo.
+- **Layout Compacto e Despoluído:**
+  - O radar inicia exibindo os principais tópicos em destaque para evitar sobrecarga cognitiva e rolagem excessiva.
+  - Um botão interativo **"Mostrar mais tendências" / "Mostrar menos"** permite alternar suavemente a visualização entre o modo compacto e a lista completa de evidências.
 - **Pílulas de Filtro (Estilo Oficial do YouTube):**
   - Barra de pílulas arredondadas (*chips/pills*) com visual fiel ao YouTube: **🔥 Todas (N)**, atalhos rápidos de região **🇧🇷 Em Alta Brasil (N)** e **🌍 Em Alta Mundo (N)**, cada pilar de categoria com seu contador e o botão de atalho **+ Novo Pilar**.
   - O clique em uma pílula filtra os tópicos na tela instantaneamente via JavaScript (sem recarregar a página), destacando apenas os temas correspondentes.
@@ -57,23 +67,25 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
   - **Badges e Metadados:** Badges com destaque de região (`🇧🇷 Em Alta Brasil` / `🌍 Em Alta Mundo`), visualizações formatadas (`📊 X.XXX.XXX visualizações`), status dos vídeos no pipeline (`🎬 N concluídos · M em produção`) e custo acumulado. Abaixo do título, exibe o nome do canal (`📺`), contagem de views e data de publicação.
   - **Evidências:** Painel expansível com detalhes das evidências e contagem de views individuais.
 - **Ações Rápidas e Interatividade:**
-  - **🔄 Buscar Agora:** Dispara atualização sob demanda via YouTube Data API v3 (`POST /studio/projects/{id}/trends/refresh`), trazendo vídeos em alta e métricas recentes. Exibe indicador de carregamento animado (spinner giratório), desativa o botão durante a requisição para evitar chamadas duplicadas e apresenta feedback de sucesso/erro em tempo real.
+  - **🔄 Buscar Agora:** Dispara atualização sob demanda via YouTube Data API v3 (`POST /studio/projects/{id}/trends/refresh`), trazendo vídeos em alta e métricas recentes com spinner animado e desativação contra cliques duplos.
   - **⚙️ Gerenciar Categorias:** Abre o modal de gerenciamento de pilares para cadastrar novos pilares, ajustar termos de busca curados (até 10 por pilar) ou remover pilares existentes.
 - **Criar Vídeo deste Tema:**
-  - O botão `✨ Criar Vídeo deste Tema` preenche automaticamente o campo de tema no formulário `+ Novo Vídeo`, abre o formulário caso esteja fechado e realiza uma rolagem suave (*smooth scroll*) com foco imediato no campo de tema para o operador revisar o projeto e formato antes de iniciar a produção.
+  - O botão `✨ Criar Vídeo deste Tema` preenche automaticamente o campo de tema no formulário `+ Novo Vídeo`, abre o formulário e realiza rolagem suave com foco imediato no campo de tema.
 - **Verificabilidade e Status:**
-  - Cada tema exibe a fonte oficial (`YouTube Brasil (Em Alta)`, `YouTube Global (Em Alta)` ou `YouTube Data API`), o link direto e a data/hora da consulta.
-  - Se a consulta estiver dentro da janela do filtro, exibe os tópicos normalmente.
-  - Se a última consulta for mais antiga que o filtro, exibe a etiqueta `Desatualizado`.
-  - Se ainda não houve ingestão, exibe `Ainda não há coleta de tendências registrada para o período selecionado.` (sem dados fictícios).
+  - Cada tema exibe a fonte oficial, link direto e data/hora da consulta.
+  - Alerta de `Desatualizado` quando a última consulta for mais antiga que a janela do filtro.
 
-### 7. Gerenciamento de Pilares de Conteúdo (Modal)
+### 9. Gerenciamento de Pilares de Conteúdo (Modal)
 - O modal permite definir os eixos editoriais estratégicos do canal.
 - Cada pilar possui um nome (1 a 100 caracteres) e até 10 termos curados de busca separados por vírgula.
-- Ações no modal:
-  - **Editar:** Carrega o pilar no formulário inferior para ajustes de nome e termos.
-  - **Excluir:** Remove o pilar com confirmação (os tópicos vinculados são mantidos com categoria desvinculada).
-  - **Novo Pilar:** Salva o novo pilar e atualiza a barra de pílulas no painel.
+- Permite criar, editar e excluir pilares mantendo a integridade dos tópicos já vinculados.
+
+### 10. Tela de Prévia com Menu Lateral Unificado (`/studio/videos/{id}/preview`)
+- **Layout Consistente com o Painel:** A tela de prévia não quebra mais o contexto visual do operador: ela mantém a mesma barra de navegação lateral (Painel, Temas em Alta, Vídeos, + Novo Vídeo, API Docs, n8n), seletor de canais e card de orçamento mensal.
+- **Área de Inspeção Centralizada:**
+  - Player de vídeo com suporte a legendas sincronizadas (`.vtt`).
+  - Painel de metadados: título, descrição, tags e verificação de checagem de fatos (QA).
+  - Ações atômicas de aprovação e rejeição vinculadas ao ID exato do render em exibição.
 
 ## Política de Custo Honesto
 - Quando todos os modelos usados forem comprovadamente gratuitos (ex.: `:free`, placeholders ou síntese local Piper TTS), o painel exibe `US$ 0,00 (gratuito)`.
@@ -86,18 +98,23 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 - **Segredos protegidos:** A URL temporária de upload do YouTube (`upload_uri`), tokens de autenticação e caminhos internos do sistema de arquivos nunca são enviados nem exibidos no painel.
 - **Aprovação atômica:** O painel apenas visualiza o estado; a decisão formal de aprovação ocorre na tela de prévia, que envia o ID do render inspecionado para validação atômica no banco de dados.
 
-## Interface (menu lateral)
+## Interface, Paleta YouTube Studio e Navegação Unificada
 
-O painel usa menu lateral fixo (Painel, Temas em Alta, Vídeos, Novo Vídeo, API Docs, n8n),
-barra superior com o filtro de período e o card do teto mensal no rodapé do menu. Os campos
-de formulário (inputs, selects, textareas) têm estilo próprio, com foco visível. O tema segue
-o modo claro/escuro do sistema. A prévia de aprovação usa o mesmo visual.
+O painel e a tela de prévia utilizam a paleta neutra e profissional do **YouTube Studio Dark**:
+- **Fundo do Sistema (`--bg-primary`):** `#0f0f0f` (preto neutro cinematográfico, sem tons azulados frios).
+- **Cards e Superfícies (`--bg-surface`):** `#181818` para cards de destaque e `#222222` para sub-cards e áreas elevadas.
+- **Bordas e Divisores (`--border-color`):** `#272727` suave e de alto contraste.
+- **Destaques e Acentos (`--accent-blue` / `--accent-hover`):** `#3ea6ff` e `#65b8ff` (azul clássico do YouTube Studio).
+- **Tipografia:** `#f1f1f1` para texto primário e `#aaaaaa` para metadados e legendas secundárias.
 
-![Painel com Pilares de Conteúdo](images/painel-dashboard.png)
+### Navegação e Menu Lateral Unificado
+O menu lateral fixo (Painel, Temas em Alta, Vídeos, Novo Vídeo, API Docs, n8n) e o cabeçalho com o seletor global de canais permanecem presentes e consistentes tanto no `/studio/panel` quanto na página `/studio/videos/{id}/preview`. Isso garante transições sem quebra de contexto visual e permite ao operador inspecionar renders sem perder a navegação geral da aplicação.
+
+![Painel do Faceless Studio com Seletor de Canais e Pipeline](images/painel-dashboard.png)
 ![Modal de Gerenciamento de Categorias](images/painel-categorias-modal.png)
 ![Formulário de novo vídeo](images/painel-form-novo-video.png)
 ![Detalhe do vídeo](images/painel-detalhe-video.png)
-![Prévia e aprovação](images/painel-preview.png)
+![Prévia e Aprovação Unificada](images/painel-preview.png)
 
 A CSP libera `<style>` e `<script>` só com nonce; atributos `style=""` são permitidos
 (`style-src-attr`) por serem apenas de apresentação, com todo texto escapado.
