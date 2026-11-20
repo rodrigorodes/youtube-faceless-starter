@@ -79,3 +79,10 @@ def test_contract_cannot_be_mutated_into_invalid_state():
 def test_round_trip_preserves_contract():
     original = beat()
     assert VisualBeat.model_validate_json(original.model_dump_json()) == original
+
+
+def test_duration_s_is_derived_from_the_interval():
+    # Ponte de reconciliação com o `duration` do plano; não é campo persistido.
+    result = beat(start_s=1.5, end_s=4.0)
+    assert result.duration_s == 2.5
+    assert "duration_s" not in result.model_dump()
