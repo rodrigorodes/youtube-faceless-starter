@@ -194,6 +194,83 @@ cache hit e correções humanas **por plano**, com o rótulo Real/Estimado.
 
 ---
 
+## 11. Respostas ao builder-check (revisão independente)
+
+Um revisor independente leu este documento e devolveu 7 perguntas. Verifiquei os fatos no
+código antes de responder; os que mudam escopo estão marcados. Todas viraram decisão minha,
+com o motivo — nenhuma ficou em aberto.
+
+**R1. O que alimenta a timeline (durações e shots) — muda escopo.**
+Fato confirmado: `studio.scenes.duration_s` **nunca é escrito** (`editorial_repo.py:57` insere
+sem a coluna); a duração só existe **depois do TTS** (`application/render.py:124-138` →
+`scene_length`). `VisualBeat`/`plan_scene_beats` não têm **produtor nem persistência** —
+só testes os referenciam.
+*Decisão:* o plano é construído **no render, depois da síntese de voz** — é o único ponto onde
+a duração existe. A fundação **aceita cenas de um shot** e **hospeda** o multi-shot no
+contrato, validado com planos montados em teste (não E2E com dados reais). O **produtor de
+beats** (storyboard → beats) é fatia **separada, depois** da fundação, e é ele que dá
+multi-shot real. Consequência honesta: o aceite de RP-04 vira "o **contrato** suporta múltiplos
+shots com mídias distintas", e **não** "o pipeline atual produz multi-shot".
+
+**R2. Como o caminho novo se pluga e o que a flag troca.**
+*Decisão:* `RunRender` constrói o `RenderPlan` e despacha para o renderer **legado** ou o
+**baseado em plano** atrás de **uma flag**; `RenderSpec` permanece como entrada do legado e o
+caminho novo é uma **segunda implementação de `Renderer`**. Legado preservado por construção.
+O plano carrega tudo o que o `RenderSpec` carrega hoje (formato, disclosure, music, work_dir,
+cues e narração global).
+
+**R3. Efeitos, disclosure e música — dentro ou fora do plano? — muda escopo.**
+Fatos confirmados: Ken Burns escolhido por `index % 4` (`render_ffmpeg.py:78-86`); disclosure
+derivado de provider (`application/render.py:147-150`); música **sintetizada em processo** com
+RNG semeado (`rich.py:70`), portanto **não é arquivo** e não cabe em `asset_manifest`.
+*Decisão:* vão **para o plano** — sem isso o compilador não é puro e a paridade do §11 é
+inalcançável. O modelo ganha: `effects` com parâmetro por shot (modo de movimento explícito,
+sem `% 4` mágico), `disclosure` no `output`, e uma fonte de áudio **gerada** distinta de
+`AssetReference`.
+
+**R4. Fonte do `style_snapshot`.**
+*Decisão:* referência por **chave + versão** ao `ChannelProfile` (que hoje é `visual_identity`
+texto livre + `version` + revisões JSONB, `0016`). O **preset estruturado** (RP-17/18,
+`cinematic-documentary`) **não** entra na fundação: precisa de estilo estruturado que não
+existe. `VisualStyle` como porta estruturada fica adiada.
+
+**R5. Onde mora a atribuição de custo por cena — muda escopo.**
+Fato confirmado: o ledger é por `video_id`/`step` (`contracts.py:168`, migrações `0017`/`0019`);
+**não há dimensão de cena**.
+*Decisão:* o plano referencia operações pagas **por chave** (`paid_operation_key` por cena/shot)
+e uma tabela lateral **aditiva** (`plan_scene_costs`) liga plano+cena+chave. O ledger **não**
+muda semântica — a fatia A fica intacta. Sem isso, o custo rotulado do mockup seria inventado,
+que é anti-objetivo declarado.
+
+**R6. Barra de "sem regressão funcional".**
+*Decisão:* checklist de recursos (§7.4) **mais** `evaluate_qa` dentro da tolerância (duração
+±1 s, resolução, LUFS, razões de silêncio/preto) — **não** hash byte-a-byte (impossível com
+grafo de encoder diferente) **nem** SSIM (prematuro).
+
+**R7. A fundação expõe plano/hash no painel agora?**
+*Decisão:* a fundação entrega **persistência** do plano e do hash de conteúdo; **API e painel
+ficam fora** (a tela Editor é fatia posterior). O hash já tem casa natural em `assets.cache_key`.
+
+## 12. Paralelismo real (o que pode começar já)
+
+| Fatia | Pode começar agora? | Motivo |
+|---|---|---|
+| 1 — baseline (RP-00) | **sim** | sem dependência; só investigação + documento. É também o que **responde R1 empiricamente** |
+| 2 — contrato (RP-01) | **sim** | só cria arquivos novos (`domain/` + modelo no `export_contracts.py` + 1 linha em `test_contracts_snapshot.py`). Não colide com A (`budget.py`), C (`channel*`), G1 (`api/panel.py`) |
+| 3 — timeline (RP-02) | não | depende de 2 |
+| 4 — builder (RP-03) | não | depende de 2 **e de C** (identidade do canal) |
+| 5 — resolver (RP-04) | **depois de 2** | não depende de C nem de D2 — vira a 3ª frente paralela assim que 2 fecha |
+| 6 — FFmpeg (RP-05) | não | depende de 3 e 5 |
+| 7 — regeneração (RP-06) | não | depende de 6 **e de D/D2** |
+| 8 — QA/rollout (RP-07) | não | depende de 6 |
+
+**Restrição de integração:** a fatia 2 tem de ser a **primeira a commitar** o modelo de plano,
+e o grande consumo (`export_contracts.py` regenera **todos** os contratos) exige cuidado com
+`index.lock` enquanto A/C/G1 commitam.
+
+---
+
 **Decisão:** construir o `RenderPlan` como linguagem comum do audiovisual, **reusando** o
 `beat_plan`/`evaluate_qa`/`production_run` já fechados, sem reescrever a fatia B e sem
-derrubar o renderer legado. Implementação **depois** que A, C, D2 e G1 fecharem.
+derrubar o renderer legado. Fatias **1 e 2** podem começar em paralelo com A/C/G1; o restante
+**depois** que essas fecharem.
