@@ -8,9 +8,11 @@
 - A taxa de palavras por minuto é obrigatória, numérica, positiva e finita;
   valores booleanos e resultados não finitos são recusados. Retorna segundos
   por cena, na ordem de entrada, e a soma, sem arredondamento explícito.
-- Contagem por sequências Unicode de letras e números; hífens e apóstrofos
-  internos unem palavras. Pontuação isolada não conta. É uma convenção de
-  estimativa, não tokenização linguística nem expansão de números.
+- A narração é normalizada para NFC antes da contagem por sequências Unicode
+  de letras e números; hífens e apóstrofos internos unem palavras. Pontuação
+  isolada não conta. Marcas combinantes sem forma composta ainda podem separar
+  palavras: é uma convenção de estimativa, não tokenização linguística nem
+  expansão de números.
 - F4-03 também pede validação contra velocidade real do TTS: **não realizada**.
   Não há evidência de precisão, pausas, prosódia ou integração long-form.
 
@@ -37,3 +39,17 @@
   foram ignorados, não validados.
 - A imagem `faceless-v2-local-test:latest` não tinha `pytest`; foi usada a
   imagem de testes citada acima, sem instalar dependências ou acessar rede.
+
+## Revisão Unicode
+
+- RED: o comando de teste do módulo acima falhou em
+  `test_canonically_equivalent_portuguese_text_has_same_duration`:
+  `ação coração pão` produziu 3 segundos em NFC e 8 em NFD a 60 palavras/minuto.
+  A expressão regular separava as marcas combinantes do texto decomposto.
+- GREEN: normalização canônica NFC antes da contagem; teste com textos
+  equivalentes, cenas de durações diferentes e estouro apenas da soma de
+  durações individualmente finitas. O comando de domínio, contrato e
+  arquitetura acima passou com **57 testes**.
+- A suíte completa com o mesmo comando e montagens descritos acima passou com
+  **672 testes**, 310 ignorados e um aviso de depreciação Starlette/AnyIO.
+  Não foi configurado banco descartável nem realizada validação contra TTS.

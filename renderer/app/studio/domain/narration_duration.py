@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import math
 import re
+import unicodedata
 from collections.abc import Sequence
 
 from .contracts import Scene
@@ -36,7 +37,10 @@ def estimate_narration_durations(
     if not valid_rate:
         raise ValueError("words_per_minute must be a finite positive number")
 
-    durations = tuple(len(_WORD.findall(scene.narration)) * 60 / words_per_minute for scene in scenes)
+    durations = tuple(
+        len(_WORD.findall(unicodedata.normalize("NFC", scene.narration))) * 60 / words_per_minute
+        for scene in scenes
+    )
     total = sum(durations)
     if not all(math.isfinite(duration) for duration in durations) or not math.isfinite(total):
         raise ValueError("estimated duration must be finite")
