@@ -80,7 +80,7 @@ class Settings:
     paid_image_usd: float = 0.05        # estimativa por imagem de modelo não ':free' (o guard decide)
     veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
     render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
-    trend_hosts: tuple[str, ...] = ("www.googleapis.com",)
+    trend_hosts: tuple[str, ...] = ("www.googleapis.com", "www.youtube.com")
     token_env_path: Path = Path("credentials/token.env")
 
     @classmethod
@@ -92,7 +92,7 @@ class Settings:
                    env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
                    env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
-                   _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com",)),
+                   _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
                    Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")))
 
 
