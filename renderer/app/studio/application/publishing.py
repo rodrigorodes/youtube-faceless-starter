@@ -108,7 +108,7 @@ class ClaimPublication:
         output = self.jobs.latest_output(video.id)
         path = self.files.resolve(output.path, "mp4") if output else None
         if path is None:
-            self.pubs.fail(pub.id, "the rendered file is missing")  # nada a enviar: retomar só com render novo + retry
+            self.pubs.fail(pub.id, pub.attempt, "the rendered file is missing")  # nada a enviar: retomar só com render novo + retry
             return None
         credits, sources = credits_and_sources(self.scripts, self.assets, self.snaps, video.id)
         description = build_description(video.description, credits, sources, synthetic=True)
@@ -154,7 +154,7 @@ class MarkFailed(_Pubs):
     def execute(self, publication_id: str, attempt: int, error: str, retryable: bool) -> Publication:
         error = " ".join(error.split())[:500] or "unknown error"
         pub = self._get(publication_id)
-        done = self.pubs.release(publication_id, attempt, error) if retryable else self.pubs.fail(publication_id, error)
+        done = self.pubs.release(publication_id, attempt, error) if retryable else self.pubs.fail(publication_id, attempt, error)
         if not done:
             raise StateConflict("the publication is no longer being uploaded by this attempt")
         return self._get(pub.id)

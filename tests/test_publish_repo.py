@@ -115,6 +115,18 @@ def test_expired_lease_is_reclaimed_keeping_the_upload_session(env):
     assert env["conn"].execute("SELECT count(*) FROM studio.publications WHERE video_id=%s", (vid,)).fetchone()[0] == 1
 
 
+def test_retry_preserves_session_and_never_reuses_attempt_number(env):
+    vid = env["make"]("APPROVED")
+    pub = env["pubs"].claim(1800, 5)
+    env["pubs"].set_upload_uri(pub.id, pub.attempt, URI, False)
+    assert env["pubs"].fail(pub.id, pub.attempt, "temporary authorization issue")
+    retried = env["pubs"].retry(vid)
+    assert retried.upload_uri == URI
+    again = env["pubs"].claim(1800, 5)
+    assert again.attempt > pub.attempt
+    assert not env["pubs"].fail(pub.id, pub.attempt, "stale failure")
+
+
 def test_attempts_are_capped_and_the_publication_fails_for_good(env):
     env["make"]("APPROVED")
     for expected in (1, 2, 3):
@@ -136,14 +148,40 @@ def test_two_workers_never_get_the_same_video(env):
     assert len([g for g in got if g]) == 1
 
 
-def test_upload_uri_only_for_the_current_attempt_and_only_once_unless_replaced(env):
+def test_concurrent_reclaims_grant_only_one_new_attempt(env):
+    env["make"]("APPROVED")
+    first = env["pubs"].claim(1800, 5)
+    env["conn"].execute("UPDATE studio.publications SET lease_until = now() - interval '1 second' WHERE id=%s", (first.id,))
+    env["conn"].commit()
+    barrier = threading.Barrier(8)
+    got, errors = [], []
+
+    def claim():
+        try:
+            barrier.wait(timeout=5)
+            got.append(env["pubs"].claim(1800, 5))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=claim) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not errors and all(not thread.is_alive() for thread in threads)
+    winners = [pub for pub in got if pub]
+    assert len(winners) == 1 and winners[0].attempt == 2
+
+
+def test_upload_uri_only_for_the_current_attempt_and_never_replaced(env):
     env["make"]("APPROVED")
     pub = env["pubs"].claim(1800, 5)
     assert env["pubs"].set_upload_uri(pub.id, 2, URI, False) is None  # tentativa errada
     assert env["pubs"].set_upload_uri(pub.id, 1, URI, False) is not None
     other = URI.replace("AbC123", "Zzz999")
     assert env["pubs"].set_upload_uri(pub.id, 1, other, False) is None  # já tem sessão
-    assert env["pubs"].set_upload_uri(pub.id, 1, other, True).upload_uri == other
+    assert env["pubs"].set_upload_uri(pub.id, 1, other, True) is None
+    assert env["pubs"].get_by_id(pub.id).upload_uri == URI
 
 
 def test_mark_uploaded_publishes_atomically_and_is_idempotent(env):
@@ -173,13 +211,13 @@ def test_release_fail_retry_and_thumbnail(env):
     again = env["pubs"].claim(1800, 5)  # lease liberado: dá para repetir já
     assert again.attempt == 2 and again.error is None
     assert env["pubs"].mark_thumbnail(pub.id) is False  # ainda não enviado
-    assert env["pubs"].fail(pub.id, "HTTP 403 quotaExceeded") is True and env["pubs"].fail(pub.id, "de novo") is False
+    assert env["pubs"].fail(pub.id, 2, "HTTP 403 quotaExceeded") is True and env["pubs"].fail(pub.id, 2, "de novo") is False
     assert env["pubs"].claim(1800, 5) is None  # FAILED fica parado até o retry manual
     retried = env["pubs"].retry(vid)
-    assert retried.status == PublicationStatus.PENDING and retried.attempt == 0 and retried.upload_uri is None and retried.error is None
+    assert retried.status == PublicationStatus.PENDING and retried.attempt == 2 and retried.upload_uri is None and retried.error is None
     assert env["pubs"].retry(vid) is None
     again = env["pubs"].claim(1800, 5)
-    assert again.id == pub.id and again.attempt == 1
+    assert again.id == pub.id and again.attempt == 3
     env["pubs"].mark_uploaded(again.id, "oNQ2KN37sfQ")
     assert env["pubs"].mark_thumbnail(again.id) is True and env["pubs"].get(vid).thumbnail_set is True
 

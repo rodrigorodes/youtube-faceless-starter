@@ -46,7 +46,7 @@ class PostgresPublicationRepository(_Base):
     def claim(self, lease_seconds: int, max_attempts: int) -> Publication | None:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cur.execute("UPDATE studio.publications SET status = 'FAILED', error = 'too many attempts', lease_until = NULL, updated_at = now() "
-                        "WHERE status IN ('PENDING', 'UPLOADING') AND attempt >= %s AND (lease_until IS NULL OR lease_until < now())", (max_attempts,))
+                        "WHERE status IN ('PENDING', 'UPLOADING') AND attempt - attempt_base >= %s AND (lease_until IS NULL OR lease_until < now())", (max_attempts,))
             cur.execute("SELECT v.id FROM studio.videos v LEFT JOIN studio.publications p ON p.video_id = v.id "
                         "WHERE v.status = 'APPROVED' AND (p.id IS NULL OR (p.status IN ('PENDING', 'UPLOADING') "
                         "AND (p.lease_until IS NULL OR p.lease_until < now()))) ORDER BY v.updated_at, v.id LIMIT 1 FOR UPDATE OF v SKIP LOCKED")
@@ -58,7 +58,8 @@ class PostgresPublicationRepository(_Base):
                         f"now() + %s * interval '1 second', (SELECT publish_at FROM studio.approvals WHERE video_id = %s)) "
                         f"ON CONFLICT (video_id) DO UPDATE SET status = 'UPLOADING', attempt = studio.publications.attempt + 1, "
                         f"lease_until = EXCLUDED.lease_until, error = NULL, updated_at = now() "
-                        f"WHERE studio.publications.status IN ('PENDING', 'UPLOADING') RETURNING {_PUB}",
+                        f"WHERE studio.publications.status IN ('PENDING', 'UPLOADING') "
+                        f"AND (studio.publications.lease_until IS NULL OR studio.publications.lease_until < now()) RETURNING {_PUB}",
                         (uuid.uuid4().hex, video_id, lease_seconds, video_id))
             out = cur.fetchone()
             return Publication.model_validate(out) if out else None
@@ -77,7 +78,7 @@ class PostgresPublicationRepository(_Base):
 
     def set_upload_uri(self, publication_id: str, attempt: int, uri: str, replace: bool) -> Publication | None:
         return self._one(f"UPDATE studio.publications SET upload_uri = %s, updated_at = now() WHERE id = %s AND attempt = %s AND status = 'UPLOADING' "
-                         f"AND (upload_uri IS NULL OR %s) RETURNING {_PUB}", (uri, check_id(publication_id), attempt, replace))
+                         f"AND upload_uri IS NULL RETURNING {_PUB}", (uri, check_id(publication_id), attempt))
 
     def mark_uploaded(self, publication_id: str, youtube_video_id: str) -> Publication | None:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -108,12 +109,12 @@ class PostgresPublicationRepository(_Base):
             return conn.execute("UPDATE studio.publications SET lease_until = now(), error = %s, updated_at = now() "
                                 "WHERE id = %s AND attempt = %s AND status = 'UPLOADING'", (error.replace("\x00", "")[:500], check_id(publication_id), attempt)).rowcount == 1
 
-    def fail(self, publication_id: str, error: str) -> bool:
+    def fail(self, publication_id: str, attempt: int, error: str) -> bool:
         with _translated(), self._connect() as conn:
             return conn.execute("UPDATE studio.publications SET status = 'FAILED', error = %s, lease_until = NULL, updated_at = now() "
-                                "WHERE id = %s AND status IN ('PENDING', 'UPLOADING')", (error.replace("\x00", "")[:500], check_id(publication_id))).rowcount == 1
+                                "WHERE id = %s AND attempt = %s AND status = 'UPLOADING'", (error.replace("\x00", "")[:500], check_id(publication_id), attempt)).rowcount == 1
 
     def retry(self, video_id: str) -> Publication | None:
-        return self._one(f"UPDATE studio.publications p SET status = 'PENDING', attempt = 0, upload_uri = NULL, lease_until = NULL, error = NULL, updated_at = now() "
+        return self._one(f"UPDATE studio.publications p SET status = 'PENDING', attempt_base = attempt, lease_until = NULL, error = NULL, updated_at = now() "
                          f"FROM studio.videos v WHERE p.video_id = %s AND v.id = p.video_id AND v.status = 'APPROVED' AND p.status = 'FAILED' "
                          f"RETURNING {', '.join('p.' + c.strip() for c in _PUB.split(','))}", (check_id(video_id),))

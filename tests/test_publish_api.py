@@ -85,12 +85,13 @@ def test_failure_reports(migrated, dsn, tmp_path):
     again = client.post("/studio/publications/claim").json()["item"]["publication"]
     assert again["attempt"] == 2
     assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "velha", "retryable": True}).status_code == 409  # tentativa antiga
+    assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "velha", "retryable": False}).status_code == 409
     failed = client.post(f"/studio/publications/{pid}/failed", json={"attempt": 2, "error": "HTTP 403 quotaExceeded", "retryable": False})
     assert failed.json()["status"] == "FAILED" and failed.json()["error"] == "HTTP 403 quotaExceeded"
     assert client.post("/studio/publications/claim").json() == {"item": None}
     assert client.post(f"/studio/videos/{vid}/publication/retry").json()["status"] == "PENDING"
     assert client.post(f"/studio/videos/{vid}/publication/retry").status_code == 409
-    assert client.post("/studio/publications/claim").json()["item"]["publication"]["attempt"] == 1
+    assert client.post("/studio/publications/claim").json()["item"]["publication"]["attempt"] == 3
 
 
 def test_inputs_are_validated(migrated, dsn, tmp_path):

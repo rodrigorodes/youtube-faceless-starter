@@ -105,7 +105,9 @@ class Pubs:
         self.calls.append(("release", attempt, error))
         return attempt == self.pub.attempt
 
-    def fail(self, publication_id, error):
+    def fail(self, publication_id, attempt, error):
+        if attempt != self.pub.attempt:
+            return False
         self.calls.append(("fail", error))
         self.pub = self.pub.model_copy(update={"status": PublicationStatus.FAILED, "error": error})
         self.items[PUB] = self.pub
@@ -309,7 +311,7 @@ def test_thumbnail_flag_needs_an_uploaded_video_and_retry_needs_a_failed_one():
     with pytest.raises(StateConflict):
         RetryPublication(v, Pubs()).execute(V)
     failed = Pubs()
-    failed.fail(PUB, "x")
+    failed.fail(PUB, 1, "x")
     assert RetryPublication(v, failed).execute(V).id == PUB
     assert GetPublication(v, Pubs()).execute(V).id == PUB
 

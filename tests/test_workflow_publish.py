@@ -53,6 +53,11 @@ def test_recording_the_id_is_retried_and_thumbnail_failure_is_not_fatal():
     assert NODES["Report failure"]["onError"] == "continueRegularOutput"
 
 
+def test_expired_session_route_cannot_create_another_session():
+    routes = WF["connections"]["Session state?"]["main"]
+    assert routes[2][0]["node"] == "Report failure"
+
+
 node = shutil.which("node")
 pytestmark_node = pytest.mark.skipif(node is None, reason="node not installed")
 
@@ -80,8 +85,8 @@ def run(name, input_, ctx=CTX):
     ({"statusCode": 201, "body": {"id": "oNQ2KN37sfQ"}}, "done", {"youtube_id": "oNQ2KN37sfQ"}),
     ({"statusCode": 308, "headers": {"range": "bytes=0-1999"}}, "partial", {"offset": 2000}),
     ({"statusCode": 308, "headers": {}}, "partial", {"offset": 0}),
-    ({"statusCode": 404, "body": ""}, "expired", {"upload_uri": ""}),
-    ({"statusCode": 410, "body": ""}, "expired", {}),
+    ({"statusCode": 404, "body": ""}, "fatal", {"retryable": False}),
+    ({"statusCode": 410, "body": ""}, "fatal", {"retryable": False}),
     ({"statusCode": 503, "body": "x"}, "retry", {"retryable": True}),
     ({"statusCode": 429, "body": "x"}, "retry", {"retryable": True}),
     ({"error": {"message": "socket hang up"}}, "retry", {"retryable": True}),
@@ -97,8 +102,9 @@ def test_session_state_classification(response, state, extra):
 
 
 @pytestmark_node
-def test_partial_offset_never_reaches_the_file_size():
-    assert run("Session state", {"statusCode": 308, "headers": {"range": "bytes=0-4999"}})["offset"] == 0  # tudo enviado mas sem confirmação: reenvia
+def test_partial_offset_at_file_size_stops_for_reconciliation():
+    out = run("Session state", {"statusCode": 308, "headers": {"range": "bytes=0-4999"}})
+    assert out["state"] == "fatal" and out["retryable"] is False
 
 
 @pytestmark_node

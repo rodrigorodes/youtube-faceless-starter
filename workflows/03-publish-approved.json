@@ -214,7 +214,7 @@
         -80
       ],
       "parameters": {
-        "jsCode": "function classify(s) {\n  if (s >= 200 && s < 300) return 'ok';\n  if (s === 308) return 'partial';\n  if (s === 404 || s === 410) return 'expired';\n  if (s === 0 || s === 429 || s >= 500) return 'retry';\n  return 'fatal';\n}\nfunction why(r, status) {\n  let m = '';\n  try { m = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || ''); } catch (e) { m = ''; }\n  const net = r.error ? (r.error.message || String(r.error)) : '';\n  return ('HTTP ' + status + ' ' + (net || m)).replace(/\\s+/g, ' ').slice(0, 300);\n}\nconst YT_ID = /^[A-Za-z0-9_-]{11}$/;\nconst ctx = $('Build context').first().json;\nconst r = $input.first().json;\nconst status = r.statusCode || 0;\nconst kind = classify(status);\nif (kind === 'ok') {\n  const id = r.body && r.body.id;\n  if (typeof id === 'string' && YT_ID.test(id)) return [{ json: { ...ctx, state: 'done', youtube_id: id } }];\n  return [{ json: { ...ctx, state: 'fatal', error: 'the upload session is complete but the response has no video id', retryable: false } }];\n}\nif (kind === 'partial') {\n  const range = (r.headers && (r.headers.range || r.headers.Range)) || '';\n  const m = /bytes=0-(\\d+)/.exec(range);\n  const offset = m ? Number(m[1]) + 1 : 0;\n  return [{ json: { ...ctx, state: 'partial', offset: offset < ctx.size ? offset : 0 } }];\n}\nif (kind === 'expired') return [{ json: { ...ctx, state: 'expired', upload_uri: '' } }];\nreturn [{ json: { ...ctx, state: kind, error: why(r, status), retryable: kind === 'retry' } }];"
+        "jsCode": "function classify(s) {\n  if (s >= 200 && s < 300) return 'ok';\n  if (s === 308) return 'partial';\n  if (s === 404 || s === 410) return 'expired';\n  if (s === 0 || s === 429 || s >= 500) return 'retry';\n  return 'fatal';\n}\nfunction why(r, status) {\n  let m = '';\n  try { m = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || ''); } catch (e) { m = ''; }\n  const net = r.error ? (r.error.message || String(r.error)) : '';\n  return ('HTTP ' + status + ' ' + (net || m)).replace(/\\s+/g, ' ').slice(0, 300);\n}\nconst YT_ID = /^[A-Za-z0-9_-]{11}$/;\nconst ctx = $('Build context').first().json;\nconst r = $input.first().json;\nconst status = r.statusCode || 0;\nconst kind = classify(status);\nif (kind === 'ok') {\n  const id = r.body && r.body.id;\n  if (typeof id === 'string' && YT_ID.test(id)) return [{ json: { ...ctx, state: 'done', youtube_id: id } }];\n  return [{ json: { ...ctx, state: 'fatal', error: 'the upload session is complete but the response has no video id', retryable: false } }];\n}\nif (kind === 'partial') {\n  const range = (r.headers && (r.headers.range || r.headers.Range)) || '';\n  const m = /bytes=0-(\\d+)/.exec(range);\n  const offset = m ? Number(m[1]) + 1 : 0;\n  if (offset >= ctx.size) return [{ json: { ...ctx, state: 'fatal', error: 'all bytes acknowledged without video id; reconcile manually', retryable: false } }];\n  return [{ json: { ...ctx, state: 'partial', offset } }];\n}\nif (kind === 'expired') return [{ json: { ...ctx, state: 'fatal', error: 'upload session unavailable; reconcile YouTube manually before any new upload', retryable: false } }];\nreturn [{ json: { ...ctx, state: kind, error: why(r, status), retryable: kind === 'retry' } }];"
       }
     },
     {
@@ -1131,7 +1131,7 @@
         ],
         [
           {
-            "node": "New session",
+            "node": "Report failure",
             "type": "main",
             "index": 0
           }

@@ -195,10 +195,10 @@ class PublicationRepository(Protocol):
     def mark_thumbnail(self, publication_id: str) -> bool: ...
     def release(self, publication_id: str, attempt: int, error: str) -> bool:
         """Falha transitória: solta o lease para a próxima reivindicação repetir."""
-    def fail(self, publication_id: str, error: str) -> bool:
+    def fail(self, publication_id: str, attempt: int, error: str) -> bool:
         """Falha definitiva (4xx): FAILED até `retry` manual."""
     def retry(self, video_id: str) -> Publication | None:
-        """FAILED → PENDING (zera tentativas e URI). None se não há publicação FAILED."""
+        """FAILED → PENDING, preservando sessão e número monotônico de tentativas."""
 
 
 class ThumbnailMaker(Protocol):
