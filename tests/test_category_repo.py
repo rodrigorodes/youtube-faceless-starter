@@ -181,3 +181,20 @@ def test_delete_category_nullifies_trend_topics(cat_env):
 
     row_after = conn.execute("SELECT category_id FROM studio.trend_topics WHERE id = %s", (trend_id,)).fetchone()
     assert row_after[0] is None
+
+
+def test_queries_capped_at_maximum_ten(cat_env):
+    repo = cat_env["repo"]
+    p_id = cat_env["project_id"]
+
+    many_queries = [f"query_{i}" for i in range(15)]
+    cat = repo.save(p_id, "Largas Consultas", many_queries)
+
+    assert len(cat.queries) == 10
+    assert cat.queries == [f"query_{i}" for i in range(10)]
+
+    fetched = repo.get(cat.id)
+    assert fetched is not None
+    assert len(fetched.queries) == 10
+    assert fetched.queries == [f"query_{i}" for i in range(10)]
+

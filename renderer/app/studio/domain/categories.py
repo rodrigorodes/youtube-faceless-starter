@@ -26,6 +26,9 @@ def validate_category_name(name: str) -> str:
     return cleaned
 
 
+MAX_QUERIES_PER_CATEGORY = 10
+
+
 def clean_queries(queries: list[str] | None) -> list[str]:
     if not queries:
         return []
@@ -35,7 +38,7 @@ def clean_queries(queries: list[str] | None) -> list[str]:
             s = q.strip()
             if s and s not in cleaned:
                 cleaned.append(s)
-    return cleaned
+    return cleaned[:MAX_QUERIES_PER_CATEGORY]
 
 
 @dataclass(frozen=True)
@@ -51,4 +54,4 @@ class ProjectCategory:
         check_id(self.id)
         check_id(self.project_id)
         validate_category_name(self.name)
-        object.__setattr__(self, "queries", list(self.queries))
+        object.__setattr__(self, "queries", clean_queries(self.queries))
