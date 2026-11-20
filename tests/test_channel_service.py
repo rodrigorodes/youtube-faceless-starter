@@ -14,6 +14,7 @@ from app.studio.application.channels import (  # noqa: E402
 )
 from app.studio.application.errors import ProjectNotFound  # noqa: E402
 from app.studio.domain.channel import (  # noqa: E402
+    ChannelFieldInvalid,
     ChannelProfile,
     ChannelVersionConflict,
     DuplicateChannelProfile,
@@ -83,6 +84,13 @@ def test_create_validates_id_before_repo():
     assert repo.calls == []
 
 
+def test_create_rejects_unknown_option_before_repo():
+    repo = FakeChannelRepo()
+    with pytest.raises(ValueError):
+        CreateChannelProfile(repo, FakeVideoRepo([PID])).execute(PID, "Canal", bogus=1)
+    assert repo.calls == []
+
+
 def test_create_propagates_duplicate_conflict():
     class DupRepo(FakeChannelRepo):
         def create(self, project_id, name, **options):
@@ -108,6 +116,14 @@ def test_list_forwards_include_archived():
     assert ListChannelProfiles(repo).execute() == []
     assert ListChannelProfiles(repo).execute(include_archived=True) == [archived]
     assert repo.calls == [("list", False), ("list", True)]
+
+
+def test_list_rejects_non_boolean_include_archived():
+    repo = FakeChannelRepo()
+    for bad in ("yes", 1, None):
+        with pytest.raises(ChannelFieldInvalid):
+            ListChannelProfiles(repo).execute(include_archived=bad)  # type: ignore[arg-type]
+    assert repo.calls == []
 
 
 def test_update_rejects_unknown_fields_before_repo():

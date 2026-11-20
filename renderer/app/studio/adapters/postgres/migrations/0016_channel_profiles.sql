@@ -9,7 +9,7 @@ CREATE TABLE studio.channel_profiles (
     strategy text NOT NULL DEFAULT '' CHECK (length(strategy) <= 500),
     language text NOT NULL DEFAULT 'pt-BR' CHECK (length(language) >= 2 AND length(language) <= 20),
     audience text NOT NULL DEFAULT '' CHECK (length(audience) <= 500),
-    pillars text[] NOT NULL DEFAULT '{}',
+    pillars text[] NOT NULL DEFAULT '{}' CHECK (cardinality(pillars) <= 20),
     narrative text NOT NULL DEFAULT '' CHECK (length(narrative) <= 4000),
     target_duration_s integer NOT NULL DEFAULT 60 CHECK (target_duration_s >= 1 AND target_duration_s <= 36000),
     visual_identity text NOT NULL DEFAULT '' CHECK (length(visual_identity) <= 2000),

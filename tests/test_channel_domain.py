@@ -36,7 +36,7 @@ def test_valid_profile_defaults():
     assert p.version == 1
     assert p.archived is False
     assert p.strategy == ""
-    assert p.pillars == []
+    assert p.pillars == ()
     assert p.created_at is None and p.updated_at is None
 
 
@@ -56,8 +56,11 @@ def test_ids_must_be_hex32():
 
 def test_pillars_are_cleaned_deduped_and_capped():
     p = profile(pillars=["  IA ", "IA", "", "Robótica", "  ", "Análise"])
-    assert p.pillars == ["IA", "Robótica", "Análise"]
-    assert len(profile(pillars=[f"p{i}" for i in range(30)]).pillars) == MAX_PILLARS
+    assert p.pillars == ("IA", "Robótica", "Análise")
+    assert isinstance(p.pillars, tuple)
+    capped = profile(pillars=[f"p{i}" for i in range(30)])
+    assert len(capped.pillars) == MAX_PILLARS
+    assert capped.pillars == tuple(f"p{i}" for i in range(MAX_PILLARS))
 
 
 def test_invalid_duration_rejected():
@@ -89,6 +92,24 @@ def test_profile_is_immutable():
         p.name = "novo"  # type: ignore[misc]
 
 
+def test_pillars_are_deeply_immutable_and_hashable():
+    source = ["IA", "Robótica"]
+    p = profile(pillars=source)
+
+    # a coleção do agregado é imutável: mutar falha em vez de alterar o perfil
+    assert isinstance(p.pillars, tuple)
+    with pytest.raises(AttributeError):
+        p.pillars.append("INJETADO")  # type: ignore[attr-defined]
+
+    # mutar a lista do chamador não vaza para o agregado
+    source.append("INJETADO")
+    assert p.pillars == ("IA", "Robótica")
+
+    # e o agregado inteiro é hashable (collections imutáveis + escalares)
+    assert hash(p) == hash(profile(pillars=["IA", "Robótica"]))
+    assert {p: "ok"}[p] == "ok"
+
+
 def test_replace_revalidates():
     p = profile()
     p2 = replace(p, version=2, name="Novo")
@@ -97,6 +118,7 @@ def test_replace_revalidates():
         replace(p, name="")
 
 
-def test_clean_pillars_helper_returns_list():
-    assert clean_pillars(None) == []
-    assert clean_pillars(["a", " a ", "b"]) == ["a", "b"]
+def test_clean_pillars_helper_returns_tuple():
+    assert clean_pillars(None) == ()
+    assert clean_pillars(["a", " a ", "b"]) == ("a", "b")
+    assert clean_pillars(("a", "b")) == ("a", "b")  # aceita tupla e normaliza para tupla

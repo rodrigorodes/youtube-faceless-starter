@@ -1,5 +1,7 @@
 """Testes de integração do repositório Postgres de perfis de canal (banco descartável)."""
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -11,8 +13,12 @@ from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepo
 from app.studio.adapters.postgres.db import migrate  # noqa: E402
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.domain.channel import (  # noqa: E402
+    MAX_PILLARS,
+    ChannelFieldInvalid,
+    ChannelLockTimeout,
     ChannelNameInvalid,
     ChannelProfile,
+    ChannelProjectNotFound,
     ChannelVersionConflict,
     DuplicateChannelProfile,
 )
@@ -26,7 +32,7 @@ def chan_env(conn, dsn):
     videos = PostgresVideoRepository(connect)
     repo = PostgresChannelProfileRepository(connect)
     project = videos.create_project("Canal História", niche="História", language="pt-BR")
-    return {"repo": repo, "project_id": project.id, "conn": conn, "connect": connect, "videos": videos}
+    return {"repo": repo, "project_id": project.id, "conn": conn, "dsn": dsn, "connect": connect, "videos": videos}
 
 
 def test_create_and_read_profile(chan_env):
@@ -53,7 +59,8 @@ def test_create_and_read_profile(chan_env):
     assert len(created.id) == 32
     assert created.project_id == p_id
     assert created.name == "História sem Fim"
-    assert created.pillars == ["Idade Média", "Roma"]
+    assert created.pillars == ("Idade Média", "Roma")
+    assert isinstance(created.pillars, tuple)
     assert created.target_duration_s == 480
     assert created.version == 1
     assert created.archived is False
@@ -179,5 +186,112 @@ def test_update_validates_changes(chan_env):
 
 def test_create_requires_existing_project(chan_env):
     repo = chan_env["repo"]
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+    with pytest.raises(ChannelProjectNotFound):
         repo.create("9" * 32, "Fantasma")
+    assert repo.list(include_archived=True) == []
+
+
+def test_create_rejects_unknown_option_before_writing(chan_env):
+    repo = chan_env["repo"]
+    p_id = chan_env["project_id"]
+    with pytest.raises(ValueError):
+        repo.create(p_id, "Canal", bogus=1)
+    assert repo.list(include_archived=True) == []
+
+
+def test_list_rejects_non_boolean_include_archived(chan_env):
+    repo = chan_env["repo"]
+    for bad in ("yes", 1, None):
+        with pytest.raises(ChannelFieldInvalid):
+            repo.list(include_archived=bad)  # type: ignore[arg-type]
+
+
+def test_db_rejects_more_pillars_than_domain_limit(chan_env):
+    repo = chan_env["repo"]
+    conn = chan_env["conn"]
+    p_id = chan_env["project_id"]
+    other_project = chan_env["videos"].create_project("Canal Limite").id
+
+    # controle positivo: exatamente o limite é aceito
+    conn.execute(
+        "INSERT INTO studio.channel_profiles(id, project_id, name, pillars) VALUES (%s, %s, %s, %s)",
+        ("c" * 32, p_id, "No limite", [f"p{i}" for i in range(MAX_PILLARS)]),
+    )
+    conn.commit()
+    assert len(repo.get("c" * 32).pillars) == MAX_PILLARS
+
+    # acima do limite o banco recusa, em vez de truncar no round-trip
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO studio.channel_profiles(id, project_id, name, pillars) VALUES (%s, %s, %s, %s)",
+            ("d" * 32, other_project, "Acima do limite", [f"p{i}" for i in range(MAX_PILLARS + 1)]),
+        )
+    conn.rollback()
+
+
+def test_update_lock_timeout_is_translated(chan_env):
+    p_id = chan_env["project_id"]
+    dsn = chan_env["dsn"]
+    created = chan_env["repo"].create(p_id, "Canal")
+
+    # conexão separada segura o lock da linha; a conexão do repositório espera e estoura o lock_timeout
+    holder = psycopg.connect(dsn)
+    try:
+        holder.execute("SELECT id FROM studio.channel_profiles WHERE id = %s FOR UPDATE", (created.id,))
+        short_lock = lambda: psycopg.connect(dsn, options="-c lock_timeout=200")
+        with pytest.raises(ChannelLockTimeout):
+            PostgresChannelProfileRepository(short_lock).update(created.id, created.version, {"name": "x"})
+    finally:
+        holder.rollback()
+        holder.close()
+
+    assert chan_env["repo"].get(created.id).version == 1
+
+
+def test_concurrent_update_has_single_winner(chan_env):
+    repo = chan_env["repo"]
+    conn = chan_env["conn"]
+    p_id = chan_env["project_id"]
+    created = repo.create(p_id, "Canal")
+    barrier = threading.Barrier(2)
+
+    def worker(name):
+        barrier.wait()
+        try:
+            updated = repo.update(created.id, created.version, {"name": name})
+            return ("ok", updated.version)
+        except ChannelVersionConflict:
+            return ("conflict", None)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result() for future in (pool.submit(worker, "A"), pool.submit(worker, "B"))]
+
+    assert sorted(r[0] for r in results) == ["conflict", "ok"]
+    assert [r[1] for r in results if r[0] == "ok"] == [2]
+    versions = conn.execute(
+        "SELECT version FROM studio.channel_profile_revisions WHERE profile_id = %s ORDER BY version",
+        (created.id,),
+    ).fetchall()
+    assert [v[0] for v in versions] == [1, 2]
+
+
+def test_concurrent_create_has_single_winner(chan_env):
+    repo = chan_env["repo"]
+    conn = chan_env["conn"]
+    p_id = chan_env["project_id"]
+    barrier = threading.Barrier(2)
+
+    def worker():
+        barrier.wait()
+        try:
+            return ("ok", repo.create(p_id, "Canal").id)
+        except DuplicateChannelProfile:
+            return ("duplicate", None)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result() for future in (pool.submit(worker), pool.submit(worker))]
+
+    assert sorted(r[0] for r in results) == ["duplicate", "ok"]
+    assert conn.execute(
+        "SELECT count(*) FROM studio.channel_profiles WHERE project_id = %s", (p_id,)
+    ).fetchone()[0] == 1

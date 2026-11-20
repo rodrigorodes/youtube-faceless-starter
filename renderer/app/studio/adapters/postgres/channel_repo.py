@@ -15,7 +15,11 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from ...domain.channel import (
+    CREATABLE_FIELDS,
+    ChannelFieldInvalid,
+    ChannelLockTimeout,
     ChannelProfile,
+    ChannelProjectNotFound,
     ChannelVersionConflict,
     DuplicateChannelProfile,
     UPDATABLE_FIELDS,
@@ -28,15 +32,10 @@ from .repo import _translated
 _COLS = ("id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s, "
          "visual_identity, voice, audio, thumbnail, cta, version, archived, created_at, updated_at")
 
-_CREATE_OPTIONS = (
-    "strategy", "language", "audience", "pillars", "narrative", "target_duration_s",
-    "visual_identity", "voice", "audio", "thumbnail", "cta", "archived",
-)
-
 
 def _profile(row: dict) -> ChannelProfile:
     row = dict(row)
-    row["pillars"] = list(row["pillars"]) if row.get("pillars") is not None else []
+    row["pillars"] = tuple(row["pillars"]) if row.get("pillars") is not None else ()
     return ChannelProfile(**row)
 
 
@@ -44,14 +43,18 @@ def _snapshot(profile: ChannelProfile) -> dict:
     snapshot: dict[str, object] = {}
     for field in dataclasses.fields(profile):
         value = getattr(profile, field.name)
-        snapshot[field.name] = value.isoformat() if isinstance(value, datetime) else value
+        if isinstance(value, datetime):
+            value = value.isoformat()
+        elif isinstance(value, tuple):
+            value = list(value)
+        snapshot[field.name] = value
     return snapshot
 
 
 class PostgresChannelProfileRepository(_Base):
     def create(self, project_id: str, name: str, **options: object) -> ChannelProfile:
         p_id = check_id(project_id)
-        unknown = set(options) - set(_CREATE_OPTIONS)
+        unknown = set(options) - set(CREATABLE_FIELDS)
         if unknown:
             raise ValueError(f"unknown channel profile fields: {sorted(unknown)}")
         profile = ChannelProfile(id=uuid.uuid4().hex, project_id=p_id, name=name, **options)
@@ -61,8 +64,12 @@ class PostgresChannelProfileRepository(_Base):
                     row = self._insert(cur, profile)
                     self._insert_revision(cur, _profile(row))
                     return _profile(row)
+            except psycopg.errors.LockNotAvailable as exc:
+                raise ChannelLockTimeout(f"timed out acquiring the channel profile lock for project '{p_id}'") from exc
             except psycopg.errors.UniqueViolation as exc:
                 raise DuplicateChannelProfile(f"channel profile already exists for project '{p_id}'") from exc
+            except psycopg.errors.ForeignKeyViolation as exc:
+                raise ChannelProjectNotFound(f"project '{p_id}' does not exist") from exc
 
     def get(self, profile_id: str) -> ChannelProfile | None:
         pid = check_id(profile_id)
@@ -79,6 +86,8 @@ class PostgresChannelProfileRepository(_Base):
             return _profile(row) if row else None
 
     def list(self, include_archived: bool = False) -> list[ChannelProfile]:
+        if not isinstance(include_archived, bool):
+            raise ChannelFieldInvalid("include_archived must be a boolean")
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 f"SELECT {_COLS} FROM studio.channel_profiles WHERE (%s OR NOT archived) ORDER BY name ASC, id ASC",
@@ -93,28 +102,31 @@ class PostgresChannelProfileRepository(_Base):
         if unknown:
             raise ValueError(f"unknown channel profile fields: {sorted(unknown)}")
         with _translated(), self._connect() as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(f"SELECT {_COLS} FROM studio.channel_profiles WHERE id = %s FOR UPDATE", (pid,))
-                row = cur.fetchone()
-                if row is None:
-                    return None
-                current = _profile(row)
-                if current.version != version:
-                    raise ChannelVersionConflict(f"expected version {version}, found {current.version}")
-                updated = dataclasses.replace(current, version=current.version + 1, **changes)
-                cur.execute(
-                    f"""UPDATE studio.channel_profiles SET
-                        name = %s, strategy = %s, language = %s, audience = %s, pillars = %s, narrative = %s,
-                        target_duration_s = %s, visual_identity = %s, voice = %s, audio = %s, thumbnail = %s,
-                        cta = %s, version = %s, archived = %s, updated_at = now()
-                        WHERE id = %s RETURNING {_COLS}""",
-                    (updated.name, updated.strategy, updated.language, updated.audience, updated.pillars,
-                     updated.narrative, updated.target_duration_s, updated.visual_identity, updated.voice,
-                     updated.audio, updated.thumbnail, updated.cta, updated.version, updated.archived, pid),
-                )
-                new_row = cur.fetchone()
-                self._insert_revision(cur, _profile(new_row))
-                return _profile(new_row)
+            try:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(f"SELECT {_COLS} FROM studio.channel_profiles WHERE id = %s FOR UPDATE", (pid,))
+                    row = cur.fetchone()
+                    if row is None:
+                        return None
+                    current = _profile(row)
+                    if current.version != version:
+                        raise ChannelVersionConflict(f"expected version {version}, found {current.version}")
+                    updated = dataclasses.replace(current, version=current.version + 1, **changes)
+                    cur.execute(
+                        f"""UPDATE studio.channel_profiles SET
+                            name = %s, strategy = %s, language = %s, audience = %s, pillars = %s, narrative = %s,
+                            target_duration_s = %s, visual_identity = %s, voice = %s, audio = %s, thumbnail = %s,
+                            cta = %s, version = %s, archived = %s, updated_at = now()
+                            WHERE id = %s RETURNING {_COLS}""",
+                        (updated.name, updated.strategy, updated.language, updated.audience, list(updated.pillars),
+                         updated.narrative, updated.target_duration_s, updated.visual_identity, updated.voice,
+                         updated.audio, updated.thumbnail, updated.cta, updated.version, updated.archived, pid),
+                    )
+                    new_row = cur.fetchone()
+                    self._insert_revision(cur, _profile(new_row))
+                    return _profile(new_row)
+            except psycopg.errors.LockNotAvailable as exc:
+                raise ChannelLockTimeout(f"timed out acquiring the channel profile lock for '{pid}'") from exc
 
     @staticmethod
     def _insert(cur, profile: ChannelProfile) -> dict:
@@ -125,7 +137,7 @@ class PostgresChannelProfileRepository(_Base):
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING """ + _COLS,
             (profile.id, profile.project_id, profile.name, profile.strategy, profile.language, profile.audience,
-             profile.pillars, profile.narrative, profile.target_duration_s, profile.visual_identity, profile.voice,
+             list(profile.pillars), profile.narrative, profile.target_duration_s, profile.visual_identity, profile.voice,
              profile.audio, profile.thumbnail, profile.cta, profile.version, profile.archived),
         )
         return cur.fetchone()

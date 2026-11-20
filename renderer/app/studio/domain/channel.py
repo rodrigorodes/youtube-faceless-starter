@@ -7,7 +7,7 @@ incrementa a versão de forma otimista, gravando um snapshot auditável por vers
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from .ids import check_id
@@ -22,6 +22,22 @@ MAX_PROVIDER_SPEC_LENGTH = 200
 MAX_CTA_LENGTH = 500
 MAX_PILLARS = 20
 MAX_DURATION_S = 36000
+
+# Campos que um `create` aceita (id, project_id e timestamps são do repositório).
+CREATABLE_FIELDS = (
+    "strategy",
+    "language",
+    "audience",
+    "pillars",
+    "narrative",
+    "target_duration_s",
+    "visual_identity",
+    "voice",
+    "audio",
+    "thumbnail",
+    "cta",
+    "archived",
+)
 
 # Campos que um `update` pode alterar (id, project_id, version e timestamps são do repositório).
 UPDATABLE_FIELDS = (
@@ -69,6 +85,14 @@ class ChannelVersionConflict(ChannelError, ValueError):
     """A versão informada não é a versão atual: outra atualização venceu a corrida."""
 
 
+class ChannelProjectNotFound(ChannelError, LookupError):
+    """O projeto (canal) informado não existe: o perfil não pode ser criado."""
+
+
+class ChannelLockTimeout(ChannelError, RuntimeError):
+    """A linha do perfil ficou bloqueada além do `lock_timeout` do banco (contenção)."""
+
+
 def validate_channel_name(name: object) -> str:
     if not isinstance(name, str):
         raise ChannelNameInvalid("channel name must be a string")
@@ -108,12 +132,15 @@ def validate_version(value: object) -> int:
     return value
 
 
-def clean_pillars(pillars: object) -> list[str]:
-    """Pilares de conteúdo: tira espaços, descarta vazios, remove repetidos e limita a MAX_PILLARS."""
+def clean_pillars(pillars: object) -> tuple[str, ...]:
+    """Pilares de conteúdo: tira espaços, descarta vazios, remove repetidos e limita a MAX_PILLARS.
+
+    Devolve uma tupla: o agregado imutável não compartilha uma lista mutável com o chamador.
+    """
     if not pillars:
-        return []
+        return ()
     if not isinstance(pillars, (list, tuple)):
-        raise ChannelFieldInvalid("pillars must be a list of strings")
+        raise ChannelFieldInvalid("pillars must be a list or tuple of strings")
     cleaned: list[str] = []
     for item in pillars:
         if not isinstance(item, str):
@@ -121,7 +148,7 @@ def clean_pillars(pillars: object) -> list[str]:
         text = item.strip()
         if text and text not in cleaned:
             cleaned.append(text)
-    return cleaned[:MAX_PILLARS]
+    return tuple(cleaned[:MAX_PILLARS])
 
 
 @dataclass(frozen=True)
@@ -132,7 +159,7 @@ class ChannelProfile:
     strategy: str = ""
     language: str = "pt-BR"
     audience: str = ""
-    pillars: list[str] = field(default_factory=list)
+    pillars: tuple[str, ...] = ()
     narrative: str = ""
     target_duration_s: int = 60
     visual_identity: str = ""
