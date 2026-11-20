@@ -21,6 +21,7 @@ Todas ficam no arquivo `.env` na raiz do projeto (copiado de `.env.example`). O 
 | `OPENCODE_ALLOW_PAID_IMAGES` | não | (vazio) | `1` libera modelos de imagem pagos no bridge |
 | `STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER` | não | `opencode:openai/gpt-6-luna`, `opencode:openrouter/recraft/recraft-v4.1-flash-v2:free`, `piper:pt_BR-faber-medium`, `ffmpeg:rich` | Provedor padrão de cada porta (`<provedor>:<modelo>`); o `config` do projeto sobrescreve. Em uso: `STUDIO_TEXT` (`opencode`, `demo`) e `STUDIO_IMAGE` (`opencode`, `placeholder`, `stock`, `veo`). `STUDIO_VOICE` (`piper`) e `STUDIO_RENDERER` (`ffmpeg`) |
 | `STUDIO_DATABASE_URL` | não | montada pelo compose | Banco do schema `studio`; sem ela o `/studio` responde 503 e o `/videos` segue normal |
+| `STUDIO_ALLOWED_HOSTS` | não | `localhost,127.0.0.1,renderer` | Hosts aceitos pela API `/studio`, separados por vírgula. Configuração protege contra DNS rebinding, mas **não substitui autenticação**; não exponha a API à rede. |
 | `MAX_COST_USD_PER_VIDEO`, `MAX_COST_USD_PER_MONTH` | não | `0`, `15` | Tetos de gasto com provedores pagos; o `CostGuard` recusa antes de cada chamada de modelo do fluxo editorial |
 | `PEXELS_API_KEY` | não | (vazio) | Chave do Pexels para `STUDIO_IMAGE=stock:pexels` |
 | `STUDIO_PAID_IMAGE_USD`, `STUDIO_VEO_USD_PER_SECOND` | não | `0.05`, `0.40` | Estimativas de custo por imagem não `:free` e por segundo de Veo (o `CostGuard` usa antes de gerar) |

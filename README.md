@@ -1,6 +1,14 @@
 # YouTube Faceless — n8n Starter (Windows + macOS)
 
-Projeto inicial para montar um ambiente local de automação de vídeos. **MVP demonstrável**, não uma fábrica de vídeos pronta para publicação: gera um MP4 vertical com slides de texto (sem narração), usando FFmpeg. Com `GEMINI_API_KEY`, usa Gemini para redigir os slides; sem chave, utiliza texto de demonstração. O n8n recebe um pedido por webhook e chama o renderizador. **Não publica no YouTube nem gera imagens/voz reais nesta versão.**
+Ambiente local de automação de vídeos com n8n, Postgres e renderer Python
+(FastAPI/FFmpeg). O Studio gera roteiro, mídia, voz, vídeo e prévia de
+aprovação; alguns provedores podem ser trocados por configuração. Inclui
+versões iniciais de recuperação e analytics.
+
+**Não habilite publicação automática:** a proteção da API e a coordenação
+do upload ainda têm limitações. O workflow legado V2 pode publicar sem a
+aprovação do Studio e, se já estiver instalado, precisa ser desativado no
+n8n. Veja [riscos e estado atual](docs/p05-p07-continuation.md).
 
 ## Documentação
 
@@ -19,6 +27,8 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Storyboard e mídia: imagens por cena, cache, licença e custo](docs/13-midia.md)
 - [Narração e renderização: vídeo, legenda, QA e fila](docs/14-render.md)
 - [Aprovação e publicação: prévia, fila, upload retomável](docs/15-publicacao.md)
+- [Recuperação e analytics: versão inicial e limites](docs/p06-p07-offline.md)
+- [Alertas passivos e suas limitações](docs/16-alertas-p06.md)
 
 ## Pré-requisitos
 
