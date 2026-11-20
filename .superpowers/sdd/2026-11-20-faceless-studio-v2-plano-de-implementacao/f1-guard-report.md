@@ -144,11 +144,13 @@ docker run --rm --network f1c-net \
 - Focados (`test_budget_guard.py`, `test_budget_http.py`, `test_paid_operations.py`,
   `test_budget_reservations.py`): **115 passed**.
 - `tests/test_db.py`: **13 passed, 2 failed** — falha esperada e **não corrigida de propósito**:
-  a instrução desta rodada proíbe tocar em `tests/test_db.py`, e as duas listas de migração
+  a instrução desta rodada proíbe tocar em `tests/test_db.py`. As duas listas de migração
   (`test_migrate_applies_once` e `test_failed_migration_rolls_back_and_is_not_recorded`, linhas 25 e
-  37) ainda terminam em `"0019_ledger_estimate_and_attribution"`. Falta acrescentar
-  `"0020_paid_operation_attempt_and_budget_indexes"` ao fim das duas listas. O controlador precisa
-  aplicar essa linha; não alterei o arquivo proibido.
+  37) não contêm a `0020`. No momento deste relatório outro agente já acrescentou
+  `"0021_channel_pillars_constraints"` ao fim das duas listas, mas **sem** a `0020`; a correção
+  necessária é inserir `"0020_paid_operation_attempt_and_budget_indexes"` **antes** de
+  `"0021_channel_pillars_constraints"` nas duas listas. O controlador precisa aplicar essa linha; não
+  alterei o arquivo proibido.
 - Suíte completa: **1537 passed, 35 skipped, 4 failed, 1 warning**. As 4 falhas são:
   - 2 de `tests/test_db.py` (lista acima, arquivo fora do escopo autorizado);
   - 2 de `tests/test_secrets_hygiene.py` (`test_real_starter_archive_is_safe_and_keeps_scripts_executable`
