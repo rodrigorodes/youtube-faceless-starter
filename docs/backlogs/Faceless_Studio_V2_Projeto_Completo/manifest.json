@@ -1,0 +1,21 @@
+{
+  "name": "Faceless Studio V2",
+  "kind": "implementation-plan",
+  "phases": [
+    "F0",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11"
+  ],
+  "cards": 95,
+  "source": "youtube-faceless-starter(1).zip + Faceless_Studio_V2_Plano_Implementacao.md",
+  "status": "proposed"
+}

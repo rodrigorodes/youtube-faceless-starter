@@ -1,0 +1,17 @@
+{
+  "name": "Faceless Studio V2 - DarkPlanner provider",
+  "status": "proposed",
+  "cards": 12,
+  "files": [
+    "PLANO_DE_EXECUCAO.md",
+    "README.md",
+    "adr/ADR-001-AUDIO-PROVIDER.md",
+    "arquitetura/DESENHO.md",
+    "backlog/CARDS.md",
+    "backlog/issues.csv",
+    "contratos/CONTRATOS.md",
+    "operacao/API_DISCOVERY.md",
+    "operacao/RUNBOOK.md",
+    "testes/PLANO_DE_TESTES.md"
+  ]
+}
