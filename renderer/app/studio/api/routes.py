@@ -1,18 +1,23 @@
 """Rotas /studio. Só falam com casos de uso; nunca com repositório ou banco."""
 from collections.abc import Callable
 
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
+from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.render import RenderRefused
+from ..domain.publish import InvalidPublishData, srt_to_vtt
+from .preview import render_preview
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
@@ -104,6 +109,56 @@ class RenderStatusOut(BaseModel):
     qa_report: QaReport | None
 
 
+class ApproveIn(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    description: str | None = Field(default=None, max_length=10000)
+    tags: list[str] | None = Field(default=None, max_length=50)
+    publish_at: datetime | None = None
+    override_reason: str | None = Field(default=None, max_length=500)
+
+
+class RejectIn(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
+class DecisionOut(BaseModel):
+    video: Video
+    changed: bool  # False: já estava decidido (repetir é seguro)
+
+
+class ClaimIn(BaseModel):
+    lease_seconds: int = Field(default=1800, ge=20, le=7200)
+
+
+class ClaimOut(BaseModel):
+    publication: Publication
+    youtube_body: dict
+    file_size: int
+    content_type: str
+    file_path: str
+    thumbnail_path: str
+
+
+class ClaimResult(BaseModel):
+    item: ClaimOut | None
+
+
+class UploadUriIn(BaseModel):
+    attempt: int = Field(ge=1)
+    upload_uri: str = Field(max_length=2000)
+    replace: bool = False
+
+
+class UploadedIn(BaseModel):
+    youtube_video_id: str = Field(max_length=64)
+
+
+class FailedIn(BaseModel):
+    attempt: int = Field(ge=1)
+    error: str = Field(max_length=2000)
+    retryable: bool
+
+
 class TransitionIn(BaseModel):
     expected: VideoStatus
     new: VideoStatus
@@ -138,6 +193,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(502, str(exc)) from exc
         except (ScriptRejected, IdeasRejected) as exc:
             raise HTTPException(502, f"model output rejected: {exc}") from exc
+        except InvalidPublishData as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except PublicationNotFound as exc:
+            raise HTTPException(404, "publication not found") from exc
+        except PublicationConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         except (AssetRefused, RenderRefused) as exc:
             raise HTTPException(502, f"asset refused: {exc}") from exc
 
@@ -258,5 +319,73 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.get("/videos/{video_id}/subtitles")
     def video_subtitles(video_id: str):
         return served(video_id, "srt", "text/plain; charset=utf-8", f"{video_id}.srt")
+
+    @router.get("/videos/{video_id}/subtitles.vtt")
+    def video_subtitles_vtt(video_id: str):
+        path = run(lambda uc: rendering(uc).file.execute(check_id(video_id), "srt"))
+        if path is None:
+            raise HTTPException(404, "rendered file not available")
+        return PlainTextResponse(srt_to_vtt(path.read_text(encoding="utf-8")), media_type="text/vtt; charset=utf-8")
+
+    def publishing(uc: UseCases):
+        if uc.publishing is None:
+            raise HTTPException(503, "publishing services unavailable")
+        return uc.publishing
+
+    @router.post("/videos/{video_id}/approve", response_model=DecisionOut)
+    def approve(video_id: str, body: ApproveIn | None = None):
+        body = body or ApproveIn()
+        video, changed = run(lambda uc: publishing(uc).approve.execute(
+            check_id(video_id), title=body.title, description=body.description, tags=body.tags, publish_at=body.publish_at,
+            override_reason=body.override_reason))
+        return DecisionOut(video=video, changed=changed)
+
+    @router.post("/videos/{video_id}/reject", response_model=DecisionOut)
+    def reject(video_id: str, body: RejectIn | None = None):
+        video, changed = run(lambda uc: publishing(uc).reject.execute(check_id(video_id), (body or RejectIn()).reason))
+        return DecisionOut(video=video, changed=changed)
+
+    @router.get("/videos/{video_id}/preview", response_class=HTMLResponse)
+    def preview(video_id: str):
+        page, headers = render_preview(run(lambda uc: publishing(uc).preview.execute(check_id(video_id))))
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/videos/{video_id}/thumbnail")
+    def thumbnail(video_id: str):
+        data = run(lambda uc: publishing(uc).thumbnail.execute(check_id(video_id)))
+        if data is None:
+            raise HTTPException(404, "thumbnail not available")
+        return Response(data, media_type="image/jpeg")
+
+    @router.get("/videos/{video_id}/publication", response_model=Publication | None)
+    def get_publication(video_id: str):
+        return run(lambda uc: publishing(uc).get.execute(check_id(video_id)))
+
+    @router.post("/videos/{video_id}/publication/retry", response_model=Publication)
+    def retry_publication(video_id: str):
+        return run(lambda uc: publishing(uc).retry.execute(check_id(video_id)))
+
+    @router.post("/publications/claim", response_model=ClaimResult)
+    def claim(body: ClaimIn | None = None):
+        item = run(lambda uc: publishing(uc).claim.execute((body or ClaimIn()).lease_seconds))
+        return ClaimResult(item=None if item is None else ClaimOut(
+            publication=item.publication, youtube_body=item.youtube_body, file_size=item.file_size, content_type=item.content_type,
+            file_path=item.file_path, thumbnail_path=item.thumbnail_path))
+
+    @router.post("/publications/{publication_id}/upload-uri", response_model=Publication)
+    def set_upload_uri(publication_id: str, body: UploadUriIn):
+        return run(lambda uc: publishing(uc).set_uri.execute(check_id(publication_id), body.attempt, body.upload_uri, body.replace))
+
+    @router.post("/publications/{publication_id}/uploaded", response_model=Publication)
+    def uploaded(publication_id: str, body: UploadedIn):
+        return run(lambda uc: publishing(uc).uploaded.execute(check_id(publication_id), body.youtube_video_id))
+
+    @router.post("/publications/{publication_id}/failed", response_model=Publication)
+    def failed(publication_id: str, body: FailedIn):
+        return run(lambda uc: publishing(uc).failed.execute(check_id(publication_id), body.attempt, body.error, body.retryable))
+
+    @router.post("/publications/{publication_id}/thumbnail-set", response_model=Publication)
+    def thumbnail_set(publication_id: str):
+        return run(lambda uc: publishing(uc).thumbnail_set.execute(check_id(publication_id)))
 
     return router
