@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..domain.render import Cue
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
 @dataclass(frozen=True)
@@ -208,3 +208,64 @@ class PublicationRepository(Protocol):
 class ThumbnailMaker(Protocol):
     def make(self, image: Path) -> bytes:
         """JPEG 1280x720 de até 2 MB a partir da imagem da cena."""
+
+
+@dataclass(frozen=True)
+class VideoRow:
+    id: str
+    project_id: str
+    topic: str
+    format: VideoFormat
+    status: VideoStatus
+    title: str
+    updated_at: datetime
+    job_status: JobStatus | None
+    step_running: bool
+    publication_status: PublicationStatus | None
+    error: str | None
+    cost_rows: list[tuple[str, str, float]]
+
+
+@dataclass(frozen=True)
+class StepInfo:
+    step: str
+    attempt: int
+    status: str
+    error_class: str | None
+    error_message: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+@dataclass(frozen=True)
+class UsageInfo:
+    step: str
+    provider: str
+    model: str
+    cost_usd: float
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class PubInfo:
+    status: PublicationStatus
+    attempt: int
+    error: str | None
+
+
+@dataclass(frozen=True)
+class VideoDetail:
+    video: VideoRow
+    steps: list[StepInfo]
+    usage: list[UsageInfo]
+    render_error: str | None
+    publication: PubInfo | None
+
+
+class PanelRepository(Protocol):
+    def projects(self) -> list[tuple[str, str]]: ...
+    def videos(self, since: datetime | None, project_id: str | None, limit: int) -> list[VideoRow]: ...
+    def video_detail(self, video_id: str) -> VideoDetail | None: ...
+    def month_usage(self) -> tuple[float, int, int]: ...
+    def unattributed_usage(self) -> list[tuple[str, str, float]]: ...
+
