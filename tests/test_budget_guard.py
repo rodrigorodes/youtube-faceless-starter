@@ -13,8 +13,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.application.budget import (  # noqa: E402
-    BeginResult, BudgetDenied, CostConfirmation, OperationInProgress, OperationSettled, OperationUncertain,
-    PaidOperationGuard, PaidOperationState, PreEffectFailure,
+    BeginResult, BudgetDenied, CostConfirmation, CostConfirmationError, OperationInProgress, OperationSettled,
+    OperationUncertain, PaidOperationGuard, PaidOperationState, PreEffectFailure,
 )
 from app.studio.application.editorial import CostGuard, GenerateScript, IngestSource  # noqa: E402
 from app.studio.application.ports import ImageResult, TextResult  # noqa: E402
@@ -41,6 +41,7 @@ class FakeLedger:
         self.events = []
         self.settlements = {}
         self.created = []
+        self.attempts = {}
         self.deny = deny
 
     def begin(self, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd):
@@ -50,11 +51,18 @@ class FakeLedger:
         state = self.states.get(key)
         if state is None:
             self.states[key] = PaidOperationState.RESERVED
+            self.attempts[key] = 1
+            self.created.append(key)
+            return BeginResult.CREATED
+        if state is PaidOperationState.RELEASED:
+            # liberada = nenhum efeito externo: reabre como nova tentativa, com nova reserva
+            self.states[key] = PaidOperationState.RESERVED
+            self.attempts[key] += 1
+            self.settlements.pop(key, None)
             self.created.append(key)
             return BeginResult.CREATED
         return {PaidOperationState.RESERVED: BeginResult.IN_PROGRESS,
                 PaidOperationState.CONFIRMED: BeginResult.CONFIRMED,
-                PaidOperationState.RELEASED: BeginResult.RELEASED,
                 PaidOperationState.UNCERTAIN: BeginResult.UNCERTAIN}[state]
 
     def confirm(self, key, entry, confirmation):
@@ -161,8 +169,57 @@ def test_known_pre_effect_failure_releases_the_reservation():
         g.run("k", V, Decimal("0.5"), refused, settle=lambda _: free_settlement())
     assert ledger.state("k") is PaidOperationState.RELEASED
     assert any(event[0] == "release" for event in ledger.events)
-    with pytest.raises(OperationSettled):  # liberada não volta a executar sem reconciliação/chave nova
+
+
+def test_released_operation_can_retry_and_charges_only_once():
+    ledger, calls = FakeLedger(), []
+    g = guard(ledger)
+
+    def refused():
+        calls.append("attempt")
+        raise PreEffectFailure("bridge refused the connection before generation")
+
+    with pytest.raises(PreEffectFailure):
         g.run("k", V, Decimal("0.5"), refused, settle=lambda _: free_settlement())
+    assert ledger.state("k") is PaidOperationState.RELEASED
+
+    result = g.run("k", V, Decimal("0.5"), lambda: calls.append("call") or "paid output",
+                   settle=lambda _: free_settlement(entry_cost=0.42))
+    assert result == "paid output"
+    assert calls == ["attempt", "call"]  # a segunda tentativa executou de fato
+    assert ledger.state("k") is PaidOperationState.CONFIRMED
+    assert ledger.attempts["k"] == 2  # nova tentativa, attempt incrementado
+    assert [event for event in ledger.events if event[0] == "confirm"] == [("confirm", "k", "ACTUAL", Decimal("0.42"))]
+    assert ledger.created == ["k", "k"]  # reserva nova na reabertura
+
+    with pytest.raises(OperationSettled):  # CONFIRMED continua terminal
+        g.run("k", V, Decimal("0.5"), lambda: calls.append("again"), settle=lambda _: free_settlement())
+
+
+def test_confirm_failure_marks_the_operation_uncertain_and_reraises():
+    class _ConfirmFails(FakeLedger):
+        def confirm(self, key, entry, confirmation):
+            raise CostConfirmationError("confirmed amount does not match the recorded provider cost")
+
+    ledger = _ConfirmFails()
+    with pytest.raises(CostConfirmationError):
+        guard(ledger).run("k", V, Decimal("0.5"), lambda: "paid", settle=lambda _: free_settlement(entry_cost=0.5))
+    assert ledger.state("k") is PaidOperationState.UNCERTAIN
+    assert ("uncertain", "k", "confirmation failed: CostConfirmationError: confirmed amount does not match the recorded provider cost") in ledger.events
+
+
+def test_confirm_failure_keeps_the_original_error_when_marking_uncertain_also_fails():
+    class _ConfirmAndMarkFail(FakeLedger):
+        def confirm(self, key, entry, confirmation):
+            raise CostConfirmationError("confirmed amount does not match the recorded provider cost")
+
+        def mark_uncertain(self, key, reason):
+            raise RuntimeError("database unavailable")
+
+    with pytest.raises(RuntimeError, match="database unavailable") as info:
+        guard(_ConfirmAndMarkFail()).run("k", V, Decimal("0.5"), lambda: "paid",
+                                         settle=lambda _: free_settlement(entry_cost=0.5))
+    assert isinstance(info.value.__cause__, CostConfirmationError)  # exceção original preservada como causa
 
 
 def test_confirmed_actual_cost_is_recorded_and_releases():
@@ -704,6 +761,24 @@ def test_score_ideas_routes_through_the_paid_guard_without_a_video():
     assert ("confirm", ledger.only_key(), "ESTIMATE", Decimal("0.1")) in ledger.events
     assert ledger.events[0][3] is None  # operação de projeto, sem vídeo
     assert usage.entries == []
+
+
+def test_invalid_ideas_after_a_successful_paid_call_stays_uncertain():
+    from app.studio.application.ideas import IdeasRejected, ScoreIdeas
+
+    class _BadIdeaText(_IdeaText):
+        def complete(self, prompt):
+            self.calls += 1
+            return TextResult(text=json.dumps({"ideas": [{"topic": "tema não enviado", "relevance": 5,
+                                                           "verifiability": 5, "visual": 5, "freshness": 5}]}),
+                              usage=UsageEntry(step="ideas", provider=self.name, model=self.model, cost_usd=self.cost))
+
+    usage, model, ledger = _Usage(), _BadIdeaText(0.10), FakeLedger()
+    with pytest.raises(IdeasRejected):
+        ScoreIdeas(model, CostGuard(usage, 0.0, 15.0), usage, paid=guard(ledger, monthly="15")).execute(["tema A"])
+    assert model.calls == 1  # a chamada paga aconteceu
+    assert ledger.state(ledger.only_key()) is PaidOperationState.UNCERTAIN
+    assert not any(event[0] == "confirm" for event in ledger.events)
 
 
 class _TwoJobs:

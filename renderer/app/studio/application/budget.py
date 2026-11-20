@@ -3,18 +3,23 @@
 A reserva (tabela `budget_reservations`) bloqueia orçamento enquanto activa. Uma operação paga é a
 intenção persistida ligada a essa reserva; só o chamador que obtém `CREATED` executa o provedor.
 Confirmar remove a reserva registrando `ACTUAL` (cobrança comprovada), `ESTIMATE` (valor aproximado,
-sujeito a reconciliação) ou `FREE` (zero); liberar remove a reserva sem gasto. Um resultado ambíguo
-mantém a reserva e exige reconciliação explícita antes de nova execução da mesma chave.
+sujeito a reconciliação) ou `FREE` (zero); liberar remove a reserva sem gasto e marca a operação como
+segura para repetir (`begin` reabre como nova tentativa). Um resultado ambíguo mantém a reserva e exige
+reconciliação explícita antes de nova execução da mesma chave.
 """
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Protocol
 
 from ..domain.contracts import UsageEntry
 from .ports import ModelUnavailable
+
+# Operação RESERVED sem atualização por este tempo é reportada como parada (não é encerrada sozinha:
+# não há heartbeat, então uma chamada legítima mais longa também aparece — é visibilidade, não mutação).
+STALLED_AFTER = timedelta(minutes=15)
 
 
 class IdempotencyConflict(ValueError):
@@ -70,7 +75,14 @@ class OperationUncertain(BudgetOperationError):
 
 
 class OperationSettled(BudgetOperationError):
-    """A operação já foi confirmada ou liberada: não reexecutar."""
+    """A operação já foi confirmada: o resultado existe e não deve ser reexecutado.
+
+    `state` diz qual estado terminal foi encontrado (`CONFIRMED` é o normal; `RELEASED` é defensivo).
+    """
+
+    def __init__(self, message: str, *, state: str | None = None):
+        super().__init__(message)
+        self.state = state
 
 
 class InvalidOperationTransition(BudgetOperationError):
@@ -148,13 +160,14 @@ class ChargeEvidence:
 
 @dataclass(frozen=True)
 class PendingReconciliation:
-    """Operação antiga ou incerta que precisa de decisão humana; não bloqueia o mês corrente por si só."""
+    """Operação antiga, incerta ou parada que precisa de decisão humana; não bloqueia sozinha por si só."""
 
     idempotency_key: str
     video_id: str | None
     amount_usd: Decimal
-    reason: str  # "stale_reservation" | "uncertain_operation"
+    reason: str  # "stale_reservation" | "uncertain_operation" | "stalled_operation" | "legacy_unconfirmed_ledger" | "unknown_ledger_cost"
     created_at: datetime
+    stalled_for: timedelta | None = None  # preenchido em "stalled_operation": tempo desde a última atualização
 
 
 def _as_amount(value) -> Decimal:
@@ -212,11 +225,19 @@ class PaidOperationRepository(Protocol):
         ...
 
     def reconcile_actual(self, key: str, charged_usd: Decimal, *, reference: str, confirmed_by: str) -> None:
-        """Troca um ESTIMATE confirmado por ACTUAL com a cobrança comprovada (reconciliação humana)."""
+        """Reconcilia uma operação com a cobrança comprovada (humano).
+
+        Aceita `CONFIRMED` com `ESTIMATE` (troca o lançamento) e `UNCERTAIN` (fecha a operação
+        inserindo o lançamento). `charged_usd = 0` converte para `FREE`; positivo vira `ACTUAL`.
+        """
         ...
 
     def release(self, key: str, reason: str) -> None:
-        """Libera a reserva sem gasto conhecido; registra o motivo."""
+        """Libera a reserva sem gasto conhecido; registra o motivo.
+
+        `RELEASED` significa "nenhum efeito externo, seguro repetir": `begin` reabre a mesma chave
+        como nova tentativa (`attempt + 1`), com nova reserva.
+        """
         ...
 
     def mark_uncertain(self, key: str, reason: str) -> None:
@@ -230,8 +251,11 @@ class PaidOperationRepository(Protocol):
         """Confirmação registrada de uma operação CONFIRMED, ou None."""
         ...
 
-    def pending_reconciliation(self) -> list[PendingReconciliation]:
-        """Reservas de meses anteriores e operações UNCERTAIN que exigem decisão explícita."""
+    def pending_reconciliation(self, *, stale_after: timedelta = STALLED_AFTER) -> list[PendingReconciliation]:
+        """Reservas antigas, operações incertas/paradas e lançamentos legados que exigem decisão explícita.
+
+        `stale_after` define há quanto tempo uma operação `RESERVED` conta como parada.
+        """
         ...
 
 
@@ -273,9 +297,10 @@ class PaidOperationGuard:
         if result is BeginResult.UNCERTAIN:
             raise OperationUncertain(f"paid operation {key} is uncertain: reconcile before retrying")
         if result is BeginResult.CONFIRMED:
-            raise OperationSettled(f"paid operation {key} was already confirmed")
+            raise OperationSettled(f"paid operation {key} was already confirmed", state="CONFIRMED")
         if result is BeginResult.RELEASED:
-            raise OperationSettled(f"paid operation {key} was already released")
+            # Defensivo: o repositório reabre RELEASED; se chegar aqui, não executar sem reconciliação.
+            raise OperationSettled(f"paid operation {key} was already released", state="RELEASED")
         raise BudgetOperationError(f"unexpected begin result {result!r}")
 
     def confirm(self, key: str, entry: UsageEntry, confirmation: CostConfirmation) -> None:
@@ -290,8 +315,8 @@ class PaidOperationGuard:
     def mark_uncertain(self, key: str, reason: str) -> None:
         self.repo.mark_uncertain(key, reason)
 
-    def pending_reconciliation(self) -> list[PendingReconciliation]:
-        return self.repo.pending_reconciliation()
+    def pending_reconciliation(self, *, stale_after: timedelta = STALLED_AFTER) -> list[PendingReconciliation]:
+        return self.repo.pending_reconciliation(stale_after=stale_after)
 
     def run(self, key: str, video_id: str | None, estimate_usd: Decimal, call, settle, *,
             validate=None, allow_free_replay: bool = False):
@@ -300,7 +325,9 @@ class PaidOperationGuard:
         `validate(result)` roda depois da chamada paga e antes de encerrar o custo; se levantar, a
         operação fica UNCERTAIN (dinheiro pago, saída inutilizável). `settle(result)` devolve
         `(UsageEntry, CostConfirmation)`; `None` também fica UNCERTAIN. Falha ambígua mantém a reserva.
-        Com `allow_free_replay`, uma operação já CONFIRMED como FREE é reexecutada sem nova cobrança.
+        `RELEASED` (falha pré-efeito) é reaberta como nova tentativa no próximo `begin`; `CONFIRMED` é
+        terminal e `UNCERTAIN` exige reconciliação. Com `allow_free_replay`, uma operação já CONFIRMED
+        como FREE é reexecutada sem nova cobrança.
         """
         try:
             self.reserve(key, video_id, estimate_usd)
@@ -345,7 +372,21 @@ class PaidOperationGuard:
             self.repo.mark_uncertain(key, "provider result has no confirmable cost")
             raise OperationUncertain(f"paid operation {key} has no confirmable cost")
         entry, confirmation = settlement
-        self.repo.confirm(key, entry, confirmation)
+        try:
+            self.repo.confirm(key, entry, confirmation)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            # a chamada externa aconteceu (dinheiro pode ter sido gasto), mas o custo não foi gravado:
+            # não deixar RESERVED órfão; marca incerto para reconciliação e relança o erro original.
+            reason = f"confirmation failed: {type(exc).__name__}: {str(exc)[:200]}"
+            try:
+                self.repo.mark_uncertain(key, reason)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as mark_exc:
+                raise mark_exc from exc  # banco fora: preserva a exceção original como causa
+            raise
         return output
 
     def _confirmed_free(self, key: str) -> bool:

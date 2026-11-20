@@ -83,13 +83,15 @@ class ScoreIdeas:
             self.guard.check(video_id, estimate)
             result = model.complete(prompt)
             self.usage.record(video_id, result.usage)
+            parsed = _parse(result.text, topics)
         else:
             # escopo de projeto (sem vídeo): reserva só limitada pelo teto mensal
             key = paid_key("ideas", video_id or "", project_id or "", getattr(model, "model", ""), model.name, prompt)
-            result = self.paid.run(key, video_id, Decimal(str(estimate)),
+            # valida a saída ANTES de confirmar: rubrica inválida vira UNCERTAIN, não gasto confirmado
+            parsed = self.paid.run(key, video_id, Decimal(str(estimate)),
                                    call=lambda: model.complete(prompt),
+                                   validate=lambda res: _parse(res.text, topics),
                                    settle=lambda res: provider_settlement(res.usage, settled_by=f"studio:ideas:{model.name}"))
-        parsed = _parse(result.text, topics)
         ranked = [RankedIdea(t, score(parsed[t]), parsed[t]) for t in topics]
         return sorted(ranked, key=lambda r: -r.score)  # sorted é estável: empate mantém a ordem enviada
 

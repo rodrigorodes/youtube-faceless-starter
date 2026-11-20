@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.studio.api.routes import make_router  # noqa: E402
 from app.studio.application.budget import (  # noqa: E402
-    BudgetDenied, InvalidOperationTransition, OperationInProgress, OperationSettled, OperationUncertain,
+    BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition, OperationInProgress,
+    OperationSettled, OperationUncertain, UnknownPaidOperation,
 )
 
 VIDEO = "b" * 32
@@ -47,18 +48,27 @@ def _client(exc):
     return TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
 
 
-@pytest.mark.parametrize(("exc", "status"), [
-    (BudgetDenied("budget denied for paid operation secret-key"), 403),
-    (OperationInProgress("paid operation secret-key is already in progress"), 409),
-    (OperationSettled("paid operation secret-key was already confirmed"), 409),
-    (OperationUncertain("paid operation secret-key is uncertain"), 409),
-    (InvalidOperationTransition("cannot confirm a RELEASED operation"), 409),
+@pytest.mark.parametrize(("exc", "status", "expected"), [
+    (BudgetDenied("budget denied for paid operation secret-key"), 403, "budget denied"),
+    (IdempotencyConflict("idempotency key secret-key already used"), 409, "idempotency key"),
+    (CostConfirmationError("confirmed amount mismatch for secret-key"), 422, "cost confirmation"),
+    (OperationInProgress("paid operation secret-key is already in progress"), 409, "already in progress"),
+    (OperationSettled("paid operation secret-key was already confirmed", state="CONFIRMED"), 409, "already confirmed"),
+    (OperationSettled("paid operation secret-key was already released", state="RELEASED"), 409, "was released"),
+    (OperationUncertain("paid operation secret-key is uncertain"), 409, "uncertain"),
+    (InvalidOperationTransition("cannot confirm a RELEASED operation secret-key"), 409, "incompatible"),
+    (UnknownPaidOperation("paid operation secret-key not found"), 404, "not found"),
 ])
-def test_paid_operation_errors_have_explicit_http_status(exc, status):
+def test_paid_operation_errors_have_explicit_http_status(exc, status, expected):
     response = _client(exc).post(f"/studio/videos/{VIDEO}/script", json={})
     assert response.status_code == status
+    body = response.text.lower()
     assert "secret-key" not in response.text  # mensagem pública, sem detalhe interno
     assert "RELEASED" not in response.text
+    assert expected in body
+    if isinstance(exc, OperationSettled):
+        # a mensagem reflete o estado real, não "in progress or awaiting reconciliation"
+        assert "in progress" not in body and "awaiting reconciliation" not in body
 
 
 def test_cost_cap_still_maps_to_403():

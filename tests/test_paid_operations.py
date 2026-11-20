@@ -5,6 +5,7 @@ banco exclusivamente descartável; a fixture principal derruba o schema `studio`
 os testes são ignorados — não há banco real nem credenciais aqui.
 """
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from decimal import Decimal
 import os
 from threading import Barrier
@@ -98,6 +99,7 @@ def test_migration_creates_paid_operations_table(conn):
     applied = migrate(conn)
     assert "0017_paid_operations" in applied
     assert "0019_ledger_estimate_and_attribution" in applied
+    assert "0020_paid_operation_attempt_and_budget_indexes" in applied
     assert conn.execute("SELECT to_regclass('studio.paid_operations') IS NOT NULL").fetchone()[0]
 
 
@@ -198,6 +200,35 @@ def test_release_frees_the_reservation_without_recording_spend(paid_db):
     assert row_counts(conn) == (1, 0)
     assert conn.execute("SELECT count(*) FROM studio.usage_ledger").fetchone()[0] == 0
     assert begin(repo, "k2", amount="1") == BeginResult.CREATED
+
+
+def test_released_operation_reopens_with_a_new_attempt_and_reservation(paid_db):
+    from app.studio.application.budget import BeginResult, IdempotencyConflict, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.9") == BeginResult.CREATED
+    repo.release("k1", "bridge refused the connection before generation")
+    assert row_counts(conn) == (1, 0)
+    assert begin(repo, "k1", amount="0.9") == BeginResult.CREATED  # seguro repetir: reabre
+    assert repo.state("k1") == PaidOperationState.RESERVED
+    assert row_counts(conn) == (1, 1)  # nova reserva
+    attempt = conn.execute("SELECT attempt FROM studio.paid_operations WHERE idempotency_key = 'k1'").fetchone()[0]
+    assert attempt == 2  # nova tentativa
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger").fetchone()[0] == 0
+    with pytest.raises(IdempotencyConflict):  # parâmetros diferentes continuam recusados
+        begin(repo, "k1", amount="0.91")
+
+
+def test_confirmed_operation_is_terminal_and_does_not_reopen(paid_db):
+    from app.studio.application.budget import BeginResult, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.3") == BeginResult.CREATED
+    repo.confirm("k1", entry(0.3), actual(0.3))
+    assert repo.state("k1") == PaidOperationState.CONFIRMED
+    assert begin(repo, "k1", amount="0.3") == BeginResult.CONFIRMED  # terminal: resultado deve ser reutilizado
+    assert row_counts(conn) == (1, 0)
+    assert conn.execute("SELECT count(*) FROM studio.usage_ledger").fetchone()[0] == 1
 
 
 def test_uncertain_keeps_the_reservation_and_blocks_reexecution(paid_db):
@@ -326,8 +357,8 @@ def test_reconcile_actual_replaces_the_estimate_with_evidence(paid_db):
     assert (updated_kind, updated_amount) == ("ACTUAL", Decimal("0.500000"))
 
 
-def test_reconcile_actual_only_applies_to_an_estimate(paid_db):
-    from app.studio.application.budget import BeginResult, CostConfirmationError, InvalidOperationTransition, UnknownPaidOperation
+def test_reconcile_actual_only_applies_to_an_estimate_or_uncertain_operation(paid_db):
+    from app.studio.application.budget import BeginResult, InvalidOperationTransition, UnknownPaidOperation
 
     repo, _ = paid_db
     assert begin(repo, "actual", amount="0.3") == BeginResult.CREATED
@@ -338,8 +369,6 @@ def test_reconcile_actual_only_applies_to_an_estimate(paid_db):
         repo.reconcile_actual("missing", Decimal("0.4"), reference="invoice", confirmed_by="billing:ops")
     assert begin(repo, "estimate", video=OTHER_VIDEO, amount="0.3") == BeginResult.CREATED
     repo.confirm("estimate", entry(0.3, provider="opencode"), estimate(0.3))
-    with pytest.raises(CostConfirmationError):
-        repo.reconcile_actual("estimate", Decimal("0"), reference="invoice", confirmed_by="billing:ops")
     with pytest.raises(ValueError):
         repo.reconcile_actual("estimate", Decimal("0.4"), reference="  ", confirmed_by="billing:ops")
 
@@ -368,6 +397,56 @@ def test_uncertain_operation_is_reported_for_reconciliation(paid_db):
     repo.mark_uncertain("k1", "ambiguous")
     pending = repo.pending_reconciliation()
     assert [(p.idempotency_key, p.reason) for p in pending] == [("k1", "uncertain_operation")]
+
+
+def test_stalled_reserved_operation_is_reported_with_the_time_it_has_been_stuck(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.3") == BeginResult.CREATED
+    assert [p for p in repo.pending_reconciliation() if p.reason == "stalled_operation"] == []  # ainda fresco
+
+    conn.execute("UPDATE studio.paid_operations SET updated_at = statement_timestamp() - interval '20 minutes' "
+                 "WHERE idempotency_key = 'k1'")
+    conn.commit()
+    pending = repo.pending_reconciliation()
+    assert [(p.idempotency_key, p.reason) for p in pending] == [("k1", "stalled_operation")]
+    assert pending[0].stalled_for >= timedelta(minutes=19)  # tempo parado no relatório de saída
+    assert pending[0].amount_usd == Decimal("0.3")
+
+    # limiar injetável: com 2 horas de tolerância a mesma operação não é stall
+    assert repo.pending_reconciliation(stale_after=timedelta(hours=2)) == []
+
+
+def test_reconcile_uncertain_operation_closes_it_with_actual_charge(paid_db):
+    from app.studio.application.budget import BeginResult, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.6", monthly="1") == BeginResult.CREATED
+    repo.mark_uncertain("k1", "connection reset after the request was sent")
+    repo.reconcile_actual("k1", Decimal("0.5"), reference="invoice:42", confirmed_by="billing:ops")
+    assert repo.state("k1") == PaidOperationState.CONFIRMED
+    assert row_counts(conn) == (1, 0)  # a reserva incerta foi encerrada
+    kind, cost = conn.execute("SELECT cost_confirmation_kind, cost_usd FROM studio.usage_ledger").fetchone()
+    assert (kind, cost) == ("ACTUAL", Decimal("0.500000"))
+    settlement = repo.settlement("k1")
+    assert (settlement.kind, settlement.amount_usd) == ("ACTUAL", Decimal("0.500000"))
+
+
+def test_reconcile_estimate_to_zero_converts_to_free_and_releases_the_ghost_spend(paid_db):
+    from app.studio.application.budget import BeginResult, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.6", monthly="1") == BeginResult.CREATED
+    repo.confirm("k1", entry(0.6, provider="opencode"), estimate(0.6))
+    repo.reconcile_actual("k1", Decimal("0"), reference="invoice:free", confirmed_by="billing:ops")
+    assert repo.state("k1") == PaidOperationState.CONFIRMED
+    kind, cost = conn.execute("SELECT cost_confirmation_kind, cost_usd FROM studio.usage_ledger").fetchone()
+    assert (kind, cost) == ("FREE", Decimal("0"))
+    settlement = repo.settlement("k1")
+    assert (settlement.kind, settlement.amount_usd) == ("FREE", Decimal("0"))
+    # o gasto fantasma da estimativa deixou de consumir o teto mensal
+    assert begin(repo, "k2", amount="1", monthly="1") == BeginResult.CREATED
 
 
 def test_finite_legacy_cost_counts_but_nan_is_still_unknown(paid_db):

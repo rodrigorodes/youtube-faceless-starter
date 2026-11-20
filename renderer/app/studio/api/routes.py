@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Res
 from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
-from ..application.budget import BudgetDenied, InvalidOperationTransition, OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation
+from ..application.budget import (BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition,
+                                  OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation)
 from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
@@ -315,8 +316,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(502, str(exc)) from exc
         except BudgetDenied as exc:
             raise HTTPException(403, "budget denied: cost cap or unknown cost blocks the operation") from exc
-        except (OperationInProgress, OperationSettled, OperationUncertain, InvalidOperationTransition) as exc:
-            raise HTTPException(409, "paid operation is already in progress or awaiting reconciliation") from exc
+        except IdempotencyConflict as exc:
+            raise HTTPException(409, "idempotency key was already used with different parameters") from exc
+        except CostConfirmationError as exc:
+            raise HTTPException(422, "cost confirmation does not match the provider result") from exc
+        except OperationSettled as exc:
+            # mensagem por estado: CONFIRMED e RELEASED não são "in progress"/"awaiting reconciliation"
+            message = {"CONFIRMED": "paid operation was already confirmed; reuse the existing result",
+                       "RELEASED": "paid operation was released and cannot be retried"}.get(
+                           getattr(exc, "state", None), "paid operation was already settled")
+            raise HTTPException(409, message) from exc
+        except OperationInProgress as exc:
+            raise HTTPException(409, "paid operation is already in progress") from exc
+        except (OperationUncertain, InvalidOperationTransition) as exc:
+            raise HTTPException(409, "paid operation is uncertain or in an incompatible state; reconcile before retrying") from exc
         except UnknownPaidOperation as exc:
             raise HTTPException(404, "paid operation not found") from exc
 
