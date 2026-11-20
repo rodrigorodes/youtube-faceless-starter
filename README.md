@@ -101,5 +101,6 @@ Resposta: `{id, topic, status, script, duration_seconds, video_url, note}`.
 - Proteja `.env` e os volumes do Docker; faça backup de `pg_data`, `n8n_data` e `storage/`.
 - O n8n pode mudar parâmetros entre versões. O JSON foi preparado para importação, mas **não foi validado contra uma instância n8n em execução neste ambiente**.
 - O endpoint legado `/videos` não tem autenticação. Para `/studio`, configure a [autenticação local](docs/17-studio-auth.md); não use o renderer como serviço público.
+- O painel web do Faceless Studio fica em `http://localhost:8000/studio/panel`; veja o [guia do operador](docs/18-painel.md).
 - Confirme preços, limites, licenças e requisitos de acesso dos serviços de IA antes de ativar faturamento.
 - O n8n é distribuído sob licença fair-code; confira os termos para seu caso de uso.

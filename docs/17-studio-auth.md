@@ -14,7 +14,8 @@ Compose; alterar o arquivo não atualiza um container já existente. Não altere
 os valores de PostgreSQL ou `N8N_ENCRYPTION_KEY`: esta última precisa permanecer
 persistente para que o n8n consiga ler suas credenciais salvas.
 
-No navegador acesse `http://localhost:8000/studio/...` e informe o usuário e a
+No navegador acesse `http://localhost:8000/studio/panel` (painel geral) ou
+`http://localhost:8000/studio/...` e informe o usuário e a
 senha quando solicitados. O navegador nunca recebe o token do worker. Os
 pedidos de alteração com Basic precisam enviar `Origin` exata do mesmo host,
 porta e esquema; ferramentas sem `Origin` devem usar a credencial de worker.
