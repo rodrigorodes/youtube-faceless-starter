@@ -1146,21 +1146,24 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     """
 
     total_trends = len(view.trends)
-    br_count = sum(1 for t in view.trends if t.region == "BR")
-    global_count = sum(1 for t in view.trends if t.region == "GLOBAL")
-
     pills = [
-        f'<button type="button" class="cat-pill active" data-filter-type="all">🔥 Todas ({total_trends})</button>',
-        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="BR">🇧🇷 Em Alta Brasil ({br_count})</button>',
-        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="GLOBAL">🌍 Em Alta Mundo ({global_count})</button>',
+        f'<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas ({total_trends})</button>',
     ]
+    region_labels = {"BR": "🇧🇷 Em Alta Brasil", "US": "🇺🇸 Em Alta EUA", "UNKNOWN": "Origem desconhecida"}
+    regions = ["BR", "US"] + sorted({t.region for t in view.trends if t.region and t.region not in ("BR", "US")})
+    for region in regions:
+        count = sum(1 for t in view.trends if t.region == region)
+        label = region_labels.get(region, f"Em Alta {region}")
+        pills.append(
+            f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="{e(region)}" aria-pressed="false">{e(label)} ({count})</button>'
+        )
     for cat in view.categories:
         cat_count = sum(1 for t in view.trends if t.category_id == cat.id)
         pills.append(
-            f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}">🏷️ {e(cat.name)} ({cat_count})</button>'
+            f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}" aria-pressed="false">🏷️ {e(cat.name)} ({cat_count})</button>'
         )
     pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-open-categories-modal">+ Novo Pilar</button>')
-    cat_pills_html = f'<div class="cat-pills-bar">{"".join(pills)}</div>'
+    cat_pills_html = f'<search class="cat-pills-bar" aria-label="Filtros de tendências">{"".join(pills)}</search>'
 
     action_buttons_html = f"""
       <div class="trends-actions">
@@ -1227,10 +1230,10 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
             # Badges row
             badges_parts = []
-            if t.region == "BR":
-                badges_parts.append('<span class="chip-metric badge-region-br">🇧🇷 Em Alta Brasil</span>')
-            elif t.region == "GLOBAL":
-                badges_parts.append('<span class="chip-metric badge-region-global">🌍 Em Alta Mundo</span>')
+            if t.region:
+                label = region_labels.get(t.region, f"Em Alta {t.region}")
+                badge_class = "badge-region-br" if t.region == "BR" else "badge-region-global"
+                badges_parts.append(f'<span class="chip-metric {badge_class}">{e(label)}</span>')
 
             if t.category_name:
                 badges_parts.append(f'<span class="chip-metric chip-category badge-pillar">🏷️ {e(t.category_name)}</span>')
@@ -1314,7 +1317,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               </div>
               <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
                 <div class="trends-source">
-                  Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+                  Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e("YouTube (origem desconhecida)" if view.trends[0].source_name == "YouTube Global (Em Alta)" else view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
                 </div>
                 {action_buttons_html}
               </div>
@@ -1685,6 +1688,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       const activePill = document.querySelector('.cat-pill.active[data-filter-type]');
       const filterType = activePill ? activePill.getAttribute('data-filter-type') : 'all';
       const isExpanded = btnToggleTrends ? btnToggleTrends.getAttribute('data-expanded') === 'true' : true;
+      let shown = 0;
 
       trendItems.forEach((item) => {{
         let matches = false;
@@ -1701,19 +1705,24 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         if (!matches) {{
           item.style.display = 'none';
         }} else {{
-          if (!isExpanded && item.classList.contains('trend-item-extra')) {{
+          if (!isExpanded && shown >= 6) {{
             item.style.display = 'none';
           }} else {{
             item.style.display = '';
           }}
+          shown++;
         }}
       }});
     }}
 
     filterPills.forEach((pill) => {{
       pill.addEventListener('click', () => {{
-        filterPills.forEach((p) => p.classList.remove('active'));
+        filterPills.forEach((p) => {{
+          p.classList.remove('active');
+          p.setAttribute('aria-pressed', 'false');
+        }});
         pill.classList.add('active');
+        pill.setAttribute('aria-pressed', 'true');
         applyTrendsFilter();
       }});
     }});

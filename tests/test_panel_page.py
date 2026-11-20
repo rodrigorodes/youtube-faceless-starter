@@ -328,7 +328,7 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
         (uuid.uuid4().hex, p_id, now, past, now),
     )
 
-    # 2. Global trend with video
+    # 2. Legacy trend with unknown region
     conn.execute(
         """
         INSERT INTO studio.trend_topics (
@@ -365,11 +365,12 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
 
     # Attributes on trend items
     assert 'data-region="BR"' in r.text
-    assert 'data-region="GLOBAL"' in r.text
+    assert 'data-region="UNKNOWN"' in r.text
 
     # Badges de regiao
     assert "🇧🇷 Em Alta Brasil" in r.text
-    assert "🌍 Em Alta Mundo" in r.text
+    assert "Origem desconhecida" in r.text
+    assert "Em Alta Mundo" not in r.text
 
     # Thumbnails
     assert "https://i.ytimg.com/vi/br123/hqdefault.jpg" in r.text
@@ -458,7 +459,7 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
         (uuid.uuid4().hex, p_id, now, past, now),
     )
 
-    # Insert a Global trend
+    # Insert a legacy trend with unknown region
     conn.execute(
         """
         INSERT INTO studio.trend_topics (
@@ -482,8 +483,9 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert '🔥 Todas (2)' in r.text
     assert 'data-filter-type="region" data-region-code="BR"' in r.text
     assert '🇧🇷 Em Alta Brasil (1)' in r.text
-    assert 'data-filter-type="region" data-region-code="GLOBAL"' in r.text
-    assert '🌍 Em Alta Mundo (1)' in r.text
+    assert 'data-filter-type="region" data-region-code="UNKNOWN"' in r.text
+    assert 'Origem desconhecida (1)' in r.text
+    assert 'Em Alta Mundo' not in r.text
     assert 'data-filter-type="category"' in r.text
     assert f'data-cat-id="{cat_id}"' in r.text
     assert '🏷️ Inovação (0)' in r.text
@@ -679,7 +681,6 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
     assert r_few.status_code == 200
     assert 'id="btn-toggle-more-trends"' not in r_few.text
     assert 'class="trend-item trend-item-extra"' not in r_few.text
-
 
 
 

@@ -1,7 +1,11 @@
+import json
+import shutil
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -345,9 +349,9 @@ def test_build_panel_extracts_video_metadata_and_region():
     assert br_view.channel_title == "Canal Brasil"
     assert br_view.published_text == "19/11/2026"
 
-    # Global popular trend
+    # The legacy label does not identify a specific region or a global aggregate.
     global_view = next(t for t in view.trends if t.topic == "Global Hit Video")
-    assert global_view.region == "GLOBAL"
+    assert global_view.region == "UNKNOWN"
     assert global_view.video_id == "9bZkp7q19f0"
     assert global_view.thumbnail_url == "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg"
     assert global_view.video_url == "https://youtu.be/9bZkp7q19f0"
@@ -364,4 +368,110 @@ def test_build_panel_extracts_video_metadata_and_region():
     assert pillar_view.published_text is None
 
 
+@pytest.mark.parametrize(
+    ("code", "expected_region", "label"),
+    [("BR", "BR", "🇧🇷 Em Alta Brasil"), ("US", "US", "🇺🇸 Em Alta EUA"),
+     ("JP", "JP", "Em Alta JP")],
+)
+def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, expected_region, label):
+    from app.studio.adapters.youtube_trends import fetch_popular_trends
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
 
+    response = MagicMock()
+    response.read.return_value = json.dumps({
+        "items": [{"id": "v123", "snippet": {"title": "Popular Video"}, "statistics": {}}]
+    }).encode()
+    response.__enter__.return_value = response
+    urlopen = MagicMock(return_value=response)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    item = fetch_popular_trends("key", code)[0]
+    record = TrendRecord(
+        id="t1", project_id="p1", topic=item.topic, topic_key=item.topic.lower(),
+        source_name=item.source_name, source_url=item.source_url,
+        observed_at=item.observed_at, window_start=item.window_start, window_end=item.window_end,
+        metric_name=item.metric_name, metric_value=item.metric_value,
+        evidence=[ev.model_dump(mode="json") for ev in item.evidence],
+    )
+    panel = BuildPanel(FakePanelRepo(), 15.0, lambda: item.observed_at,
+                       trends=FakeTrendRepo([record], item.observed_at))
+    view = panel.execute(days=7)
+    assert view.trends[0].region == expected_region
+    assert f"regionCode={code}" in urlopen.call_args[0][0].full_url
+    html, _ = render_panel(view)
+    assert f'data-region-code="{expected_region}"' in html
+    assert f'data-region="{expected_region}"' in html
+    assert f"{label} (1)" in html
+    assert f">{label}</span>" in html
+    assert "Em Alta Mundo" not in html
+
+
+def test_legacy_global_label_is_displayed_as_unknown_not_global():
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
+
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    record = TrendRecord(
+        id="old", project_id="p1", topic="Legacy Video", topic_key="legacy video",
+        source_name="YouTube Global (Em Alta)", source_url="https://www.youtube.com/feed/trending",
+        observed_at=now, window_start=now - timedelta(days=7), window_end=now,
+        metric_name="views", metric_value=1, evidence=[],
+    )
+    view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
+                      trends=FakeTrendRepo([record], now)).execute(days=7)
+    assert view.trends[0].region == "UNKNOWN"
+    html, _ = render_panel(view)
+    assert 'data-region-code="UNKNOWN"' in html
+    assert 'data-region="UNKNOWN"' in html
+    assert "Origem desconhecida (1)" in html
+    assert "Origem desconhecida</span>" in html
+    assert "YouTube Global (Em Alta)" not in html
+    assert "Em Alta Mundo" not in html
+
+
+def test_region_filter_shows_matching_items_beyond_initial_six():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js necessário para exercitar o filtro JavaScript")
+    from app.studio.api.panel import render_panel
+
+    now = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    html, _ = render_panel(BuildPanel(FakePanelRepo(), 15.0, lambda: now).execute(days=7))
+    script = html.split("// Pill Filtering (Region, Category & All) & Compact Trends Expansion", 1)[1]
+    script = script.split("// Modal Open & Close", 1)[0]
+    setup = """
+const assert = require('node:assert/strict');
+function element(attrs, classes = []) {
+  const c = new Set(classes);
+  return {
+    attrs, style: {}, classList: {
+      add: (x) => c.add(x), remove: (x) => c.delete(x), contains: (x) => c.has(x)
+    },
+    getAttribute: function(k) { return this.attrs[k] || null; },
+    setAttribute: function(k, v) { this.attrs[k] = v; },
+    addEventListener: function(_, callback) { this.click = callback; }
+  };
+}
+const all = element({'data-filter-type': 'all'}, ['cat-pill', 'active']);
+const jp = element({'data-filter-type': 'region', 'data-region-code': 'JP'}, ['cat-pill']);
+const pills = [all, jp];
+const items = Array.from({length: 7}, (_, i) =>
+  element({'data-region': i === 6 ? 'JP' : 'BR'}, i === 6 ? ['trend-item-extra'] : []));
+const toggle = element({'data-expanded': 'false', 'data-total': '7'});
+const document = {
+  querySelectorAll: (selector) => selector.startsWith('.cat-pill') ? pills : items,
+  querySelector: () => pills.find((p) => p.classList.contains('active')),
+  getElementById: (id) => id === 'btn-toggle-more-trends' ? toggle : null
+};
+"""
+    checks = """
+jp.click();
+assert.equal(items[6].style.display, '');
+assert.ok(items.slice(0, 6).every((item) => item.style.display === 'none'));
+assert.equal(jp.attrs['aria-pressed'], 'true');
+assert.equal(all.attrs['aria-pressed'], 'false');
+all.click();
+assert.equal(items[6].style.display, 'none');
+"""
+    result = subprocess.run([node, "-e", setup + script + checks], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
