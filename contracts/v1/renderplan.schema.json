@@ -168,9 +168,49 @@
       "title": "GeneratedAudioSource",
       "type": "object"
     },
+    "NarrationCue": {
+      "additionalProperties": false,
+      "description": "Narração associada a uma cena e a um intervalo da timeline (RP-013).",
+      "properties": {
+        "duration_ticks": {
+          "minimum": 1,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "scene_id": {
+          "minLength": 1,
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "track_id": {
+          "minLength": 1,
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_id",
+        "track_id",
+        "source_ref",
+        "start_tick",
+        "duration_ticks"
+      ],
+      "title": "NarrationCue",
+      "type": "object"
+    },
     "Output": {
       "additionalProperties": false,
-      "description": "Formato de saída e texto de disclosure (R3).",
+      "description": "Formato de saída e texto de disclosure (R3). A taxa de quadros é da ``Timebase``.",
       "properties": {
         "disclosure": {
           "default": "Ilustração gerada por IA",
@@ -180,12 +220,6 @@
         },
         "format": {
           "$ref": "#/$defs/VideoFormat"
-        },
-        "fps": {
-          "default": 25,
-          "minimum": 1,
-          "title": "Fps",
-          "type": "integer"
         },
         "height": {
           "minimum": 1,
@@ -237,20 +271,12 @@
     },
     "Scene": {
       "additionalProperties": false,
-      "description": "Unidade narrativa: agrupa shots e referencia narração/legenda.",
+      "description": "Unidade narrativa: agrupa shots visuais.",
       "properties": {
         "duration_ticks": {
           "minimum": 1,
           "title": "Duration Ticks",
           "type": "integer"
-        },
-        "narration_refs": {
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "title": "Narration Refs",
-          "type": "array"
         },
         "paid_operation_key": {
           "anyOf": [
@@ -282,14 +308,6 @@
           "minimum": 0,
           "title": "Start Tick",
           "type": "integer"
-        },
-        "subtitle_refs": {
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "title": "Subtitle Refs",
-          "type": "array"
         }
       },
       "required": [
@@ -407,17 +425,61 @@
       "title": "StyleSnapshot",
       "type": "object"
     },
-    "Timeline": {
+    "SubtitleCue": {
       "additionalProperties": false,
-      "description": "Timebase inteira do plano e as cenas.",
+      "description": "Legenda associada a uma cena e a um intervalo da timeline (RP-013).",
       "properties": {
-        "scenes": {
-          "items": {
-            "$ref": "#/$defs/Scene"
-          },
-          "minItems": 1,
-          "title": "Scenes",
-          "type": "array"
+        "duration_ticks": {
+          "minimum": 1,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "scene_id": {
+          "minLength": 1,
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "track_id": {
+          "minLength": 1,
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_id",
+        "track_id",
+        "text",
+        "start_tick",
+        "duration_ticks"
+      ],
+      "title": "SubtitleCue",
+      "type": "object"
+    },
+    "Timebase": {
+      "additionalProperties": false,
+      "description": "Timebase racional do plano: fps como fração e resolução inteira em ticks.\n\n``fps_num``/``fps_den`` representam exatamente taxas como ``30000/1001``.\n``ticks_per_second`` é explícito. A grade de ticks tem de conter toda fronteira\nde quadro: reduzido, ``fps_num`` precisa dividir ``ticks_per_second``, senão um\nquadro cai entre dois ticks e a duração deixa de ser reproduzível.",
+      "properties": {
+        "fps_den": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Fps Den",
+          "type": "integer"
+        },
+        "fps_num": {
+          "default": 25,
+          "minimum": 1,
+          "title": "Fps Num",
+          "type": "integer"
         },
         "ticks_per_second": {
           "minimum": 1,
@@ -426,10 +488,81 @@
         }
       },
       "required": [
-        "ticks_per_second",
+        "ticks_per_second"
+      ],
+      "title": "Timebase",
+      "type": "object"
+    },
+    "Timeline": {
+      "additionalProperties": false,
+      "description": "Timebase, tracks, cenas e as cues de narração/legenda da timeline.",
+      "properties": {
+        "narration": {
+          "items": {
+            "$ref": "#/$defs/NarrationCue"
+          },
+          "title": "Narration",
+          "type": "array"
+        },
+        "scenes": {
+          "items": {
+            "$ref": "#/$defs/Scene"
+          },
+          "minItems": 1,
+          "title": "Scenes",
+          "type": "array"
+        },
+        "subtitles": {
+          "items": {
+            "$ref": "#/$defs/SubtitleCue"
+          },
+          "title": "Subtitles",
+          "type": "array"
+        },
+        "timebase": {
+          "$ref": "#/$defs/Timebase"
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/Track"
+          },
+          "minItems": 1,
+          "title": "Tracks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "timebase",
+        "tracks",
         "scenes"
       ],
       "title": "Timeline",
+      "type": "object"
+    },
+    "Track": {
+      "additionalProperties": false,
+      "description": "Faixa da timeline; shots exigem faixa ``visual``, cues exigem a faixa do seu tipo.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "visual",
+            "narration",
+            "subtitle"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "track_id": {
+          "minLength": 1,
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track_id",
+        "kind"
+      ],
+      "title": "Track",
       "type": "object"
     },
     "Transition": {

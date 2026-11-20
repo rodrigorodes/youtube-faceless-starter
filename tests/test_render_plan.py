@@ -4,6 +4,10 @@ Contrato puro (`app.studio.domain.render_plan`): sem I/O, sem FFmpeg, sem banco.
 Cobre as validações obrigatórias do §9 do writing-block e as decisões R1..R7/C1..C4
 do design: ticks inteiros, ids únicos, shot→asset existente, duração pelo formato de
 saída, fonte de áudio gerada distinta de `AssetReference` e round-trip sem perda.
+
+A timeline (timebase racional, tracks, intervalos e sincronização) é da fatia 3 e
+tem suíte própria em `tests/test_render_plan_timeline.py`; aqui ficam as bases do
+contrato, já sobre o modelo estendido.
 """
 import sys
 from pathlib import Path
@@ -19,13 +23,16 @@ from app.studio.domain.render_plan import (  # noqa: E402
     Composition,
     Effects,
     GeneratedAudioSource,
+    NarrationCue,
     Output,
     Provenance,
     RenderPlan,
     Scene,
     Shot,
     StyleSnapshot,
+    Timebase,
     Timeline,
+    Track,
     Transition,
 )
 
@@ -63,6 +70,16 @@ def scene(**overrides):
     return Scene(**data)
 
 
+def timeline(**overrides):
+    data = dict(
+        timebase=Timebase(ticks_per_second=25),
+        tracks=[Track(track_id="visual-main", kind="visual")],
+        scenes=[scene()],
+    )
+    data.update(overrides)
+    return Timeline(**data)
+
+
 def plan(**overrides):
     data = dict(
         plan_id="plan-01",
@@ -70,7 +87,7 @@ def plan(**overrides):
         project_id="project-01",
         video_id="video-01",
         output=Output(format=VideoFormat.short, width=1080, height=1920),
-        timeline=Timeline(ticks_per_second=25, scenes=[scene()]),
+        timeline=timeline(),
         asset_manifest=[asset()],
         style_snapshot=StyleSnapshot(style_id="channel-01", version=3),
         provenance=Provenance(builder_version="1.0.0"),
@@ -93,16 +110,21 @@ def test_plan_round_trips_through_json_without_loss():
     original = plan(
         asset_manifest=[asset(license="CC0", attribution="Pexels", metadata={"prompt": "x"})],
         generated_audio=[
+            GeneratedAudioSource(source_id="voice-01", kind="voice", duration_ticks=250),
             GeneratedAudioSource(source_id="music-01", kind="music", duration_ticks=250,
-                                 params={"bpm": 90, "seed": 7})
+                                 params={"bpm": 90, "seed": 7}),
         ],
-        timeline=Timeline(ticks_per_second=25, scenes=[
-            scene(shots=[shot(composition=Composition(fit="contain"),
-                              effects=Effects(motion="zoom_in"),
-                              transition=Transition(kind="fade", duration_ticks=6),
-                              paid_operation_key="voice:video-01:0")],
-                  narration_refs=["music-01"], paid_operation_key="voice:video-01:0")
-        ]),
+        timeline=timeline(
+            tracks=[Track(track_id="visual-main", kind="visual"),
+                    Track(track_id="voice", kind="narration")],
+            narration=[NarrationCue(scene_id="scene-01", track_id="voice", source_ref="voice-01",
+                                    start_tick=0, duration_ticks=250)],
+            scenes=[scene(shots=[shot(composition=Composition(fit="contain"),
+                                     effects=Effects(motion="zoom_in"),
+                                     transition=Transition(kind="fade", duration_ticks=6),
+                                     paid_operation_key="voice:video-01:0")],
+                         paid_operation_key="voice:video-01:0")],
+        ),
     )
     dumped = original.model_dump_json()
     again = RenderPlan.model_validate_json(dumped)
@@ -150,7 +172,7 @@ def test_unknown_fields_are_rejected():
 
 def test_ticks_are_strict_integers_not_seconds():
     with pytest.raises(ValidationError):
-        Timeline(ticks_per_second=25.0, scenes=[scene()])
+        Timebase(ticks_per_second=25.0)
     with pytest.raises(ValidationError):
         shot(duration_ticks=10.0)
     with pytest.raises(ValidationError):
@@ -160,7 +182,7 @@ def test_ticks_are_strict_integers_not_seconds():
 def test_missing_required_fields_are_rejected():
     with pytest.raises(ValidationError):
         RenderPlan(plan_id="plan-01", revision=1, project_id="p", video_id="v",
-                   timeline=Timeline(ticks_per_second=25, scenes=[scene()]),
+                   timeline=timeline(),
                    style_snapshot=StyleSnapshot(style_id="c", version=1),
                    provenance=Provenance(builder_version="1.0.0"))
 
@@ -184,7 +206,7 @@ def test_plan_is_immutable():
 
 def test_duplicate_scene_ids_are_rejected():
     with pytest.raises(ValidationError):
-        Timeline(ticks_per_second=25, scenes=[
+        timeline(scenes=[
             scene(scene_id="scene-01", start_tick=0),
             scene(scene_id="scene-01", start_tick=250, shots=[shot(shot_id="shot-02", start_tick=250)]),
         ])
@@ -213,20 +235,22 @@ def test_duplicate_generated_audio_ids_are_rejected():
 
 def test_shot_referencing_missing_asset_is_rejected():
     with pytest.raises(ValidationError):
-        plan(asset_manifest=[], timeline=Timeline(ticks_per_second=25, scenes=[
+        plan(asset_manifest=[], timeline=timeline(scenes=[
             scene(shots=[shot(asset_ref="asset-does-not-exist")])
         ]))
 
 
-def test_narration_and_subtitle_refs_must_resolve():
+def test_narration_cue_referencing_missing_media_is_rejected():
     with pytest.raises(ValidationError):
-        plan(asset_manifest=[asset()], timeline=Timeline(ticks_per_second=25, scenes=[
-            scene(narration_refs=["voice-missing"])
-        ]))
-    with pytest.raises(ValidationError):
-        plan(asset_manifest=[asset()], timeline=Timeline(ticks_per_second=25, scenes=[
-            scene(subtitle_refs=["text-missing"])
-        ]))
+        plan(
+            generated_audio=[],
+            timeline=timeline(
+                tracks=[Track(track_id="visual-main", kind="visual"),
+                        Track(track_id="voice", kind="narration")],
+                narration=[NarrationCue(scene_id="scene-01", track_id="voice",
+                                        source_ref="voice-missing", start_tick=0, duration_ticks=250)],
+            ),
+        )
 
 
 def test_shot_must_fit_inside_its_scene():
@@ -248,14 +272,14 @@ def test_resolution_must_match_output_format():
 
 def test_duration_must_respect_output_format_limit():
     ticks = 25 * 200  # 200 s > 175 s do short
-    big = Scene(scene_id="scene-01", start_tick=0, duration_ticks=ticks,
+    big = scene(scene_id="scene-01", start_tick=0, duration_ticks=ticks,
                 shots=[shot(duration_ticks=ticks)])
     with pytest.raises(ValidationError):
         plan(output=Output(format=VideoFormat.short, width=1080, height=1920),
-             timeline=Timeline(ticks_per_second=25, scenes=[big]))
+             timeline=timeline(scenes=[big]))
     # o mesmo plano em `long` (1920x1080, teto 1200 s) é válido
     long_plan = plan(output=Output(format=VideoFormat.long, width=1920, height=1080),
-                     timeline=Timeline(ticks_per_second=25, scenes=[big]))
+                     timeline=timeline(scenes=[big]))
     assert long_plan.timeline.duration_ticks == ticks
 
 
