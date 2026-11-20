@@ -1,6 +1,7 @@
 import base64
 import sys
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -166,6 +167,39 @@ def test_panel_page_renders_topic_group_summary_and_cost(client_env):
     assert "Tema Agrupado" in r.text
     assert "US$ 0,00 (gratuito)" in r.text
     assert "<details" in r.text
+
+
+def test_panel_page_renders_trending_topics_block(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'ADE Lineup 2026 Revelado', 'ade lineup 2026 revelado',
+            'YouTube Data API', 'https://www.googleapis.com/youtube/v3/search',
+            %s, %s, %s, 'views', 1200000,
+            '[{"title": "Lineup Revelado <exclusivo>", "channel": "Cerc Music", "url": "https://youtube.com/watch?v=1", "views": 1200000}]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Temas em Alta" in r.text
+    assert "ADE Lineup 2026 Revelado" in r.text
+    assert "YouTube Data API" in r.text
+    assert "Lineup Revelado &lt;exclusivo&gt;" in r.text
+    assert "Lineup Revelado <exclusivo>" not in r.text
+
 
 
 

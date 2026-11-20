@@ -151,6 +151,64 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </details>
     """
 
+    if view.trends_status == "never_collected" or not view.trends:
+        trends_html = f"""
+          <div class="card" style="margin-bottom: 1.5rem;">
+            <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem;">🔥 Temas em Alta nos Últimos {days} Dias</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">Ainda não há coleta de tendências registrada para o período selecionado.</div>
+          </div>
+        """
+    else:
+        last_dt_str = view.last_collected_at.strftime("%d/%m %H:%M") if view.last_collected_at else ""
+        stale_badge = ' <span class="pill pill-FAILED" style="margin-left: 0.5rem;">Desatualizado</span>' if view.trends_status == "stale" else ""
+        items_html = []
+        for t in view.trends:
+            ev_list = []
+            for ev in t.evidence:
+                ev_title = e(ev.get("title", ""))
+                ev_chan = e(ev.get("channel", ""))
+                ev_views = f"{int(ev['views']):,} views".replace(",", ".") if ev.get("views") is not None else ""
+                ev_list.append(f"<li>{ev_title} ({ev_chan}) — {ev_views}</li>")
+            ev_html = f'<ul style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; padding-left: 1.25rem;">{"".join(ev_list)}</ul>' if ev_list else ""
+
+            btn_create = (
+                f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}">Criar Vídeo deste Tema</button>'
+                if t.create_action else ""
+            )
+
+            metric_badge = f'<span style="font-weight: 600; color: var(--info);">{e(t.metric_text)}</span>' if t.metric_text else ""
+            completed_count = t.counts.get(Stage.COMPLETED, 0)
+            in_prod_count = t.counts.get(Stage.IN_PRODUCTION, 0)
+
+            items_html.append(f"""
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <div>
+                  <div style="font-weight: 600; font-size: 1rem;">{e(t.topic)}</div>
+                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <span>📊 {metric_badge}</span>
+                    <span>🎬 {completed_count} concluídos · {in_prod_count} em produção</span>
+                    <span>💰 Custo: {e(t.cost_text)}</span>
+                  </div>
+                  {ev_html}
+                </div>
+                <div>{btn_create}</div>
+              </div>
+            """)
+
+        trends_html = f"""
+          <div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(180deg, rgba(47, 129, 247, 0.05) 0%, var(--surface) 100%);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center;">
+                <span>🔥 Temas em Alta nos Últimos {days} Dias</span>{stale_badge}
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">
+                Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+              </div>
+            </div>
+            {''.join(items_html)}
+          </div>
+        """
+
     if not view.topics:
         body_html = '<div class="card empty">Nenhum vídeo no período selecionado.</div>'
     else:
@@ -247,6 +305,8 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     </div>
 
     {create_form_html}
+
+    {trends_html}
 
     {warning_html}
 

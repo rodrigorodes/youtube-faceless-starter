@@ -162,3 +162,59 @@ def test_detail_returns_view_when_found():
     assert view.stage == Stage.AWAITING_APPROVAL
     assert view.cost_text == "US$ 0,00 (gratuito)"
     assert len(view.steps) == 1
+
+
+class FakeTrendRepo:
+    def __init__(self, records=None, last_collected=None):
+        self._records = records or []
+        self._last_collected = last_collected
+
+    def list(self, project_id, since):
+        return [r for r in self._records if r.window_end >= since]
+
+    def last_collected_at(self, project_id):
+        return self._last_collected
+
+
+def test_panel_trends_never_collected():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    repo = FakePanelRepo()
+    trends = FakeTrendRepo(last_collected=None)
+    panel = BuildPanel(repo, 15.0, lambda: now, trends=trends)
+    view = panel.execute(days=7)
+    assert view.trends_status == "never_collected"
+    assert view.trends == []
+
+
+def test_panel_joins_trends_with_existing_videos_by_topic_key():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    from app.studio.application.ports import TrendRecord
+
+    t_rec = TrendRecord(
+        id="t1",
+        project_id="p1",
+        topic="ADE Lineup 2026",
+        topic_key="ade lineup 2026",
+        source_name="YouTube Data API",
+        source_url="https://www.googleapis.com/youtube/v3/search",
+        observed_at=now,
+        window_start=now - timedelta(days=7),
+        window_end=now,
+        metric_name="views",
+        metric_value=1200000.0,
+        evidence=[],
+    )
+    v1 = _row("v1", "ade  lineup 2026!", VideoStatus.AWAITING_APPROVAL, updated_at=now)
+
+    repo = FakePanelRepo(videos_list=[v1])
+    trends = FakeTrendRepo(records=[t_rec], last_collected=now)
+    panel = BuildPanel(repo, 15.0, lambda: now, trends=trends)
+    view = panel.execute(days=7)
+
+    assert view.trends_status == "ok"
+    assert len(view.trends) == 1
+    t_view = view.trends[0]
+    assert t_view.topic == "ADE Lineup 2026"
+    assert t_view.counts[Stage.AWAITING_APPROVAL] == 1
+    assert t_view.stale is False
+

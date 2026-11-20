@@ -2,13 +2,13 @@
 import re
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from ..domain.panel import CostSummary, Stage, classify, cost_text, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
-from .ports import PanelRepository, PubInfo, StepInfo, UsageInfo, VideoRow
+from .ports import PanelRepository, PubInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,21 @@ class TopicGroup:
 
 
 @dataclass(frozen=True)
+class TrendItemView:
+    topic: str
+    key: str
+    source_name: str
+    source_url: str
+    observed_at: datetime
+    stale: bool
+    metric_text: str | None
+    evidence: list[dict]
+    counts: dict[Stage, int]
+    cost_text: str
+    create_action: bool
+
+
+@dataclass(frozen=True)
 class PanelView:
     generated_at: datetime
     days: int
@@ -49,6 +64,9 @@ class PanelView:
     month: MonthCost
     topics: list[TopicGroup]
     truncated: bool = False
+    trends: list[TrendItemView] = field(default_factory=list)
+    trends_status: str = "never_collected"
+    last_collected_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -63,10 +81,11 @@ class VideoDetailView:
 
 
 class BuildPanel:
-    def __init__(self, repo: PanelRepository, monthly_cap_usd: float, clock: Callable[[], datetime]):
+    def __init__(self, repo: PanelRepository, monthly_cap_usd: float, clock: Callable[[], datetime], trends: TrendRepository | None = None):
         self.repo = repo
         self.monthly_cap_usd = monthly_cap_usd
         self.clock = clock
+        self.trends = trends
 
     def execute(self, days: int = 7, project_id: str | None = None) -> PanelView:
         if days not in (7, 14, 30):
@@ -152,6 +171,49 @@ class BuildPanel:
             percent=percent,
         )
 
+        trend_views: list[TrendItemView] = []
+        trends_status = "never_collected"
+        last_col = None
+
+        if self.trends is not None:
+            last_col = self.trends.last_collected_at(project_id)
+            if last_col is not None:
+                recs = self.trends.list(project_id, since=since)
+                trends_status = "stale" if last_col < since else "ok"
+                for r in recs:
+                    if r.topic_key in grouped_videos:
+                        entries = grouped_videos[r.topic_key]
+                        c_counts = {stage: 0 for stage in Stage}
+                        t_known = sum(c_sum.known_usd for _, _, c_sum, _ in entries)
+                        t_calls = sum(c_sum.calls for _, _, c_sum, _ in entries)
+                        t_unknown = sum(c_sum.unknown_calls for _, _, c_sum, _ in entries)
+                        for _, st, _, _ in entries:
+                            c_counts[st] += 1
+                        t_cost_text = cost_text(CostSummary(t_known, t_calls, t_unknown))
+                    else:
+                        c_counts = {stage: 0 for stage in Stage}
+                        t_cost_text = "Nenhum vídeo ainda"
+
+                    metric_text = (
+                        f"{int(r.metric_value):,} visualizações".replace(",", ".")
+                        if r.metric_value is not None else None
+                    )
+                    is_stale = r.observed_at < since
+                    create_action = len(r.topic) <= 300
+                    trend_views.append(TrendItemView(
+                        topic=r.topic,
+                        key=r.topic_key,
+                        source_name=r.source_name,
+                        source_url=r.source_url,
+                        observed_at=r.observed_at,
+                        stale=is_stale,
+                        metric_text=metric_text,
+                        evidence=r.evidence,
+                        counts=c_counts,
+                        cost_text=t_cost_text,
+                        create_action=create_action,
+                    ))
+
         return PanelView(
             generated_at=now,
             days=days,
@@ -160,6 +222,9 @@ class BuildPanel:
             month=month,
             topics=topic_groups,
             truncated=truncated,
+            trends=trend_views,
+            trends_status=trends_status,
+            last_collected_at=last_col,
         )
 
     def detail(self, video_id: str) -> VideoDetailView:
