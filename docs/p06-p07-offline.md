@@ -32,7 +32,8 @@
   amostra pequena e não gera sugestão. Com 100 ou mais, retorna apenas uma
   sugestão exploratória do mesmo tema, não uma afirmação de desempenho
   superior; 100 é um limiar operacional arbitrário, não significância
-  estatística. Dados ausentes podem tornar o agregado incompleto.
+  estatística. Quando falta algum dia no intervalo ou alguma contagem de
+  visualizações, o agregado é marcado incompleto e não gera sugestão.
 - `workflows/04-analytics-daily.json` é inativo e começa com mapa vazio. Antes
   de usá-lo, o humano configura em `Prepare queries` pares `{video_id,
   youtube_id}` conferidos contra a publicação local, e associa ao nó de leitura

@@ -71,6 +71,17 @@ def test_unknown_view_counts_prevent_suggestion(analytics):
     assert row["suggestion"] is None
 
 
+def test_missing_day_in_week_prevents_suggestion(analytics):
+    from app.studio.application.analytics import DailyMetric
+
+    repo, video = analytics
+    first, last = date(2026, 11, 10), date(2026, 11, 16)
+    repo.upsert(DailyMetric(video_id=video, date=first, views=120))
+    row = repo.weekly(first, last)[0]
+    assert row["views_complete"] is False
+    assert row["suggestion"] is None
+
+
 def test_composition_exposes_analytics_and_resume(conn, dsn, tmp_path):
     from app.studio.composition import Settings, Studio
 

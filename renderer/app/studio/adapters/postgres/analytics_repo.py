@@ -33,6 +33,7 @@ class PostgresAnalyticsRepository(_Base):
             rows = cur.fetchall()
         result = []
         for row in rows:
+            row["views_complete"] = row["views_complete"] and len(row["days"]) == (end - start).days + 1
             small = row["views"] is None or row["views"] < 100
             suggestion = None if small or not row["views_complete"] else {
                 "topic": row["topic"],
