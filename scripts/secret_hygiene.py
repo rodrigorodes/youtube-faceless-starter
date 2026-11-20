@@ -10,14 +10,22 @@ from pathlib import Path
 PATTERNS = (
     re.compile(rb"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(rb"AIzaSy[A-Za-z0-9_-]{30,}"),
-    re.compile(rb"""Bearer\s+(?!(?:test-worker-token|test-browser-password)(?:["'\s]|$))[A-Za-z0-9._~+/-]{20,}""", re.I),
-    re.compile(rb"""client_secret["']?\s*[:=]\s*["'][A-Za-z0-9._~+/-]{16,}["']""", re.I),
     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 )
-ALLOWED_ROOTS = {"renderer", "contracts", "docs", "examples", "scripts", "tests", "workflows"}
+TOKEN_PATTERNS = (
+    re.compile(rb"Bearer\s+([A-Za-z0-9._~+/-]{12,})", re.I),
+    re.compile(rb"""(?:client_secret|refresh_token)["']?\s*[:=]\s*["']?([A-Za-z0-9._~+/-]{12,})""", re.I),
+)
+SAFE_TOKENS = {b"test-worker-token", b"test-browser-password", b"your_client_secret",
+               b"your_refresh_token", b"your_access_token", b"change_me_client_secret",
+               b"change_me", b"placeholder"}
 ALLOWED_FILES = {".env.example", ".gitignore", ".gitattributes", "README.md",
                  "requirements-dev.txt", "docker-compose.yml",
-                 "docker-compose.test.yml", "docker-compose.vertex.yml"}
+                 "docker-compose.test.yml", "docker-compose.vertex.yml",
+                 "renderer/Dockerfile", "renderer/requirements.txt",
+                 "examples/ade-2026-publish.json", "examples/ade-2026-rich-publish.json",
+                 "examples/rich-smoke.json", "workflows/03-publish-approved.json",
+                 "workflows/04-analytics-daily.json", "workflows/05-trends-daily.json"}
 BLOCKED_DIRS = {".git", "credentials", "backups", "storage", "__pycache__", ".pytest_cache"}
 KEEP_FILES = {"backups/.gitkeep", "storage/jobs/.gitkeep", "storage/output/.gitkeep"}
 
@@ -38,7 +46,32 @@ def blocked(path):
 
 
 def has_secret(data):
-    return any(pattern.search(data) for pattern in PATTERNS)
+    return (any(pattern.search(data) for pattern in PATTERNS)
+            or any(match.group(1).lower() not in SAFE_TOKENS
+                   for pattern in TOKEN_PATTERNS for match in pattern.finditer(data)))
+
+
+def distributable(path):
+    p = Path(path)
+    if path in ALLOWED_FILES:
+        return True
+    if any(part.startswith(".") for part in p.parts):
+        return False
+    if re.search(r"(?:backup|archive|export|dump)", p.name, re.I):
+        return False
+    parts = p.parts
+    suffix = p.suffix.lower()
+    if parts[0] == "renderer":
+        if len(parts) >= 3 and parts[1] == "app" and suffix == ".py":
+            return True
+        return (len(parts) == 7
+                and parts[1:6] == ("app", "studio", "adapters", "postgres", "migrations")
+                and re.fullmatch(r"[0-9]{4}_[a-z0-9_]+\.sql", p.name) is not None)
+    if parts[:2] == ("contracts", "v1") and len(parts) == 3:
+        return re.fullmatch(r"[a-z0-9_]+\.schema\.json", p.name) is not None
+    allowed_extensions = {"docs": {".md"}, "scripts": {".py", ".sh", ".ps1"},
+                          "tests": {".py"}}
+    return len(parts) >= 2 and suffix in allowed_extensions.get(parts[0], set())
 
 
 def tracked():
@@ -84,7 +117,7 @@ def main():
             if output.exists():
                 raise ValueError("Output already exists; choose a new path")
             selected = [(path, data) for path, _, data in entries
-                        if path in ALLOWED_FILES or Path(path).parts[0] in ALLOWED_ROOTS]
+                        if distributable(path)]
             # Scan precisely the bytes written to the artifact, not just filenames.
             if any(blocked(path) or has_secret(data) for path, data in selected):
                 raise ValueError("Unsafe artifact content")
