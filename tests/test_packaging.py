@@ -7,6 +7,7 @@ permanecem humanas e são representadas como declarações explícitas.
 """
 
 import ast
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,11 +37,11 @@ def claim(kind="verifiable_promise", statement="O custo declarado no relatório 
     return TitleClaim(kind=kind, statement=statement)
 
 
-def variant(variant_id="v1", title="O custo real de uma máquina parada", **changes):
+def variant(variant_id="v1", title=None, **changes):
     values = {
         "variant_id": variant_id,
-        "title": title,
-        "thumbnail_concept": "Máquina parada sobre três faixas de custo",
+        "title": f"Conceito editorial {variant_id}" if title is None else title,
+        "thumbnail_concept": f"Máquina parada sobre faixas de custo ({variant_id})",
         "rationale": "Contrasta a expectativa do operador com o custo citado na fonte",
         "title_claim": claim(),
     }
@@ -59,6 +60,7 @@ def variants():
 def package(**changes):
     values = {
         "title": "O custo real de manter uma máquina parada",
+        "title_claim": claim(),
         "description": "Descrição editorial com a referência declarada.",
         "tags": ("manutenção", "custo industrial"),
         "chapters": (
@@ -182,6 +184,50 @@ def test_description_accepts_multiline_but_rejects_blank_and_nul():
         package(description="   ")
     with pytest.raises(ValidationError):
         package(description="Texto\x00com nulo")
+    with pytest.raises(ValidationError):
+        package(description="Texto\u202ecom override bidi")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Título\u202ecom override bidi",
+        "Título\u200dcom ZWJ",
+        "Título\u200ccom ZWNJ",
+    ],
+)
+def test_title_rejects_bidi_override_and_format_joiners(value):
+    with pytest.raises(ValidationError):
+        package(title=value)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: package(tags=("tag\x00",)),
+        lambda: package(tags=("tag\u202e",)),
+        lambda: package(sources=(SourceCitation(name="Fonte\x00"),)),
+        lambda: package(sources=(SourceCitation(name="Fonte\u200d"),)),
+        lambda: package(sources=(SourceCitation(name="Fonte", url="https://example.org/\x00"),)),
+        lambda: package(cta="Inscreva-se\x07"),
+        lambda: package(cta="Inscreva-se\u200d"),
+        lambda: package(chapters=(Chapter(start_seconds=0, title="Abertura\x00"),)),
+        lambda: package(chapters=(Chapter(start_seconds=0, title="Abertura\u202e"),)),
+        lambda: variant("v1", rationale="Justificativa\x00"),
+        lambda: variant("v1", rationale="Justificativa\u202e"),
+        lambda: variant("v1", thumbnail_concept="Conceito\u200d"),
+        lambda: variant(variant_id="v\x001"),
+        lambda: TitleClaim(kind="verifiable_promise", statement="Promessa\x00"),
+        lambda: TitleClaim(kind="verifiable_promise", statement="Promessa\u202e"),
+        lambda: decision(decided_by="revisor\x00"),
+        lambda: decision(rationale="Decisão\u202e"),
+        lambda: UnverifiedPerformanceEstimate(statement="Estimativa\x00", basis="Base"),
+        lambda: UnverifiedPerformanceEstimate(statement="Estimativa", basis="Base\u202e"),
+    ],
+)
+def test_control_and_format_characters_are_rejected_in_every_public_text(build):
+    with pytest.raises(ValidationError):
+        build()
 
 
 # --- limites configurados, não verificados ---------------------------------
@@ -201,6 +247,20 @@ def test_limits_are_configured_constants_and_documented_as_not_api_verified():
 
 def test_default_limits_do_not_reject_a_normal_package():
     assert package().limit_violations() == ()
+
+
+def test_limit_violations_documents_that_configured_defaults_are_used():
+    doc = (VideoPackaging.limit_violations.__doc__ or "").lower()
+
+    assert "configurado" in doc
+    assert "somente quando" not in (packaging.__doc__ or "").lower()
+
+
+def test_contract_documents_that_consumers_must_revalidate():
+    doc = (packaging.__doc__ or "").lower()
+
+    assert "revalid" in doc
+    assert "model_construct" in doc
 
 
 def test_limit_violations_uses_the_explicit_limits_passed_in():
@@ -255,6 +315,66 @@ def test_tags_are_stored_normalized_without_surrounding_whitespace():
     item = package(tags=(" manutenção ", "custo industrial"))
 
     assert item.tags == ("manutenção", "custo industrial")
+
+
+NFC_CAFE = unicodedata.normalize("NFC", "café")
+NFD_CAFE = unicodedata.normalize("NFD", "café")
+
+
+def test_tags_reject_nfc_nfd_duplicates_and_store_canonical_nfc():
+    with pytest.raises(ValidationError):
+        package(tags=(NFC_CAFE, NFD_CAFE))
+
+    item = package(tags=(NFD_CAFE, "outra tag"))
+
+    assert item.tags[0] == NFC_CAFE
+    assert unicodedata.is_normalized("NFC", item.tags[0])
+
+
+def test_tags_reject_compatibility_variants_after_nfkc_normalization():
+    with pytest.raises(ValidationError):
+        package(tags=("ABC", "\uff21\uff22\uff23"))
+
+
+def test_chapter_titles_reject_nfc_nfd_duplicates():
+    with pytest.raises(ValidationError):
+        package(
+            chapters=(
+                Chapter(start_seconds=0, title=NFC_CAFE),
+                Chapter(start_seconds=45, title=NFD_CAFE),
+            )
+        )
+
+
+def test_variant_ids_are_unique_after_unicode_and_case_normalization():
+    with pytest.raises(ValidationError):
+        package(
+            variants=(
+                variant("v1", "Primeiro"),
+                variant("V1", "Segundo"),
+                variant("v3", "Terceiro"),
+            )
+        )
+
+    with pytest.raises(ValidationError):
+        package(
+            variants=(
+                variant(NFC_CAFE, "Primeiro"),
+                variant(NFD_CAFE, "Segundo"),
+                variant("v3", "Terceiro"),
+            )
+        )
+
+
+def test_variant_thumbnail_concepts_must_be_distinct_after_normalization():
+    with pytest.raises(ValidationError):
+        package(
+            variants=(
+                variant("v1", "Primeiro", thumbnail_concept=NFC_CAFE),
+                variant("v2", "Segundo", thumbnail_concept=NFD_CAFE),
+                variant("v3", "Terceiro"),
+            )
+        )
 
 
 # --- capítulos -------------------------------------------------------------
@@ -358,7 +478,7 @@ def test_variants_require_stable_unique_ids_and_distinct_titles():
     with pytest.raises(ValidationError):
         package(variants=(variant("v1"), variant("v1", "Outro título"), variant("v3", "Terceiro título")))
     with pytest.raises(ValidationError):
-        package(variants=(variant("v1"), variant("v2", "O CUSTO REAL DE UMA MÁQUINA PARADA"), variant("v3")))
+        package(variants=(variant("v1"), variant("v2", "CONCEITO EDITORIAL V1"), variant("v3")))
 
 
 @pytest.mark.parametrize(
@@ -383,6 +503,61 @@ def test_variant_requires_an_explicit_title_claim():
             thumbnail_concept="Conceito",
             rationale="Justificativa",
         )
+
+
+def test_published_title_carries_its_own_claim():
+    original = package(
+        title_claim=claim(
+            kind="declared_sensational_claim",
+            statement="Promete eliminar todas as paradas",
+        )
+    )
+
+    restored = VideoPackaging.model_validate_json(original.model_dump_json())
+
+    assert restored.title_claim.kind == "declared_sensational_claim"
+
+
+def test_published_title_claim_is_required():
+    data = package(title_claim=claim()).model_dump()
+    data.pop("title_claim")
+
+    with pytest.raises(ValidationError):
+        VideoPackaging.model_validate(data)
+
+
+def test_sensational_variant_is_flagged_for_human_review_until_decided():
+    sensational = variant(
+        "v1",
+        "Título sensacionalista",
+        title_claim=claim(
+            kind="declared_sensational_claim",
+            statement="Promete resolver toda parada em uma semana",
+        ),
+    )
+
+    pending = package(variants=(sensational, variant("v2"), variant("v3")))
+    assert pending.unreviewed_sensational_variant_ids() == ("v1",)
+
+    decided = package(
+        variants=(sensational, variant("v2"), variant("v3")),
+        decisions=(
+            decision(
+                variant_id="v1",
+                decision="reject",
+                rationale="A promessa declarada exagera a fonte",
+            ),
+        ),
+    )
+    assert decided.unreviewed_sensational_variant_ids() == ()
+
+
+def test_decisions_must_reference_an_existing_variant_once():
+    with pytest.raises(ValidationError):
+        package(decisions=(decision(variant_id="v9"),))
+
+    with pytest.raises(ValidationError):
+        package(decisions=(decision(), decision(decision="reject")))
 
 
 # --- declaração de promessa versus afirmação sensacionalista ---------------

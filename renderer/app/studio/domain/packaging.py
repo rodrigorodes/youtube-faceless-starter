@@ -12,17 +12,30 @@ Fronteiras deliberadas:
   foram conferidos contra a API nem contra a documentação vigente do YouTube e
   podem mudar com o tempo; a conferência real é F7-06. O contrato exige apenas
   invariantes estruturais (título não vazio, sem espaço/controle inválido,
-  capítulos ordenados etc.) e aplica limites somente quando o chamador passa um
-  ``PackagingLimits`` explícito para ``limit_violations``.
+  capítulos ordenados etc.) e ``limit_violations`` usa os defaults
+  ``CONFIGURED_*`` ou um ``PackagingLimits`` explícito, sem consultar a API.
+- **Texto público é canônico e sem spoofing.** Título, descrição, tags, fontes,
+  CTA, capítulos, justificativas e nomes recusam caracteres de controle e de
+  formato (``Cc``/``Cf``/``Cs``). Isso inclui override bidirecional (U+202E) e
+  joiners (U+200C/U+200D): não há lista de ``Cf`` legítimo, então sequências de
+  emoji que dependem de ZWJ são recusadas no título. Comparações de
+  duplicidade aplicam NFKC (dobra variantes de compatibilidade, largura total e
+  ligaduras usadas em spoofing), colapso de espaços e *casefold*; tags são
+  armazenadas em NFC.
 - **Fontes são declaradas, não certificadas.** Toda afirmação factual exige
   fonte, então o pacote sempre tem pelo menos uma fonte declarada. O contrato
   não consegue julgar se uma afirmação é factual nem se as fontes bastam ou são
   legítimas: a suficiência não é verificada aqui.
-- **Anti-clickbait é declaração, não julgamento.** Cada variante declara se o
-  título traz uma promessa verificável, uma afirmação sensacionalista
-  explicitamente assumida ou nenhuma das duas. O contrato recusa variante sem
-  declaração ou com declaração vazia, mas NÃO decide se a afirmação é enganosa;
-  um revisor humano registra aceite ou recusa em ``HumanVariantDecision``.
+- **Anti-clickbait é declaração, não julgamento.** O título publicado e cada
+  variante declaram, em ``TitleClaim``, se trazem uma promessa verificável, uma
+  afirmação sensacionalista explicitamente assumida ou nenhuma das duas. O
+  contrato recusa título/variante sem declaração ou com declaração vazia, mas
+  NÃO decide se a afirmação é enganosa. Ele também expõe
+  ``unreviewed_sensational_variant_ids``: afirmação sensacionalista declarada só
+  é considerada revisada quando existe ``HumanVariantDecision`` humana para a
+  variante (o gate de publicação pertence a F7-04/F7-05). A recusa é registrada
+  em ``HumanVariantDecision(decision="reject")``, com autor humano e instante
+  com fuso. Não há campo ``chosen``/``auto_selected`` na variante.
 - **Desempenho não é fato.** Não há campo de CTR garantido nem previsão de
   desempenho apresentada como resultado. Se houver estimativa, ela é
   ``UnverifiedPerformanceEstimate``: rótulo fixo ``unverified_estimate`` e
@@ -31,6 +44,12 @@ Fronteiras deliberadas:
   humana exige autor identificado, instante com fuso e ``automatic`` sempre
   falso; não existe caminho no contrato para marcar uma variante como escolhida
   automaticamente.
+- **Garantia de validação, não de runtime.** ``model_validate``,
+  ``model_validate_json`` e ``load_versioned`` aplicam todas as invariantes.
+  Atalhos do Pydantic como ``model_construct`` e ``model_copy(update=...)`` não
+  revalidam: podem furar ``Literal[False]``, a regra de zero ou três variantes e
+  as demais checagens. Consumidores que recebem dados de fora devem revalidar
+  pelo caminho de validação antes de publicar.
 """
 
 import unicodedata
@@ -49,7 +68,6 @@ from pydantic import (
 
 from .contracts import _Model
 
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Seconds = Annotated[int, Field(strict=True, ge=0)]
 Revision = Annotated[int, Field(strict=True, ge=1)]
 ClaimKind = Literal["verifiable_promise", "declared_sensational_claim", "no_claim"]
@@ -66,12 +84,20 @@ CONFIGURED_MAX_TAGS = 500
 CONFIGURED_TOTAL_TAG_CHARS = 500
 
 
-def _reject_control_characters(value: str, *, allow_newline: bool) -> None:
+def _reject_unsafe_characters(value: str, *, allow_newline: bool = False) -> str:
+    """Recusa controle e formato que quebram ou disfarçam texto público.
+
+    ``Cf`` inclui override bidirecional (U+202E) e joiners (U+200C/U+200D); não
+    há ``Cf`` considerado legítimo neste contrato. ``Cs`` cobre surrogates
+    isolados e ``Cc`` cobre nulos, sino e tabulações. Apenas ``\\n`` é permitido
+    na descrição.
+    """
     for character in value:
         if character == "\n" and allow_newline:
             continue
-        if unicodedata.category(character) in {"Cc", "Cs"}:
-            raise ValueError("text must not contain control characters")
+        if unicodedata.category(character) in {"Cc", "Cf", "Cs"}:
+            raise ValueError("text must not contain control or format characters")
+    return value
 
 
 def _validate_title_text(value: str) -> str:
@@ -79,15 +105,13 @@ def _validate_title_text(value: str) -> str:
         raise ValueError("title must not be blank")
     if value != value.strip():
         raise ValueError("title must not have leading or trailing whitespace")
-    _reject_control_characters(value, allow_newline=False)
-    return value
+    return _reject_unsafe_characters(value)
 
 
 def _validate_description_text(value: str) -> str:
     if not value.strip():
         raise ValueError("description must not be blank")
-    _reject_control_characters(value, allow_newline=True)
-    return value
+    return _reject_unsafe_characters(value, allow_newline=True)
 
 
 def _aware_instant(value: datetime) -> datetime:
@@ -97,12 +121,25 @@ def _aware_instant(value: datetime) -> datetime:
 
 
 def _canonical_key(value: str) -> str:
-    """Chave de comparação para duplicidade declarada (espaços e caixa)."""
-    return " ".join(value.split()).casefold()
+    """Identidade textual: NFKC, espaços colapsados e *casefold*.
+
+    NFKC é escolhido em vez de NFC porque também dobra variantes de
+    compatibilidade (largura total, ligaduras, formas circuladas) usadas para
+    parecer diferente sendo a mesma identidade. A normalização é só para
+    comparação; o valor armazenado preserva a forma editorial escolhida (tags em
+    NFC).
+    """
+    normalized = unicodedata.normalize("NFKC", value)
+    return " ".join(normalized.split()).casefold()
 
 
 TitleText = Annotated[str, AfterValidator(_validate_title_text)]
 DescriptionText = Annotated[str, AfterValidator(_validate_description_text)]
+SafeText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+    AfterValidator(_reject_unsafe_characters),
+]
 
 
 class PackagingLimits(BaseModel):
@@ -122,8 +159,8 @@ class SourceCitation(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    name: NonBlank
-    url: NonBlank | None = None
+    name: SafeText
+    url: SafeText | None = None
 
 
 class Chapter(_Model):
@@ -132,7 +169,7 @@ class Chapter(_Model):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     start_seconds: Seconds
-    title: NonBlank
+    title: SafeText
 
     @property
     def timestamp(self) -> str:
@@ -150,7 +187,7 @@ class TitleClaim(_Model):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: ClaimKind
-    statement: NonBlank | None = None
+    statement: SafeText | None = None
 
     @model_validator(mode="after")
     def _statement_matches_kind(self):
@@ -167,34 +204,44 @@ class UnverifiedPerformanceEstimate(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    statement: NonBlank
-    basis: NonBlank
+    statement: SafeText
+    basis: SafeText
     label: Literal["unverified_estimate"] = "unverified_estimate"
     guarantees_performance: Literal[False] = False
 
 
 class PackagingVariant(_Model):
-    """Conceito de thumbnail/título com justificativa; sem estado de seleção."""
+    """Conceito de thumbnail/título com justificativa; sem estado de seleção.
+
+    No pacote, ``variant_id``, título e ``thumbnail_concept`` são únicos por
+    comparação canônica: dois conceitos iguais não servem aos três conceitos
+    distintos de F7-02.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    variant_id: NonBlank
+    variant_id: SafeText
     title: TitleText
-    thumbnail_concept: NonBlank
-    rationale: NonBlank
+    thumbnail_concept: SafeText
+    rationale: SafeText
     title_claim: TitleClaim
     performance_estimate: UnverifiedPerformanceEstimate | None = None
 
 
 class HumanVariantDecision(_Model):
-    """Aceite ou recusa registrados por revisor humano identificado."""
+    """Aceite ou recusa registrados por revisor humano identificado.
+
+    Uma revisão posterior pertence a uma nova revisão do pacote; o pacote aceita
+    no máximo uma decisão por variante. Edição pós-aprovação de metadados é
+    fluxo de F7-07 e não é modelada aqui.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    variant_id: NonBlank
+    variant_id: SafeText
     decision: DecisionKind
-    rationale: NonBlank
-    decided_by: NonBlank
+    rationale: SafeText
+    decided_by: SafeText
     decided_at: datetime
     automatic: Literal[False] = False
 
@@ -205,18 +252,20 @@ class HumanVariantDecision(_Model):
 
 
 class VideoPackaging(_Model):
-    """Pacote editorial completo, imutável e versionado por schema/revisão."""
+    """Pacote completo; o título publicado e cada variante declaram sua promessa."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     revision: Revision = 1
     title: TitleText
+    title_claim: TitleClaim
     description: DescriptionText
-    tags: tuple[NonBlank, ...] = ()
+    tags: tuple[SafeText, ...] = ()
     chapters: tuple[Chapter, ...] = ()
     sources: tuple[SourceCitation, ...] = Field(min_length=1)
-    cta: NonBlank
+    cta: SafeText
     variants: tuple[PackagingVariant, ...] = ()
+    decisions: tuple[HumanVariantDecision, ...] = ()
 
     @field_validator("tags")
     @classmethod
@@ -226,8 +275,8 @@ class VideoPackaging(_Model):
         for tag in values:
             if "#" in tag:
                 raise ValueError("tags must not contain '#'")
-            normalized = " ".join(tag.split())
-            key = normalized.casefold()
+            normalized = unicodedata.normalize("NFC", " ".join(tag.split()))
+            key = _canonical_key(normalized)
             if key in seen:
                 raise ValueError(f"duplicate tag after normalization: {normalized!r}")
             seen.add(key)
@@ -264,18 +313,65 @@ class VideoPackaging(_Model):
             raise ValueError("variants must be absent or contain exactly three concepts")
         seen_ids = set()
         seen_titles = set()
+        seen_concepts = set()
         for item in values:
-            if item.variant_id in seen_ids:
-                raise ValueError(f"duplicate variant_id {item.variant_id!r}")
+            id_key = _canonical_key(item.variant_id)
+            if id_key in seen_ids:
+                raise ValueError(f"duplicate variant_id after normalization: {item.variant_id!r}")
             title_key = _canonical_key(item.title)
             if title_key in seen_titles:
                 raise ValueError(f"duplicate variant title: {item.title!r}")
-            seen_ids.add(item.variant_id)
+            concept_key = _canonical_key(item.thumbnail_concept)
+            if concept_key in seen_concepts:
+                raise ValueError(
+                    f"duplicate thumbnail concept after normalization: {item.thumbnail_concept!r}"
+                )
+            seen_ids.add(id_key)
             seen_titles.add(title_key)
+            seen_concepts.add(concept_key)
         return values
 
+    @model_validator(mode="after")
+    def _decisions_reference_existing_variants_once(self):
+        if not self.decisions:
+            return self
+        known = {_canonical_key(item.variant_id) for item in self.variants}
+        seen = set()
+        for item in self.decisions:
+            key = _canonical_key(item.variant_id)
+            if key not in known:
+                raise ValueError(
+                    f"decision references unknown variant {item.variant_id!r}"
+                )
+            if key in seen:
+                raise ValueError(
+                    f"duplicate decision for variant {item.variant_id!r}; "
+                    "a later review belongs to a new packaging revision"
+                )
+            seen.add(key)
+        return self
+
+    def unreviewed_sensational_variant_ids(self) -> tuple[str, ...]:
+        """Variantes com afirmação sensacionalista declarada ainda sem decisão humana.
+
+        Não é julgamento de engano: apenas exige que a declaração sensacionalista
+        tenha passado por um revisor. Tratar isso como gate de publicação é
+        responsabilidade de F7-04/F7-05.
+        """
+        decided = {_canonical_key(item.variant_id) for item in self.decisions}
+        return tuple(
+            item.variant_id
+            for item in self.variants
+            if item.title_claim.kind == "declared_sensational_claim"
+            and _canonical_key(item.variant_id) not in decided
+        )
+
     def limit_violations(self, limits: PackagingLimits | None = None) -> tuple[str, ...]:
-        """Compara com limites declarados; não consulta a API nem os verifica."""
+        """Compara com limites locais; usa os ``CONFIGURED_*`` se ``limits`` for omitido.
+
+        Não consulta a API e não verifica se os limites configurados continuam
+        válidos na plataforma.
+        """
         effective = limits or PackagingLimits()
         violations: list[str] = []
         if len(self.title) > effective.title_max_chars:
