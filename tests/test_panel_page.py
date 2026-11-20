@@ -104,3 +104,17 @@ def test_video_detail_page_escapes_error_messages(client_env):
     assert r.status_code == 200
     assert "Falha <grave>" not in r.text
     assert "Falha &lt;grave&gt;" in r.text
+
+
+def test_panel_page_has_create_video_form_and_safe_script(client_env):
+    client = client_env["client"]
+    p_id = client_env["project_id"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert 'id="create-video-form"' in r.text
+    assert 'maxlength="300"' in r.text
+    assert p_id in r.text
+    assert '<script nonce="' in r.text
+    assert "innerHTML" not in r.text
+    assert "eval(" not in r.text
+

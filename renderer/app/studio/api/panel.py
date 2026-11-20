@@ -123,6 +123,34 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         if view.truncated else ""
     )
 
+    project_options = "".join(f'<option value="{e(p[0])}">{e(p[1])}</option>' for p in view.projects)
+    create_form_html = f"""
+      <details style="margin-bottom: 1.5rem;" id="new-video-section">
+        <summary class="btn btn-primary" style="display: inline-block; list-style: none; margin-bottom: 0.75rem;">+ Novo Vídeo</summary>
+        <form id="create-video-form" class="card" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.75rem; max-width: 32rem;">
+          <div>
+            <label for="new-video-project" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Projeto</label>
+            <select id="new-video-project" name="project_id" style="width: 100%; padding: 0.4rem;" required>
+              {project_options}
+            </select>
+          </div>
+          <div>
+            <label for="new-video-topic" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Tema (3 a 300 caracteres)</label>
+            <input id="new-video-topic" name="topic" minlength="3" maxlength="300" style="width: 100%; padding: 0.4rem; font: inherit;" placeholder="Ex: ADE Lineup 2026 Revelado" required>
+          </div>
+          <div>
+            <label for="new-video-format" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Formato</label>
+            <select id="new-video-format" name="format" style="width: 100%; padding: 0.4rem;">
+              <option value="short">Short (vertical 1080x1920)</option>
+              <option value="long">Long (horizontal 1920x1080)</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" id="btn-create-video" style="align-self: flex-start;">Criar Vídeo</button>
+          <div id="create-video-feedback" style="font-size: 0.85rem;"></div>
+        </form>
+      </details>
+    """
+
     if not view.topics:
         body_html = '<div class="card empty">Nenhum vídeo no período selecionado.</div>'
     else:
@@ -207,11 +235,43 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </div>
     </div>
 
+    {create_form_html}
+
     {warning_html}
 
     <h2>Vídeos</h2>
     {body_html}
   </div>
+  <script nonce="{nonce}">
+    const form = document.getElementById('create-video-form');
+    if (form) {{
+      form.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const feedback = document.getElementById('create-video-feedback');
+        const project_id = document.getElementById('new-video-project').value;
+        const topic = document.getElementById('new-video-topic').value.trim();
+        const format = document.getElementById('new-video-format').value;
+        if (!topic) return;
+        feedback.textContent = 'Criando vídeo...';
+        try {{
+          const res = await fetch('/studio/videos', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ project_id, topic, format }})
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok) {{
+            feedback.textContent = 'Vídeo criado com sucesso! Atualizando...';
+            setTimeout(() => location.reload(), 800);
+          }} else {{
+            feedback.textContent = 'Erro ao criar: ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+          }}
+        }} catch (err) {{
+          feedback.textContent = 'Falha de rede: ' + err.message;
+        }}
+      }});
+    }}
+  </script>
 </body>
 </html>"""
     return html_content, _headers(nonce)
