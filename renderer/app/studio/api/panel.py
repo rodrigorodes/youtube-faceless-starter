@@ -934,6 +934,22 @@ details summary::-webkit-details-marker { display: none !important; }
   padding: 0.25rem 0.75rem;
   font-size: 0.8rem;
 }
+.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.project-switcher label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.form-select-compact {
+  width: auto;
+  min-height: 32px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  display: inline-block;
+}
 
 /* Inline loading spinner */
 .spinner-inline {
@@ -984,9 +1000,12 @@ def _headers(nonce: str) -> dict[str, str]:
 def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     days = view.days
+    current_project_id = view.project_id or (view.projects[0][0] if view.projects else "")
 
     filters_html = "".join(
-        f'<a class="filter-link {"active" if d == days else ""}" href="/studio/panel?days={d}">{d} dias</a>'
+        f'<a class="filter-link {"active" if d == days else ""}" href="/studio/panel?project_id={e(current_project_id)}&days={d}">{d} dias</a>'
+        if current_project_id
+        else f'<a class="filter-link {"active" if d == days else ""}" href="/studio/panel?days={d}">{d} dias</a>'
         for d in (7, 14, 30)
     )
 
@@ -995,7 +1014,11 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         if view.truncated else ""
     )
 
-    project_options = "".join(f'<option value="{e(p[0])}">{e(p[1])}</option>' for p in view.projects)
+    project_options = "".join(
+        f'<option value="{e(p[0])}"{" selected" if p[0] == current_project_id else ""}>{e(p[1])}</option>'
+        for p in view.projects
+    )
+    global_project_options = project_options
     create_form_html = f"""
       <details class="new-video-section" id="new-video-section">
         <summary class="new-video-summary">
@@ -1034,8 +1057,6 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         </form>
       </details>
     """
-
-    current_project_id = view.project_id or (view.projects[0][0] if view.projects else "")
 
     total_trends = len(view.trends)
     br_count = sum(1 for t in view.trends if t.region == "BR")
@@ -1320,6 +1341,42 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </div>
     """
 
+    project_modal_html = f"""
+      <div class="modal-overlay" id="project-modal" role="dialog" aria-modal="true" aria-labelledby="modal-project-title">
+        <div class="modal-content" style="max-width: 500px;">
+          <div class="modal-header">
+            <div class="modal-title" id="modal-project-title">Novo Projeto / Canal</div>
+            <button type="button" class="modal-close" id="btn-close-project-modal" aria-label="Fechar">&times;</button>
+          </div>
+          <div class="modal-body">
+            <form id="form-project" style="display: flex; flex-direction: column; gap: 0.85rem;">
+              <div>
+                <label for="project-name">Nome do Projeto / Canal <span style="color: var(--primary);">*</span></label>
+                <input type="text" id="project-name" name="name" minlength="1" maxlength="120" placeholder="Ex: Canal de Curiosidades" required>
+              </div>
+              <div>
+                <label for="project-niche">Nicho Editorial <span style="font-weight: 400; opacity: 0.75;">(opcional)</span></label>
+                <input type="text" id="project-niche" name="niche" maxlength="200" placeholder="Ex: Música, Mistérios, Curiosidades">
+              </div>
+              <div>
+                <label for="project-language">Idioma</label>
+                <select id="project-language" name="language">
+                  <option value="pt-BR" selected>Português Brasil (pt-BR)</option>
+                  <option value="en-US">English US (en-US)</option>
+                  <option value="es-ES">Español (es-ES)</option>
+                </select>
+              </div>
+              <div class="form-actions" style="margin-top: 0.5rem;">
+                <button type="submit" class="btn btn-primary" id="btn-save-project">Cadastrar Projeto</button>
+                <button type="button" class="btn btn-compact" id="btn-cancel-project">Cancelar</button>
+                <div id="project-form-feedback" class="form-feedback"></div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    """
+
     pct_width = min(100.0, max(0.0, view.month.percent or 0.0))
 
     html_content = f"""<!DOCTYPE html>
@@ -1388,7 +1445,14 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
           <h1>Painel Operacional</h1>
           <div style="font-size: 0.8rem; color: var(--text-muted);">Produção, validação editorial e custos</div>
         </div>
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <div class="project-switcher">
+            <label for="global-project-select" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">Canal Ativo:</label>
+            <select id="global-project-select" class="form-select-compact">
+              {global_project_options}
+            </select>
+            <button type="button" class="btn btn-compact" id="btn-open-project-modal">+ Novo Projeto</button>
+          </div>
           <div class="filter-bar">
             <span style="padding-left: 0.4rem; color: var(--text-muted);">Período:</span>
             {filters_html}
@@ -1432,6 +1496,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     </main>
   </div>
   {modal_html}
+  {project_modal_html}
   <script nonce="{nonce}">
     const form = document.getElementById('create-video-form');
     if (form) {{
@@ -1557,10 +1622,93 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       }});
     }}
     document.addEventListener('keydown', (ev) => {{
-      if (ev.key === 'Escape' && modal && modal.style.display === 'flex') {{
-        closeCatModal();
+      if (ev.key === 'Escape') {{
+        if (modal && modal.style.display === 'flex') closeCatModal();
+        if (projectModal && projectModal.style.display === 'flex') closeProjectModal();
       }}
     }});
+
+    // Global Project Switcher Change
+    const globalProjectSelect = document.getElementById('global-project-select');
+    if (globalProjectSelect) {{
+      globalProjectSelect.addEventListener('change', () => {{
+        const val = globalProjectSelect.value;
+        const urlParams = new URLSearchParams(window.location.search);
+        const days = urlParams.get('days') || '{days}';
+        window.location.href = '/studio/panel?project_id=' + encodeURIComponent(val) + '&days=' + encodeURIComponent(days);
+      }});
+    }}
+
+    // Project Creation Modal Open & Close
+    const projectModal = document.getElementById('project-modal');
+    const btnOpenProjectModal = document.getElementById('btn-open-project-modal');
+    const btnCloseProjectModal = document.getElementById('btn-close-project-modal');
+    const btnCancelProject = document.getElementById('btn-cancel-project');
+    const projectForm = document.getElementById('form-project');
+    const projectFeedback = document.getElementById('project-form-feedback');
+    const btnSaveProject = document.getElementById('btn-save-project');
+
+    function openProjectModal() {{
+      if (projectModal) {{
+        projectModal.style.display = 'flex';
+        if (projectForm) projectForm.reset();
+        if (projectFeedback) projectFeedback.textContent = '';
+        if (btnSaveProject) btnSaveProject.disabled = false;
+        const nameInput = document.getElementById('project-name');
+        if (nameInput) nameInput.focus();
+      }}
+    }}
+    function closeProjectModal() {{
+      if (projectModal) projectModal.style.display = 'none';
+    }}
+
+    if (btnOpenProjectModal) btnOpenProjectModal.addEventListener('click', openProjectModal);
+    if (btnCloseProjectModal) btnCloseProjectModal.addEventListener('click', closeProjectModal);
+    if (btnCancelProject) btnCancelProject.addEventListener('click', closeProjectModal);
+    if (projectModal) {{
+      projectModal.addEventListener('click', (ev) => {{
+        if (ev.target === projectModal) closeProjectModal();
+      }});
+    }}
+
+    // Project Form Submit
+    if (projectForm) {{
+      projectForm.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const nameInput = document.getElementById('project-name');
+        const nicheInput = document.getElementById('project-niche');
+        const langInput = document.getElementById('project-language');
+        const name = nameInput ? nameInput.value.trim() : '';
+        const niche = nicheInput ? nicheInput.value.trim() : '';
+        const language = langInput ? langInput.value : 'pt-BR';
+
+        if (!name) return;
+        if (btnSaveProject) btnSaveProject.disabled = true;
+        if (projectFeedback) projectFeedback.textContent = 'Cadastrando projeto...';
+
+        try {{
+          const res = await fetch('/studio/projects', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ name, niche, language }})
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok && data.id) {{
+            if (projectFeedback) projectFeedback.textContent = 'Projeto criado com sucesso! Redirecionando...';
+            const urlParams = new URLSearchParams(window.location.search);
+            const days = urlParams.get('days') || '{days}';
+            window.location.href = '/studio/panel?project_id=' + encodeURIComponent(data.id) + '&days=' + encodeURIComponent(days);
+          }} else {{
+            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            if (projectFeedback) projectFeedback.textContent = 'Erro ao cadastrar: ' + errMsg;
+            if (btnSaveProject) btnSaveProject.disabled = false;
+          }}
+        }} catch (err) {{
+          if (projectFeedback) projectFeedback.textContent = 'Falha de rede: ' + err.message;
+          if (btnSaveProject) btnSaveProject.disabled = false;
+        }}
+      }});
+    }}
 
     // Category Form Reset & Edit
     const catForm = document.getElementById('form-category');

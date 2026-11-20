@@ -522,6 +522,41 @@ def test_panel_and_preview_use_neutral_youtube_dark_theme(client_env):
     assert "#0b0f17" not in PREVIEW_CSS
 
 
+def test_panel_has_project_selector_and_create_project_modal(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    p_id_1 = client_env["project_id"]
+    p2 = videos.create_project("Canal Secundário", niche="Curiosidades", language="en-US")
+    p_id_2 = p2.id
+
+    # 1. Default request selects first project
+    r1 = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r1.status_code == 200
+    assert 'id="global-project-select"' in r1.text
+    assert 'id="btn-open-project-modal"' in r1.text
+    assert 'id="project-modal"' in r1.text
+    assert 'role="dialog"' in r1.text
+    assert 'aria-modal="true"' in r1.text
+    assert 'aria-labelledby="modal-project-title"' in r1.text
+    assert 'id="btn-save-project"' in r1.text
+    assert 'id="project-form-feedback"' in r1.text
+    assert 'value="pt-BR"' in r1.text
+    assert 'value="en-US"' in r1.text
+    assert 'value="es-ES"' in r1.text
+
+    # Default project (p_id_1) is selected
+    assert f'<option value="{p_id_1}" selected>' in r1.text
+
+    # 2. Specifying project_id selects project 2
+    r2 = client.get(f"/studio/panel?project_id={p_id_2}", headers=AUTH_HEADER)
+    assert r2.status_code == 200
+    assert f'<option value="{p_id_2}" selected>' in r2.text
+
+    # Both global selector and new-video-project have selected attribute
+    assert r2.text.count(f'value="{p_id_2}" selected') >= 2
+
+
+
 
 
 
