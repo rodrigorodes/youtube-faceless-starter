@@ -427,5 +427,83 @@ def test_panel_youtube_card_escapes_xss_in_video_metadata(client_env):
     assert 'onclick="alert(2)' not in r.text
 
 
+def test_panel_page_has_loading_spinner_and_region_filters(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    # Insert a category
+    cat_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO studio.project_categories (id, project_id, name, queries) VALUES (%s, %s, %s, %s)",
+        (cat_id, p_id, "Inovação", ["IA"]),
+    )
+
+    # Insert a BR trend
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Tema Brasil Teste', 'tema brasil teste',
+            'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
+            %s, %s, %s, 'views', 100000, '[]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+
+    # Insert a Global trend
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Global Topic Test', 'global topic test',
+            'YouTube Global (Em Alta)', 'https://www.youtube.com/feed/trending',
+            %s, %s, %s, 'views', 200000, '[]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    # 1. Pill Filters order & attributes
+    assert 'data-filter-type="all"' in r.text
+    assert '🔥 Todas (2)' in r.text
+    assert 'data-filter-type="region" data-region-code="BR"' in r.text
+    assert '🇧🇷 Em Alta Brasil (1)' in r.text
+    assert 'data-filter-type="region" data-region-code="GLOBAL"' in r.text
+    assert '🌍 Em Alta Mundo (1)' in r.text
+    assert 'data-filter-type="category"' in r.text
+    assert f'data-cat-id="{cat_id}"' in r.text
+    assert '🏷️ Inovação (0)' in r.text
+    assert 'id="btn-open-categories-modal"' in r.text
+    assert '+ Novo Pilar' in r.text
+
+    # 2. UX Loading Spinner on Buscar Agora
+    assert '.spinner-inline' in r.text
+    assert '@keyframes spin' in r.text
+    assert 'Consultando YouTube...' in r.text
+    assert 'btn-refresh-trends' in r.text
+
+    # 3. Smooth Action on Criar Vídeo deste Tema
+    assert 'btn-create-from-trend' in r.text
+    assert 'data-topic="Tema Brasil Teste"' in r.text
+    assert 'topic-pulse' in r.text
+    assert '@keyframes topicPulse' in r.text
+
+    # 4. Strict CSP & XSS safety
+    assert 'innerHTML' not in r.text
+
+
+
 
 

@@ -932,6 +932,39 @@ details summary::-webkit-details-marker { display: none !important; }
   padding: 0.25rem 0.75rem;
   font-size: 0.8rem;
 }
+
+/* Inline loading spinner */
+.spinner-inline {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Topic input pulse/glow highlight */
+@keyframes topicPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 129, 247, 0.6);
+    border-color: var(--primary);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(47, 129, 247, 0.2);
+    border-color: var(--primary);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
+    border-color: var(--border);
+  }
+}
+.topic-pulse {
+  animation: topicPulse 1.2s ease-out;
+}
 """
 
 
@@ -989,8 +1022,8 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             </div>
           </div>
           <div>
-            <label for="new-video-topic">Tema <span style="font-weight: 400; opacity: 0.75;">(3 a 300 caracteres)</span></label>
-            <input type="text" id="new-video-topic" name="topic" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
+            <label for="topic">Tema <span style="font-weight: 400; opacity: 0.75;">(3 a 300 caracteres)</span></label>
+            <input type="text" id="topic" name="topic" class="new-video-topic" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="btn-create-video">Criar Vídeo</button>
@@ -1002,11 +1035,21 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
     current_project_id = view.project_id or (view.projects[0][0] if view.projects else "")
 
-    pills = [f'<button type="button" class="cat-pill active" data-category-id="all">Todas ({len(view.trends)})</button>']
+    total_trends = len(view.trends)
+    br_count = sum(1 for t in view.trends if t.region == "BR")
+    global_count = sum(1 for t in view.trends if t.region == "GLOBAL")
+
+    pills = [
+        f'<button type="button" class="cat-pill active" data-filter-type="all">🔥 Todas ({total_trends})</button>',
+        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="BR">🇧🇷 Em Alta Brasil ({br_count})</button>',
+        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="GLOBAL">🌍 Em Alta Mundo ({global_count})</button>',
+    ]
     for cat in view.categories:
         cat_count = sum(1 for t in view.trends if t.category_id == cat.id)
-        pills.append(f'<button type="button" class="cat-pill" data-category-id="{e(cat.id)}">{e(cat.name)} ({cat_count})</button>')
-    pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-add-pillar-pill">+ Novo Pilar</button>')
+        pills.append(
+            f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}">🏷️ {e(cat.name)} ({cat_count})</button>'
+        )
+    pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-open-categories-modal">+ Novo Pilar</button>')
     cat_pills_html = f'<div class="cat-pills-bar">{"".join(pills)}</div>'
 
     action_buttons_html = f"""
@@ -1395,7 +1438,8 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         const btn = document.getElementById('btn-create-video');
         const feedback = document.getElementById('create-video-feedback');
         const project_id = document.getElementById('new-video-project').value;
-        const topic = document.getElementById('new-video-topic').value.trim();
+        const topicInput = document.getElementById('topic') || document.getElementById('new-video-topic');
+        const topic = topicInput ? topicInput.value.trim() : '';
         const format = document.getElementById('new-video-format').value;
         if (!topic) return;
         if (btn) btn.disabled = true;
@@ -1422,13 +1466,21 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     }}
     document.querySelectorAll('.btn-create-from-trend').forEach((btn) => {{
       btn.addEventListener('click', () => {{
-        const topic = btn.dataset.topic || '';
+        const topic = btn.getAttribute('data-topic') || btn.dataset.topic || '';
         const details = document.getElementById('new-video-section');
-        const input = document.getElementById('new-video-topic');
+        const form = document.getElementById('create-video-form');
+        const input = document.getElementById('topic') || document.getElementById('new-video-topic');
         if (details) details.open = true;
         if (input) {{
           input.value = topic;
-          input.focus();
+          input.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+          input.classList.remove('topic-pulse');
+          void input.offsetWidth;
+          input.classList.add('topic-pulse');
+          setTimeout(() => input.focus(), 100);
+          setTimeout(() => input.classList.remove('topic-pulse'), 1500);
+        }} else if (form) {{
+          form.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }}
       }});
     }});
@@ -1437,10 +1489,10 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       navBtnNew.addEventListener('click', (ev) => {{
         ev.preventDefault();
         const details = document.getElementById('new-video-section');
-        const input = document.getElementById('new-video-topic');
+        const input = document.getElementById('topic') || document.getElementById('new-video-topic');
         if (details) {{
           details.open = true;
-          details.scrollIntoView({{ behavior: 'smooth' }});
+          details.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }}
         if (input) {{
           setTimeout(() => input.focus(), 200);
@@ -1448,19 +1500,31 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       }});
     }}
 
-    // Category Filtering
-    const categoryPills = document.querySelectorAll('.cat-pill[data-category-id]');
+    // Pill Filtering (Region, Category & All)
+    const filterPills = document.querySelectorAll('.cat-pill[data-filter-type]');
     const trendItems = document.querySelectorAll('.trend-item');
-    categoryPills.forEach((pill) => {{
+    filterPills.forEach((pill) => {{
       pill.addEventListener('click', () => {{
-        categoryPills.forEach((p) => p.classList.remove('active'));
+        filterPills.forEach((p) => p.classList.remove('active'));
         pill.classList.add('active');
-        const catId = pill.dataset.categoryId;
+        const filterType = pill.getAttribute('data-filter-type');
         trendItems.forEach((item) => {{
-          if (catId === 'all' || item.dataset.categoryId === catId) {{
+          if (filterType === 'all') {{
             item.style.display = '';
-          }} else {{
-            item.style.display = 'none';
+          }} else if (filterType === 'region') {{
+            const regCode = pill.getAttribute('data-region-code');
+            if (item.getAttribute('data-region') === regCode) {{
+              item.style.display = '';
+            }} else {{
+              item.style.display = 'none';
+            }}
+          }} else if (filterType === 'category') {{
+            const catId = pill.getAttribute('data-cat-id') || pill.getAttribute('data-category-id');
+            if (item.getAttribute('data-category-id') === catId) {{
+              item.style.display = '';
+            }} else {{
+              item.style.display = 'none';
+            }}
           }}
         }});
       }});
@@ -1469,7 +1533,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     // Modal Open & Close
     const modal = document.getElementById('categories-modal');
     const btnManage = document.getElementById('btn-manage-categories');
-    const btnAddPillarPill = document.getElementById('btn-add-pillar-pill');
+    const btnAddPillarPill = document.getElementById('btn-open-categories-modal') || document.getElementById('btn-add-pillar-pill');
     const btnCloseModal = document.getElementById('btn-close-modal');
 
     function openCatModal() {{
@@ -1625,7 +1689,10 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       btnRefresh.addEventListener('click', async () => {{
         btnRefresh.disabled = true;
         const origText = btnRefresh.textContent;
-        btnRefresh.textContent = '🔄 Buscando...';
+        btnRefresh.textContent = ' Consultando YouTube...';
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner-inline';
+        btnRefresh.prepend(spinner);
         if (refreshFeedback) refreshFeedback.textContent = 'Consultando YouTube Data API com seus pilares de conteúdo...';
 
         try {{
@@ -1638,7 +1705,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
           if (res.ok) {{
             const count = typeof data.stored === 'number' ? data.stored : 0;
             if (refreshFeedback) refreshFeedback.textContent = 'Coleta concluída (' + count + ' temas encontrados)! Atualizando...';
-            setTimeout(() => location.reload(), 800);
+            setTimeout(() => location.reload(), 500);
           }} else {{
             const msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
             if (refreshFeedback) refreshFeedback.textContent = 'Erro na coleta: ' + msg;
