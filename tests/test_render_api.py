@@ -140,6 +140,36 @@ def test_render_failure_records_correlated_step_run(migrated, dsn, tmp_path):
         studio.shutdown()
 
 
+@pytest.mark.parametrize("failure_point", ["attempt", "finish"])
+def test_new_render_recovers_after_step_bookkeeping_outage(migrated, dsn, tmp_path, monkeypatch, failure_point):
+    from app.studio.adapters.postgres.step_repo import PostgresStepRepository
+
+    client, studio = make_client(dsn, tmp_path, renderer="boom:x")
+    try:
+        vid = ready_video(client)
+        studio.use_cases()  # initialize before injecting the failure
+        original = getattr(PostgresStepRepository, failure_point)
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("bookkeeping unavailable")
+
+        monkeypatch.setattr(PostgresStepRepository, failure_point, fail)
+        if failure_point == "attempt":
+            monkeypatch.setattr(PostgresStepRepository, "finish", fail)
+        assert client.post(f"/studio/videos/{vid}/render").status_code == 202
+        assert client.get(f"/studio/videos/{vid}/render").json()["job"]["status"] == "FAILED"
+        monkeypatch.setattr(PostgresStepRepository, failure_point, original)
+        if failure_point == "attempt":
+            monkeypatch.undo()
+        assert client.post(f"/studio/videos/{vid}/render").status_code == 202
+        job = client.get(f"/studio/videos/{vid}/render").json()["job"]
+        assert job["status"] == "FAILED" and "falhou de propósito" in job["error"]
+        rows = migrated.execute("SELECT status FROM studio.step_runs WHERE video_id=%s ORDER BY attempt", (vid,)).fetchall()
+        assert rows == [("FAILED",), ("FAILED",)]
+    finally:
+        studio.shutdown()
+
+
 def test_full_render_short_produces_playable_files_and_moves_to_awaiting_approval(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = ready_video(client)

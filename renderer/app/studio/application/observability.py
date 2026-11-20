@@ -3,6 +3,7 @@ import random
 import time
 import json
 import logging
+from contextlib import nullcontext
 
 
 def retry_transient(operation, *, attempts=3, sleep=time.sleep, random_value=random.random):
@@ -24,19 +25,30 @@ def retry_transient(operation, *, attempts=3, sleep=time.sleep, random_value=ran
 
 def run_step(repo, video_id, step, input_hash, operation, *, reusable=True):
     """Run an independently reusable step; operation must persist its own output."""
+    guard = repo.render_guard(video_id) if step == "render" else nullcontext()
+    with guard:
+        return _run_step(repo, video_id, step, input_hash, operation, reusable=reusable)
+
+
+def _run_step(repo, video_id, step, input_hash, operation, *, reusable):
     run_id = repo.begin(video_id, step, input_hash, reusable=reusable)
     if run_id is None:
         return False
-    attempt = repo.attempt(run_id)
     logger = logging.getLogger("studio.steps")
+    attempt = None
     try:
+        attempt = repo.attempt(run_id)
         operation()
+        if not repo.finish(run_id, True):
+            raise RuntimeError("step ownership lost")
     except Exception:
-        repo.finish(run_id, False)
-        logger.info(json.dumps({"video_id": video_id, "step": step, "attempt": attempt, "status": "FAILED"}))
+        try:
+            repo.finish(run_id, False)
+        except Exception:
+            pass  # recovery on the next render; preserve the original failure
+        if attempt is not None:
+            logger.info(json.dumps({"video_id": video_id, "step": step, "attempt": attempt, "status": "FAILED"}))
         raise
-    if not repo.finish(run_id, True):
-        raise RuntimeError("step ownership lost")
     logger.info(json.dumps({"video_id": video_id, "step": step, "attempt": attempt, "status": "SUCCEEDED"}))
     return True
 

@@ -125,3 +125,105 @@ def test_failed_step_can_be_retried_and_does_not_log_exception_text(conn, dsn, c
         assert run_step(repo, video.id, "render", "c" * 64, lambda: None)
     assert "sensitive exception text" not in caplog.text
     assert '"attempt": 2' in caplog.text
+
+
+@pytest.mark.parametrize("failure_point", ["attempt", "finish"])
+def test_render_recovers_orphan_after_bookkeeping_failure(conn, dsn, monkeypatch, failure_point):
+    import psycopg
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.adapters.postgres.step_repo import PostgresStepRepository
+    from app.studio.application.observability import run_step
+    from app.studio.domain.contracts import VideoFormat
+
+    migrate(conn)
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    video = videos.create_video(videos.create_project("c").id, "tema", VideoFormat.short)
+    repo = PostgresStepRepository(connect)
+    original = getattr(repo, failure_point)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(repo, failure_point, fail)
+    if failure_point == "attempt":
+        monkeypatch.setattr(repo, "finish", fail)
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        run_step(repo, video.id, "render", "a" * 64, lambda: None, reusable=False)
+    monkeypatch.setattr(repo, failure_point, original)
+    if failure_point == "attempt":
+        monkeypatch.undo()
+    assert run_step(repo, video.id, "render", "a" * 64, lambda: None, reusable=False)
+    rows = conn.execute("SELECT status FROM studio.step_runs WHERE video_id=%s ORDER BY attempt", (video.id,)).fetchall()
+    assert rows == [("FAILED",), ("SUCCEEDED",)]
+
+
+@pytest.mark.parametrize("drop_lock_session", [False, True])
+def test_live_render_step_is_not_reaped(conn, dsn, drop_lock_session):
+    import threading
+    import psycopg
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.adapters.postgres.step_repo import PostgresStepRepository
+    from app.studio.application.observability import run_step
+    from app.studio.domain.contracts import VideoFormat
+
+    migrate(conn)
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    video = videos.create_video(videos.create_project("c").id, "tema", VideoFormat.short)
+    repo = PostgresStepRepository(connect)
+    entered, release = threading.Event(), threading.Event()
+    errors = []
+
+    def operation():
+        entered.set()
+        assert release.wait(10)
+
+    def worker():
+        try:
+            run_step(repo, video.id, "render", "a" * 64, operation, reusable=False)
+        except Exception as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    try:
+        assert entered.wait(10)
+        if drop_lock_session:
+            pid = conn.execute(
+                "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted "
+                "AND classid = (hashtextextended(%s, 0) >> 32)::int::oid "
+                "AND objid = (hashtextextended(%s, 0) & 4294967295)::oid",
+                ("render-step:" + video.id, "render-step:" + video.id),
+            ).fetchone()[0]
+            assert conn.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone()[0]
+        with pytest.raises(RuntimeError):
+            run_step(repo, video.id, "render", "b" * 64, lambda: None, reusable=False)
+        assert conn.execute("SELECT status FROM studio.step_runs WHERE video_id=%s", (video.id,)).fetchone() == ("RUNNING",)
+    finally:
+        release.set()
+        thread.join(10)
+    assert not thread.is_alive() and not errors
+
+
+def test_render_recovery_respects_another_session_lock(conn, dsn):
+    import psycopg
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.adapters.postgres.step_repo import PostgresStepRepository
+    from app.studio.application.observability import run_step
+    from app.studio.domain.contracts import VideoFormat
+
+    migrate(conn)
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    video = videos.create_video(videos.create_project("c").id, "tema", VideoFormat.short)
+    repo = PostgresStepRepository(connect)
+    run_id = repo.begin(video.id, "render", "a" * 64, reusable=False)
+    with connect() as other:
+        other.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", ("render-step:" + video.id,))
+        with pytest.raises(RuntimeError, match="already running"):
+            run_step(repo, video.id, "render", "b" * 64, lambda: None, reusable=False)
+        assert conn.execute("SELECT status FROM studio.step_runs WHERE id=%s", (run_id,)).fetchone() == ("RUNNING",)

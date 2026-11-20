@@ -1,13 +1,51 @@
 """Atomic step attempt bookkeeping; callers own side effects and recovery."""
 import re
 import uuid
+import contextlib
+import threading
+import weakref
 
+import psycopg
 from ...domain.ids import check_id
 from .editorial_repo import _Base
 from .repo import _translated
 
+_render_locks = weakref.WeakValueDictionary()
+_render_locks_guard = threading.Lock()
+
 
 class PostgresStepRepository(_Base):
+    @contextlib.contextmanager
+    def render_guard(self, video_id: str):
+        """Serialize recovery and render execution, even if the lock connection drops."""
+        video_id = check_id(video_id)
+        with _render_locks_guard:
+            lock = _render_locks.get(video_id)
+            if lock is None:
+                lock = threading.Lock()
+                _render_locks[video_id] = lock
+        if not lock.acquire(blocking=False):
+            raise RuntimeError("step already running")
+        conn = None
+        try:
+            with _translated():
+                conn = self._connect()
+                conn.autocommit = True
+                acquired = conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                                        ("render-step:" + video_id,)).fetchone()[0]
+                if not acquired:
+                    raise RuntimeError("step already running")
+                conn.execute("UPDATE studio.step_runs SET status='FAILED', error_class='Interrupted', finished_at=now() "
+                             "WHERE video_id=%s AND step='render' AND status='RUNNING'", (video_id,))
+            yield
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except psycopg.Error:
+                    pass
+            lock.release()
+
     def begin(self, video_id: str, step: str, input_hash: str, *, reusable: bool = True) -> str | None:
         if not step or len(step) > 100 or not re.fullmatch(r"[0-9a-f]{64}", input_hash):
             raise ValueError("invalid step or input hash")
