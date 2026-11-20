@@ -5,10 +5,10 @@ Ambiente local de automação de vídeos com n8n, Postgres e renderer Python
 aprovação; alguns provedores podem ser trocados por configuração. Inclui
 versões iniciais de recuperação e analytics.
 
-**Não habilite publicação automática:** a proteção da API e a coordenação
-do upload ainda têm limitações. O workflow legado V2 pode publicar sem a
-aprovação do Studio e, se já estiver instalado, precisa ser desativado no
-n8n. Veja [riscos e estado atual](docs/p05-p07-continuation.md).
+**Publicação segura:** o fluxo legado V2 que publicava sem aprovação humana
+foi removido. O Studio exige aprovação humana obrigatória via painel antes
+que qualquer vídeo possa ser reivindicado para publicação privada no YouTube.
+Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publicacao.md).
 
 ## Documentação
 
@@ -43,25 +43,8 @@ n8n. Veja [riscos e estado atual](docs/p05-p07-continuation.md).
 3. Execute `docker compose up -d --build` no diretório do projeto.
 4. Acesse **http://localhost:5678** e crie a conta local de proprietário do n8n.
 5. Acesse **http://localhost:8000/docs** para testar o renderizador diretamente.
-6. No n8n, importe `workflows/01-create-short.json` via **Import from File**. Salve e clique em **Listen for test event** no nó Webhook.
-7. Em outro terminal, teste o webhook:
-
-```bash
-curl -X POST 'http://localhost:5678/webhook-test/faceless-create' \
-  -H 'Content-Type: application/json' \
-  -d '{"topic":"Como será a IA em 2030?","duration_seconds":20,"style":"documentary"}'
-```
-
-No Windows PowerShell, use `Invoke-RestMethod` em vez de `curl`:
-
-```powershell
-$body = @{topic="Como sera a IA em 2030?";duration_seconds=20;style="documentary"} | ConvertTo-Json
-Invoke-RestMethod -Uri 'http://localhost:5678/webhook-test/faceless-create' -Method Post -ContentType 'application/json' -Body $body
-```
-
-O retorno contém `video_url` apontando para o MP4 em `http://localhost:8000/videos/<id>/file`. O arquivo também fica em `storage/output/`.
-
-**Observação:** o webhook de teste funciona apenas enquanto o n8n está escutando. Para utilizar `/webhook/faceless-create`, ative o workflow. A renderização é síncrona e deve ser usada apenas para testes locais curtos.
+6. Acesse o **Painel do Faceless Studio** em **http://localhost:8000/studio/panel** (autenticado com `STUDIO_BROWSER_USER` e `STUDIO_BROWSER_PASSWORD`). Crie e gerencie vídeos pelo painel.
+7. Os workflows seguros de publicação, analytics e tendências (`03-publish-approved.json`, `04-analytics-daily.json`, `05-trends-daily.json`) podem ser importados no n8n com a credencial `studio_worker`. Veja [guia de autenticação](docs/17-studio-auth.md).
 
 ## Teste sem n8n
 

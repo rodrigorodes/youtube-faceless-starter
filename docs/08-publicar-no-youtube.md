@@ -1,19 +1,17 @@
-# Publicar no YouTube (workflow V2)
+# Publicação no YouTube
 
-> **Legado — não ative nem use para novos vídeos.** Este fluxo não consulta o
-> Studio nem exige aprovação antes do upload e aceita visibilidade pública.
-> Ele não cumpre a política atual do projeto. O workflow legado instalado
-> anteriormente no n8n pode continuar ativo independentemente deste arquivo;
-> desative-o no n8n antes de usar o Studio. O fluxo de substituição está em
-> [15-publicacao.md](15-publicacao.md), mas também permanece inativo até as
-> correções de segurança e concorrência indicadas nessa página.
+> **Fluxo legado removido:** O antigo workflow V2 (`02-create-and-publish.json`) e os endpoints
+> não autenticados `/videos` foram removidos do repositório e desinstalados da instância local do n8n.
 >
-> As instruções abaixo são histórico do V2, não um procedimento recomendado.
+> **Fluxo Atual e Oficial:** O fluxo de publicação do Studio exige aprovação humana obrigatória
+> e atômica via painel (`/studio/videos/{id}/preview`) antes que qualquer upload seja reivindicado.
+> Toda a especificação do fluxo seguro, credenciais OAuth2 e recuperação está documentada em:
+> - [15-publicacao.md (Publicação Segura)](15-publicacao.md)
+> - [18-painel.md (Guia do Operador)](18-painel.md)
+>
+> O workflow oficial correspondente é `workflows/03-publish-approved.json`.
 
-Workflow: `workflows/02-create-and-publish.json` (**Faceless V2 - Create and Publish Short (private)**).
-Fluxo: **Webhook → Render Video → Init YouTube Upload → Download MP4 → Upload to YouTube → resposta** (com respostas de erro).
-
-> **Padrão seguro:** o vídeo sobe **`private`**. `unlisted` ou `public` só se você enviar `privacy` explicitamente no pedido.
+---
 
 ## 1. Preparar o Google Cloud (uma vez)
 

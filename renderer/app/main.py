@@ -378,60 +378,10 @@ def health():
     return {"status": "ok", "ffmpeg": True, "studio_db": "ok" if studio.ping() else "unavailable"}
 
 
-@app.post("/videos")
-async def create_video(request: VideoRequest):
-    job_id = uuid.uuid4().hex
-    job_dir = JOBS / job_id
-    job_dir.mkdir(parents=True, exist_ok=False)
-    if request.mode == "rich":
-        return await create_rich_video(request, job_id, job_dir)
-    content = await generate_content(request.topic, request.style, request.context)
-    script = content["slides"]
-    duration = request.duration_seconds
-    per_scene = duration / len(script)
-    parts = []
-    for i, text in enumerate(script):
-        png = job_dir / f"scene_{i:02d}.png"
-        mp4 = job_dir / f"scene_{i:02d}.mp4"
-        make_slide(text, png, i, request.footer)
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-framerate", "25", "-i", str(png), "-t", str(per_scene), "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(mp4)]
-        subprocess.run(cmd, check=True, timeout=150)
-        parts.append(mp4)
-    concat = job_dir / "concat.txt"
-    concat.write_text("".join(f"file '{part.as_posix()}'\n" for part in parts), encoding="utf-8")
-    output = OUTPUT / f"{job_id}.mp4"
-    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(output)], check=True, timeout=150)
-    sources = [str(u) for u in request.sources]
-    title = (content["title"] or request.topic)[:100]
-    body = content["description"] or " ".join(script)
-    parts = [body]
-    if sources:
-        parts.append("Fontes:\n" + "\n".join(sources))
-    parts.append("Roteiro gerado com auxílio de IA e vídeo montado automaticamente.")
-    description = "\n\n".join(parts)[:4900]
-    manifest = {"id": job_id, "topic": request.topic, "status": "AWAITING_APPROVAL", "script": script, "title": title, "description": description, "tags": content["tags"], "sources": sources, "duration_seconds": duration, "video_url": f"http://localhost:8000/videos/{job_id}/file", "note": "Demo silent slideshow; not yet voice/image generation or YouTube upload"}
-    (job_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    return manifest
-
-
-@app.get("/videos/{job_id}")
-def get_video(job_id: str):
-    if not re.fullmatch(r"[a-f0-9]{32}", job_id):
-        raise HTTPException(400, "Invalid ID")
-    path = JOBS / job_id / "manifest.json"
-    if not path.exists():
-        raise HTTPException(404, "Not found")
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-@app.get("/videos/{job_id}/file")
-def get_file(job_id: str):
-    if not re.fullmatch(r"[a-f0-9]{32}", job_id):
-        raise HTTPException(400, "Invalid ID")
-    path = OUTPUT / f"{job_id}.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Not found")
-    return FileResponse(path, media_type="video/mp4", filename=f"{job_id}.mp4")
+@app.api_route("/videos", methods=["GET", "POST", "HEAD"])
+@app.api_route("/videos/{path:path}", methods=["GET", "POST", "HEAD"])
+def legacy_videos_removed():
+    raise HTTPException(410, "legacy unauthenticated endpoint removed; use /studio/panel or /studio/videos")
 
 
 app.include_router(make_router(lambda: studio.use_cases(), lambda: studio.ping()))
