@@ -64,14 +64,24 @@ editor visual (regeneração seletiva) e para o custo rotulado do mockup.
 conversão ticks↔segundos exige teste de round-trip para não reintroduzir deriva que a
 fatia B fechou; `Scene` do plano **não** é a `Scene` editorial do banco — o schema do
 plano é `renderplan.schema.json` (a cena do banco é `scene.schema.json`), sem colisão de
-nomes. A régua de sobreposição por *track* (RP-012/RP-014) e a sincronização por tipo de
-mídia (RP-013) não fazem parte deste contrato; a régua de duração já existe
-(`evaluate_qa`, `domain/render.py`).
+nomes. A régua de sobreposição e lacunas por *track* (RP-012), a sincronização de
+narração e legenda por tipo de mídia (RP-013) e as validações de duração/alinhamento
+(RP-014) **fazem parte deste contrato** desde o RP-02 (fatia 3): vivem em `Timeline`,
+com `Timeline.timebase` racional (`fps_num`/`fps_den` + `ticks_per_second` explícito) e
+`NarrationCue`/`SubtitleCue` no lugar de `Scene.narration_refs`/`subtitle_refs` — para não
+haver duas verdades sobre o mesmo tempo. A régua de duração do vídeo final continua em
+`domain/render.py` (`evaluate_qa`).
 
 ## Regras verificáveis
 
 1. `domain/render_plan.py` não importa `application`/`adapters`/`api`/I/O
    (`tests/test_architecture.py`).
+1b. O **núcleo de render é protegido por teste**: `domain/` e `application/` não podem
+   importar bibliotecas de mídia nem SDK de provedor — `PIL`, `numpy`, `cv2`, `ffmpeg`,
+   `moviepy`, `av`, `openai`, `anthropic`, `elevenlabs`, `fal_client`, `boto3`,
+   `google.*` (`test_render_core_has_no_media_or_provider_sdks` em
+   `tests/test_architecture.py`). É o que garante, por execução e não por disciplina, o
+   princípio "Core não importa FFmpeg ou SDKs de IA" e o compilador puro do RP-023.
 2. `contracts/v1/renderplan.schema.json` é gerado e commitado; o snapshot
    (`tests/test_contracts_snapshot.py`) compara o JSON gerado ao código.
 3. `RenderPlan` recusa `schema_version` desconhecido (`load_versioned`) e campos extras
