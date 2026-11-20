@@ -6,6 +6,11 @@ apenas a *duração desejada* (``end_s - start_s``); a posição absoluta dele �
 recalculada para que os beats fiquem contíguos, sem sobreposição, cobrindo a
 cena. Nada aqui resolve mídia, valida licença/veracidade de proveniência nem
 confirma que o asset existe: isso é auditoria (F5-08) e render (F5-06).
+
+Limite de magnitude: cada beat precisa ser representável na escala corrente —
+se ``cursor + span == cursor`` (span abaixo de ~``ulp(cursor)/2``), a entrada é
+rejeitada com erro claro, e não aceita com janela de span 0. A cobertura é
+validada pela mesma acumulação sequencial usada para montar as janelas.
 """
 
 from __future__ import annotations
@@ -58,10 +63,12 @@ def plan_scene_beats(
     Entradas inválidas são rejeitadas com ``ValueError``: cena sem duração
     finita positiva; ``beats`` não iterável; lista de beats vazia; beat de outra
     cena ou que não é :class:`VisualBeat`; duração de beat não finita ou não
-    positiva; soma que **excede** a cena (fora do resíduo de ponto flutuante) ou
-    que **não a cobre** (fora de ``tolerance_s``). A ordem de entrada é
-    preservada. Quando a soma não excede a cena, o último beat fecha exatamente
-    ``scene.duration_s``; nenhum beat pode sair com span <= 0 ou start >= end.
+    positiva; span de beat **não representável** na magnitude corrente; soma que
+    **excede** a cena (fora do resíduo de arredondamento) ou que **não a cobre**
+    (fora de ``tolerance_s``). A ordem de entrada é preservada. Quando a soma não
+    excede a cena, o último beat fecha exatamente ``scene.duration_s``; todo beat
+    planejado é representável e tem span > 0 (o contrário é rejeitado com erro
+    claro do núcleo, não com ``ValidationError`` do contrato).
     """
     duration = _scene_duration(scene)
     _validate_tolerance(tolerance_s)
@@ -89,11 +96,18 @@ def plan_beat_windows(
     validar fronteiras (zero beats, durações não finitas/negativas, excesso ou
     cobertura incompleta) sem depender do contrato de mídia.
 
-    Política de excedente: a soma dos beats pode ficar até ``tolerance_s``
-    **abaixo** da cena (sobra), mas nunca acima além do resíduo de soma em ponto
-    flutuante (poucos ulps) — excesso real é rejeitado. As janelas são
-    cumulativas e cada beat recebe exatamente sua duração; o último beat só é
-    fechado em ``scene_duration_s`` quando isso não zera nem inverte o span.
+    Acumulação: as janelas e a cobertura usam a **mesma** soma sequencial
+    (``cursor = cursor + span``). Um beat cujo span não avança o cursor
+    (``cursor + span == cursor`` — span abaixo de ~``ulp(cursor)/2``) é
+    **impossível de posicionar** e a entrada é rejeitada com ``ValueError``
+    claro do núcleo ("not representable"), sem vazar ``ValidationError`` do
+    contrato. É por isso que não há janela de span <= 0: ou todo beat é
+    representável na magnitude corrente, ou a entrada falha aqui.
+
+    Política de excedente: a soma sequencial pode ficar até ``tolerance_s``
+    **abaixo** da cena (sobra), mas nunca acima além do resíduo de arredondamento
+    (poucos ulps de ``duration``) — excesso real é rejeitado. O último beat só é
+    fechado em ``scene_duration_s`` quando ``duration > last_start``.
     """
     duration = _positive_finite(scene_duration_s, "scene duration")
     _validate_tolerance(tolerance_s)
@@ -101,24 +115,31 @@ def plan_beat_windows(
     spans = tuple(_positive_finite(span, "beat duration") for span in durations)
     if not spans:
         raise ValueError("at least one beat is required")
-    total = math.fsum(spans)
-    overflow_epsilon = max(_FLOAT_RESIDUE_S, math.ulp(duration) * _RESIDUE_ULPS)
-    if total > duration + overflow_epsilon:
-        raise ValueError(f"beats exceed scene duration: {total} > {duration}")
-    if total < duration - tolerance_s:
-        raise ValueError(f"beats do not cover scene duration: {total} < {duration}")
     windows: list[tuple[float, float]] = []
     cursor = 0.0
-    for span in spans:
-        windows.append((cursor, cursor + span))
-        cursor += span
+    for index, span in enumerate(spans):
+        end = cursor + span
+        if end <= cursor:
+            raise ValueError(
+                f"beat {index} span {span!r} is not representable at cursor {cursor!r} "
+                f"(smallest usable increment is ulp(cursor)={math.ulp(cursor)!r})"
+            )
+        windows.append((cursor, end))
+        cursor = end
+    # Cobertura pela MESMA acumulação sequencial que produziu as janelas.
+    coverage = cursor
+    overflow_epsilon = max(_FLOAT_RESIDUE_S, math.ulp(duration) * _RESIDUE_ULPS)
+    if coverage > duration + overflow_epsilon:
+        raise ValueError(f"beats exceed scene duration: {coverage} > {duration}")
+    if coverage < duration - tolerance_s:
+        raise ValueError(f"beats do not cover scene duration: {coverage} < {duration}")
     last_start = windows[-1][0]
     if duration > last_start:
-        # Fecha a cena; o último beat cresce apenas o resíduo aceito (<= overflow).
+        # Fecha a cena; o último beat cresce apenas o resíduo aceito. A subtração
+        # de dois doubles distintos é representável e > 0, então o span segue > 0.
         windows[-1] = (last_start, duration)
     # Se ``duration <= last_start`` (overflow em resíduo), mantém as janelas
-    # cumulativas: nenhum beat é encolhido, então span <= 0 e start >= end são
-    # impossíveis por construção.
+    # cumulativas: nenhum beat é encolhido.
     return tuple(windows)
 
 

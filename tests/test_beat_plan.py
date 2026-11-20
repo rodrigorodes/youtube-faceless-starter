@@ -1,6 +1,7 @@
 import math
 
 import pytest
+from pydantic import ValidationError
 
 from app.studio.domain.beat_plan import (
     DEFAULT_TOLERANCE_S,
@@ -250,3 +251,75 @@ def test_malformed_beat_span_is_rejected(malformed):
 def test_plan_rejects_invalid_tolerance(tolerance):
     with pytest.raises(ValueError):
         plan_scene_beats(scene(3.0), [beat(3.0)], tolerance_s=tolerance)
+
+
+# ---------- magnitude / representabilidade em ponto flutuante ----------
+# Política: um beat cujo span não avança o cursor (cursor + span == cursor) é
+# IMPOSSÍVEL de posicionar naquela magnitude e a entrada é REJEITADA com
+# ValueError claro do núcleo — nunca aceita com span 0 nem ValidationError
+# enganosa do contrato.
+
+
+@pytest.mark.parametrize(
+    "duration,spans",
+    [
+        (1e16, [1e16, 1.0]),
+        (2.0**53, [2.0**53, 1.0]),
+        (1e16, [1e16] + [1.0] * 100),
+        (1.0, [1.0, 5e-324]),                      # denormal abaixo de ulp(1.0)/2
+        (1.0, [1.0, 1e-17]),
+        (1e16, [1e16, math.nextafter(1.0, 0.0)]),  # 0.9999... < ulp(1e16)/2
+    ],
+)
+def test_windows_reject_unrepresentable_span_with_clear_error(duration, spans):
+    with pytest.raises(ValueError) as excinfo:
+        plan_beat_windows(duration, spans)
+    assert "not representable" in str(excinfo.value)
+
+
+def test_windows_sequential_overshoot_beyond_residue_is_rejected():
+    # A acumulação sequencial real excede o resíduo documentado -> rejeita
+    # (não aceita e depois emite janelas de span 0).
+    with pytest.raises(ValueError) as excinfo:
+        plan_beat_windows(1e16, [1e16] + [3.0] * 5)
+    assert "exceed" in str(excinfo.value)
+
+
+def test_windows_reject_non_representable_span_at_fractional_magnitude():
+    with pytest.raises(ValueError) as excinfo:
+        plan_beat_windows(1.0, [0.5, math.ulp(0.5) / 4])
+    assert "not representable" in str(excinfo.value)
+
+
+def test_windows_accept_span_exactly_one_ulp_at_large_magnitude():
+    windows = plan_beat_windows(1e16, [1e16, 2.0])  # ulp(1e16) == 2.0
+    assert_valid_windows(windows)
+    assert windows[-1][1] - windows[-1][0] == 2.0
+
+
+def test_windows_accept_nextafter_just_above_half_ulp():
+    span = math.nextafter(1.0, 2.0)  # > 1.0 == ulp(1e16)/2
+    windows = plan_beat_windows(1e16, [1e16, span])
+    assert_valid_windows(windows)
+    assert windows[-1][1] - windows[-1][0] == 2.0  # arredonda para um ulp
+
+
+def test_windows_small_magnitude_nextafter_is_valid():
+    windows = plan_beat_windows(1.0, [0.5, math.nextafter(0.5, 0.0)])
+    assert_valid_windows(windows)
+    assert windows[-1][1] == 1.0  # fecha a cena absorvendo o resíduo mínimo
+
+
+def test_plan_scene_beats_rejects_unrepresentable_span_with_clear_error():
+    beats = [beat(1e16, reference="big"), beat(1.0, reference="tiny")]
+    with pytest.raises(ValueError) as excinfo:
+        plan_scene_beats(scene(1e16), beats)
+    assert not isinstance(excinfo.value, ValidationError)  # erro do núcleo, não do contrato
+    assert "not representable" in str(excinfo.value)
+
+
+def test_plan_scene_beats_accepts_representable_span_at_large_magnitude():
+    plan = plan_scene_beats(scene(1e16), [beat(1e16), beat(2.0)])
+    for placed in plan.beats:
+        assert placed.start_s < placed.end_s
+        assert placed.duration_s > 0
