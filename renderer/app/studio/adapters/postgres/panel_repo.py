@@ -103,7 +103,7 @@ class PostgresPanelRepository(_Base):
                 LEFT JOIN LATERAL (
                     SELECT status, error FROM studio.render_jobs r
                     WHERE r.video_id = v.id
-                    ORDER BY r.created_at DESC, r.id DESC
+                    ORDER BY r.created_at DESC, r.attempt DESC, r.id DESC
                     LIMIT 1
                 ) j ON true
                 LEFT JOIN studio.publications p ON p.video_id = v.id

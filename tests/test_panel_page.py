@@ -106,6 +106,69 @@ def test_video_detail_page_escapes_error_messages(client_env):
     assert "Falha &lt;grave&gt;" in r.text
 
 
+def test_video_detail_page_displays_unknown_cost_honestly(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Tema Custo Desconhecido", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'openai/gpt-4o-paid', 0.0)",
+        (v.id,),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "0.0000" not in r.text
+    assert "0,0000" not in r.text
+    assert "Não informado" in r.text or "sem custo informado" in r.text
+
+
+def test_video_detail_page_displays_render_error(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Tema Render Error", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.render_jobs (id, video_id, status, attempt, input_hash, error) "
+        "VALUES (%s, %s, 'FAILED', 1, 'h1', 'FFmpeg timeout gravíssimo')",
+        (uuid.uuid4().hex, v.id),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "FFmpeg timeout gravíssimo" in r.text
+
+
+def test_panel_page_renders_topic_group_summary_and_cost(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v1 = videos.create_video(p_id, "Tema Agrupado", VideoFormat.short)
+    v2 = videos.create_video(p_id, "tema  agrupado!", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'gpt:free', 0.0)",
+        (v1.id,),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Tema Agrupado" in r.text
+    assert "US$ 0,00 (gratuito)" in r.text
+    assert "<details" in r.text
+
+
+
 def test_panel_page_has_create_video_form_and_safe_script(client_env):
     client = client_env["client"]
     p_id = client_env["project_id"]

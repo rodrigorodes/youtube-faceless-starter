@@ -5,7 +5,7 @@ import html
 import secrets
 
 from ..application.panel import PanelView, VideoDetailView
-from ..domain.panel import Stage
+from ..domain.panel import Stage, is_known_cost
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -154,8 +154,9 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     if not view.topics:
         body_html = '<div class="card empty">Nenhum vídeo no período selecionado.</div>'
     else:
-        rows = []
+        topic_blocks = []
         for g in view.topics:
+            rows = []
             for v in g.videos:
                 actions_html = []
                 if "preview" in v.actions:
@@ -174,22 +175,32 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                   </tr>
                 """)
 
-        body_html = f"""
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Tema</th>
-                <th scope="col">Etapa</th>
-                <th scope="col">Custo</th>
-                <th scope="col">Atualizado</th>
-                <th scope="col">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {''.join(rows)}
-            </tbody>
-          </table>
-        """
+            table_html = f"""
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Tema</th>
+                    <th scope="col">Etapa</th>
+                    <th scope="col">Custo</th>
+                    <th scope="col">Atualizado</th>
+                    <th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {''.join(rows)}
+                </tbody>
+              </table>
+            """
+            topic_blocks.append(f"""
+              <details open class="card" style="margin-bottom: 1rem;">
+                <summary style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-weight: 600;">
+                  <span>{e(g.label)} <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">({len(g.videos)} vídeo{'s' if len(g.videos) > 1 else ''})</span></span>
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">{e(g.cost_text)}</span>
+                </summary>
+                {table_html}
+              </details>
+            """)
+        body_html = "".join(topic_blocks)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -247,11 +258,13 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     if (form) {{
       form.addEventListener('submit', async (ev) => {{
         ev.preventDefault();
+        const btn = document.getElementById('btn-create-video');
         const feedback = document.getElementById('create-video-feedback');
         const project_id = document.getElementById('new-video-project').value;
         const topic = document.getElementById('new-video-topic').value.trim();
         const format = document.getElementById('new-video-format').value;
         if (!topic) return;
+        if (btn) btn.disabled = true;
         feedback.textContent = 'Criando vídeo...';
         try {{
           const res = await fetch('/studio/videos', {{
@@ -265,9 +278,11 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             setTimeout(() => location.reload(), 800);
           }} else {{
             feedback.textContent = 'Erro ao criar: ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+            if (btn) btn.disabled = false;
           }}
         }} catch (err) {{
           feedback.textContent = 'Falha de rede: ' + err.message;
+          if (btn) btn.disabled = false;
         }}
       }});
     }}
@@ -300,14 +315,20 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
         usage_html.append('<tr><td colspan="4" class="empty">Sem registro de uso de IA para este vídeo.</td></tr>')
     else:
         for u in view.usage:
+            if is_known_cost(u.provider, u.model, u.cost_usd):
+                cost_str = "US$ 0,00 (gratuito)" if u.cost_usd == 0.0 else f"US$ {u.cost_usd:.4f}"
+            else:
+                cost_str = '<span style="color: var(--warn);">Não informado</span>'
             usage_html.append(f"""
               <tr>
                 <td>{e(u.step)}</td>
                 <td>{e(u.provider)}</td>
                 <td>{e(u.model)}</td>
-                <td>US$ {u.cost_usd:.4f}</td>
+                <td>{cost_str}</td>
               </tr>
             """)
+
+    render_err_html = f'<div class="warning" style="margin-top: 1rem;"><strong>Erro de Renderização:</strong> {e(view.render_error)}</div>' if view.render_error else ""
 
     pub_status_html = ""
     if view.publication:
@@ -350,6 +371,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
         <ul class="timeline">
           {''.join(steps_html)}
         </ul>
+        {render_err_html}
         {pub_status_html}
       </div>
 

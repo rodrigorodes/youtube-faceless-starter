@@ -140,3 +140,27 @@ def test_month_usage_and_unattributed_usage(repo_env):
     unattributed = repo.unattributed_usage()
     assert len(unattributed) == 1
     assert unattributed[0] == ("opencode", "gpt-4o-paid", 0.0)
+
+
+def test_video_detail_lateral_join_orders_by_attempt_desc(repo_env):
+    repo = repo_env["repo"]
+    videos = repo_env["videos"]
+    conn = repo_env["conn"]
+    p_id = repo_env["project_id"]
+
+    v = videos.create_video(p_id, "Tema Multi Tentativa", VideoFormat.short)
+    # Insert attempt 1 FAILED and attempt 2 SUCCEEDED with same timestamp
+    conn.execute(
+        "INSERT INTO studio.render_jobs (id, video_id, status, attempt, input_hash) "
+        "VALUES ('00000000000000000000000000000002', %s, 'FAILED', 1, 'h1'), "
+        "('00000000000000000000000000000001', %s, 'SUCCEEDED', 2, 'h2')",
+        (v.id, v.id),
+    )
+    conn.commit()
+
+    detail = repo.video_detail(v.id)
+    assert detail is not None
+    # Because id '...02' > '...01', ordering by id DESC would pick attempt 1 FAILED.
+    # Ordering by attempt DESC picks attempt 2 SUCCEEDED!
+    assert detail.video.job_status == JobStatus.SUCCEEDED
+
