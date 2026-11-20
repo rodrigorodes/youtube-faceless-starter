@@ -19,8 +19,13 @@ from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
+from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.render import RenderRefused
+from ..domain.production_run import (InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
+                                     ProductionIdempotencyConflict, ProductionRunLockTimeout,
+                                     ProductionRunReferencedEntityNotFound, ProductionStage, RunState,
+                                     RunTransitionResult)
 from ..domain.publish import InvalidPublishData, srt_to_vtt
 from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
@@ -269,6 +274,60 @@ class TrendRefreshIn(BaseModel):
     queries: list[str] | None = None
 
 
+class ProductionRunIn(BaseModel):
+    idempotency_key: str | None = Field(default=None, max_length=200)
+    channel_id: str | None = None
+    stages: list[str] | None = None  # subconjunto fechado sob dependências; vazio/None usa o pipeline padrão
+
+
+class ProductionActionIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class ProductionResumeIn(BaseModel):
+    expected_state: RunState | None = None  # CAS opcional; ausente usa o estado persistido atual
+
+
+class ProductionRunStartOut(BaseModel):
+    run_id: str
+    state: str
+    mode: str
+    created: bool
+
+
+class ProductionStageStateOut(BaseModel):
+    stage: str
+    state: str
+    attempt: int
+    fencing_token: int
+    checkpoint_version: int | None = None
+    error: str | None = None
+    updated_at: datetime | None = None
+
+
+class ProductionEventOut(BaseModel):
+    id: int
+    event_type: str
+    event_version: int
+    stage_id: str | None = None
+    payload: dict
+    created_at: datetime | None = None
+
+
+class ProductionRunViewOut(BaseModel):
+    run_id: str
+    video_id: str
+    state: str
+    mode: str
+    channel_id: str | None = None
+    next_action: str | None = None
+    next_stage: str | None = None
+    stages: list[ProductionStageStateOut]
+    available_stages: list[str]
+    unavailable_stages: list[dict]
+    events: list[ProductionEventOut]
+
+
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
     router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard), Depends(_authenticate)])
 
@@ -332,6 +391,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, "paid operation is uncertain or in an incompatible state; reconcile before retrying") from exc
         except UnknownPaidOperation as exc:
             raise HTTPException(404, "paid operation not found") from exc
+        except ProductionIdempotencyConflict as exc:
+            raise HTTPException(409, "idempotency key was already used for a different production run request") from exc
+        except InvalidIdempotencyKey as exc:
+            raise HTTPException(422, "idempotency key is not in the canonical form") from exc
+        except ProductionRunLockTimeout as exc:
+            raise HTTPException(409, "the production run is busy; retry the operation") from exc
+        except ProductionRunReferencedEntityNotFound as exc:
+            raise HTTPException(404, "video or channel not found") from exc
+        except (InvalidPipeline, InvalidProductionTransition) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except StageCapabilityUnavailable as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except RunNotFound as exc:
+            raise HTTPException(404, "production run not found") from exc
 
     def editorial(uc: UseCases):
         if uc.editorial is None:
@@ -667,5 +740,106 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/publications/{publication_id}/thumbnail-set", response_model=Publication, response_model_exclude={"upload_uri"})
     def thumbnail_set(publication_id: str):
         return run(lambda uc: publishing(uc).thumbnail_set.execute(check_id(publication_id)))
+
+    # -- produção (D2): iniciar, acompanhar e agir por estado -------------------
+
+    def production_service(uc: UseCases):
+        if uc.production is None:
+            raise HTTPException(503, "production services unavailable")
+        return uc.production
+
+    def _stage(value: str) -> ProductionStage:
+        try:
+            return ProductionStage(value)
+        except ValueError:
+            raise HTTPException(422, f"unknown production stage {value!r}") from None
+
+    def _owned(uc: UseCases, video_id: str, run_id: str):
+        projection = production_service(uc).coordinator.get(check_id(run_id))
+        if projection is None or projection.run.video_id != check_id(video_id):
+            raise HTTPException(404, "production run not found")
+        return projection
+
+    def _view(projection, events) -> ProductionRunViewOut:
+        return ProductionRunViewOut(
+            run_id=projection.run.run_id, video_id=projection.run.video_id, state=projection.run.state.value,
+            mode=projection.mode.value, channel_id=projection.run.channel_id,
+            next_action=projection.next_action, next_stage=projection.next_stage.value if projection.next_stage else None,
+            stages=[ProductionStageStateOut(stage=e.stage_id.value, state=e.state.value, attempt=e.attempt,
+                                            fencing_token=e.fencing_token,
+                                            checkpoint_version=e.checkpoint.version if e.checkpoint else None,
+                                            error=e.error, updated_at=e.updated_at) for e in projection.stages],
+            available_stages=[stage.value for stage in projection.available_stages],
+            unavailable_stages=[{"stage": stage.value, "reason": reason} for stage, reason in projection.unavailable_stages],
+            events=[ProductionEventOut(id=event.id, event_type=event.event_type.value, event_version=event.event_version,
+                                       stage_id=event.stage_id.value if event.stage_id else None, payload=event.payload,
+                                       created_at=event.created_at) for event in events])
+
+    @router.post("/videos/{video_id}/production-runs", status_code=202, response_model=ProductionRunStartOut)
+    def start_production_run(video_id: str, body: ProductionRunIn | None = None, request: Request = None):
+        body = body or ProductionRunIn()
+        key = request.headers.get("idempotency-key") or body.idempotency_key
+        if not key:
+            raise HTTPException(400, "an Idempotency-Key header (or idempotency_key field) is required")
+
+        def go(uc):
+            service = production_service(uc)
+            stages = [_stage(item) for item in body.stages] if body.stages is not None else None
+            creation = service.start(check_id(video_id), key,
+                                     channel_id=check_id(body.channel_id) if body.channel_id else None, stages=stages)
+            return ProductionRunStartOut(run_id=creation.run.run_id, state=creation.run.state.value,
+                                         mode=service.coordinator.mode.value,
+                                         created=creation.result.value == "CREATED")
+        return run(go)
+
+    @router.get("/videos/{video_id}/production-runs/{run_id}", response_model=ProductionRunViewOut)
+    def get_production_run(video_id: str, run_id: str):
+        def go(uc):
+            projection = _owned(uc, video_id, run_id)
+            return _view(projection, production_service(uc).coordinator.events(check_id(run_id)))
+        return run(go)
+
+    @router.post("/videos/{video_id}/production-runs/{run_id}/pause")
+    def pause_production_run(video_id: str, run_id: str, body: ProductionActionIn | None = None):
+        def go(uc):
+            _owned(uc, video_id, run_id)
+            reason = (body.reason if body and body.reason else "pausado pelo operador").strip()
+            transition = production_service(uc).coordinator.pause(check_id(run_id), reason)
+            if transition.result is not RunTransitionResult.APPLIED:
+                raise HTTPException(409, "the production run cannot be paused in its current state")
+            return {"run_id": run_id, "state": transition.run.state.value}
+        return run(go)
+
+    @router.post("/videos/{video_id}/production-runs/{run_id}/resume")
+    def resume_production_run(video_id: str, run_id: str, body: ProductionResumeIn | None = None):
+        def go(uc):
+            projection = _owned(uc, video_id, run_id)
+            expected = (body.expected_state if body else None) or projection.run.state
+            transition = production_service(uc).coordinator.resume(check_id(run_id), expected_state=expected)
+            if transition.result is not RunTransitionResult.APPLIED:
+                raise HTTPException(409, "the production run cannot be resumed from this state")
+            return {"run_id": run_id, "state": transition.run.state.value}
+        return run(go)
+
+    @router.post("/videos/{video_id}/production-runs/{run_id}/cancel")
+    def cancel_production_run(video_id: str, run_id: str, body: ProductionActionIn | None = None):
+        def go(uc):
+            _owned(uc, video_id, run_id)
+            reason = (body.reason if body and body.reason else "cancelado pelo operador").strip()
+            transition = production_service(uc).coordinator.cancel(check_id(run_id), reason)
+            if transition.result is not RunTransitionResult.APPLIED:
+                raise HTTPException(409, "the production run cannot be cancelled in its current state")
+            return {"run_id": run_id, "state": transition.run.state.value}
+        return run(go)
+
+    @router.post("/videos/{video_id}/production-runs/{run_id}/retry")
+    def retry_production_run(video_id: str, run_id: str):
+        def go(uc):
+            _owned(uc, video_id, run_id)
+            transition = production_service(uc).coordinator.retry(check_id(run_id), expected_state=RunState.FAILED)
+            if transition.result is not RunTransitionResult.APPLIED:
+                raise HTTPException(409, "retry is available only for a FAILED production run")
+            return {"run_id": run_id, "state": transition.run.state.value}
+        return run(go)
 
     return router

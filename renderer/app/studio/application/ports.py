@@ -14,7 +14,7 @@ from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
-                                     RunCreation, RunState, RunTransition, StageClaim, StageTransition)
+                                     RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
 
 
 @dataclass(frozen=True)
@@ -380,3 +380,15 @@ class ProductionRunRepository(Protocol):
 
     def ack_outbox(self, event_id: int) -> AckResult:
         """Confirma um evento; repetir não falha e não apaga histórico."""
+
+
+class ProductionRunStageReader(Protocol):
+    """Leitura das etapas de um run para a projeção de status (D2).
+
+    Porta separada de `ProductionRunRepository` para o coordenador montar a projeção sem acrescentar
+    métodos de escrita à porta D. O mesmo objeto do repositório satisfaz as duas portas; um run
+    inexistente devolve tupla vazia.
+    """
+
+    def list_stages(self, run_id: str) -> tuple[StageExecution, ...]:
+        """Etapas do run na ordem estável do DAG (topológica); vazio se o run não existe."""

@@ -24,6 +24,7 @@ from .adapters.postgres.panel_repo import PostgresPanelRepository
 from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
+from .adapters.postgres.production_repo import build_postgres_production_run_repository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
 from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
 from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
@@ -52,6 +53,8 @@ from .application.render import GetRender, GetRenderFile, Rendering, RunRender, 
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
 from .application.budget import PaidOperationGuard
+from .application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
+                                     ProductionCoordinator, build_stage_handlers)
 from .application.use_cases import ServiceUnavailable, UseCases
 
 DEFAULT_ALLOWLIST = ("amsterdam-dance-event.nl",)
@@ -75,6 +78,28 @@ def _flag(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _production_mode(value: str | None) -> ProductionMode:
+    try:
+        return ProductionMode((value or ProductionMode.INTERACTIVE.value).strip().upper())
+    except ValueError:
+        return ProductionMode.INTERACTIVE
+
+
+class _MeasuredSpendFloor:
+    """Projeção conservadora do coordenador: o gasto já registrado no mês contra o teto do canal.
+
+    É um **piso medido**, não uma previsão do que ainda será gasto. Serve para o modo guardado
+    dispensar a pausa intermediária só quando o gasto corrente já está sob o teto; a proteção dura
+    contra estouro por operação é do guard hard (fatia A), que precisa estar ligado junto.
+    """
+
+    def __init__(self, usage, ceiling_usd: Decimal):
+        self.usage, self.ceiling_usd = usage, ceiling_usd
+
+    def project(self, run, next_stage) -> BudgetProjection:
+        return BudgetProjection(projected_usd=Decimal(str(self.usage.spent_month())), ceiling_usd=self.ceiling_usd)
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str | None = None
@@ -92,6 +117,7 @@ class Settings:
     trend_hosts: tuple[str, ...] = ("www.googleapis.com", "www.youtube.com")
     token_env_path: Path = Path("credentials/token.env")
     budget_guard: bool = False  # liga a reserva preventiva de orçamento nos caminhos pagos (STUDIO_BUDGET_GUARD=1)
+    production_mode: ProductionMode = ProductionMode.INTERACTIVE  # modo do coordenador (STUDIO_PRODUCTION_MODE)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -103,7 +129,8 @@ class Settings:
                    env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
                    _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
-                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")))
+                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")),
+                   _production_mode(env.get("STUDIO_PRODUCTION_MODE")))
 
 
 RETRY_SECONDS = 5.0
@@ -257,6 +284,18 @@ class Studio:
             popular_fetcher=self._youtube_popular_fetcher or fetch_popular_trends,
             environ=self.environ,
         )
+        run_repo = build_postgres_production_run_repository(connect, dag=COORDINATOR_DAG)
+        # O coordenador roda o render em linha (enqueue no-op); a fila de render HTTP continua a mesma.
+        coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
+        handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
+                                        run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals)
+        # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
+        # pode dispensar a pausa intermediária; sem projeção o coordenador pausa para humano.
+        budget = _MeasuredSpendFloor(usage, Decimal(str(s.max_cost_month))) if s.budget_guard else None
+        coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget)
+        worker = ProductionWorker(coordinator)
+        production = Production(coordinator=coordinator, worker=worker,
+                                submit=lambda run_id: self._executor.submit(worker.work, run_id))
         panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
@@ -268,7 +307,8 @@ class Studio:
                                   create_channel_profile=CreateChannelProfile(channel_repo, repo),
                                   get_channel_profile=GetChannelProfile(channel_repo, repo),
                                   update_channel_profile=UpdateChannelProfile(channel_repo),
-                                  list_channel_profiles=ListChannelProfiles(channel_repo))
+                                  list_channel_profiles=ListChannelProfiles(channel_repo),
+                                  production=production)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
