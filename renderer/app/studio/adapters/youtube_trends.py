@@ -56,7 +56,7 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = 4) -
                 for v in d2.get("items", []):
                     snip = v.get("snippet", {})
                     stats = v.get("statistics", {})
-                    vc = int(stats.get("viewCount", 0))
+                    vc = int(stats.get("viewCount") or 0)
                     total_views += vc
                     published_str = snip.get("publishedAt")
                     published_at = None
@@ -128,7 +128,7 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10) -
             continue
         snip = v.get("snippet", {})
         stats = v.get("statistics", {})
-        vc = int(stats.get("viewCount", 0))
+        vc = int(stats.get("viewCount") or 0)
 
         published_str = snip.get("publishedAt")
         published_at = None

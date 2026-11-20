@@ -51,7 +51,9 @@ def test_panel_page_csp_and_cache_control_headers(client_env):
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "Content-Security-Policy" in r.headers
-    assert "nonce-" in r.headers["Content-Security-Policy"]
+    csp = r.headers["Content-Security-Policy"]
+    assert "nonce-" in csp
+    assert "https://i.ytimg.com" in csp
     assert "no-store" in r.headers.get("Cache-Control", "")
 
 
