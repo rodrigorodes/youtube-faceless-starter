@@ -35,7 +35,8 @@
         "path": "faceless-publish-approved",
         "responseMode": "onReceived",
         "options": {}
-      }
+      },
+      "webhookId": "faceless-publish-approved"
     },
     {
       "id": "c0",

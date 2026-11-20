@@ -18,6 +18,7 @@ Projeto inicial para montar um ambiente local de automação de vídeos. **MVP d
 - [Fluxo editorial: fontes, roteiro e checagem factual](docs/12-editorial.md)
 - [Storyboard e mídia: imagens por cena, cache, licença e custo](docs/13-midia.md)
 - [Narração e renderização: vídeo, legenda, QA e fila](docs/14-render.md)
+- [Aprovação e publicação: prévia, fila, upload retomável](docs/15-publicacao.md)
 
 ## Pré-requisitos
 
