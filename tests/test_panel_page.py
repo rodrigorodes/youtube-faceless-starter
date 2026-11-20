@@ -215,3 +215,12 @@ def test_panel_page_has_create_video_form_and_safe_script(client_env):
     assert "innerHTML" not in r.text
     assert "eval(" not in r.text
 
+
+def test_panel_page_trend_create_button_wires_to_form(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "btn-create-from-trend" in r.text or "new-video-topic" in r.text
+    assert "btn-create-from-trend" in r.text
+
+

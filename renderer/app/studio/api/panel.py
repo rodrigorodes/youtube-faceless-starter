@@ -346,6 +346,18 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         }}
       }});
     }}
+    document.querySelectorAll('.btn-create-from-trend').forEach((btn) => {{
+      btn.addEventListener('click', () => {{
+        const topic = btn.dataset.topic || '';
+        const details = document.getElementById('new-video-section');
+        const input = document.getElementById('new-video-topic');
+        if (details) details.open = true;
+        if (input) {{
+          input.value = topic;
+          input.focus();
+        }}
+      }});
+    }});
   </script>
 </body>
 </html>"""
