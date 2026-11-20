@@ -43,7 +43,7 @@ class PostgresBudgetRepository:
                           AND created_at < (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'
                     ), 0) AS month, COALESCE(SUM(cost_usd) FILTER (WHERE video_id = %s), 0) AS video,
                     COALESCE(BOOL_OR(
-                        (cost_usd = 'NaN'::numeric OR (cost_usd = 0 AND cost_zero_evidence IS NULL))
+                        (cost_usd = 'NaN'::numeric OR cost_confirmation_kind IS NULL)
                         AND (video_id = %s OR
                             (created_at >= date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
                              AND created_at < (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'))
