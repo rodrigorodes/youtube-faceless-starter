@@ -5,7 +5,7 @@ import html
 import secrets
 
 from ..application.panel import PanelView, VideoDetailView
-from ..domain.contracts import VideoFormat
+from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage, is_known_cost
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
@@ -20,65 +20,106 @@ STAGE_LABELS = {
     Stage.REJECTED: "Rejeitado",
 }
 
+# Três estados operacionais da jornada. PENDING não é execução: é ausência de execução.
+STATE_BY_STAGE = {
+    Stage.COMPLETED: ("done", "✓", "Concluído"),
+    Stage.IN_PRODUCTION: ("running", "▶", "Em execução"),
+    Stage.AWAITING_APPROVAL: ("action", "!", "Ação necessária"),
+    Stage.APPROVED: ("action", "!", "Ação necessária"),
+    Stage.FAILED: ("fail", "×", "Falhou"),
+    Stage.REJECTED: ("fail", "×", "Rejeitado"),
+    Stage.PENDING: ("idle", "·", "Sem execução registrada"),
+}
+ACTION_STAGES = (Stage.AWAITING_APPROVAL, Stage.APPROVED, Stage.FAILED, Stage.REJECTED)
+
+
+def _state_badge(stage: Stage, count: int | None = None) -> str:
+    kind, icon, label = STATE_BY_STAGE.get(stage, ("idle", "·", "Sem execução registrada"))
+    count_html = f': <span class="state-count">{count}</span>' if count is not None else ""
+    return (
+        f'<span class="state s-{kind}" data-state="{kind}">'
+        f'<span class="state-icon" aria-hidden="true">{icon}</span> '
+        f'<span>{label}</span>{count_html}</span>'
+    )
+
+
+def _cost_parts(text: str) -> tuple[str, str]:
+    """Classifica o texto de custo no que a visão realmente sabe: grátis, desconhecido ou registrado."""
+    if text == "sem registro de uso":
+        return "none", text
+    if "(gratuito)" in text:
+        return "free", text
+    if "sem custo informado" in text:
+        if text.startswith("US$ 0,00 + "):
+            return "unknown", text[len("US$ 0,00 + "):]
+        return "mixed", text
+    return "known", text
+
+
+def _cost_html(text: str) -> str:
+    kind, value = _cost_parts(text)
+    if kind == "none":
+        return '<span class="cost-origin">sem registro de uso</span>'
+    if kind == "free":
+        return f'<span class="cost-origin">Custo: {e(value)}</span>'
+    if kind == "unknown":
+        return f'<span class="cost-origin">Custo desconhecido: {e(value)}</span>'
+    return f'<span class="cost-origin">Custo registrado: {e(value)}</span>'
+
 CSS = """
 :root {
-  color-scheme: light dark;
-  --bg: #0f0f0f;
-  --sidebar: #0f0f0f;
-  --sidebar-hover: #212121;
-  --surface: #181818;
-  --surface-alt: #212121;
-  --surface-hover: #212121;
-  --surface-elevated: #282828;
-  --border: #282828;
-  --border-hover: #383838;
-  --text: #f1f1f1;
-  --text-muted: #aaaaaa;
-  --text-faint: #717171;
-  --primary: #cc0000;
-  --primary-hover: #ff0000;
-  --primary-focus: rgba(204, 0, 0, 0.28);
-  --input-bg: #121212;
-  --input-focus-bg: #181818;
-  --ok: #2ba640;
-  --ok-bg: rgba(43, 166, 64, 0.14);
-  --warn: #fbc02d;
-  --warn-bg: rgba(251, 192, 45, 0.14);
-  --bad: #ff4e45;
-  --bad-bg: rgba(255, 78, 69, 0.14);
-  --info: #3ea6ff;
-  --info-bg: rgba(62, 166, 255, 0.14);
+  /* Dark-only, tokens medidos do mockup aprovado (mockup-proposta.html). */
+  color-scheme: dark;
+  --bg-app: #0a0f19;
+  --bg-canvas: #101827;
+  --surface: #131b2d;
+  --surface-raised: #1b263e;
+  --border: #2a3350;
+  --border-soft: #1f2942;
+  --text: #e6e9f5;
+  --text-muted: #aab3c8;
+  --text-dim: #7f8aa6;
+  --accent: #7c3aed;
+  --accent-strong: #5b08f6;
+  --accent-soft: #331e7e;
+  --accent-contrast: #ffffff;
+  --success: #74d6a6;
+  --success-surface: #12322a;
+  --success-contrast: #06130d;
+  --info: #0abcff;
+  --info-surface: #0b2c3f;
+  --warn: #e3b341;
+  --warn-surface: #33270e;
+  --danger: #ff5a6e;
+  --danger-surface: #38141c;
+  --gold: #e3b341;
+  --radius: 18px;
+  --gap: 20px;
+
+  /* Aliases semânticos dos componentes existentes, derivados dos tokens. */
+  --bg: var(--bg-canvas);
+  --sidebar: var(--bg-app);
+  --sidebar-hover: var(--surface-raised);
+  --surface-alt: var(--surface-raised);
+  --surface-hover: var(--surface-raised);
+  --surface-elevated: var(--surface-raised);
+  --border-hover: #3a4568;
+  --text-faint: var(--text-dim);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-strong);
+  --primary-focus: rgba(124, 58, 237, 0.32);
+  --input-bg: #0c1322;
+  --input-focus-bg: var(--surface);
+  --ok: var(--success);
+  --ok-bg: rgba(116, 214, 166, 0.14);
+  --warn-bg: rgba(227, 179, 65, 0.14);
+  --bad: var(--danger);
+  --bad-bg: rgba(255, 90, 110, 0.14);
+  --info-bg: rgba(10, 188, 255, 0.14);
+  accent-color: var(--accent);
+  scrollbar-color: var(--border) var(--bg-app);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f7fb;
-    --sidebar: #ffffff;
-    --sidebar-hover: #edf2f7;
-    --surface: #ffffff;
-    --surface-alt: #f0f0f0;
-    --surface-hover: #f7fafc;
-    --surface-elevated: #ffffff;
-    --border: #dbe2ec;
-    --border-hover: #cbd5e1;
-    --text: #1a202c;
-    --text-muted: #64748b;
-    --text-faint: #94a3b8;
-    --primary: #cc0000;
-    --primary-hover: #b30000;
-    --primary-focus: rgba(204, 0, 0, 0.22);
-    --input-bg: #ffffff;
-    --input-focus-bg: #ffffff;
-    --ok: #1a7f37;
-    --ok-bg: rgba(26, 127, 55, 0.12);
-    --warn: #9a6700;
-    --warn-bg: rgba(154, 103, 0, 0.12);
-    --bad: #cf222e;
-    --bad-bg: rgba(207, 34, 46, 0.12);
-    --info: #0969da;
-    --info-bg: rgba(9, 105, 218, 0.12);
-  }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--text); min-height: 100vh; }
@@ -100,10 +141,23 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
   flex-shrink: 0;
   z-index: 10;
 }
-@media (max-width: 860px) {
-  .app-layout { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+@media (max-width: 1180px) {
+  .app-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .rail { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
+@media (max-width: 820px) {
+  .app-layout { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .sidebar { position: static; }
+  .nav-list:first-of-type { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.25rem; }
+  .nav-list:first-of-type li { flex: none; }
+  .nav-list:last-of-type { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
+  .nav-tag { display: none; }
+  .idea-row { grid-template-columns: minmax(0, 1fr); }
+  .item { grid-template-columns: minmax(0, 1fr); gap: 0.4rem; }
+  .item .btn { width: 100%; }
+  .hero h1 { font-size: 1.6rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 .brand {
   display: flex;
@@ -117,12 +171,12 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary) 0%, #990000 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
-  box-shadow: 0 2px 6px rgba(204, 0, 0, 0.3);
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.35);
 }
 .brand-title {
   font-size: 0.95rem;
@@ -142,16 +196,23 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
   gap: 0.25rem;
   flex: 1;
 }
+.nav-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
 .nav-item {
   display: flex;
   align-items: center;
   gap: 0.65rem;
   padding: 0.55rem 0.75rem;
+  min-height: 44px;
   border-radius: 6px;
   color: var(--text-muted);
   font-size: 0.85rem;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   text-decoration: none;
 }
 .nav-item svg {
@@ -167,10 +228,52 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
   color: var(--text);
   text-decoration: none;
 }
-.nav-item.active {
-  background: var(--surface-hover);
-  color: var(--primary);
+.nav-item.active,
+.nav-item[aria-current] {
+  background: var(--accent-soft);
+  color: var(--text);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav-item-unavailable {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.nav-item-unavailable:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+.nav-tag {
+  margin-left: auto;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.nav-resources {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  z-index: 2000;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--info);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+.skip-link:focus {
+  top: 1rem;
 }
 
 .sidebar-footer {
@@ -260,8 +363,9 @@ textarea:hover {
 input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: none;
-  border-color: var(--primary);
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--primary-focus);
   background: var(--input-focus-bg);
 }
@@ -292,8 +396,8 @@ select {
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
-  min-height: 40px;
-  min-width: 40px;
+  min-height: 44px;
+  min-width: 44px;
   line-height: 1.4;
   text-align: center;
   transition: all 0.15s ease;
@@ -305,9 +409,9 @@ select {
   text-decoration: none;
 }
 .btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
   box-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 .btn-primary:hover {
@@ -315,7 +419,10 @@ select {
   border-color: var(--primary-hover);
   box-shadow: 0 2px 6px var(--primary-focus);
 }
-.btn:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.btn:focus-visible,
+a:focus-visible,
+.nav-item:focus-visible,
+.next-step:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 
 .grid-summary {
   display: grid;
@@ -415,7 +522,7 @@ tr:hover td { background: var(--surface-hover); }
 .pill-PENDING { background: var(--border); color: var(--text-muted); }
 .pill-IN_PRODUCTION { background: var(--info-bg); color: var(--info); border: 1px solid var(--info); }
 .pill-AWAITING_APPROVAL { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
-.pill-APPROVED { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.pill-APPROVED { background: var(--success-surface); color: var(--success-contrast); border: 1px solid var(--success); }
 .pill-COMPLETED { background: var(--ok-bg); color: var(--ok); }
 .pill-FAILED { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); }
 .pill-REJECTED { background: var(--bad-bg); color: var(--bad); }
@@ -471,7 +578,7 @@ tr:hover td { background: var(--surface-hover); }
   height: 68px;
   aspect-ratio: 16 / 9;
   border-radius: 6px;
-  background: #121212;
+  background: var(--bg-app);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -485,7 +592,7 @@ tr:hover td { background: var(--surface-hover); }
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: #606060;
+  color: var(--text-faint);
 }
 .video-sample-body {
   display: flex;
@@ -613,8 +720,8 @@ details summary::-webkit-details-marker { display: none !important; }
   border: 1px solid var(--border);
 }
 .trend-item {
-  background: #181818;
-  border: 1px solid #282828;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1rem;
   margin-bottom: 0.85rem;
@@ -624,7 +731,7 @@ details summary::-webkit-details-marker { display: none !important; }
   transition: border-color 0.15s ease;
 }
 .trend-item:hover {
-  border-color: #383838;
+  border-color: var(--border-hover);
 }
 .trend-thumb-link {
   text-decoration: none;
@@ -637,7 +744,7 @@ details summary::-webkit-details-marker { display: none !important; }
   border-radius: 8px;
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: var(--bg-app);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -659,15 +766,15 @@ details summary::-webkit-details-marker { display: none !important; }
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: #212121;
-  color: #606060;
+  background: var(--surface-raised);
+  color: var(--text-faint);
 }
 .thumb-play-overlay {
   position: absolute;
   bottom: 4px;
   right: 4px;
   background: rgba(0, 0, 0, 0.8);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 0.68rem;
   font-weight: 600;
   padding: 1px 4px;
@@ -697,7 +804,7 @@ details summary::-webkit-details-marker { display: none !important; }
 }
 .trend-title-link {
   text-decoration: none;
-  color: #f1f1f1;
+  color: var(--text);
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -705,7 +812,7 @@ details summary::-webkit-details-marker { display: none !important; }
 }
 .trend-title-link:hover .trend-topic-name {
   text-decoration: underline;
-  color: #ffffff;
+  color: var(--text);
 }
 .trend-external-icon {
   font-size: 0.82rem;
@@ -715,7 +822,7 @@ details summary::-webkit-details-marker { display: none !important; }
 }
 .trend-title-link:hover .trend-external-icon {
   transform: translate(1px, -1px);
-  color: #38bdf8;
+  color: var(--info);
 }
 .trend-badges {
   display: flex;
@@ -744,9 +851,9 @@ details summary::-webkit-details-marker { display: none !important; }
   margin-top: 0.25rem;
 }
 .btn-watch-yt {
-  background: #272727;
-  color: #f1f1f1;
-  border: 1px solid #383838;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-hover);
   text-decoration: none;
   font-weight: 500;
   font-size: 0.82rem;
@@ -755,26 +862,26 @@ details summary::-webkit-details-marker { display: none !important; }
   gap: 0.35rem;
 }
 .btn-watch-yt:hover {
-  background: #cc0000;
-  border-color: #cc0000;
-  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
 }
 .badge-region-br {
   background: rgba(239, 68, 68, 0.16);
-  color: #f87171;
+  color: var(--bad);
   border: 1px solid rgba(239, 68, 68, 0.3);
   font-weight: 600;
 }
 .badge-region-global {
   background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
+  color: var(--info);
   border: 1px solid rgba(56, 189, 248, 0.3);
   font-weight: 600;
 }
 .badge-pillar {
-  background: #272727;
-  color: #e5e5e5;
-  border: 1px solid #383838;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
   font-weight: 500;
 }
 @media (max-width: 640px) {
@@ -855,9 +962,9 @@ details summary::-webkit-details-marker { display: none !important; }
   gap: 0.35rem;
   padding: 5px 14px;
   border-radius: 18px;
-  background: #272727;
+  background: var(--surface-raised);
   border: 1px solid transparent;
-  color: #f1f1f1;
+  color: var(--text);
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -865,25 +972,25 @@ details summary::-webkit-details-marker { display: none !important; }
   user-select: none;
 }
 .cat-pill:hover {
-  background: #383838;
-  color: #ffffff;
+  background: var(--border);
+  color: var(--text);
 }
 .cat-pill.active {
-  background: #f1f1f1;
+  background: var(--accent);
   border-color: transparent;
-  color: #0f0f0f;
+  color: var(--accent-contrast);
   font-weight: 600;
 }
 .cat-pill-btn {
   background: transparent;
-  border: 1px dashed #3f3f3f;
-  color: #aaa;
+  border: 1px dashed var(--border-hover);
+  color: var(--text-muted);
 }
 .cat-pill-btn:hover {
   border-style: solid;
-  border-color: #f1f1f1;
-  color: #f1f1f1;
-  background: #272727;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-raised);
 }
 .chip-category {
   background: var(--surface-elevated);
@@ -1017,7 +1124,7 @@ details summary::-webkit-details-marker { display: none !important; }
   flex-wrap: wrap;
 }
 .btn-compact {
-  min-height: 32px;
+  min-height: 44px;
   padding: 0.25rem 0.75rem;
   font-size: 0.8rem;
 }
@@ -1045,7 +1152,7 @@ details summary::-webkit-details-marker { display: none !important; }
   height: 0.85rem;
   border: 2px solid rgba(255,255,255,0.3);
   border-radius: 50%;
-  border-top-color: #fff;
+  border-top-color: var(--accent-contrast);
   animation: spin 0.8s linear infinite;
   vertical-align: middle;
   margin-right: 0.35rem;
@@ -1055,12 +1162,12 @@ details summary::-webkit-details-marker { display: none !important; }
 /* Topic input pulse/glow highlight */
 @keyframes topicPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(204, 0, 0, 0.6);
-    border-color: var(--primary);
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.6);
+    border-color: var(--accent);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(204, 0, 0, 0.2);
-    border-color: var(--primary);
+    box-shadow: 0 0 0 8px rgba(124, 58, 237, 0.2);
+    border-color: var(--accent);
   }
   100% {
     box-shadow: 0 0 0 0 rgba(204, 0, 0, 0);
@@ -1070,6 +1177,393 @@ details summary::-webkit-details-marker { display: none !important; }
 .topic-pulse {
   animation: topicPulse 1.2s ease-out;
 }
+
+/* Shell: navegação por seções, estados honestos e diagnóstico avançado */
+.panel-section {
+  scroll-margin-top: 1rem;
+  margin-bottom: 2.25rem;
+}
+.panel-section:last-child { margin-bottom: 0; }
+.panel-section > h2 { margin-bottom: 0.35rem; }
+.section-sub {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.section-block { margin-bottom: 1.75rem; }
+.section-block h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
+}
+
+.state-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+}
+.state-icon { font-weight: 700; }
+.state-done { border-color: var(--success-surface); }
+.state-done .state-icon { color: var(--success); }
+.state-running { border-color: var(--info); }
+.state-running .state-icon { color: var(--info); }
+.state-action { border-color: var(--warn); }
+.state-action .state-icon { color: var(--warn); }
+.state-idle { border-color: var(--border); }
+.state-idle .state-icon { color: var(--text-muted); }
+.state-count { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.next-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.next-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  text-decoration: none;
+}
+a.next-step:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  text-decoration: none;
+}
+.next-step-title { font-weight: 600; font-size: 0.9rem; }
+.next-step-count { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.next-step-hint { font-size: 0.78rem; color: var(--text-muted); }
+
+.status-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+.status-label { color: var(--text-muted); }
+.status-count {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-origin { font-weight: 600; }
+.cost-note {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0.75rem 0 1rem;
+}
+.video-state { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+
+.advanced { margin-top: 1.25rem; padding: 0; }
+.advanced-summary {
+  cursor: pointer;
+  padding: 0.85rem 1.15rem;
+  color: var(--text);
+  font-weight: 600;
+  list-style: none;
+}
+.advanced-summary::-webkit-details-marker { display: none; }
+.advanced-summary::after { content: "▾"; float: right; color: var(--text-muted); }
+.advanced[open] .advanced-summary { border-bottom: 1px solid var(--border); }
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.advanced-body code { color: var(--text); word-break: break-all; }
+.failure-summary {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.failure-summary p { margin-bottom: 0.4rem; }
+.failure-summary p:last-child { margin-bottom: 0; }
+
+/* ===== Alinhamento ao mockup aprovado (mockup-proposta.html) ===== */
+body {
+  background-color: var(--bg-app);
+  background-image: radial-gradient(1200px 620px at 72% -8%, #241b52 0%, transparent 62%);
+  background-repeat: no-repeat;
+}
+.app-layout {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr) 300px;
+  gap: var(--gap);
+  padding: 18px;
+  max-width: 1600px;
+  margin: 0 auto;
+  align-items: start;
+  min-height: 100vh;
+}
+.sidebar {
+  width: auto;
+  height: auto;
+  position: sticky;
+  top: 18px;
+  gap: 18px;
+  padding: 18px 14px;
+  background: linear-gradient(180deg, #0c1222, #0a0f19);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  z-index: 1;
+}
+.brand {
+  padding-bottom: 0.75rem;
+  border-bottom: 0;
+  margin-bottom: 0;
+}
+.brand-icon {
+  border-radius: 10px;
+  background: linear-gradient(160deg, var(--accent-strong), #9d6bff);
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+.nav-label {
+  margin: 0.75rem 0 0.35rem 0.4rem;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+.nav-label:first-child { margin-top: 0; }
+.nav-list { gap: 0.25rem; }
+.nav-item {
+  padding: 0.5rem 0.6rem;
+  min-height: 40px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+.nav-item:hover { background: var(--surface-raised); color: var(--text); }
+.nav-item.active,
+.nav-item[aria-current] {
+  background: linear-gradient(90deg, var(--accent-soft), #241a4f);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px #4b32a8;
+  font-weight: 600;
+}
+.nav-item svg { width: 18px; height: 18px; }
+.is-disabled,
+.nav-item-unavailable { color: var(--text-dim); cursor: not-allowed; }
+.nav-tag {
+  margin-left: auto;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.side-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--surface);
+}
+.side-card h2 {
+  display: block;
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.side-card p { margin: 0; font-size: 0.78rem; color: var(--text-dim); }
+.mock-note {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+.topbar { background: transparent; border: 0; padding: 0 0.25rem; }
+.hero {
+  background: linear-gradient(135deg, #1a1440 0%, #141b30 55%, #121a2b 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 26px 26px 22px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -80px -120px auto;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.33), transparent 70%);
+  pointer-events: none;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.hero h1 {
+  display: block;
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.75rem, 3.2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+}
+.accent-word {
+  background: linear-gradient(92deg, #b79bff 0%, var(--accent) 45%, var(--gold) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lede { margin: 0 0 1.1rem; color: var(--text-muted); max-width: 60ch; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.tab {
+  min-height: 40px;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f1626;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.tab[aria-selected="true"] {
+  background: linear-gradient(180deg, #2a1f63, #1c1548);
+  border-color: #4b32a8;
+  color: #fff;
+}
+.tab[aria-disabled="true"] { color: var(--text-dim); cursor: not-allowed; opacity: 0.75; }
+.idea-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+.idea-row .form-actions { margin: 0; }
+.idea-row .btn { min-height: 46px; }
+.note { margin: 0.75rem 0 0; font-size: 0.75rem; color: var(--text-dim); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: #0d1424;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+.steps li .n { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.fine { margin: 0.75rem 0 0; color: var(--text-dim); font-size: 0.72rem; line-height: 1.5; }
+.card.empty { border-style: dashed; background: #101728; }
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.state .state-icon { font-size: 0.7rem; line-height: 1; }
+.s-done { color: var(--success); background: var(--success-surface); border-color: #1f6b4e; }
+.s-run { color: var(--info); background: var(--info-surface); border-color: #14567a; }
+.s-act { color: var(--warn); background: var(--warn-surface); border-color: #6b4a1c; }
+.s-fail { color: var(--danger); background: var(--danger-surface); border-color: #7a2436; }
+.state-idle { color: var(--text-muted); background: var(--surface-raised); border-color: var(--border); }
+.next { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; }
+.next .card { display: grid; gap: 0.6rem; }
+.spread { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.muted { color: var(--text-muted); }
+.dim { color: var(--text-dim); }
+.item { border-top: 1px solid var(--border-soft); }
+.item:first-child { border-top: 0; }
+.rail { display: grid; gap: var(--gap); align-content: start; }
+.rail .card h2 { display: block; margin-bottom: 0.5rem; }
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.8rem;
+}
+.kv:first-of-type { border-top: 0; }
+.kv span:last-child { font-weight: 600; }
+.tag { margin-left: 0.35rem; color: var(--text-dim); font-size: 0.65rem; }
+details.advanced { background: #0e1524; }
 """
 
 
@@ -1146,21 +1640,24 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     """
 
     total_trends = len(view.trends)
-    br_count = sum(1 for t in view.trends if t.region == "BR")
-    global_count = sum(1 for t in view.trends if t.region == "GLOBAL")
-
     pills = [
-        f'<button type="button" class="cat-pill active" data-filter-type="all">🔥 Todas ({total_trends})</button>',
-        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="BR">🇧🇷 Em Alta Brasil ({br_count})</button>',
-        f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="GLOBAL">🌍 Em Alta Mundo ({global_count})</button>',
+        f'<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas ({total_trends})</button>',
     ]
+    region_labels = {"BR": "🇧🇷 Em Alta Brasil", "US": "🇺🇸 Em Alta EUA", "UNKNOWN": "Origem desconhecida"}
+    regions = ["BR", "US"] + sorted({t.region for t in view.trends if t.region and t.region not in ("BR", "US")})
+    for region in regions:
+        count = sum(1 for t in view.trends if t.region == region)
+        label = region_labels.get(region, f"Em Alta {region}")
+        pills.append(
+            f'<button type="button" class="cat-pill" data-filter-type="region" data-region-code="{e(region)}" aria-pressed="false">{e(label)} ({count})</button>'
+        )
     for cat in view.categories:
         cat_count = sum(1 for t in view.trends if t.category_id == cat.id)
         pills.append(
-            f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}">🏷️ {e(cat.name)} ({cat_count})</button>'
+            f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}" aria-pressed="false">🏷️ {e(cat.name)} ({cat_count})</button>'
         )
     pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-open-categories-modal">+ Novo Pilar</button>')
-    cat_pills_html = f'<div class="cat-pills-bar">{"".join(pills)}</div>'
+    cat_pills_html = f'<search class="cat-pills-bar" aria-label="Filtros de tendências">{"".join(pills)}</search>'
 
     action_buttons_html = f"""
       <div class="trends-actions">
@@ -1171,7 +1668,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
     if view.trends_status == "never_collected" or not view.trends:
         trends_html = f"""
-          <div class="card trends-card" style="margin-bottom: 1.75rem;" id="trending-section">
+          <div class="card trends-card" style="margin-bottom: 1.75rem;">
             <div class="trends-header">
               <div class="trends-title">
                 <span>🔥 Temas em Alta nos Últimos {days} Dias</span>
@@ -1209,9 +1706,9 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             else:
                 thumb_inner = (
                     '<div class="trend-thumb-placeholder">'
-                    '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#606060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
                     '<rect x="2" y="4" width="20" height="16" rx="4"></rect>'
-                    '<polygon points="10 8 16 12 10 16 10 8" fill="#606060"></polygon>'
+                    '<polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon>'
                     '</svg>'
                     '</div>'
                 )
@@ -1227,10 +1724,10 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
             # Badges row
             badges_parts = []
-            if t.region == "BR":
-                badges_parts.append('<span class="chip-metric badge-region-br">🇧🇷 Em Alta Brasil</span>')
-            elif t.region == "GLOBAL":
-                badges_parts.append('<span class="chip-metric badge-region-global">🌍 Em Alta Mundo</span>')
+            if t.region:
+                label = region_labels.get(t.region, f"Em Alta {t.region}")
+                badge_class = "badge-region-br" if t.region == "BR" else "badge-region-global"
+                badges_parts.append(f'<span class="chip-metric {badge_class}">{e(label)}</span>')
 
             if t.category_name:
                 badges_parts.append(f'<span class="chip-metric chip-category badge-pillar">🏷️ {e(t.category_name)}</span>')
@@ -1240,8 +1737,15 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
             completed_count = t.counts.get(Stage.COMPLETED, 0)
             in_prod_count = t.counts.get(Stage.IN_PRODUCTION, 0)
-            badges_parts.append(f'<span class="chip-metric">🎬 {completed_count} concluídos · {in_prod_count} em produção</span>')
-            badges_parts.append(f'<span class="chip-metric">💰 Custo: {e(t.cost_text)}</span>')
+            trend_action_count = sum(t.counts.get(stage, 0) for stage in ACTION_STAGES)
+            trend_idle_count = t.counts.get(Stage.PENDING, 0)
+            if completed_count + in_prod_count + trend_action_count + trend_idle_count == 0:
+                badges_parts.append(_state_badge(Stage.PENDING))
+            else:
+                badges_parts.append(_state_badge(Stage.COMPLETED, completed_count))
+                badges_parts.append(_state_badge(Stage.IN_PRODUCTION, in_prod_count))
+                badges_parts.append(_state_badge(Stage.AWAITING_APPROVAL, trend_action_count))
+            badges_parts.append(f'<span class="chip-metric">💰 {_cost_html(t.cost_text)}</span>')
 
             badges_html = f'<div class="trend-badges">{"".join(badges_parts)}</div>'
 
@@ -1300,21 +1804,30 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             extra_count = len(view.trends) - 6
             expansion_bar_html = f"""
               <div class="trends-expansion-bar" style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
-                <button type="button" class="btn btn-compact" id="btn-toggle-more-trends" data-expanded="false" data-total="{len(view.trends)}">
+                <button type="button" class="btn btn-compact" id="btn-toggle-more-trends" data-expanded="false" data-total="{len(view.trends)}" aria-expanded="false">
                   Ver Mais Tendências (+{extra_count}) ▼
                 </button>
               </div>
             """
 
+        sources = dict.fromkeys(
+            ("YouTube (origem desconhecida)" if t.source_name == "YouTube Global (Em Alta)" else t.source_name,
+             t.source_url)
+            for t in view.trends
+        )
+        sources_html = " · ".join(
+            f'<a href="{e(url)}" target="_blank" rel="noopener noreferrer">{e(name)}</a>'
+            for name, url in sources
+        )
         trends_html = f"""
-          <div class="card trends-card" id="trending-section">
+          <div class="card trends-card">
             <div class="trends-header">
               <div class="trends-title">
                 <span>🔥 Temas em Alta nos Últimos {days} Dias</span>{stale_badge}
               </div>
               <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
                 <div class="trends-source">
-                  Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+                  Fontes (todas as tendências): {sources_html} · Consulta: {last_dt_str}
                 </div>
                 {action_buttons_html}
               </div>
@@ -1347,14 +1860,15 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                   <div class="video-sample-card">
                     <div class="video-thumb-sample">
                       <div class="video-thumb-placeholder">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#606060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="2" y="4" width="20" height="16" rx="4"></rect>
-                          <polygon points="10 8 16 12 10 16 10 8" fill="#606060"></polygon>
+                          <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon>
                         </svg>
                       </div>
                     </div>
                     <div class="video-sample-body">
-                      <div>
+                      <div class="video-state">
+                        {_state_badge(v.stage)}
                         <span class="pill pill-{e(v.stage.value)}">{e(stage_label)}</span>
                       </div>
                       <div class="video-sample-title">{e(v.topic)}</div>
@@ -1363,7 +1877,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                         <span>·</span>
                         <span>{date_str}</span>
                         <span>·</span>
-                        <span style="font-variant-numeric: tabular-nums;">{e(v.cost_text)}</span>
+                        <span style="font-variant-numeric: tabular-nums;">{_cost_html(v.cost_text)}</span>
                       </div>
                     </div>
                     <div class="video-sample-actions">
@@ -1380,7 +1894,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                       <span class="topic-group-label" style="font-weight: 700; font-size: 1rem;">{e(g.label)}</span>
                       <span class="chip-metric" style="font-size: 0.72rem;">{len(g.videos)} vídeo{'s' if len(g.videos) > 1 else ''}</span>
                     </div>
-                    <span class="topic-group-cost" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">{e(g.cost_text)}</span>
+                    <span class="topic-group-cost" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">{_cost_html(g.cost_text)}</span>
                   </div>
                 </summary>
                 <div class="topic-group-videos" style="display: flex; flex-direction: column; gap: 0.5rem;">
@@ -1486,75 +2000,377 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </div>
     """
 
-    pct_width = min(100.0, max(0.0, view.month.percent or 0.0))
+    month_kind, month_value = _cost_parts(view.month.text)
+    if month_kind == "none":
+        month_display = "Sem registro de uso"
+        month_origin = "Nenhuma chamada de IA registrada no mês."
+    elif month_kind == "unknown":
+        month_display = f"Desconhecido — {month_value}"
+        month_origin = "Custo desconhecido não é exibido como zero."
+    elif month_kind == "mixed":
+        month_display = month_value
+        month_origin = "Custo registrado no ledger; chamadas sem custo informado são desconhecidas."
+    elif month_kind == "free":
+        month_display = month_value
+        month_origin = "Cobrança gratuita registrada."
+    else:
+        month_display = month_value
+        month_origin = "Custo registrado no ledger; esta visão não separa real de estimado."
+
+    budget_bar_html = ""
+    if view.month.percent is not None and view.month.known_usd > 0:
+        pct_width = min(100.0, max(0.0, view.month.percent))
+        budget_bar_html = (
+            f'<div class="budget-bar" aria-hidden="true">'
+            f'<div class="budget-fill" style="width: {pct_width:.1f}%;"></div></div>'
+        )
+
+    done_count = view.totals.get(Stage.COMPLETED, 0)
+    running_count = view.totals.get(Stage.IN_PRODUCTION, 0)
+    action_count = sum(view.totals.get(stage, 0) for stage in ACTION_STAGES)
+    idle_count = view.totals.get(Stage.PENDING, 0)
+    total_videos = done_count + running_count + action_count + idle_count
+
+    state_legend_html = (
+        '<div class="state-legend" aria-label="Legenda de estados">'
+        + _state_badge(Stage.COMPLETED, done_count)
+        + _state_badge(Stage.IN_PRODUCTION, running_count)
+        + _state_badge(Stage.AWAITING_APPROVAL, action_count)
+        + '</div>'
+    )
+
+    steps_chips_html = """
+      <ol class="steps" aria-label="Etapas da produção">
+        <li><span class="n">1</span> Roteiro</li>
+        <li><span class="n">2</span> Fontes</li>
+        <li><span class="n">3</span> Fact-check</li>
+        <li><span class="n">4</span> Cenas</li>
+        <li><span class="n">5</span> Voz</li>
+        <li><span class="n">6</span> Render</li>
+        <li><span class="n">7</span> QA</li>
+        <li><span class="n">8</span> Publicação</li>
+      </ol>
+    """
+
+    if total_videos == 0:
+        producao_body_html = f"""
+          <article class="card empty" id="producao-vazia">
+            <h3>Nenhuma execução registrada</h3>
+            <p class="muted">Quando você produzir um vídeo, o andamento aparece aqui com etapa atual, próxima ação e custo.</p>
+            {steps_chips_html}
+            <p class="fine">Etapas exibidas sem estado: nenhuma foi iniciada. Não há percentual porque não existe execução registrada.</p>
+          </article>
+        """
+    else:
+        status_items = "".join(
+            f'<li class="status-item" data-stage="{stage.value}">'
+            f'<span class="status-label">{e(STAGE_LABELS[stage])}</span>'
+            f'<span class="status-count">{view.totals.get(stage, 0)}</span></li>'
+            for stage in Stage
+        )
+        producao_body_html = f"""
+          <div class="grid-summary">
+            <div class="card" style="border-left: 4px solid var(--info);">
+              <div class="card-label">Em Produção</div>
+              <div class="card-value" style="color: var(--info);">{running_count}</div>
+              <div class="card-sub">Jobs de render/áudio ativos</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--warn);">
+              <div class="card-label">Aguardando Aprovação</div>
+              <div class="card-value" style="color: var(--warn);">{view.totals.get(Stage.AWAITING_APPROVAL, 0)}</div>
+              <div class="card-sub">Exigem revisão humana</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--ok);">
+              <div class="card-label">Concluídos / Publicados</div>
+              <div class="card-value" style="color: var(--ok);">{done_count}</div>
+              <div class="card-sub">No período selecionado</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--accent);">
+              <div class="card-label">Gasto no Mês vs Teto</div>
+              <div class="card-value">{e(month_display)}</div>
+              <div class="card-sub">Teto mensal: US$ {view.month.cap_usd:.2f}</div>
+              <div class="card-sub">{e(month_origin)}</div>
+            </div>
+          </div>
+          <div class="section-block">
+            <h3>Status por fase</h3>
+            <ul class="status-list">{status_items}</ul>
+          </div>
+          <p class="cost-note">Custos: <strong>gratuito</strong> e <strong>desconhecido</strong> são explícitos; os demais valores são <strong>registrados</strong> no ledger e esta visão não separa real de estimado. Ausência de custo é exibida como “sem registro de uso”, nunca como zero.</p>
+        """
+
+    action_videos = [
+        item
+        for group in view.topics
+        for item in group.videos
+        if item.stage in ACTION_STAGES
+    ]
+    action_videos.sort(key=lambda item: item.updated_at, reverse=True)
+    if not action_videos:
+        precisa_body_html = (
+            '<div class="card empty">Nada exige sua ação no período selecionado.</div>'
+        )
+    else:
+        cards = []
+        for item in action_videos[:6]:
+            buttons = []
+            if "preview" in item.actions:
+                buttons.append(
+                    f'<a class="btn btn-primary" href="/studio/videos/{e(item.id)}/preview">Abrir Prévia</a>'
+                )
+            if "progress" in item.actions:
+                progress_label = "Ver correção" if item.stage in (Stage.FAILED, Stage.REJECTED) else "Ver Progresso"
+                button_class = "btn btn-ghost" if "preview" in item.actions else "btn btn-primary"
+                buttons.append(
+                    f'<a class="{button_class}" href="/studio/panel/videos/{e(item.id)}">{progress_label}</a>'
+                )
+            if not buttons:
+                buttons.append('<span class="dim">Sem ação disponível nesta versão.</span>')
+            hints = {
+                Stage.AWAITING_APPROVAL: "Aprovar ou editar antes de seguir para publicação.",
+                Stage.APPROVED: "Aprovado; a publicação ainda não foi registrada.",
+                Stage.FAILED: "Revisar o passo que falhou e reexecutar a produção.",
+                Stage.REJECTED: "Rejeitado; revisar antes de retomar.",
+            }
+            cards.append(f"""
+              <article class="card">
+                <div class="spread">
+                  <h3>{e(item.topic)}</h3>
+                  {_state_badge(item.stage)}
+                </div>
+                <p class="muted">{_cost_html(item.cost_text)}</p>
+                <p class="dim">{hints.get(item.stage, "Ação necessária para continuar.")}</p>
+                <div class="row">{''.join(buttons)}</div>
+              </article>
+            """)
+        remaining = len(action_videos) - 6
+        remaining_html = (
+            f'<p class="fine">E mais {remaining} item(ns) com ação necessária na seção Vídeos.</p>'
+            if remaining > 0 else ""
+        )
+        precisa_body_html = f'<div class="next">{"".join(cards)}</div>{remaining_html}'
+
+    latest_failure = next(
+        (
+            item
+            for group in view.topics
+            for item in group.videos
+            if item.stage == Stage.FAILED
+        ),
+        None,
+    )
+    if latest_failure is None:
+        ultima_falha_html = (
+            '<p class="muted">Nenhuma falha registrada no período selecionado.</p>'
+        )
+    else:
+        ultima_falha_html = f"""
+          <p><strong>Falha registrada no vídeo «{e(latest_failure.topic)}».</strong></p>
+          <p class="muted">O que fazer: abra o vídeo para ver o passo de correção. O botão de nova tentativa aparece no detalhe quando o estado permite.</p>
+          <p class="dim">Detalhe técnico disponível em Avançado — diagnóstico.</p>
+          <a class="btn btn-primary" style="width: 100%;" href="/studio/panel/videos/{e(latest_failure.id)}">Ver correção</a>
+        """
+
+    rail_cost_rows = [
+        ("Custo registrado (real ou estimado)",
+         f"US$ {view.month.known_usd:.2f}".replace(".", ",") if view.month.known_usd > 0 else "nenhum"),
+        ("Sem custo (gratuito)", "não detalhado nesta visão"),
+        ("Custo desconhecido",
+         f"{view.month.unknown_calls} chamada(s) sem custo informado" if view.month.unknown_calls else "nenhum"),
+        ("Sem registro de uso", "sim" if month_kind == "none" else "não"),
+    ]
+    rail_cost_html = "".join(
+        f'<div class="kv"><span>{e(label)}</span><span>{e(value)}</span></div>'
+        for label, value in rail_cost_rows
+    )
+
+    fases_html = """
+      <div class="kv"><span>F0 Segurança e docs</span><span class="state s-done"><span class="state-icon" aria-hidden="true">✓</span> concluído</span></div>
+      <div class="kv"><span>F1 Reservas e execução</span><span class="state s-act"><span class="state-icon" aria-hidden="true">!</span> parcial</span></div>
+      <div class="kv"><span>F5 Audiovisual</span><span class="state s-act"><span class="state-icon" aria-hidden="true">!</span> domínio</span></div>
+      <div class="kv"><span>F6 QA</span><span class="state s-act"><span class="state-icon" aria-hidden="true">!</span> contrato</span></div>
+      <div class="kv"><span>F8 Publicação</span><span class="state s-fail"><span class="state-icon" aria-hidden="true">×</span> não iniciada</span></div>
+      <div class="kv"><span>F11 SaaS</span><span class="state s-fail"><span class="state-icon" aria-hidden="true">×</span> adiada</span></div>
+      <p class="fine">Rótulos do plano de implementação do repositório; não são estado de execução do Studio.</p>
+    """
+
+    sidebar_nav_html = """
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul class="nav-list">
+          <li>
+            <a class="nav-item active" href="#inicio-section" aria-current="page">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              <span>Início</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-item" href="#producao-section">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="4"></rect><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+              <span>Produção</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-item" href="#trending-section">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+              <span>Tendências</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-item" href="#videos-section">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+              <span>Vídeos</span>
+            </a>
+          </li>
+        </ul>
+        <p class="nav-label">Indisponível nesta versão</p>
+        <ul class="nav-list">
+          <li>
+            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="14" rx="2"></rect><line x1="8" y1="22" x2="16" y2="22"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>
+              <span>Canais</span><em class="nav-tag">em breve</em>
+            </span>
+          </li>
+          <li>
+            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="14"></line></svg>
+              <span>Analytics</span><em class="nav-tag">em breve</em>
+            </span>
+          </li>
+          <li>
+            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <span>Equipe</span><em class="nav-tag">SaaS</em>
+            </span>
+          </li>
+          <li>
+            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              <span>Configurações</span><em class="nav-tag">em breve</em>
+            </span>
+          </li>
+        </ul>
+      </nav>
+      <nav class="nav-resources" aria-label="Recursos externos">
+        <ul class="nav-list">
+          <li>
+            <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              <span>API Docs</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-item" href="http://localhost:5678" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>n8n Workflows</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    """
+
+    budget_state_html = (
+        f"Custo registrado: US$ {view.month.known_usd:.2f}".replace(".", ",")
+        if view.month.known_usd > 0
+        else "Não disponível: nenhum custo confirmado neste mês."
+    )
+    side_card_html = f"""
+        <div class="side-card">
+          <h2>Orçamento do mês</h2>
+          <p>{e(budget_state_html)}</p>
+          {budget_bar_html}
+        </div>
+    """
+
+    create_form_html = f"""
+        <form id="create-video-form" class="idea-row">
+          <div>
+            <label class="sr-only" for="topic">Tema do vídeo</label>
+            <input type="text" id="topic" name="topic" class="new-video-topic input" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
+          </div>
+          <div>
+            <label class="sr-only" for="new-video-project">Projeto</label>
+            <select id="new-video-project" name="project_id" class="input" style="width: auto;" required>
+              {project_options}
+            </select>
+          </div>
+          <div>
+            <label class="sr-only" for="new-video-format">Formato</label>
+            <select id="new-video-format" name="format" class="input" style="width: auto;">
+              <option value="short">Short (1080x1920)</option>
+              <option value="long">Long (1920x1080)</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="btn-create-video">✦ Produzir vídeo</button>
+            <div id="create-video-feedback" class="form-feedback"></div>
+          </div>
+        </form>
+        <p class="note">A produção começa no modo assistido; a aprovação do roteiro e do preview acontece no vídeo.</p>
+    """
+
+    hero_html = f"""
+        <section class="hero" id="inicio-section" aria-labelledby="hero-heading" tabindex="-1">
+          <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Um comando, do briefing à publicação</p>
+          <h1 id="hero-heading">Transforme uma ideia em um vídeo <span class="accent-word">publicado</span></h1>
+          <p class="lede">Produção assistida com aprovação humana e teto de custo. Esta visão mostra apenas o que está registrado no Studio.</p>
+          <div class="tabs" role="tablist" aria-label="Origem do vídeo">
+            <button type="button" class="tab" role="tab" id="tab-ideia" aria-selected="true" aria-controls="p-ideia">Minha ideia</button>
+            <button type="button" class="tab" role="tab" id="tab-tend" aria-selected="false" aria-controls="p-tend" tabindex="-1">Tendência</button>
+            <button type="button" class="tab" role="tab" id="tab-serie" aria-selected="false" aria-controls="p-serie" aria-disabled="true" tabindex="-1">Série / Playlist</button>
+          </div>
+          <div id="p-ideia" role="tabpanel" aria-labelledby="tab-ideia">
+            <div id="new-video-section">{create_form_html}</div>
+          </div>
+          <div id="p-tend" role="tabpanel" aria-labelledby="tab-tend" hidden>
+            <p class="note">Use a seção <a href="#trending-section">Tendências</a>; o botão «Criar Vídeo deste Tema» preenche o tema acima.</p>
+          </div>
+          <div id="p-serie" role="tabpanel" aria-labelledby="tab-serie" hidden>
+            <p class="note">Séries e playlists ainda não têm backend nesta versão; por isso a aba está indisponível.</p>
+          </div>
+        </section>
+    """
+
+    advanced_panel_html = f"""
+      <details class="advanced" id="advanced-diagnostics">
+        <summary class="advanced-summary">Avançado — diagnóstico (IDs, traces, uso de modelos)</summary>
+        <div class="advanced-body">
+          <p>Projeto: <code>{e(current_project_id) or "não selecionado"}</code></p>
+          <p>Visão gerada em {view.generated_at.strftime("%d/%m/%Y %H:%M")}.</p>
+          <p>Identificadores técnicos apenas. Logs e traces por vídeo ficam no detalhe do vídeo, na mesma seção avançada.</p>
+        </div>
+      </details>
+    """
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
   <title>Faceless Studio — Painel</title>
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
+  <a class="skip-link" href="#inicio-section">Ir para o conteúdo</a>
   <div class="app-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Barra lateral">
       <div class="brand">
-        <div class="brand-icon">🎬</div>
+        <div class="brand-icon" aria-hidden="true">FS</div>
         <div>
-          <div class="brand-title">FACELESS STUDIO</div>
-          <div class="brand-sub">Pipeline de Vídeos</div>
+          <div class="brand-title">Faceless Studio V2</div>
+          <div class="brand-sub">YouTube Automation</div>
         </div>
       </div>
-      <nav class="nav-menu">
-        <a class="nav-item active" href="/studio/panel">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-          <span>Painel</span>
-        </a>
-        <a class="nav-item" href="#trending-section">
-          <svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
-          <span>Temas em Alta</span>
-        </a>
-        <a class="nav-item" href="#videos-section">
-          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
-          <span>Vídeos</span>
-        </a>
-        <a class="nav-item" href="#new-video-section" id="nav-btn-new-video">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-          <span>Novo Vídeo</span>
-        </a>
-        <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-          <span>API Docs</span>
-        </a>
-        <a class="nav-item" href="http://localhost:5678" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-          <span>n8n Workflows</span>
-        </a>
-      </nav>
-      <div class="sidebar-footer">
-        <div class="budget-card">
-          <div style="font-weight: 600; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Teto Mensal</div>
-          <div style="font-size: 0.85rem; font-weight: 700; margin-top: 0.15rem;">{e(view.month.text)}</div>
-          <div class="budget-bar">
-            <div class="budget-fill" style="width: {pct_width:.1f}%;"></div>
-          </div>
-          <div style="font-size: 0.7rem; color: var(--text-muted);">Teto: US$ {view.month.cap_usd:.2f}</div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem;">
-          <span style="color: var(--ok); font-size: 0.85rem;">●</span>
-          <span>Docker Local / Saudável</span>
-        </div>
-      </div>
+      {sidebar_nav_html}
+      {side_card_html}
+      <p class="mock-note">Dados reais do Studio. Sem conteúdo ilustrativo.</p>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
-        <div>
-          <h1>Painel Operacional</h1>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">Produção, validação editorial e custos</div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <div class="topbar-actions" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <a class="btn btn-primary btn-compact" href="#new-video-section" id="nav-btn-new-video">+ Novo Vídeo</a>
           <div class="project-switcher">
             <label for="global-project-select" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">Canal Ativo:</label>
             <select id="global-project-select" class="form-select-compact">
@@ -1569,40 +2385,54 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         </div>
       </header>
 
-      <div class="content-body">
-        <div class="grid-summary">
-          <div class="card" style="border-left: 4px solid var(--info);">
-            <div class="card-label">Em Produção</div>
-            <div class="card-value" style="color: var(--info);">{view.totals.get(Stage.IN_PRODUCTION, 0)}</div>
-            <div class="card-sub">Jobs de render/áudio ativos</div>
-          </div>
-          <div class="card" style="border-left: 4px solid var(--warn);">
-            <div class="card-label">Aguardando Aprovação</div>
-            <div class="card-value" style="color: var(--warn);">{view.totals.get(Stage.AWAITING_APPROVAL, 0)}</div>
-            <div class="card-sub">Exigem revisão humana</div>
-          </div>
-          <div class="card" style="border-left: 4px solid var(--ok);">
-            <div class="card-label">Concluídos / Publicados</div>
-            <div class="card-value" style="color: var(--ok);">{view.totals.get(Stage.COMPLETED, 0)}</div>
-            <div class="card-sub">No período selecionado</div>
-          </div>
-          <div class="card" style="border-left: 4px solid #a78bfa;">
-            <div class="card-label">Gasto no Mês vs Teto</div>
-            <div class="card-value">{e(view.month.text)}</div>
-            <div class="card-sub">Teto mensal: US$ {view.month.cap_usd:.2f}</div>
-          </div>
+      {hero_html}
+
+      <section class="block panel-section" id="producao-section" aria-labelledby="producao-heading">
+        <div class="block-head">
+          <h2 id="producao-heading">Produção</h2>
+          {state_legend_html}
         </div>
+        {producao_body_html}
+      </section>
 
-        {create_form_html}
+      <section class="block panel-section" id="precisa-section" aria-labelledby="precisa-heading">
+        <h2 id="precisa-heading">Precisa de você</h2>
+        {precisa_body_html}
+      </section>
 
+      <section class="block panel-section" id="trending-section" aria-labelledby="trending-heading">
+        <div class="block-head">
+          <h2 id="trending-heading">Tendências</h2>
+        </div>
+        <p class="section-sub">Temas coletados com evidências, região e origem. Origem não identificada aparece como desconhecida.</p>
         {trends_html}
+      </section>
 
-        {warning_html}
+      {warning_html}
 
-        <h2 id="videos-section">Vídeos</h2>
+      <section class="block panel-section" id="videos-section" aria-labelledby="videos-heading">
+        <h2 id="videos-heading">Vídeos</h2>
         {body_html}
-      </div>
+      </section>
+
+      {advanced_panel_html}
     </main>
+
+    <aside class="rail" aria-label="Resumo">
+      <section class="card" aria-labelledby="h-custo">
+        <h2 id="h-custo">Custo do mês</h2>
+        {rail_cost_html}
+        <p class="fine">Estimativa não é custo cobrado; custo desconhecido não é tratado como zero. Esta visão não separa real de estimado.</p>
+      </section>
+      <section class="card" aria-labelledby="h-falha">
+        <h2 id="h-falha">Última falha</h2>
+        {ultima_falha_html}
+      </section>
+      <section class="card" aria-labelledby="h-fase">
+        <h2 id="h-fase">Estado das fases</h2>
+        {fases_html}
+      </section>
+    </aside>
   </div>
   {modal_html}
   {project_modal_html}
@@ -1646,7 +2476,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         const details = document.getElementById('new-video-section');
         const form = document.getElementById('create-video-form');
         const input = document.getElementById('topic') || document.getElementById('new-video-topic');
-        if (details) details.open = true;
+        if (details && 'open' in details) details.open = true;
         if (input) {{
           input.value = topic;
           input.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
@@ -1667,12 +2497,59 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         const details = document.getElementById('new-video-section');
         const input = document.getElementById('topic') || document.getElementById('new-video-topic');
         if (details) {{
-          details.open = true;
+          if ('open' in details) details.open = true;
           details.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }}
         if (input) {{
           setTimeout(() => input.focus(), 200);
         }}
+      }});
+    }}
+
+    // Abas de origem: só alterna entre painéis reais; a aba sem backend fica indisponível.
+    const originTabs = Array.from(document.querySelectorAll('.tab[role="tab"]'));
+    if (originTabs.length > 0) {{
+      const selectTab = (selectedTab) => {{
+        if (selectedTab.getAttribute('aria-disabled') === 'true') return;
+        originTabs.forEach((tab) => {{
+          const isSelected = tab === selectedTab;
+          tab.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+          tab.tabIndex = isSelected ? 0 : -1;
+          const panel = document.getElementById(tab.getAttribute('aria-controls'));
+          if (panel) panel.hidden = !isSelected;
+        }});
+      }};
+      originTabs.forEach((tab) => {{
+        if (tab.getAttribute('aria-disabled') === 'true') return;
+        tab.addEventListener('click', () => selectTab(tab));
+      }});
+    }}
+
+    // Navegação por seções: aria-current acompanha a seção visível.
+    const primaryNav = document.querySelector('nav[aria-label="Principal"]');
+    if (primaryNav) {{
+      const sectionLinks = Array.from(primaryNav.querySelectorAll('a.nav-item[href^="#"]'));
+      const sectionTargets = sectionLinks
+        .map((link) => document.querySelector(link.getAttribute('href')))
+        .filter(Boolean);
+      const markCurrentSection = (id) => {{
+        sectionLinks.forEach((link) => {{
+          const isCurrent = link.getAttribute('href') === '#' + id;
+          link.classList.toggle('active', isCurrent);
+          if (isCurrent) link.setAttribute('aria-current', 'page');
+          else link.removeAttribute('aria-current');
+        }});
+      }};
+      if ('IntersectionObserver' in window && sectionTargets.length > 0) {{
+        const observer = new IntersectionObserver((entries) => {{
+          entries.forEach((entry) => {{
+            if (entry.isIntersecting) markCurrentSection(entry.target.id);
+          }});
+        }}, {{ rootMargin: '-30% 0px -55% 0px', threshold: 0 }});
+        sectionTargets.forEach((target) => observer.observe(target));
+      }}
+      sectionLinks.forEach((link) => {{
+        link.addEventListener('click', () => markCurrentSection(link.getAttribute('href').slice(1)));
       }});
     }}
 
@@ -1685,6 +2562,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       const activePill = document.querySelector('.cat-pill.active[data-filter-type]');
       const filterType = activePill ? activePill.getAttribute('data-filter-type') : 'all';
       const isExpanded = btnToggleTrends ? btnToggleTrends.getAttribute('data-expanded') === 'true' : true;
+      let shown = 0;
 
       trendItems.forEach((item) => {{
         let matches = false;
@@ -1701,19 +2579,34 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         if (!matches) {{
           item.style.display = 'none';
         }} else {{
-          if (!isExpanded && item.classList.contains('trend-item-extra')) {{
+          if (!isExpanded && shown >= 6) {{
             item.style.display = 'none';
           }} else {{
             item.style.display = '';
           }}
+          shown++;
         }}
       }});
+      if (btnToggleTrends) {{
+        const hidden = shown <= 6;
+        btnToggleTrends.hidden = hidden;
+        btnToggleTrends.parentElement.hidden = hidden;
+        btnToggleTrends.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        btnToggleTrends.textContent = isExpanded
+          ? 'Recolher Tendências ▲'
+          : 'Ver Mais Tendências (+' + Math.max(0, shown - 6) + ') ▼';
+      }}
     }}
 
     filterPills.forEach((pill) => {{
       pill.addEventListener('click', () => {{
-        filterPills.forEach((p) => p.classList.remove('active'));
+        filterPills.forEach((p) => {{
+          p.classList.remove('active');
+          p.setAttribute('aria-pressed', 'false');
+        }});
         pill.classList.add('active');
+        pill.setAttribute('aria-pressed', 'true');
+        if (btnToggleTrends) btnToggleTrends.setAttribute('data-expanded', 'false');
         applyTrendsFilter();
       }});
     }});
@@ -1721,16 +2614,11 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     if (btnToggleTrends) {{
       btnToggleTrends.addEventListener('click', () => {{
         const isCurrentlyExpanded = btnToggleTrends.getAttribute('data-expanded') === 'true';
-        const total = parseInt(btnToggleTrends.getAttribute('data-total') || '0', 10);
-        const extraCount = Math.max(0, total - 6);
-
         if (!isCurrentlyExpanded) {{
           btnToggleTrends.setAttribute('data-expanded', 'true');
-          btnToggleTrends.textContent = 'Recolher Tendências ▲';
           applyTrendsFilter();
         }} else {{
           btnToggleTrends.setAttribute('data-expanded', 'false');
-          btnToggleTrends.textContent = 'Ver Mais Tendências (+' + extraCount + ') ▼';
           applyTrendsFilter();
           const trendSection = document.getElementById('trending-section');
           if (trendSection) {{
@@ -2022,17 +2910,33 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     v = view.video
 
+    step_state_labels = {
+        "SUCCEEDED": ("done", "✓", "Concluído"),
+        "FAILED": ("action", "!", "Ação necessária"),
+        "RUNNING": ("running", "▶", "Em execução"),
+    }
+
     steps_html = []
     if not view.steps:
-        steps_html.append('<li class="timeline-item"><div class="timeline-desc">Nenhum passo executado ainda.</div></li>')
+        steps_html.append(
+            '<li class="timeline-item"><div class="timeline-desc">'
+            'Nenhum passo executado ainda. Sem execução registrada.</div></li>'
+        )
     else:
-        for s in view.steps:
-            err_html = f'<div style="color: var(--bad); font-size: 0.8rem; margin-top: 0.2rem;">{e(s.error_message)}</div>' if s.error_message else ""
+        for step in view.steps:
+            kind, icon, label = step_state_labels.get(
+                step.status, ("idle", "·", "Sem execução registrada")
+            )
             steps_html.append(f"""
               <li class="timeline-item">
                 <div class="timeline-dot"></div>
-                <div class="timeline-title">{e(s.step)} (tentativa {s.attempt}): {e(s.status)}</div>
-                <div class="timeline-desc">{s.started_at.strftime("%d/%m %H:%M:%S")}{err_html}</div>
+                <div class="timeline-title">{e(step.step)} (tentativa {step.attempt})</div>
+                <div class="timeline-desc">
+                  <span class="state s-{kind}" data-state="{kind}">
+                    <span class="state-icon" aria-hidden="true">{icon}</span> <span>{label}</span>
+                  </span>
+                  <span style="margin-left: 0.4rem;">{step.started_at.strftime("%d/%m %H:%M:%S")}</span>
+                </div>
               </li>
             """)
 
@@ -2040,32 +2944,126 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
     if not view.usage:
         usage_html.append('<tr><td colspan="4" class="empty">Sem registro de uso de IA para este vídeo.</td></tr>')
     else:
-        for u in view.usage:
-            if is_known_cost(u.provider, u.model, u.cost_usd):
-                cost_str = "US$ 0,00 (gratuito)" if u.cost_usd == 0.0 else f"US$ {u.cost_usd:.4f}"
+        for usage in view.usage:
+            if is_known_cost(usage.provider, usage.model, usage.cost_usd):
+                if usage.cost_usd == 0.0:
+                    cost_str = "gratuito (US$ 0,00)"
+                else:
+                    cost_str = f"registrado: US$ {usage.cost_usd:.4f}"
             else:
                 cost_str = '<span style="color: var(--warn);">Não informado</span>'
             usage_html.append(f"""
               <tr>
-                <td>{e(u.step)}</td>
-                <td>{e(u.provider)}</td>
-                <td>{e(u.model)}</td>
+                <td>{e(usage.step)}</td>
+                <td>{e(usage.provider)}</td>
+                <td>{e(usage.model)}</td>
                 <td>{cost_str}</td>
               </tr>
             """)
 
-    render_err_html = f'<div class="warning" style="margin-top: 1rem;"><strong>Erro de Renderização:</strong> {e(view.render_error)}</div>' if view.render_error else ""
+    failed_steps = [step for step in view.steps if step.status == "FAILED"]
+    has_render_failure = bool(view.render_error or failed_steps)
+    has_publication_failure = bool(
+        view.publication and view.publication.status == PublicationStatus.FAILED
+    )
 
-    pub_status_html = ""
+    failure_paragraphs = []
+    retry_buttons = []
+    if has_render_failure:
+        failed_step_name = failed_steps[-1].step if failed_steps else "render"
+        failure_paragraphs.append(f"<p><strong>Falha na etapa {e(failed_step_name)}.</strong></p>")
+        failure_paragraphs.append(
+            f"<p>Passo de correção: revise a etapa {e(failed_step_name)} e reexecute a produção.</p>"
+        )
+        if view.render_error and v.status == VideoStatus.ASSETS_READY:
+            retry_buttons.append(
+                f'<button type="button" class="btn btn-primary btn-compact" '
+                f'id="btn-retry-render" data-video-id="{e(v.id)}">Tentar render novamente</button>'
+            )
+        else:
+            failure_paragraphs.append(
+                "<p>Nova tentativa de render só é válida quando o vídeo está pronto para renderizar. "
+                "Corrija o passo no painel para voltar a esse estado.</p>"
+            )
+    if has_publication_failure:
+        failure_paragraphs.append("<p><strong>Falha na publicação.</strong></p>")
+        failure_paragraphs.append(
+            "<p>Passo de correção: confira os dados da publicação e tente novamente.</p>"
+        )
+        retry_buttons.append(
+            f'<button type="button" class="btn btn-primary btn-compact" '
+            f'id="btn-retry-publication" data-video-id="{e(v.id)}">Tentar publicar novamente</button>'
+        )
+
+    failure_html = ""
+    if failure_paragraphs:
+        actions = (
+            f'<div class="form-actions" style="margin-top: 0.6rem;">{"".join(retry_buttons)}</div>'
+            if retry_buttons else ""
+        )
+        failure_html = f'<div class="failure-summary">{"".join(failure_paragraphs)}{actions}</div>'
+
+    publication_summary_html = ""
     if view.publication:
-        pub_err = f'<div style="color: var(--bad);">{e(view.publication.error)}</div>' if view.publication.error else ""
-        pub_status_html = f"""
-          <div class="card" style="margin-top: 1.25rem;">
-            <div class="card-label">Publicação</div>
-            <div>Status: <span class="pill pill-{e(view.publication.status.value)}">{e(view.publication.status.value)}</span> (tentativa {view.publication.attempt})</div>
-            {pub_err}
+        publication_summary_html = f"""
+          <div class="section-block" style="margin-top: 1rem;">
+            <h3>Publicação</h3>
+            <p>Status: <span class="pill pill-{e(view.publication.status.value)}">{e(view.publication.status.value)}</span>
+            (tentativa {view.publication.attempt})</p>
           </div>
         """
+
+    render_err_html = (
+        f'<div class="warning"><strong>Erro de renderização (bruto):</strong> '
+        f'<code>{e(view.render_error)}</code></div>'
+        if view.render_error else ""
+    )
+    step_errors_html = "".join(
+        f'<div class="warning"><strong>Passo {e(step.step)} (tentativa {step.attempt}) — erro bruto:</strong> '
+        f'<code>{e(step.error_message)}</code></div>'
+        for step in view.steps
+        if step.error_message
+    )
+    pub_err_html = ""
+    if view.publication and view.publication.error:
+        pub_err_html = (
+            f'<div class="warning"><strong>Publicação (erro bruto):</strong> '
+            f'<code>{e(view.publication.error)}</code></div>'
+        )
+
+    preview_nav_html = ""
+    preview_stages = (Stage.AWAITING_APPROVAL, Stage.APPROVED, Stage.COMPLETED)
+    if view.stage in preview_stages:
+        preview_nav_html = f"""
+          <li>
+            <a class="nav-item" href="/studio/videos/{e(v.id)}/preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              <span>Ver Prévia</span>
+            </a>
+          </li>
+        """
+    else:
+        preview_nav_html = """
+          <li>
+            <span class="nav-item nav-item-unavailable" aria-disabled="true" tabindex="-1">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              <span>Prévia após render</span><span class="nav-tag">indisponível</span>
+            </span>
+          </li>
+        """
+
+    if view.stage == Stage.AWAITING_APPROVAL:
+        header_action_html = (
+            f'<a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Abrir Prévia e Aprovar</a>'
+        )
+    elif view.stage in (Stage.APPROVED, Stage.COMPLETED):
+        header_action_html = (
+            f'<a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Abrir Prévia</a>'
+        )
+    else:
+        header_action_html = (
+            '<span class="section-sub" style="margin: 0;">Prévia e aprovação ficam disponíveis após a renderização.</span>'
+        )
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -2076,8 +3074,9 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
+  <a class="skip-link" href="#detalhe-heading">Ir para o conteúdo</a>
   <div class="app-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Barra lateral">
       <div class="brand">
         <div class="brand-icon">🎬</div>
         <div>
@@ -2085,27 +3084,31 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
           <div class="brand-sub">Pipeline de Vídeos</div>
         </div>
       </div>
-      <nav class="nav-menu">
-        <a class="nav-item" href="/studio/panel">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-          <span>Painel</span>
-        </a>
-        <a class="nav-item active" href="#">
-          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
-          <span>Detalhe do Vídeo</span>
-        </a>
-        <a class="nav-item" href="/studio/videos/{e(v.id)}/preview">
-          <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-          <span>Abrir Prévia</span>
-        </a>
-        <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-          <span>API Docs</span>
-        </a>
+      <nav class="nav-menu" aria-label="Navegação do vídeo">
+        <ul class="nav-list">
+          <li>
+            <a class="nav-item" href="/studio/panel">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              <span>Painel</span>
+            </a>
+          </li>
+          <li>
+            <span class="nav-item active" aria-current="page">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+              <span>Detalhe do Vídeo</span>
+            </span>
+          </li>
+          {preview_nav_html}
+          <li>
+            <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span>API Docs</span>
+            </a>
+          </li>
+        </ul>
       </nav>
       <div class="sidebar-footer">
-        <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.25rem;">ID do Vídeo:</div>
-        <div style="font-family: monospace; font-size: 0.72rem; word-break: break-all; color: var(--text);">{e(v.id)}</div>
+        <div style="font-size: 0.72rem; color: var(--text-muted);">ID, erros brutos e uso de modelos ficam em Avançado — diagnóstico.</div>
       </div>
     </aside>
 
@@ -2113,15 +3116,14 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
       <header class="topbar">
         <div>
           <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>
-          <h1>{e(v.topic)}</h1>
+          <h1 id="detalhe-heading">{e(v.topic)}</h1>
           <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span class="pill pill-{e(view.stage.value)}">{e(view.stage.value)}</span>
-            <span style="font-size: 0.85rem; color: var(--text-muted);">Custo do vídeo: {e(view.cost_text)}</span>
+            {_state_badge(view.stage)}
+            <span class="pill pill-{e(view.stage.value)}">{e(STAGE_LABELS.get(view.stage, view.stage.value))}</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Custo do vídeo: {_cost_html(view.cost_text)}</span>
           </div>
         </div>
-        <div>
-          <a class="btn btn-primary" href="/studio/videos/{e(v.id)}/preview">Abrir Prévia e Aprovar</a>
-        </div>
+        <div>{header_action_html}</div>
       </header>
 
       <div class="content-body">
@@ -2131,30 +3133,70 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
             <ul class="timeline">
               {''.join(steps_html)}
             </ul>
-            {render_err_html}
-            {pub_status_html}
-          </div>
-
-          <div class="card">
-            <h2>Registro de Uso de Modelos</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Passo</th>
-                  <th scope="col">Provedor</th>
-                  <th scope="col">Modelo</th>
-                  <th scope="col">Custo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {''.join(usage_html)}
-              </tbody>
-            </table>
+            {failure_html}
+            {publication_summary_html}
           </div>
         </div>
+
+        <details class="card advanced" id="advanced-diagnostics">
+          <summary class="advanced-summary">Avançado — diagnóstico</summary>
+          <div class="advanced-body">
+            <p>ID do vídeo: <code>{e(v.id)}</code></p>
+            <div>
+              <h3>Registro de Uso de Modelos</h3>
+              <p class="cost-note">Custo: “gratuito”, “registrado” e “não informado” são explícitos. Esta visão não separa real de estimado.</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Passo</th>
+                    <th scope="col">Provedor</th>
+                    <th scope="col">Modelo</th>
+                    <th scope="col">Custo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {''.join(usage_html)}
+                </tbody>
+              </table>
+            </div>
+            {render_err_html}
+            {step_errors_html}
+            {pub_err_html}
+          </div>
+        </details>
       </div>
     </main>
   </div>
+  <script nonce="{nonce}">
+    function wireRetry(buttonId, url) {{
+      const button = document.getElementById(buttonId);
+      if (!button) return;
+      button.addEventListener('click', async () => {{
+        button.disabled = true;
+        const original = button.textContent;
+        button.textContent = 'Enviando...';
+        try {{
+          const response = await fetch(url, {{ method: 'POST' }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            button.textContent = 'Solicitado. Atualizando...';
+            setTimeout(() => location.reload(), 800);
+          }} else {{
+            button.disabled = false;
+            button.textContent = original;
+            const message = typeof data.detail === 'string' ? data.detail : 'Não foi possível repetir a operação.';
+            window.alert(message);
+          }}
+        }} catch (error) {{
+          button.disabled = false;
+          button.textContent = original;
+          window.alert('Falha de rede: ' + error.message);
+        }}
+      }});
+    }}
+    wireRetry('btn-retry-render', '/studio/videos/{e(v.id)}/resume');
+    wireRetry('btn-retry-publication', '/studio/videos/{e(v.id)}/publication/retry');
+  </script>
 </body>
 </html>"""
     return html_content, _headers(nonce)

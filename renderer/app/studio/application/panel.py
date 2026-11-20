@@ -255,8 +255,14 @@ class BuildPanel:
                     region = None
                     if r.source_name == "YouTube Brasil (Em Alta)":
                         region = "BR"
+                    elif r.source_name == "YouTube EUA (Em Alta)":
+                        region = "US"
                     elif r.source_name == "YouTube Global (Em Alta)":
-                        region = "GLOBAL"
+                        region = "UNKNOWN"
+                    else:
+                        match = re.fullmatch(r"YouTube ([A-Z]{2}) \(Em Alta\)", r.source_name)
+                        if match:
+                            region = match.group(1)
 
                     video_id = None
                     thumbnail_url = None

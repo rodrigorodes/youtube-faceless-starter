@@ -6,12 +6,14 @@ from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
 
 from .adapters.postgres.db import migrate
 from .adapters.fetcher import HttpxFetcher
+from .adapters.postgres.budget_repo import PostgresPaidOperationRepository
 from .adapters.image_opencode import OpenCodeImage
 from .adapters.image_placeholder import PlaceholderImage
 from .adapters.image_stock import PexelsImage
@@ -23,6 +25,7 @@ from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
+from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
 from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
@@ -41,12 +44,14 @@ from .application.analytics import Analytics
 from .application.panel import BuildPanel
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
+from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
+from .application.budget import PaidOperationGuard
 from .application.use_cases import ServiceUnavailable, UseCases
 
 DEFAULT_ALLOWLIST = ("amsterdam-dance-event.nl",)
@@ -66,6 +71,10 @@ def _cap(value: str | None, default: float) -> float:
     return number if number == number and 0 <= number < float("inf") else default
 
 
+def _flag(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str | None = None
@@ -82,6 +91,7 @@ class Settings:
     render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
     trend_hosts: tuple[str, ...] = ("www.googleapis.com", "www.youtube.com")
     token_env_path: Path = Path("credentials/token.env")
+    budget_guard: bool = False  # liga a reserva preventiva de orçamento nos caminhos pagos (STUDIO_BUDGET_GUARD=1)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -93,7 +103,7 @@ class Settings:
                    env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
                    _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
-                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")))
+                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")))
 
 
 RETRY_SECONDS = 5.0
@@ -191,18 +201,22 @@ class Studio:
             return provider_for("text", project_id)
 
         guard = CostGuard(usage, s.max_cost_video, s.max_cost_month)
+        paid_guard = None
+        if s.budget_guard:  # caminhos pagos passam a exigir reserva; desligado por padrão até a operação estar pronta
+            paid_guard = PaidOperationGuard(PostgresPaidOperationRepository(connect),
+                                            Decimal(str(s.max_cost_month)), Decimal(str(s.max_cost_video)))
         editorial = Editorial(
             ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
-            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for),
+            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for, paid=paid_guard),
             get_script=GetScript(repo, scripts),
             fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
-            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for))
+            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard))
         assets = PostgresAssetRepository(connect)
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),
             produce=ProduceAssets(repo, scripts, assets, FileAssetStore(s.storage_root), guard, usage,
                                   image_for=lambda project_id: provider_for("image", project_id),
-                                  lock=PostgresProductionLock(self._connect_autocommit)),
+                                  lock=PostgresProductionLock(self._connect_autocommit), paid=paid_guard),
             list_assets=ListAssets(repo, scripts, assets))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
@@ -216,7 +230,8 @@ class Studio:
         except OSError:
             pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
-                         renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer, steps=steps)
+                         renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer, steps=steps,
+                         paid=paid_guard)
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
@@ -232,6 +247,7 @@ class Studio:
         list_categories = ListCategories(category_repo, repo)
         save_category = SaveCategory(category_repo, repo)
         delete_category = DeleteCategory(category_repo)
+        channel_repo = PostgresChannelProfileRepository(connect)
         refresh_trends = RefreshTrends(
             repo=category_repo,
             ingest=ingest_trends,
@@ -247,7 +263,12 @@ class Studio:
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
                                   categories_repo=category_repo, list_categories=list_categories,
                                   save_category=save_category, delete_category=delete_category,
-                                  refresh_trends=refresh_trends)
+                                  refresh_trends=refresh_trends,
+                                  channel_profiles_repo=channel_repo,
+                                  create_channel_profile=CreateChannelProfile(channel_repo, repo),
+                                  get_channel_profile=GetChannelProfile(channel_repo, repo),
+                                  update_channel_profile=UpdateChannelProfile(channel_repo),
+                                  list_channel_profiles=ListChannelProfiles(channel_repo))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +11,10 @@ from typing import Protocol
 from ..domain.render import Cue
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
+from ..domain.channel import ChannelProfile
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
+                                     RunCreation, RunState, RunTransition, StageClaim, StageTransition)
 
 
 @dataclass(frozen=True)
@@ -303,3 +306,74 @@ class CategoryRepository(Protocol):
     def delete(self, category_id: str) -> bool: ...
 
 
+class ChannelProfileRepository(Protocol):
+    def create(self, project_id: str, name: str, **options: object) -> ChannelProfile: ...
+    def get(self, profile_id: str) -> ChannelProfile | None: ...
+    def get_by_project(self, project_id: str) -> ChannelProfile | None: ...
+    def list(self, include_archived: bool = False) -> list[ChannelProfile]: ...
+    def update(self, profile_id: str, expected_version: int, changes: dict[str, object]) -> ChannelProfile | None:
+        """Atualiza de forma otimista: None se o perfil não existe; `ChannelVersionConflict` se a versão divergiu."""
+
+
+class ProductionRunRepository(Protocol):
+    """Execução persistida de produção: toda transição condiciona no estado atual (CAS).
+
+    Os retornos são enums explícitos (nunca booleano ambíguo). A outbox é gravada na mesma
+    transação da mudança de estado; o chamador só executa efeito externo após `CLAIMED`.
+
+    Erros com significado próprio (nunca 500 genérico): `InvalidIdempotencyKey` (chave fora da forma
+    canônica), `ProductionIdempotencyConflict` (replay divergente),
+    `ProductionRunReferencedEntityNotFound` (vídeo/canal inexistente) e `ProductionRunLockTimeout`
+    (contenção de lock: repetir).
+    """
+
+    def create_run(self, run_id: str, video_id: str, idempotency_key: str, *,
+                   channel_id: str | None = None,
+                   stages: Sequence[ProductionStage] | None = None) -> RunCreation:
+        """Cria o run e as etapas PENDING numa transação; replay da chave devolve `EXISTING`.
+
+        A chave é identidade byte-a-byte canônica: ASCII minúsculo em `[a-z0-9._:-]`. Variantes
+        (caixa, Unicode/NFC, espaço ou invisível) são recusadas, nunca normalizadas. A mesma chave
+        com outra solicitação (vídeo, canal ou conjunto de estágios) é conflito.
+        """
+
+    def get_run(self, run_id: str) -> ProductionRun | None: ...
+
+    def claim_stage(self, run_id: str, stage_id: ProductionStage, owner: str, lease_seconds: int) -> StageClaim:
+        """Reivindica a etapa se as dependências concluíram e o lease não está com outro dono.
+
+        Etapa órfã (lease vencido) é retomável; o claim incrementa tentativa e fencing token.
+        """
+
+    def renew_lease(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int,
+                    lease_seconds: int) -> LeaseResult:
+        """Heartbeat: só o dono do token atual, com lease ainda válido, estende a expiração."""
+
+    def complete_stage(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int, *,
+                       checkpoint: Checkpoint | None = None) -> StageTransition:
+        """SUCCEEDED via CAS de dono/token/lease; grava checkpoint monotônico e evento na mesma transação."""
+
+    def fail_stage(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int,
+                   error: str, *, checkpoint: Checkpoint | None = None) -> StageTransition:
+        """FAILED via o mesmo CAS; persiste o erro, libera o lease e marca o run como FAILED."""
+
+    def pause_run(self, run_id: str, reason: str) -> RunTransition:
+        """Pausa humana persistida: run e etapa em execução viram WAITING_HUMAN, sem lease ativo."""
+
+    def resume_run(self, run_id: str, expected_state: RunState) -> RunTransition:
+        """Retoma somente se o estado persistido for `expected_state`; divergência é recusada.
+
+        Revoga leases e incrementa o `fencing_token` das etapas abertas: a geração anterior não
+        escreve mais. Cada etapa revogada emite `stage.revoked` na mesma transação. A prova de
+        aprovação humana versionada (gate de QA) é D2 e entrará como referência do checkpoint da
+        etapa `approval`.
+        """
+
+    def cancel_run(self, run_id: str, reason: str) -> RunTransition:
+        """Cancela o run e as etapas abertas numa transação; estados terminais recusam."""
+
+    def read_outbox(self, limit: int = 100, *, run_id: str | None = None) -> list[OutboxEvent]:
+        """Eventos de progresso ainda não confirmados, em ordem de gravação."""
+
+    def ack_outbox(self, event_id: int) -> AckResult:
+        """Confirma um evento; repetir não falha e não apaga histórico."""

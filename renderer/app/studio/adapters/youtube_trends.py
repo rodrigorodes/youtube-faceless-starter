@@ -118,7 +118,9 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10) -
     except Exception as e:
         raise YouTubeApiError(f"YouTube popular trends request failed: {e}") from e
 
-    source_name = "YouTube Brasil (Em Alta)" if region_code.upper() == "BR" else "YouTube Global (Em Alta)"
+    region = region_code.upper()
+    region_name = {"BR": "Brasil", "US": "EUA"}.get(region, region)
+    source_name = f"YouTube {region_name} (Em Alta)"
     source_url = "https://www.youtube.com/feed/trending"
 
     items: list[TrendItem] = []
@@ -166,4 +168,3 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10) -
         )
 
     return items
-

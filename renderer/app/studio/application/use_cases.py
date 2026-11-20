@@ -8,11 +8,12 @@ from .media import Media
 from .publishing import Publishing
 from .render import Rendering
 from .panel import BuildPanel
-from .ports import CategoryRepository, TrendRepository, VideoRepository
+from .ports import CategoryRepository, ChannelProfileRepository, TrendRepository, VideoRepository
 from .trends import IngestTrends
 from .analytics import Analytics
 from .observability import Resume
 from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
+from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -73,6 +74,11 @@ class UseCases:
     save_category: SaveCategory | None = None
     delete_category: DeleteCategory | None = None
     refresh_trends: RefreshTrends | None = None
+    channel_profiles_repo: ChannelProfileRepository | None = None
+    create_channel_profile: CreateChannelProfile | None = None
+    get_channel_profile: GetChannelProfile | None = None
+    update_channel_profile: UpdateChannelProfile | None = None
+    list_channel_profiles: ListChannelProfiles | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -84,7 +90,14 @@ class UseCases:
                   list_categories: ListCategories | None = None,
                   save_category: SaveCategory | None = None,
                   delete_category: DeleteCategory | None = None,
-                  refresh_trends: RefreshTrends | None = None) -> "UseCases":
+                  refresh_trends: RefreshTrends | None = None,
+                  channel_profiles_repo: ChannelProfileRepository | None = None,
+                  create_channel_profile: CreateChannelProfile | None = None,
+                  get_channel_profile: GetChannelProfile | None = None,
+                  update_channel_profile: UpdateChannelProfile | None = None,
+                  list_channel_profiles: ListChannelProfiles | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
-                   categories_repo, list_categories, save_category, delete_category, refresh_trends)
+                   categories_repo, list_categories, save_category, delete_category, refresh_trends,
+                   channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
+                   list_channel_profiles)

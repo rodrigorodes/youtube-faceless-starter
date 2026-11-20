@@ -1,7 +1,12 @@
+import json
+import re
+import shutil
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -345,9 +350,9 @@ def test_build_panel_extracts_video_metadata_and_region():
     assert br_view.channel_title == "Canal Brasil"
     assert br_view.published_text == "19/11/2026"
 
-    # Global popular trend
+    # The legacy label does not identify a specific region or a global aggregate.
     global_view = next(t for t in view.trends if t.topic == "Global Hit Video")
-    assert global_view.region == "GLOBAL"
+    assert global_view.region == "UNKNOWN"
     assert global_view.video_id == "9bZkp7q19f0"
     assert global_view.thumbnail_url == "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg"
     assert global_view.video_url == "https://youtu.be/9bZkp7q19f0"
@@ -364,4 +369,476 @@ def test_build_panel_extracts_video_metadata_and_region():
     assert pillar_view.published_text is None
 
 
+@pytest.mark.parametrize(
+    ("code", "expected_region", "label"),
+    [("BR", "BR", "🇧🇷 Em Alta Brasil"), ("US", "US", "🇺🇸 Em Alta EUA"),
+     ("JP", "JP", "Em Alta JP")],
+)
+def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, expected_region, label):
+    from app.studio.adapters.youtube_trends import fetch_popular_trends
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
 
+    response = MagicMock()
+    response.read.return_value = json.dumps({
+        "items": [{"id": "v123", "snippet": {"title": "Popular Video"}, "statistics": {}}]
+    }).encode()
+    response.__enter__.return_value = response
+    urlopen = MagicMock(return_value=response)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    item = fetch_popular_trends("key", code)[0]
+    record = TrendRecord(
+        id="t1", project_id="p1", topic=item.topic, topic_key=item.topic.lower(),
+        source_name=item.source_name, source_url=item.source_url,
+        observed_at=item.observed_at, window_start=item.window_start, window_end=item.window_end,
+        metric_name=item.metric_name, metric_value=item.metric_value,
+        evidence=[ev.model_dump(mode="json") for ev in item.evidence],
+    )
+    panel = BuildPanel(FakePanelRepo(), 15.0, lambda: item.observed_at,
+                       trends=FakeTrendRepo([record], item.observed_at))
+    view = panel.execute(days=7)
+    assert view.trends[0].region == expected_region
+    assert f"regionCode={code}" in urlopen.call_args[0][0].full_url
+    html, _ = render_panel(view)
+    assert f'data-region-code="{expected_region}"' in html
+    assert f'data-region="{expected_region}"' in html
+    assert f"{label} (1)" in html
+    assert f">{label}</span>" in html
+    assert "Em Alta Mundo" not in html
+
+
+def test_legacy_global_label_is_displayed_as_unknown_not_global():
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
+
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    record = TrendRecord(
+        id="old", project_id="p1", topic="Legacy Video", topic_key="legacy video",
+        source_name="YouTube Global (Em Alta)", source_url="https://www.youtube.com/feed/trending",
+        observed_at=now, window_start=now - timedelta(days=7), window_end=now,
+        metric_name="views", metric_value=1, evidence=[],
+    )
+    view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
+                      trends=FakeTrendRepo([record], now)).execute(days=7)
+    assert view.trends[0].region == "UNKNOWN"
+    html, _ = render_panel(view)
+    assert 'data-region-code="UNKNOWN"' in html
+    assert 'data-region="UNKNOWN"' in html
+    assert "Origem desconhecida (1)" in html
+    assert "Origem desconhecida</span>" in html
+    assert "YouTube Global (Em Alta)" not in html
+    assert "Em Alta Mundo" not in html
+
+
+def test_panel_header_lists_distinct_sources_for_mixed_trends():
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
+
+    now = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    sources = [
+        ("YouTube Brasil (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube EUA (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube Global (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube Data API", "https://www.googleapis.com/youtube/v3/search"),
+        ("YouTube Brasil (Em Alta)", "https://www.youtube.com/feed/trending"),
+    ]
+    records = [
+        TrendRecord(id=str(i), project_id="p1", topic=f"Video {i}", topic_key=f"video {i}",
+                    source_name=name, source_url=url, observed_at=now, window_start=now,
+                    window_end=now, metric_name="views", metric_value=1, evidence=[])
+        for i, (name, url) in enumerate(sources)
+    ]
+    view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
+                      trends=FakeTrendRepo(records, now)).execute(days=7)
+    html, _ = render_panel(view)
+    header = html.split('<div class="trends-source">', 1)[1].split("</div>", 1)[0]
+    assert "Fontes (todas as tendências):" in header
+    assert header.count("YouTube Brasil (Em Alta)") == 1
+    assert "YouTube EUA (Em Alta)" in header
+    assert "YouTube (origem desconhecida)" in header
+    assert "YouTube Data API" in header
+    assert "https://www.googleapis.com/youtube/v3/search" in header
+    assert "YouTube Global (Em Alta)" not in header
+
+
+def test_region_filter_shows_matching_items_beyond_initial_six():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js necessário para exercitar o filtro JavaScript")
+    from app.studio.api.panel import render_panel
+
+    now = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    html, _ = render_panel(BuildPanel(FakePanelRepo(), 15.0, lambda: now).execute(days=7))
+    script = html.split("// Pill Filtering (Region, Category & All) & Compact Trends Expansion", 1)[1]
+    script = script.split("// Modal Open & Close", 1)[0]
+    setup = """
+const assert = require('node:assert/strict');
+function element(attrs, classes = []) {
+  const c = new Set(classes);
+  return {
+    attrs, style: {}, classList: {
+      add: (x) => c.add(x), remove: (x) => c.delete(x), contains: (x) => c.has(x)
+    },
+    getAttribute: function(k) { return this.attrs[k] || null; },
+    setAttribute: function(k, v) { this.attrs[k] = v; },
+    addEventListener: function(_, callback) { this.click = callback; }
+  };
+}
+const all = element({'data-filter-type': 'all'}, ['cat-pill', 'active']);
+const jp = element({'data-filter-type': 'region', 'data-region-code': 'JP'}, ['cat-pill']);
+const br = element({'data-filter-type': 'region', 'data-region-code': 'BR'}, ['cat-pill']);
+const us = element({'data-filter-type': 'region', 'data-region-code': 'US'}, ['cat-pill']);
+const category = element({'data-filter-type': 'category', 'data-cat-id': 'six'}, ['cat-pill']);
+const pills = [all, jp, br, us, category];
+const items = Array.from({length: 9}, (_, i) =>
+  element({'data-region': i < 7 ? 'BR' : 'JP', 'data-category-id': i < 6 ? 'six' : 'other'},
+          i >= 6 ? ['trend-item-extra'] : []));
+const toggle = element({'data-expanded': 'false', 'aria-expanded': 'false', 'data-total': '9'});
+toggle.parentElement = {hidden: false};
+const document = {
+  querySelectorAll: (selector) => selector.startsWith('.cat-pill') ? pills : items,
+  querySelector: () => pills.find((p) => p.classList.contains('active')),
+  getElementById: (id) => id === 'btn-toggle-more-trends' ? toggle : null
+};
+"""
+    checks = """
+jp.click();
+assert.equal(items[7].style.display, '');
+assert.equal(items[8].style.display, '');
+assert.ok(items.slice(0, 7).every((item) => item.style.display === 'none'));
+assert.equal(toggle.hidden, true);
+assert.equal(jp.attrs['aria-pressed'], 'true');
+assert.equal(all.attrs['aria-pressed'], 'false');
+br.click();
+assert.equal(toggle.hidden, false);
+assert.match(toggle.textContent, /\\(\\+1\\)/);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+toggle.click();
+assert.equal(toggle.attrs['aria-expanded'], 'true');
+assert.match(toggle.textContent, /Recolher/);
+assert.equal(items[6].style.display, '');
+category.click();
+assert.equal(toggle.hidden, true);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.equal(items.filter((item) => item.style.display === '').length, 6);
+us.click();
+assert.equal(toggle.hidden, true);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.ok(items.every((item) => item.style.display === 'none'));
+all.click();
+assert.equal(toggle.hidden, false);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.match(toggle.textContent, /\\(\\+3\\)/);
+assert.equal(items[6].style.display, 'none');
+toggle.click();
+toggle.click();
+assert.match(toggle.textContent, /\\(\\+3\\)/);
+"""
+    result = subprocess.run([node, "-e", setup + script + checks], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def _render_panel_html(repo=None, *, days=7, clock=None):
+    from app.studio.api.panel import render_panel
+
+    now = clock or datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    view = BuildPanel(repo or FakePanelRepo(), 15.0, lambda: now).execute(days=days)
+    return render_panel(view)[0]
+
+
+def _primary_nav(html):
+    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    assert match is not None, "navegação principal ausente"
+    return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
+
+
+def _nav_text(item):
+    return " ".join(re.sub(r"<[^>]+>", " ", item).split())
+
+
+def _visible_text(html):
+    without_regions = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
+    return " ".join(re.sub(r"<[^>]+>", " ", without_regions).split())
+
+
+def _state_count(html, state):
+    match = re.search(rf'data-state="{state}"[^>]*>.*?<span class="state-count">(\d+)</span>', html, re.S)
+    assert match is not None, f"estado {state} sem contador explícito"
+    return int(match.group(1))
+
+
+def test_render_panel_shell_marks_exactly_one_active_nav_item():
+    html = _render_panel_html()
+    items = _primary_nav(html)
+    labels = [_nav_text(item) for item in items]
+
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+        assert any(expected in label for label in labels), expected
+
+    active = [item for item in items if 'aria-current="page"' in item]
+    assert len(active) == 1
+    assert "Início" in _nav_text(active[0])
+    assert active[0].lstrip().startswith("<a ")
+    assert html.count('aria-current="page"') == 1
+
+    for label, href in (
+        ("Início", "#inicio-section"),
+        ("Produção", "#producao-section"),
+        ("Tendências", "#trending-section"),
+        ("Vídeos", "#videos-section"),
+    ):
+        item = next(item for item in items if label in _nav_text(item))
+        assert f'href="{href}"' in item
+
+
+def test_render_panel_shell_disabled_nav_items_are_not_links():
+    html = _render_panel_html()
+    items = _primary_nav(html)
+
+    for label in ("Canais", "Analytics", "Equipe", "Configurações"):
+        item = next(item for item in items if label in _nav_text(item))
+        assert 'aria-disabled="true"' in item
+        assert 'tabindex="-1"' in item
+        assert '<em class="nav-tag">' in item
+        assert "href=" not in item
+        assert not item.lstrip().startswith("<a ")
+
+
+def test_render_panel_has_one_h1_section_ids_and_no_invented_product_state():
+    html = _render_panel_html()
+    visible = _visible_text(html)
+
+    assert html.count("<h1") == 1
+    assert 'lang="pt-BR"' in html
+    for section_id in ("inicio-section", "producao-section", "trending-section", "videos-section", "new-video-section"):
+        assert f'id="{section_id}"' in html
+
+    for forbidden in (
+        "Implementado", "Plano Pro", "créditos/mês", "Gerando imagens", "62%",
+        "Rodrigo Dev", "Ana Costa", "Carlos Lima", "Mariana Alves", "Administrador",
+        "Docker Local", "Saudável",
+    ):
+        assert forbidden not in visible
+    assert re.search(r"\d+(?:[.,]\d+)?\s*%", visible) is None
+
+
+def test_render_panel_empty_state_is_explicit_and_has_no_fake_progress():
+    html = _render_panel_html()
+
+    assert "Nenhuma execução registrada" in html
+    assert 'role="progressbar"' not in html
+    assert "<progress" not in html
+    assert 'class="budget-fill"' not in html
+    assert "0%" not in _visible_text(html)
+
+
+def test_render_panel_always_states_done_running_and_action_with_text():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    rows = [
+        _row("done", "Concluído", VideoStatus.PUBLISHED, pub=PublicationStatus.UPLOADED),
+        _row("running", "Executando", VideoStatus.SCRIPTED, step_running=True),
+        _row("action", "Aguardando", VideoStatus.AWAITING_APPROVAL),
+        _row("idle", "Sem início", VideoStatus.IDEA),
+    ]
+    html = _render_panel_html(FakePanelRepo(videos_list=rows), clock=now)
+
+    assert _state_count(html, "done") == 1
+    assert _state_count(html, "running") == 1
+    assert _state_count(html, "action") == 1
+    for label in ("Concluído", "Em execução", "Ação necessária", "Sem execução registrada"):
+        assert label in _visible_text(html)
+    assert "0 concluídos · 0 em produção" not in html
+
+
+def test_render_panel_only_offers_actions_valid_for_the_current_stage():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    html = _render_panel_html(FakePanelRepo(videos_list=[_row("v1", "Sem render", VideoStatus.IDEA)]), clock=now)
+
+    assert "Ver Progresso" in html
+    assert "Ver Prévia" not in html
+    assert "Aprovar" not in html
+
+
+def test_render_panel_labels_cost_origin_and_never_zero_for_unknown_or_absent():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+
+    paid = _render_panel_html(FakePanelRepo(videos_list=[
+        _row("paid", "Pago", VideoStatus.IDEA, costs=[("opencode", "gpt-paid", 0.5)]),
+    ]), clock=now)
+    assert "Custo registrado: US$ 0,50" in paid
+
+    free = _render_panel_html(FakePanelRepo(videos_list=[
+        _row("free", "Gratuito", VideoStatus.IDEA, costs=[("opencode", "gpt:free", 0.0)]),
+    ]), clock=now)
+    assert "US$ 0,00 (gratuito)" in free
+
+    unknown = _render_panel_html(FakePanelRepo(videos_list=[
+        _row("unknown", "Desconhecido", VideoStatus.IDEA, costs=[("opencode", "gpt-4o-paid", 0.0)]),
+    ]), clock=now)
+    assert "Custo desconhecido" in unknown
+    assert "US$ 0,00 +" not in unknown
+
+    absent = _render_panel_html(FakePanelRepo(videos_list=[_row("absent", "Sem uso", VideoStatus.IDEA)]), clock=now)
+    assert "sem registro de uso" in absent
+    assert "US$ 0,00" not in absent
+
+
+def test_render_panel_has_closed_advanced_diagnostics():
+    html = _render_panel_html()
+    match = re.search(r'<details class="[^"]*advanced[^"]*" id="advanced-diagnostics"([^>]*)>', html)
+    assert match is not None
+    assert "open" not in match.group(1)
+    assert "Avançado — diagnóstico" in html
+    assert "<code>p1</code>" in html
+
+
+def test_render_panel_declares_viewport_and_responsive_layout():
+    html = _render_panel_html()
+    assert 'name="viewport"' in html
+    assert "@media (max-width: 820px)" in html
+
+
+def test_panel_uses_dark_mockup_palette_tokens_and_visible_focus():
+    from app.studio.api.panel import CSS
+
+    root = CSS.split(":root {", 1)[1].split("\n}", 1)[0]
+    expectations = {
+        "--bg-app": "#0a0f19",
+        "--bg-canvas": "#101827",
+        "--surface": "#131b2d",
+        "--surface-raised": "#1b263e",
+        "--border": "#2a3350",
+        "--border-soft": "#1f2942",
+        "--text": "#e6e9f5",
+        "--text-muted": "#aab3c8",
+        "--text-dim": "#7f8aa6",
+        "--accent": "#7c3aed",
+        "--accent-strong": "#5b08f6",
+        "--accent-soft": "#331e7e",
+        "--accent-contrast": "#ffffff",
+        "--success": "#74d6a6",
+        "--success-surface": "#12322a",
+        "--success-contrast": "#06130d",
+        "--info": "#0abcff",
+        "--warn": "#e3b341",
+        "--danger": "#ff5a6e",
+        "--radius": "18px",
+    }
+    for token, value in expectations.items():
+        assert f"{token}: {value};" in root, token
+
+    assert "color-scheme: dark" in root
+    assert "accent-color: var(--accent);" in root
+    assert "scrollbar-color: var(--border) var(--bg-app);" in root
+    assert "prefers-color-scheme" not in CSS
+    assert ":focus-visible" in CSS
+    assert "outline: 2px solid var(--info)" in CSS
+
+    for block in re.findall(r"\{([^{}]*)\}", CSS):
+        if "background: var(--success-surface)" in block:
+            assert re.search(r"color:\s*(#ffffff|#fff|white|var\(--accent-contrast\))", block) is None, block
+    assert "var(--success-contrast)" in CSS
+
+
+def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_error=None, publication=None):
+    detail = VideoDetailView(
+        video=row,
+        stage=stage,
+        cost_text="sem registro de uso",
+        steps=steps or [],
+        usage=usage or [],
+        render_error=render_error,
+        publication=publication,
+    )
+    from app.studio.api.panel import render_video
+    return render_video(detail)[0]
+
+
+def test_video_detail_hides_approval_when_no_artifact_is_ready():
+    row = _row("v1", "Sem artefato", VideoStatus.IDEA)
+    html = _detail_view(row, stage=Stage.PENDING)
+    assert "Aprovar" not in html
+
+
+def test_video_detail_keeps_raw_traceback_out_of_main_area_and_states_correction():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", "Falha crua", VideoStatus.IDEA)
+    step = StepInfo("render", 1, "FAILED", None, "Traceback (most recent call last): boom", now, now)
+    html = _detail_view(row, stage=Stage.FAILED, steps=[step], render_error="Traceback (most recent call last): boom")
+
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert "Traceback" not in main_area
+    assert "Passo de correção" in main_area
+    advanced_area = html.split('id="advanced-diagnostics"', 1)[1]
+    assert "Traceback" in advanced_area
+
+
+def test_video_detail_advanced_diagnostics_is_closed_and_holds_usage_ledger():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", "Com uso", VideoStatus.AWAITING_APPROVAL)
+    usage = [UsageInfo("text", "opencode", "gpt-4o-paid", 0.0, now)]
+    html = _detail_view(row, stage=Stage.AWAITING_APPROVAL, usage=usage)
+
+    match = re.search(r'<details class="[^"]*advanced[^"]*" id="advanced-diagnostics"([^>]*)>', html)
+    assert match is not None
+    assert "open" not in match.group(1)
+    assert "Avançado — diagnóstico" in html
+    advanced_area = html.split('id="advanced-diagnostics"', 1)[1]
+    assert "Registro de Uso de Modelos" in advanced_area
+    assert "Não informado" in advanced_area
+
+
+def test_video_detail_offers_retry_only_when_resume_is_valid():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    valid = _row("v1", "Pronto para render", VideoStatus.ASSETS_READY)
+    html = _detail_view(valid, stage=Stage.FAILED, render_error="FFmpeg falhou")
+    assert 'id="btn-retry-render"' in html
+    assert "/studio/videos/v1/resume" in html
+
+    invalid = _row("v2", "Sem artefato", VideoStatus.IDEA)
+    html_invalid = _detail_view(invalid, stage=Stage.FAILED, render_error="FFmpeg falhou")
+    assert 'id="btn-retry-render"' not in html_invalid
+
+
+def test_render_panel_matches_approved_mockup_structure_without_illustrative_data():
+    html = _render_panel_html()
+    visible = _visible_text(html)
+
+    for group in ("Operação", "Indisponível nesta versão"):
+        assert group in visible
+
+    assert 'class="hero"' in html
+    assert "accent-word" in html
+    assert "Transforme uma ideia em um vídeo" in visible
+    assert 'role="tablist"' in html
+
+    assert "Nenhuma execução registrada" in visible
+    for step in ("Roteiro", "Fontes", "Fact-check", "Cenas", "Voz", "Render", "QA", "Publicação"):
+        assert step in visible
+    assert "Não há percentual" in visible
+
+    for rail in ("Custo do mês", "Última falha", "Estado das fases"):
+        assert rail in visible
+    assert "F8 Publicação" in visible and "F11 SaaS" in visible
+
+    assert 'id="advanced-diagnostics"' in html
+
+    for forbidden in (
+        "Como a OpenAI ganha dinheiro?", "1,2 mi views", "890 mil views", "650 mil views",
+        "US$ 0,07", "US$ 0,05", "run_7f3a", "vid_2b91", "9f2c", "Agentes de IA na prática",
+        "Rodrigo Dev", "Faber", "Plano Pro",
+    ):
+        assert forbidden not in visible
+
+
+def test_render_panel_series_tab_is_disabled_and_not_focusable():
+    html = _render_panel_html()
+    match = re.search(r'<button[^>]*id="tab-serie"[^>]*>', html)
+    assert match is not None
+    tag = match.group(0)
+    assert 'role="tab"' in tag
+    assert 'aria-disabled="true"' in tag
+    assert 'tabindex="-1"' in tag
+
+    ideia = re.search(r'<button[^>]*id="tab-ideia"[^>]*>', html)
+    assert ideia is not None and 'aria-selected="true"' in ideia.group(0)

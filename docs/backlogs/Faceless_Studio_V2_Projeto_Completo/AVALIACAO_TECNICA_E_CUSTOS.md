@@ -4,6 +4,8 @@
 **Status:** Proposta de Design Técnico / Avaliação de Arquitetura  
 **Alvo:** Repositório `youtube-faceless-starter`  
 
+> **Ressalva de execução (20/11/2026):** os preços e resultados de qualidade abaixo não foram verificados e não são base para orçamento ou escolha de fornecedor. O custo do DarkPlanner é desconhecido. O contrato de API, autenticação, cobrança, licenças e idempotência exigem discovery antes de integrar; manter o Piper selecionável. O plano de implementação também requer correções de testes, orçamento concorrente e recuperação antes de ser seguido literalmente.
+
 ---
 
 ## 1. Visão do Produto e Princípio Norteador

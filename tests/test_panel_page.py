@@ -1,4 +1,5 @@
 import base64
+import re
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -328,7 +329,7 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
         (uuid.uuid4().hex, p_id, now, past, now),
     )
 
-    # 2. Global trend with video
+    # 2. Legacy trend with unknown region
     conn.execute(
         """
         INSERT INTO studio.trend_topics (
@@ -365,11 +366,12 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
 
     # Attributes on trend items
     assert 'data-region="BR"' in r.text
-    assert 'data-region="GLOBAL"' in r.text
+    assert 'data-region="UNKNOWN"' in r.text
 
     # Badges de regiao
     assert "🇧🇷 Em Alta Brasil" in r.text
-    assert "🌍 Em Alta Mundo" in r.text
+    assert "Origem desconhecida" in r.text
+    assert "Em Alta Mundo" not in r.text
 
     # Thumbnails
     assert "https://i.ytimg.com/vi/br123/hqdefault.jpg" in r.text
@@ -458,7 +460,7 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
         (uuid.uuid4().hex, p_id, now, past, now),
     )
 
-    # Insert a Global trend
+    # Insert a legacy trend with unknown region
     conn.execute(
         """
         INSERT INTO studio.trend_topics (
@@ -482,8 +484,9 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert '🔥 Todas (2)' in r.text
     assert 'data-filter-type="region" data-region-code="BR"' in r.text
     assert '🇧🇷 Em Alta Brasil (1)' in r.text
-    assert 'data-filter-type="region" data-region-code="GLOBAL"' in r.text
-    assert '🌍 Em Alta Mundo (1)' in r.text
+    assert 'data-filter-type="region" data-region-code="UNKNOWN"' in r.text
+    assert 'Origem desconhecida (1)' in r.text
+    assert 'Em Alta Mundo' not in r.text
     assert 'data-filter-type="category"' in r.text
     assert f'data-cat-id="{cat_id}"' in r.text
     assert '🏷️ Inovação (0)' in r.text
@@ -506,12 +509,17 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert 'innerHTML' not in r.text
 
 
-def test_panel_and_preview_use_neutral_youtube_dark_theme(client_env):
+def test_panel_uses_dark_mockup_palette_and_preview_stays_dark(client_env):
+    # Paleta do painel trocada pelos tokens aprovados do mockup (G1); a prévia
+    # continua com o tema anterior porque não faz parte desta fatia.
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "--bg: #0f0f0f" in r.text
-    assert "--surface: #181818" in r.text
+    assert "color-scheme: dark" in r.text
+    assert "--bg-canvas: #101827" in r.text
+    assert "--surface: #131b2d" in r.text
+    assert "--accent: #7c3aed" in r.text
+    assert "prefers-color-scheme" not in r.text
     assert "#0b111e" not in r.text  # no navy blue tint
     assert "#0b0f17" not in r.text
 
@@ -570,7 +578,7 @@ def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
     assert "border-left: 4px solid var(--info)" in r.text or "border-left: 4px solid #38bdf8" in r.text
     assert "border-left: 4px solid var(--warn)" in r.text or "border-left: 4px solid #fbbf24" in r.text
     assert "border-left: 4px solid var(--ok)" in r.text or "border-left: 4px solid #4ade80" in r.text
-    assert "border-left: 4px solid #a78bfa" in r.text
+    assert "border-left: 4px solid var(--accent)" in r.text
     assert "Jobs de render/áudio ativos" in r.text
     assert "Exigem revisão humana" in r.text
     assert "Concluídos / Publicados" in r.text or "CONCLUÍDOS / PUBLICADOS" in r.text
@@ -689,3 +697,251 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
 
 
 
+
+def _nav_items(html: str):
+    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    assert match is not None, "navegação principal ausente"
+    return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
+
+
+def _page_text(html: str) -> str:
+    without_regions = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
+    return " ".join(re.sub(r"<[^>]+>", " ", without_regions).split())
+
+
+def test_panel_shell_sidebar_marks_one_active_item_and_disables_unavailable_ones(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    items = _nav_items(r.text)
+    labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
+
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+        assert any(expected in label for label in labels), expected
+
+    active = [item for item in items if 'aria-current="page"' in item]
+    assert len(active) == 1 and "Início" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
+    assert r.text.count('aria-current="page"') == 1
+
+    for label in ("Canais", "Analytics", "Equipe", "Configurações"):
+        item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
+        assert 'aria-disabled="true"' in item
+        assert 'tabindex="-1"' in item
+        assert '<em class="nav-tag">' in item
+        assert "href=" not in item
+        assert not item.lstrip().startswith("<a ")
+
+    for label, href in (("Início", "#inicio-section"), ("Produção", "#producao-section"),
+                        ("Tendências", "#trending-section"), ("Vídeos", "#videos-section")):
+        item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
+        assert f'href="{href}"' in item
+
+
+def test_panel_shell_does_not_invent_product_or_execution_state(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    visible = _page_text(r.text)
+
+    for forbidden in ("Implementado", "Plano Pro", "créditos/mês", "Gerando imagens", "62%",
+                      "Rodrigo Dev", "Ana Costa", "Carlos Lima", "Mariana Alves", "Administrador",
+                      "Docker Local", "Saudável", "Como a OpenAI ganha dinheiro?", "1,2 mi views",
+                      "890 mil views", "650 mil views", "US$ 0,07", "US$ 0,05", "run_7f3a", "vid_2b91",
+                      "9f2c", "Agentes de IA na prática", "Faber"):
+        assert forbidden not in visible
+    assert re.search(r"\d+(?:[.,]\d+)?\s*%", visible) is None
+
+
+def test_panel_empty_production_state_is_explicit_without_fake_progress(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Nenhuma execução registrada" in r.text
+    assert 'role="progressbar"' not in r.text
+    assert "<progress" not in r.text
+    assert 'class="budget-fill"' not in r.text
+    assert "0%" not in _page_text(r.text)
+
+
+def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    for i in range(8):
+        conn.execute(
+            """
+            INSERT INTO studio.trend_topics (
+                id, project_id, topic, topic_key, source_name, source_url,
+                observed_at, window_start, window_end, metric_name, metric_value, evidence
+            ) VALUES (%s, %s, %s, %s, 'YouTube Brasil (Em Alta)',
+                      'https://www.youtube.com/feed/trending', %s, %s, %s, 'views', %s, '[]'::jsonb)
+            """,
+            (uuid.uuid4().hex, p_id, f"Tema {i}", f"tema {i}", now, past, now, 1000 - i),
+        )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    for section_id in ("inicio-section", "producao-section", "trending-section", "videos-section", "new-video-section"):
+        assert f'id="{section_id}"' in r.text
+    assert r.text.count("<h1") == 1
+    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas (8)</button>' in r.text
+    assert 'data-filter-type="region" data-region-code="BR" aria-pressed="false"' in r.text
+    assert "🇧🇷 Em Alta Brasil (8)" in r.text
+    assert "Ver Mais Tendências (+2)" in r.text
+    assert "trend-item-extra" in r.text
+    assert "Fontes (todas as tendências):" in r.text
+
+
+def test_panel_shell_escapes_trend_topic_and_source(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'views', 1, '[]'::jsonb)
+        """,
+        (uuid.uuid4().hex, p_id, "<script>alert('topic')</script>", "xss source",
+         "<script>alert('source')</script>", "https://example.com/?q=<script>",
+         now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "<script>alert" not in r.text
+    assert "&lt;script&gt;alert(&#x27;topic&#x27;)&lt;/script&gt;" in r.text
+    assert "&lt;script&gt;alert(&#x27;source&#x27;)&lt;/script&gt;" in r.text
+    assert "https://example.com/?q=&lt;script&gt;" in r.text
+
+
+def test_panel_costs_are_labeled_and_absence_is_not_zero(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    paid = videos.create_video(p_id, "Custo Pago", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'gpt-paid', 0.5)",
+        (paid.id,),
+    )
+    free = videos.create_video(p_id, "Custo Gratuito", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'gpt:free', 0.0)",
+        (free.id,),
+    )
+    unknown = videos.create_video(p_id, "Custo Desconhecido", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'gpt-4o-paid', 0.0)",
+        (unknown.id,),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Custo registrado: US$ 0,50" in r.text
+    assert "US$ 0,00 (gratuito)" in r.text
+    assert "Custo desconhecido" in r.text
+    assert "US$ 0,00 +" not in r.text
+
+
+def test_panel_absence_of_cost_is_not_rendered_as_zero(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    p_id = client_env["project_id"]
+    videos.create_video(p_id, "Sem Uso Registrado", VideoFormat.short)
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "sem registro de uso" in r.text
+    assert "US$ 0,00" not in r.text
+
+
+def test_panel_has_closed_advanced_diagnostics(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    match = re.search(r'<details class="[^"]*advanced[^"]*" id="advanced-diagnostics"([^>]*)>', r.text)
+    assert match is not None
+    assert "open" not in match.group(1)
+    assert "Avançado — diagnóstico" in r.text
+
+
+def test_panel_declares_viewport_and_responsive_media_query(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert 'name="viewport"' in r.text
+    assert "@media (max-width: 820px)" in r.text
+
+
+def test_video_detail_hides_invalid_approval_and_keeps_diagnostics_collapsed(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Vídeo Sem Render", VideoFormat.short)
+    conn.execute(
+        "INSERT INTO studio.step_runs (id, video_id, step, attempt, status, input_hash, error_message) "
+        "VALUES (%s, %s, 'render', 1, 'FAILED', 'hash', 'Traceback (most recent call last): boom')",
+        (uuid.uuid4().hex, v.id),
+    )
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'text', 'opencode', 'gpt-4o-paid', 0.0)",
+        (v.id,),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Aprovar" not in r.text
+    main_area = r.text.split('id="advanced-diagnostics"', 1)[0]
+    assert "Traceback" not in main_area
+    assert "Passo de correção" in main_area
+
+    match = re.search(r'<details class="[^"]*advanced[^"]*" id="advanced-diagnostics"([^>]*)>', r.text)
+    assert match is not None and "open" not in match.group(1)
+    advanced_area = r.text.split('id="advanced-diagnostics"', 1)[1]
+    assert "Registro de Uso de Modelos" in advanced_area
+    assert "Não informado" in advanced_area
+    assert "Traceback" in advanced_area
+
+
+def test_panel_page_matches_approved_mockup_shell(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    assert 'class="hero"' in r.text
+    assert 'id="hero-heading"' in r.text
+    assert 'role="tablist"' in r.text
+    serie = re.search(r'<button[^>]*id="tab-serie"[^>]*>', r.text)
+    assert serie is not None
+    assert 'aria-disabled="true"' in serie.group(0)
+    assert 'tabindex="-1"' in serie.group(0)
+
+    for group in ("Operação", "Indisponível nesta versão"):
+        assert group in r.text
+    for rail in ("Custo do mês", "Estado das fases", "Última falha"):
+        assert rail in r.text
+    assert "F8 Publicação" in r.text and "F11 SaaS" in r.text
+
+    visible = _page_text(r.text)
+    for step in ("Roteiro", "Fontes", "Fact-check", "Cenas", "Voz", "Render", "QA", "Publicação"):
+        assert step in visible
+    assert "Não há percentual" in visible
