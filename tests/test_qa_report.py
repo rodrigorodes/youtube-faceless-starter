@@ -19,6 +19,8 @@ from app.studio.domain.qa_report import (
     InvalidChecksum,
     InvalidGeneratedAt,
     InvalidRenderId,
+    InvalidRenderVersion,
+    InvalidReportState,
     QaCoverage,
     QaFinding,
     QaGateError,
@@ -33,6 +35,9 @@ from app.studio.domain.qa_report import (
 AT = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
+ZWSP = "\u200b"
+ZWNJ = "\u200c"
+BOM = "\ufeff"
 
 
 def coverage(**changes):
@@ -43,6 +48,7 @@ def coverage(**changes):
 
 def finding(**changes):
     values = {
+        "finding_id": "f-codec",
         "check_id": "codec",
         "category": "technical",
         "severity": "warning",
@@ -77,20 +83,23 @@ def test_clean_report_on_latest_render_is_approved():
     qa = report()
     approved = approve(report=qa, latest=version(), requested=version())
     assert approved == version()
-    assert_publishable(report=qa, latest=version(), requested=version()) is None
+    assert assert_publishable(report=qa, latest=version(), requested=version()) is None
 
 
-def test_approval_returns_the_exact_approved_version():
-    approved = approve(report=report(), latest=version(), requested=version())
-    assert (approved.render_id, approved.checksum) == ("render-1", SHA_A)
+def test_approval_returns_the_exact_approved_version_without_normalization():
+    requested = version(render_id="render-1")
+    approved = approve(report=report(), latest=version(), requested=requested)
+    assert approved is requested or approved == requested
+    assert approved.render_id == "render-1"
+    assert approved.checksum == SHA_A
 
 
 def test_report_with_findings_and_coverage_is_approved_when_nothing_blocks():
     qa = report(
         checks_run=("codec", "audio", "loudness"),
         findings=(
-            finding(check_id="loudness", severity="warning"),
-            finding(check_id="codec", severity="info"),
+            finding(finding_id="f-loudness", check_id="loudness", severity="warning"),
+            finding(finding_id="f-codec", check_id="codec", severity="info"),
         ),
     )
     assert approve(report=qa, latest=version(), requested=version()) == version()
@@ -111,8 +120,8 @@ def test_warning_and_info_do_not_block_but_are_counted():
     qa = report(
         checks_run=("codec", "audio", "loudness"),
         findings=(
-            finding(check_id="loudness", severity="warning"),
-            finding(check_id="audio", severity="info"),
+            finding(finding_id="f-loudness", check_id="loudness", severity="warning"),
+            finding(finding_id="f-audio", check_id="audio", severity="info"),
         ),
     )
     assert qa.is_publishable is True
@@ -130,8 +139,8 @@ def test_is_publishable_is_false_with_any_blocking_finding():
     qa = report(
         checks_run=("codec", "audio"),
         findings=(
-            finding(check_id="audio", severity="blocking"),
-            finding(check_id="codec", severity="info"),
+            finding(finding_id="f-audio", check_id="audio", severity="blocking"),
+            finding(finding_id="f-codec", check_id="codec", severity="info"),
         ),
     )
     assert qa.is_publishable is False
@@ -154,6 +163,48 @@ def test_unknown_category_is_rejected():
         finding(category="")
 
 
+# --- severidade contornada por model_copy: falha fechada --------------------
+
+
+def test_tampered_severity_counts_as_blocking_in_publishable():
+    tampered = finding(severity="warning").model_copy(update={"severity": "BLOCKING"})
+    qa = report().model_copy(update={"findings": (tampered,)})
+    assert qa.is_publishable is False
+    assert qa.severity_counts == {"blocking": 1, "warning": 0, "info": 0}
+    assert qa.blocking_findings == (tampered,)
+
+
+def test_tampered_unknown_severity_also_counts_as_blocking():
+    tampered = finding(severity="warning").model_copy(update={"severity": "crit"})
+    qa = report().model_copy(update={"findings": (tampered,)})
+    assert qa.is_publishable is False
+    assert qa.severity_counts["blocking"] == 1
+
+
+def test_non_finding_item_fails_closed_in_publishable():
+    qa = report().model_copy(update={"findings": ("not-a-finding",)})
+    assert qa.is_publishable is False
+    assert qa.severity_counts["blocking"] == 1
+
+
+@pytest.mark.parametrize("severity", ["BLOCKING", "crit", "blocking "])
+def test_gate_rejects_tampered_finding_severity(severity):
+    base = finding(severity="info")
+    tampered = base.model_copy(update={"severity": severity})
+    qa = report(findings=(base,)).model_copy(update={"findings": (tampered,)})
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+    with pytest.raises(InvalidReportState):
+        assert_publishable(report=qa, latest=version(), requested=version())
+
+
+def test_gate_rejects_tampered_finding_referencing_unknown_check():
+    tampered = finding(check_id="audio").model_copy(update={"check_id": "frame_black"})
+    qa = report(findings=(finding(check_id="audio"),)).model_copy(update={"findings": (tampered,)})
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+
+
 # --- cobertura: vazio não é aprovável ---------------------------------------
 
 
@@ -174,13 +225,13 @@ def test_verified_coverage_must_not_carry_a_gap_reason():
         coverage(status="verified", reason="tudo certo")
 
 
-def test_unverified_coverage_is_not_approvable():
+def test_unverified_coverage_is_not_publishable_and_not_approvable():
     qa = report(
         coverage=coverage(status="not_verified", reason="ffprobe indisponível no worker"),
         checks_run=(),
         findings=(),
     )
-    assert qa.is_publishable is True  # sem achados bloqueantes, mas cobertura não verificada
+    assert qa.is_publishable is False
     with pytest.raises(CoverageNotVerified):
         approve(report=qa, latest=version(), requested=version())
     with pytest.raises(CoverageNotVerified):
@@ -196,6 +247,19 @@ def test_tampered_report_without_coverage_is_rejected_by_the_gate():
         checks_run=(),
         findings=(),
     )
+    with pytest.raises(CoverageNotVerified):
+        approve(report=qa, latest=version(), requested=version())
+
+
+def test_tampered_blank_checks_run_is_rejected_by_the_gate():
+    qa = report().model_copy(update={"checks_run": ("   ",)})
+    assert qa.is_publishable is False
+    with pytest.raises(CoverageNotVerified):
+        approve(report=qa, latest=version(), requested=version())
+
+
+def test_tampered_coverage_status_is_rejected_by_the_gate():
+    qa = report().model_copy(update={"coverage": coverage().model_copy(update={"status": "verified "})})
     with pytest.raises(CoverageNotVerified):
         approve(report=qa, latest=version(), requested=version())
 
@@ -254,7 +318,9 @@ def test_gate_error_types_are_distinct_and_explicit():
     reasons = [
         InvalidRenderId,
         InvalidChecksum,
+        InvalidRenderVersion,
         InvalidGeneratedAt,
+        InvalidReportState,
         RenderSuperseded,
         ReportForOtherRender,
         CoverageNotVerified,
@@ -274,6 +340,32 @@ def test_blank_render_id_is_rejected_by_the_gate():
 def test_blank_checksum_is_rejected_by_the_gate():
     with pytest.raises(InvalidChecksum):
         approve(report=report(), latest=version(checksum=""), requested=version(checksum=""))
+
+
+def test_identities_with_edge_whitespace_are_rejected_not_normalized():
+    with pytest.raises(InvalidRenderId):
+        approve(report=report(), latest=version(render_id=" render-1"), requested=version())
+    with pytest.raises(InvalidChecksum):
+        approve(report=report(), latest=version(checksum=SHA_A + " "), requested=version())
+    with pytest.raises(ValidationError):
+        report(render_id=" render-1")
+    with pytest.raises(ValidationError):
+        report(checksum=" " + SHA_A)
+
+
+def test_identities_with_invisible_characters_are_rejected_by_the_gate():
+    with pytest.raises(InvalidRenderId):
+        approve(report=report(), latest=version(render_id="render-1" + ZWSP), requested=version())
+    with pytest.raises(InvalidChecksum):
+        approve(report=report(), latest=version(checksum=SHA_A + BOM), requested=version())
+
+
+@pytest.mark.parametrize("field", ["latest", "requested"])
+def test_gate_rejects_none_render_versions(field):
+    kwargs = {"report": report(), "latest": version(), "requested": version()}
+    kwargs[field] = None
+    with pytest.raises(InvalidRenderVersion):
+        approve(**kwargs)
 
 
 def test_tampered_blank_report_checksum_is_rejected_by_the_gate():
@@ -305,15 +397,41 @@ def test_naive_report_instant_is_rejected_by_the_gate():
 # --- integridade dos achados -------------------------------------------------
 
 
-def test_duplicate_check_id_is_rejected():
+def test_duplicate_finding_id_is_rejected():
     with pytest.raises(ValidationError):
         report(
             checks_run=("codec", "audio"),
             findings=(
-                finding(check_id="codec", severity="warning"),
-                finding(check_id="codec", severity="blocking"),
+                finding(finding_id="f-1", check_id="codec", severity="warning"),
+                finding(finding_id="f-1", check_id="audio", severity="blocking"),
             ),
         )
+
+
+def test_two_findings_for_the_same_check_are_allowed():
+    qa = report(
+        checks_run=("codec", "audio"),
+        findings=(
+            finding(
+                finding_id="f-codec-color",
+                check_id="codec",
+                severity="warning",
+                evidence="pixel format yuv420p inesperado",
+                suggested_action="re-renderizar forçando yuv420p",
+            ),
+            finding(
+                finding_id="f-codec-resolution",
+                check_id="codec",
+                severity="blocking",
+                evidence="resolução 720x1280 em vez de 1080x1920",
+                suggested_action="re-renderizar na resolução do formato",
+            ),
+        ),
+    )
+    assert qa.severity_counts == {"blocking": 1, "warning": 1, "info": 0}
+    with pytest.raises(BlockingFindings) as caught:
+        approve(report=qa, latest=version(), requested=version())
+    assert "codec" in str(caught.value)
 
 
 def test_duplicate_checks_run_entry_is_rejected():
@@ -343,6 +461,27 @@ def test_empty_suggested_action_is_rejected():
 def test_blank_check_id_is_rejected():
     with pytest.raises(ValidationError):
         finding(check_id="  ")
+
+
+@pytest.mark.parametrize("invisible", [ZWSP, ZWNJ, BOM])
+@pytest.mark.parametrize("field", ["evidence", "suggested_action", "check_id"])
+def test_invisible_text_is_rejected_in_finding(field, invisible):
+    with pytest.raises(ValidationError):
+        finding(**{field: invisible})
+    with pytest.raises(ValidationError):
+        finding(**{field: "ok" + invisible})
+
+
+@pytest.mark.parametrize("invisible", [ZWSP, ZWNJ, BOM])
+def test_invisible_text_is_rejected_in_coverage_reason(invisible):
+    with pytest.raises(ValidationError):
+        coverage(status="not_verified", reason=invisible)
+
+
+def test_newline_is_allowed_in_evidence_but_not_in_suggested_action():
+    assert finding(evidence="linha 1\nlinha 2").evidence == "linha 1\nlinha 2"
+    with pytest.raises(ValidationError):
+        finding(suggested_action="linha 1\nlinha 2")
 
 
 def test_extra_fields_are_rejected_at_every_level():
@@ -385,8 +524,8 @@ def test_round_trip_preserves_the_contract():
     qa = report(
         checks_run=("codec", "audio", "loudness"),
         findings=(
-            finding(check_id="loudness", severity="warning", evidence="pico em -1.2 dBFS"),
-            finding(check_id="audio", severity="info", evidence="canal único detectado"),
+            finding(finding_id="f-loudness", check_id="loudness", severity="warning", evidence="pico em -1.2 dBFS"),
+            finding(finding_id="f-audio", check_id="audio", severity="info", evidence="canal único detectado"),
         ),
     )
     restored = QaReport.model_validate_json(qa.model_dump_json())
@@ -394,6 +533,7 @@ def test_round_trip_preserves_the_contract():
     assert restored.severity_counts == qa.severity_counts
     assert restored.is_publishable is True
     assert restored.findings[0].severity == "warning"
+    assert restored.findings[0].finding_id == "f-loudness"
 
 
 def test_round_trip_through_load_versioned():
@@ -443,6 +583,14 @@ def test_qa_report_module_has_no_outward_or_io_imports():
         "socket",
         "sqlalchemy",
         "urllib",
+        "pathlib",
+        "json",
+        "logging",
+        "time",
+        "random",
+        "shutil",
+        "glob",
+        "io",
     )
     assert not {
         module
