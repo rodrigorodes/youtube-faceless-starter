@@ -190,3 +190,52 @@ repositório) e depois em GREEN.
 - `created_at/updated_at` vão como ISO-string no `snapshot` jsonb (menos consultável).
 - Hand-off para a fatia H: as exceções de canal herdam de `ValueError`, mas `api/routes.py` só
   traduz as que enumera. É preciso `except` explícito antes de expor endpoint, senão vira 500.
+
+## Rodada final — constraints de pilares retroativas (commit `bb0d108`)
+
+Risco encontrado: a correção anterior adicionou `CHECK (cardinality(pillars) <= 20)` editando a
+`0016_channel_profiles.sql` no lugar. Um banco que já aplicou a `0016` **antiga** tem a versão
+registrada em `schema_migrations`; `migrate()` pula `0016` e o CHECK nunca é criado — 21+ pilares
+continuam aceitos e o truncamento silencioso (30 → lê 20 → persiste 20) segue possível.
+
+Correção: migração **nova, aditiva e idempotente** `0021_channel_pillars_constraints.sql`
+(próximo número livre; `0016`–`0020` já existiam).
+
+- **`0016` mantida como está** para instalações novas (CHECK inline) e a `0021` fecha o retrofit.
+  Escolhi manter as duas porque a `0021` é guardada por `pg_constraint` (nome + `conrelid`):
+  se a `0016` nova já criou `channel_profiles_pillars_check`, a `0021` não faz nada; não há
+  constraint duplicada. O teste de banco novo prova **uma única** constraint de cardinalidade.
+- Guard `IF NOT EXISTS` por `conname = 'channel_profiles_pillars_check'` **e**
+  `conrelid = 'studio.channel_profiles'::regclass`.
+- Novo CHECK separado e idempotente para **elemento NULL**:
+  `array_position(pillars, NULL) IS NULL` (`channel_profiles_pillars_not_null_check`) — a
+  `cardinality` só contava elementos e aceitava NULL dentro do array.
+- Constraints adicionadas **validadas** (sem `NOT VALID`): `ALTER TABLE ... ADD CONSTRAINT` valida
+  as linhas na própria transação da migração. Documentado no SQL: a tabela é pequena, mas a
+  validação toma um lock `ACCESS EXCLUSIVE` em `studio.channel_profiles` durante a janela. Se
+  existir linha legada com >20 pilares ou elemento NULL, a migração **falha alto** em vez de
+  truncar silenciosamente — comportamento intencional.
+
+Testes (RED → GREEN) em `tests/test_channel_migrations.py`:
+
+- Banco novo: `cardinality(pillars)` aparece **uma vez** e o guard de NULL uma vez; 20 pilares
+  aceitos; 21 recusados (`CheckViolation`); elemento NULL recusado.
+- Retrofit: aplica `0001`–`0015` + uma `0016` **antiga** (CHECK removido por transformação do
+  arquivo real) e registra as versões; confirma que 21 pilares eram aceitos; então roda
+  `migrate()` com a árvore nova (`0016` pulada) e a `0021` cria os CHECKs; 21 e NULL passam a ser
+  recusados. O teste não depende do número fixo da migração aditiva (usa sufixo `_channel_pillars_constraints`).
+
+`tests/test_db.py`: lista esperada com `0020_paid_operation_attempt_and_budget_indexes` e
+`0021_channel_pillars_constraints` na ordem, nas duas ocorrências.
+
+Resultados:
+
+- Foco (`test_db.py` + `tests/test_channel_*` + `test_architecture.py`): **59 passed**.
+- Suíte completa em cópia isolada (HEAD + só as minhas edições): **1442 passed, 136 skipped, 0 failed**.
+- Suíte completa no worktree compartilhado: **1464 passed, 136 skipped, 2 failed**. As 2 falhas são
+  `tests/test_secrets_hygiene.py`, ambientais: `secret_hygiene.tracked()` chama
+  `git cat-file blob <oid>` e o container não resolve o objeto de `.env.example` (arquivo
+  modificado por outro agente) no `.git` montado — `CalledProcessError` 128, sem relação com o meu
+  código. Não são falhas de segredo.
+
+Risco residual do retrofit de pilares: **encerrado** nesta rodada.
