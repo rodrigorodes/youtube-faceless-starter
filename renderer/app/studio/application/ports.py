@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +13,8 @@ from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
+                                     RunCreation, RunTransition, StageClaim, StageTransition)
 
 
 @dataclass(frozen=True)
@@ -313,3 +315,52 @@ class ChannelProfileRepository(Protocol):
         """Atualiza de forma otimista: None se o perfil não existe; `ChannelVersionConflict` se a versão divergiu."""
 
 
+class ProductionRunRepository(Protocol):
+    """Execução persistida de produção: toda transição condiciona no estado atual (CAS).
+
+    Os retornos são enums explícitos (nunca booleano ambíguo). A outbox é gravada na mesma
+    transação da mudança de estado; o chamador só executa efeito externo após `CLAIMED`.
+    """
+
+    def create_run(self, run_id: str, video_id: str, idempotency_key: str, *,
+                   channel_id: str | None = None,
+                   stages: Sequence[ProductionStage] | None = None) -> RunCreation:
+        """Cria o run e as etapas PENDING numa transação; replay da chave devolve `EXISTING`.
+
+        A mesma chave com outra solicitação (vídeo, canal ou conjunto de estágios) é conflito.
+        """
+
+    def get_run(self, run_id: str) -> ProductionRun | None: ...
+
+    def claim_stage(self, run_id: str, stage_id: ProductionStage, owner: str, lease_seconds: int) -> StageClaim:
+        """Reivindica a etapa se as dependências concluíram e o lease não está com outro dono.
+
+        Etapa órfã (lease vencido) é retomável; o claim incrementa tentativa e fencing token.
+        """
+
+    def renew_lease(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int,
+                    lease_seconds: int) -> LeaseResult:
+        """Heartbeat: só o dono do token atual, com lease ainda válido, estende a expiração."""
+
+    def complete_stage(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int, *,
+                       checkpoint: Checkpoint | None = None) -> StageTransition:
+        """SUCCEEDED via CAS de dono/token/lease; grava checkpoint monotônico e evento na mesma transação."""
+
+    def fail_stage(self, run_id: str, stage_id: ProductionStage, owner: str, fencing_token: int,
+                   error: str, *, checkpoint: Checkpoint | None = None) -> StageTransition:
+        """FAILED via o mesmo CAS; persiste o erro, libera o lease e marca o run como FAILED."""
+
+    def pause_run(self, run_id: str, reason: str) -> RunTransition:
+        """Pausa humana persistida: run e etapa em execução viram WAITING_HUMAN, sem lease ativo."""
+
+    def resume_run(self, run_id: str) -> RunTransition:
+        """Retoma WAITING_HUMAN/PAUSED/FAILED: run volta a RUNNING e etapas aguardando viram PENDING."""
+
+    def cancel_run(self, run_id: str, reason: str) -> RunTransition:
+        """Cancela o run e as etapas abertas numa transação; estados terminais recusam."""
+
+    def read_outbox(self, limit: int = 100, *, run_id: str | None = None) -> list[OutboxEvent]:
+        """Eventos de progresso ainda não confirmados, em ordem de gravação."""
+
+    def ack_outbox(self, event_id: int) -> AckResult:
+        """Confirma um evento; repetir não falha e não apaga histórico."""
