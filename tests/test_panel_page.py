@@ -506,6 +506,23 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert 'innerHTML' not in r.text
 
 
+def test_panel_and_preview_use_neutral_youtube_dark_theme(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "--bg: #0f0f0f" in r.text
+    assert "--surface: #181818" in r.text
+    assert "#0b111e" not in r.text  # no navy blue tint
+    assert "#0b0f17" not in r.text
+
+    from app.studio.api.preview import CSS as PREVIEW_CSS
+    assert "--bg: #0f0f0f" in PREVIEW_CSS
+    assert "--surface: #181818" in PREVIEW_CSS
+    assert "#0b111e" not in PREVIEW_CSS
+    assert "#0b0f17" not in PREVIEW_CSS
+
+
+
 
 
 

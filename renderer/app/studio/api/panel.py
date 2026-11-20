@@ -12,30 +12,31 @@ e = lambda value: html.escape(str(value if value is not None else ""), quote=Tru
 CSS = """
 :root {
   color-scheme: light dark;
-  --bg: #0b0f17;
-  --sidebar: #101520;
-  --sidebar-hover: #171f2e;
-  --surface: #141b27;
-  --surface-hover: #1b2434;
-  --surface-elevated: #1e293a;
-  --border: #222d3e;
-  --border-hover: #33445c;
-  --text: #f0f4f8;
-  --text-muted: #8897a8;
-  --text-faint: #5a6878;
-  --primary: #2f81f7;
-  --primary-hover: #4c94ff;
-  --primary-focus: rgba(47, 129, 247, 0.28);
-  --input-bg: #0d131d;
-  --input-focus-bg: #111824;
-  --ok: #3fb950;
-  --ok-bg: rgba(63, 185, 80, 0.14);
-  --warn: #e3b341;
-  --warn-bg: rgba(227, 179, 65, 0.14);
-  --bad: #f85149;
-  --bad-bg: rgba(248, 81, 73, 0.14);
-  --info: #58a6ff;
-  --info-bg: rgba(88, 166, 255, 0.14);
+  --bg: #0f0f0f;
+  --sidebar: #0f0f0f;
+  --sidebar-hover: #212121;
+  --surface: #181818;
+  --surface-alt: #212121;
+  --surface-hover: #212121;
+  --surface-elevated: #282828;
+  --border: #282828;
+  --border-hover: #383838;
+  --text: #f1f1f1;
+  --text-muted: #aaaaaa;
+  --text-faint: #717171;
+  --primary: #cc0000;
+  --primary-hover: #ff0000;
+  --primary-focus: rgba(204, 0, 0, 0.28);
+  --input-bg: #121212;
+  --input-focus-bg: #181818;
+  --ok: #2ba640;
+  --ok-bg: rgba(43, 166, 64, 0.14);
+  --warn: #fbc02d;
+  --warn-bg: rgba(251, 192, 45, 0.14);
+  --bad: #ff4e45;
+  --bad-bg: rgba(255, 78, 69, 0.14);
+  --info: #3ea6ff;
+  --info-bg: rgba(62, 166, 255, 0.14);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
 }
@@ -45,6 +46,7 @@ CSS = """
     --sidebar: #ffffff;
     --sidebar-hover: #edf2f7;
     --surface: #ffffff;
+    --surface-alt: #f0f0f0;
     --surface-hover: #f7fafc;
     --surface-elevated: #ffffff;
     --border: #dbe2ec;
@@ -52,9 +54,9 @@ CSS = """
     --text: #1a202c;
     --text-muted: #64748b;
     --text-faint: #94a3b8;
-    --primary: #0969da;
-    --primary-hover: #085cc1;
-    --primary-focus: rgba(9, 105, 218, 0.22);
+    --primary: #cc0000;
+    --primary-hover: #b30000;
+    --primary-focus: rgba(204, 0, 0, 0.22);
     --input-bg: #ffffff;
     --input-focus-bg: #ffffff;
     --ok: #1a7f37;
@@ -104,12 +106,12 @@ body { background: var(--bg); color: var(--text); min-height: 100vh; }
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary) 0%, #1f6feb 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, #990000 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
-  box-shadow: 0 2px 6px rgba(47, 129, 247, 0.3);
+  box-shadow: 0 2px 6px rgba(204, 0, 0, 0.3);
 }
 .brand-title {
   font-size: 0.95rem;
@@ -499,7 +501,7 @@ details summary::-webkit-details-marker { display: none !important; }
 /* Trending Section */
 .trends-card {
   margin-bottom: 1.75rem;
-  background: linear-gradient(180deg, rgba(47, 129, 247, 0.05) 0%, var(--surface) 100%);
+  background: linear-gradient(180deg, rgba(204, 0, 0, 0.04) 0%, var(--surface) 100%);
 }
 .trends-header {
   display: flex;
@@ -950,15 +952,15 @@ details summary::-webkit-details-marker { display: none !important; }
 /* Topic input pulse/glow highlight */
 @keyframes topicPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(47, 129, 247, 0.6);
+    box-shadow: 0 0 0 0 rgba(204, 0, 0, 0.6);
     border-color: var(--primary);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(47, 129, 247, 0.2);
+    box-shadow: 0 0 0 8px rgba(204, 0, 0, 0.2);
     border-color: var(--primary);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
+    box-shadow: 0 0 0 0 rgba(204, 0, 0, 0);
     border-color: var(--border);
   }
 }
