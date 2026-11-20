@@ -268,6 +268,32 @@ ficam fora** (a tela Editor é fatia posterior). O hash já tem casa natural em 
 e o grande consumo (`export_contracts.py` regenera **todos** os contratos) exige cuidado com
 `index.lock` enquanto A/C/G1 commitam.
 
+## 13. Correções da fatia 1 (RP-00, baseline)
+
+A fatia 1 mapeou o pipeline real (`docs/superpowers/plans/2026-11-20-rp00-baseline-render-pipeline.md`,
+commit `17886db`) e **corrigiu três pontos deste documento**:
+
+**C1 — R7 estava errado: `cache_key` não é hash de conteúdo.** `ids.py:26-30` deriva a chave de
+`{kind, provider, model, prompt, params}` — é hash de **entrada**. Para o vídeo,
+`render.py:157` faz `sha256("video|<renderer.name>|<job.input_hash>|<job.id>")`, ou seja,
+**inclui o `job.id`** e um re-render idêntico gera **outra** chave. Portanto a afirmação de R7
+("o hash já tem casa em `assets.cache_key`") **não vale**: RP-20 precisa de um `content_sha256`
+próprio no manifesto, cujo único precedente no domínio é `SourceSnapshot.content_sha256`.
+
+**C2 — R3 refinado: `music=False` não remove a trilha.** `render_ffmpeg.py:119-122` mantém o
+grafo de mixagem idêntico com a trilha muda; `rich.synth_music` materializa `music.wav`
+(determinística, seed 7). Ou seja: não é `Asset` persistido, mas **é arquivo gerado com
+parâmetros**. O plano precisa de uma **fonte de áudio gerada** e o compilador tem de reproduzir
+essa equivalência (música presente *e* modo silencioso) para a paridade do §11.
+
+**C3 — o núcleo visual está duplicado.** `index % 4` (Ken Burns) e `loudnorm -16` aparecem
+tanto em `rich.py` (rota `/videos`) quanto em `render_ffmpeg.py`. *Decisão:* a paridade do §11
+mira o caminho do `RenderSpec` (`render_ffmpeg.py`); a rota `/videos` (`rich.py`) fica
+**declarada fora do escopo** da fundação, registrada como limitação.
+
+**C4 — `VisualBeat`/`plan_scene_beats` não têm consumidor real** (só `domain/` e testes).
+Confirma R1: a fundação hospeda o multi-shot no contrato; o produtor de beats é fatia separada.
+
 ---
 
 **Decisão:** construir o `RenderPlan` como linguagem comum do audiovisual, **reusando** o
