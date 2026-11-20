@@ -95,20 +95,24 @@ Suíte completa no estado commitado, executada numa cópia isolada (HEAD + apena
 edições, para não depender de arquivos não rastreados de outros agentes no worktree compartilhado):
 
 ```
-1284 passed, 86 skipped, 1 warning   (Starlette DeprecationWarning)
+1330 passed, 108 skipped, 2 failed   (Starlette DeprecationWarning)
 ```
+
+As 2 falhas são `tests/test_db.py::test_migrate_applies_once` e
+`::test_failed_migration_rolls_back_and_is_not_recorded`. Elas **não são do meu código**: o slice
+F1 commitou `0018_production_runs.sql` (`3a7bb8d`) sem atualizar a lista hardcoded de
+`tests/test_db.py`, que em `6b9128c` ainda termina em `0017_paid_operations`. Evidência:
+`git show 6b9128c:tests/test_db.py | grep 0018` não retorna nada; removendo `0018` numa cópia
+descartável, `tests/test_db.py` + testes de canal + arquitetura dão **57 passed**. Num estado
+anterior (antes de `0018`), a suíte isolada deu `1284 passed, 86 skipped`.
 
 No worktree compartilhado, com os arquivos em andamento dos outros agentes:
 
 ```
-1351 passed, 116 skipped, 2 failed
+1351 passed, 116 skipped, 2 failed   (as mesmas 2 de test_db)
 ```
 
-As 2 falhas são `tests/test_db.py::test_migrate_applies_once` e
-`::test_failed_migration_rolls_back_and_is_not_recorded`, causadas por migrações `0018/0019`
-não rastreadas de outra fatia e pela lista hardcoded desatualizada no `tests/test_db.py` do outro
-agente — não pelo meu código. No tree isolado, `test_db.py` passa com `0016` + `0017`. As falhas
-ambientais de `test_secrets_hygiene` exigem o `.git` externo montado; com ele, passaram.
+As falhas ambientais de `test_secrets_hygiene` exigem o `.git` externo montado; com ele, passaram.
 
 Antes do outro agente commitar o guard de orçamento, a mesma suíte sobre a minha fatia isolada
 deu `1084 passed, 70 skipped`. O `skipped` caiu de 310 para 70–86 porque os testes de banco rodaram
