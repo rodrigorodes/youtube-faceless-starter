@@ -303,4 +303,129 @@ def test_panel_page_empty_trends_still_shows_category_actions(client_env):
     assert 'id="categories-modal"' in r.text
 
 
+def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    # 1. Brasil trend with video and thumbnail
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Hit do Carnaval 2026', 'hit do carnaval 2026',
+            'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
+            %s, %s, %s, 'views', 2500000,
+            '[{"title": "Hit do Carnaval 2026", "channel": "Música BR", "url": "https://youtube.com/watch?v=br123", "views": 2500000, "published_at": "2026-11-19T12:00:00Z"}]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+
+    # 2. Global trend with video
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Global AI Breakthrough', 'global ai breakthrough',
+            'YouTube Global (Em Alta)', 'https://www.youtube.com/feed/trending',
+            %s, %s, %s, 'views', 10000000,
+            '[{"title": "Global AI Breakthrough", "channel": "Tech World", "url": "https://youtube.com/watch?v=us456", "views": 10000000}]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+
+    # 3. Item without video evidence
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Manual Offline Topic <clean>', 'manual offline topic <clean>',
+            'Curadoria Interna', 'https://example.com',
+            %s, %s, %s, 'views', 5000, '[]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    # Attributes on trend items
+    assert 'data-region="BR"' in r.text
+    assert 'data-region="GLOBAL"' in r.text
+
+    # Badges de regiao
+    assert "🇧🇷 Em Alta Brasil" in r.text
+    assert "🌍 Em Alta Mundo" in r.text
+
+    # Thumbnails
+    assert "https://i.ytimg.com/vi/br123/hqdefault.jpg" in r.text
+    assert "https://i.ytimg.com/vi/us456/hqdefault.jpg" in r.text
+    assert "trend-thumb" in r.text
+
+    # Video links with target="_blank" and rel="noopener noreferrer"
+    assert 'href="https://youtube.com/watch?v=br123"' in r.text
+    assert 'target="_blank"' in r.text
+    assert 'rel="noopener noreferrer"' in r.text
+
+    # Channel & metadata
+    assert "Música BR" in r.text
+    assert "Tech World" in r.text
+    assert "📺" in r.text
+
+    # Action buttons
+    assert "Assistir no YouTube" in r.text
+    assert "btn-create-from-trend" in r.text
+
+    # SVG placeholder fallback for item without video
+    assert "trend-thumb-placeholder" in r.text or "<svg" in r.text
+
+    # XSS safety
+    assert "Manual Offline Topic &lt;clean&gt;" in r.text
+    assert "Manual Offline Topic <clean>" not in r.text
+
+
+def test_panel_youtube_card_escapes_xss_in_video_metadata(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'XSS Trend <script>alert(1)</script>', 'xss trend',
+            'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
+            %s, %s, %s, 'views', 1000,
+            '[{"title": "Video <bad>", "channel": "Bad <Channel>\\"", "url": "https://youtube.com/watch?v=test\\"onclick=\\"alert(2)", "views": 1000}]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "<script>alert(1)</script>" not in r.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r.text
+    assert "Bad &lt;Channel&gt;&quot;" in r.text or "Bad &lt;Channel&gt;&#34;" in r.text
+    assert 'onclick="alert(2)' not in r.text
+
+
+
 

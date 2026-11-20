@@ -524,8 +524,73 @@ details summary::-webkit-details-marker { display: none !important; }
   border: 1px solid var(--border);
 }
 .trend-item {
-  padding: 1.15rem 0;
-  border-bottom: 1px solid var(--border);
+  background: #181818;
+  border: 1px solid #282828;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.85rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  transition: border-color 0.15s ease;
+}
+.trend-item:hover {
+  border-color: #383838;
+}
+.trend-thumb-link {
+  text-decoration: none;
+  display: block;
+  flex-shrink: 0;
+}
+.trend-thumb {
+  width: 168px;
+  height: 94px;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trend-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s ease;
+}
+.trend-thumb:hover img {
+  transform: scale(1.05);
+}
+.trend-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #212121;
+  color: #606060;
+}
+.thumb-play-overlay {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+.trend-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
 }
 .trend-top-row {
   display: flex;
@@ -536,16 +601,102 @@ details summary::-webkit-details-marker { display: none !important; }
 }
 .trend-topic-name {
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   letter-spacing: -0.01em;
   color: var(--text);
+  line-height: 1.35;
+}
+.trend-title-link {
+  text-decoration: none;
+  color: #f1f1f1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  word-break: break-word;
+}
+.trend-title-link:hover .trend-topic-name {
+  text-decoration: underline;
+  color: #ffffff;
+}
+.trend-external-icon {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.trend-title-link:hover .trend-external-icon {
+  transform: translate(1px, -1px);
+  color: #38bdf8;
 }
 .trend-badges {
-  margin-top: 0.45rem;
   display: flex;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
   align-items: center;
+}
+.trend-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.trend-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.trend-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+.btn-watch-yt {
+  background: #272727;
+  color: #f1f1f1;
+  border: 1px solid #383838;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.btn-watch-yt:hover {
+  background: #cc0000;
+  border-color: #cc0000;
+  color: #ffffff;
+}
+.badge-region-br {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  font-weight: 600;
+}
+.badge-region-global {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-weight: 600;
+}
+.badge-pillar {
+  background: #272727;
+  color: #e5e5e5;
+  border: 1px solid #383838;
+  font-weight: 500;
+}
+@media (max-width: 640px) {
+  .trend-item {
+    flex-direction: column;
+  }
+  .trend-thumb {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
 }
 .chip-metric {
   display: inline-flex;
@@ -613,11 +764,11 @@ details summary::-webkit-details-marker { display: none !important; }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.3rem 0.75rem;
-  border-radius: 9999px;
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
+  padding: 5px 14px;
+  border-radius: 18px;
+  background: #272727;
+  border: 1px solid transparent;
+  color: #f1f1f1;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -625,24 +776,25 @@ details summary::-webkit-details-marker { display: none !important; }
   user-select: none;
 }
 .cat-pill:hover {
-  border-color: var(--border-hover);
-  color: var(--text);
-  background: var(--surface-elevated);
+  background: #383838;
+  color: #ffffff;
 }
 .cat-pill.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #ffffff;
+  background: #f1f1f1;
+  border-color: transparent;
+  color: #0f0f0f;
   font-weight: 600;
 }
 .cat-pill-btn {
   background: transparent;
-  border-style: dashed;
+  border: 1px dashed #3f3f3f;
+  color: #aaa;
 }
 .cat-pill-btn:hover {
   border-style: solid;
-  border-color: var(--primary);
-  color: var(--primary);
+  border-color: #f1f1f1;
+  color: #f1f1f1;
+  background: #272727;
 }
 .chip-category {
   background: var(--surface-elevated);
@@ -896,31 +1048,95 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                 )
             ev_html = f'<div role="list" class="evidence-list">{"".join(ev_list)}</div>' if ev_list else ""
 
-            btn_create = (
-                f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}" style="white-space: nowrap;">Criar Vídeo deste Tema</button>'
-                if t.create_action else ""
-            )
+            # Thumbnail markup
+            if t.thumbnail_url:
+                thumb_inner = f'<img src="{e(t.thumbnail_url)}" alt="{e(t.topic)}" loading="lazy" class="trend-thumb-img" /><span class="thumb-play-overlay">▶</span>'
+            else:
+                thumb_inner = (
+                    '<div class="trend-thumb-placeholder">'
+                    '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#606060" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<rect x="2" y="4" width="20" height="16" rx="4"></rect>'
+                    '<polygon points="10 8 16 12 10 16 10 8" fill="#606060"></polygon>'
+                    '</svg>'
+                    '</div>'
+                )
 
-            metric_badge = f'<span class="chip-metric" style="color: var(--info); font-weight: 600;">📊 {e(t.metric_text)}</span>' if t.metric_text else ""
-            cat_badge = f'<span class="chip-metric chip-category">🏷️ {e(t.category_name)}</span>' if t.category_name else ""
+            if t.video_url:
+                thumb_html = (
+                    f'<a href="{e(t.video_url)}" target="_blank" rel="noopener noreferrer" class="trend-thumb-link" aria-label="Assistir {e(t.topic)} no YouTube">'
+                    f'<div class="trend-thumb">{thumb_inner}</div>'
+                    f'</a>'
+                )
+            else:
+                thumb_html = f'<div class="trend-thumb">{thumb_inner}</div>'
+
+            # Badges row
+            badges_parts = []
+            if t.region == "BR":
+                badges_parts.append('<span class="chip-metric badge-region-br">🇧🇷 Em Alta Brasil</span>')
+            elif t.region == "GLOBAL":
+                badges_parts.append('<span class="chip-metric badge-region-global">🌍 Em Alta Mundo</span>')
+
+            if t.category_name:
+                badges_parts.append(f'<span class="chip-metric chip-category badge-pillar">🏷️ {e(t.category_name)}</span>')
+
+            if t.metric_text:
+                badges_parts.append(f'<span class="chip-metric" style="color: var(--info); font-weight: 600;">📊 {e(t.metric_text)}</span>')
+
             completed_count = t.counts.get(Stage.COMPLETED, 0)
             in_prod_count = t.counts.get(Stage.IN_PRODUCTION, 0)
+            badges_parts.append(f'<span class="chip-metric">🎬 {completed_count} concluídos · {in_prod_count} em produção</span>')
+            badges_parts.append(f'<span class="chip-metric">💰 Custo: {e(t.cost_text)}</span>')
+
+            badges_html = f'<div class="trend-badges">{"".join(badges_parts)}</div>'
+
+            # Title
+            if t.video_url:
+                title_html = (
+                    f'<a href="{e(t.video_url)}" target="_blank" rel="noopener noreferrer" class="trend-title-link">'
+                    f'<span class="trend-topic-name">{e(t.topic)}</span>'
+                    f'<span class="trend-external-icon">↗</span>'
+                    f'</a>'
+                )
+            else:
+                title_html = f'<div class="trend-topic-name">{e(t.topic)}</div>'
+
+            # Channel & metadata
+            views_str = None
+            if t.evidence and t.evidence[0].get("views") is not None:
+                views_str = f"{int(t.evidence[0]['views']):,} views".replace(",", ".")
+            elif t.metric_text:
+                views_str = t.metric_text
+
+            meta_parts = [f'<span class="trend-meta-item">📺 {e(t.channel_title or "Canal")}</span>']
+            if views_str:
+                meta_parts.append(f'<span class="trend-meta-item">👁️ {e(views_str)}</span>')
+            if t.published_text:
+                meta_parts.append(f'<span class="trend-meta-item">⏱️ {e(t.published_text)}</span>')
+            meta_html = f'<div class="trend-meta-row">{" · ".join(meta_parts)}</div>'
+
+            # Action buttons
+            action_buttons = []
+            if t.video_url:
+                action_buttons.append(
+                    f'<a href="{e(t.video_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-compact btn-watch-yt">▶️ Assistir no YouTube</a>'
+                )
+            if t.create_action:
+                action_buttons.append(
+                    f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}" style="white-space: nowrap;">✨ Criar Vídeo deste Tema</button>'
+                )
+            actions_html = f'<div class="trend-actions-row">{"".join(action_buttons)}</div>' if action_buttons else ""
 
             items_html.append(f"""
-              <div class="trend-item" data-category-id="{e(t.category_id or '')}">
-                <div class="trend-top-row">
-                  <div>
-                    <div class="trend-topic-name">{e(t.topic)}</div>
-                    <div class="trend-badges">
-                      {cat_badge}
-                      {metric_badge}
-                      <span class="chip-metric">🎬 {completed_count} concluídos · {in_prod_count} em produção</span>
-                      <span class="chip-metric">💰 Custo: {e(t.cost_text)}</span>
-                    </div>
-                  </div>
-                  <div style="flex-shrink: 0;">{btn_create}</div>
+              <div class="trend-item" data-category-id="{e(t.category_id or '')}" data-region="{e(t.region or '')}">
+                {thumb_html}
+                <div class="trend-content">
+                  {badges_html}
+                  {title_html}
+                  {meta_html}
+                  {actions_html}
+                  {ev_html}
                 </div>
-                {ev_html}
               </div>
             """)
 
