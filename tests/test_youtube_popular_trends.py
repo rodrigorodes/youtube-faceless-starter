@@ -82,7 +82,7 @@ def test_fetch_popular_trends_brazil_returns_items(monkeypatch):
     validate_trends(items, allowed_hosts=("www.youtube.com",))
 
 
-def test_fetch_popular_trends_global_returns_items(monkeypatch):
+def test_fetch_popular_trends_us_returns_items(monkeypatch):
     sample_payload = {
         "items": [
             {
@@ -105,8 +105,28 @@ def test_fetch_popular_trends_global_returns_items(monkeypatch):
     items = fetch_popular_trends("fake-key", "US", max_results=1)
 
     assert len(items) == 1
-    assert items[0].source_name == "YouTube Global (Em Alta)"
+    assert items[0].source_name == "YouTube EUA (Em Alta)"
     assert items[0].source_url == "https://www.youtube.com/feed/trending"
+    assert "regionCode=US" in mock_urlopen.call_args[0][0].full_url
+
+
+@pytest.mark.parametrize(
+    ("region_code", "expected_source"),
+    [
+        ("BR", "YouTube Brasil (Em Alta)"),
+        ("us", "YouTube EUA (Em Alta)"),
+        ("JP", "YouTube JP (Em Alta)"),
+    ],
+)
+def test_fetch_popular_trends_labels_and_requests_actual_region(monkeypatch, region_code, expected_source):
+    payload = {"items": [{"id": "vid", "snippet": {"title": "Popular"}, "statistics": {}}]}
+    mock_urlopen = MagicMock(return_value=_mock_response(payload))
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    items = fetch_popular_trends("fake-key", region_code)
+
+    assert items[0].source_name == expected_source
+    assert f"regionCode={region_code}" in mock_urlopen.call_args[0][0].full_url
 
 
 def test_fetch_popular_trends_http_error_raises_youtube_api_error(monkeypatch):
