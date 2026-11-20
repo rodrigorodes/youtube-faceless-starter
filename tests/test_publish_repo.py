@@ -1,5 +1,6 @@
 import sys
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,8 +12,9 @@ psycopg = pytest.importorskip("psycopg")
 from app.studio.adapters.postgres.db import migrate  # noqa: E402
 from app.studio.adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository  # noqa: E402
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
+from app.studio.adapters.postgres.render_repo import PostgresRenderJobRepository  # noqa: E402
 from app.studio.application.publishing import PublicationConflict  # noqa: E402
-from app.studio.domain.contracts import PublicationStatus, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.contracts import Asset, AssetKind, QaReport, PublicationStatus, VideoFormat, VideoStatus  # noqa: E402
 
 S = VideoStatus
 URI = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=AbC123"
@@ -24,14 +26,18 @@ def env(conn, dsn):
     connect = lambda: psycopg.connect(dsn)
     videos = PostgresVideoRepository(connect)
     project = videos.create_project("canal").id
+    outputs = {}
 
     def make(status="AWAITING_APPROVAL", topic="ADE 2026"):
         video = videos.create_video(project, topic, VideoFormat.short)
         conn.execute("UPDATE studio.videos SET status=%s WHERE id=%s", (status, video.id))
+        outputs[video.id] = insert_output(conn, video.id, 1)
+        if status == "APPROVED":
+            conn.execute("INSERT INTO studio.approvals(video_id, decision, output_asset_id) VALUES (%s, 'approved', %s)", (video.id, outputs[video.id]))
         conn.commit()
         return video.id
 
-    return {"make": make, "videos": videos, "approvals": PostgresApprovalRepository(connect), "pubs": PostgresPublicationRepository(connect), "conn": conn, "connect": connect}
+    return {"make": make, "videos": videos, "approvals": PostgresApprovalRepository(connect), "pubs": PostgresPublicationRepository(connect), "conn": conn, "connect": connect, "outputs": outputs}
 
 
 def status(env, vid):
@@ -40,8 +46,112 @@ def status(env, vid):
 
 
 def approve(env, vid, expected=S.AWAITING_APPROVAL, **kw):
-    base = dict(title="T", description="D", tags=["a"], publish_at=None, reason="", qa_override=False)
+    base = dict(title="T", description="D", tags=["a"], publish_at=None, reason="", qa_override=False, output_asset_id=env["outputs"][vid])
     return env["approvals"].decide(vid, expected, "approved", **{**base, **kw})
+
+
+def insert_output(conn, vid, attempt):
+    asset, job = uuid.uuid4().hex, uuid.uuid4().hex
+    conn.execute("INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license) VALUES (%s, 'video', %s, 'file.mp4', 'test', 'test', 'ok')",
+                 (asset, uuid.uuid4().hex * 2))
+    conn.execute("INSERT INTO studio.render_jobs(id, video_id, status, attempt, output_asset_id, finished_at) "
+                 "VALUES (%s, %s, 'SUCCEEDED', %s, %s, clock_timestamp())", (job, vid, attempt, asset))
+    return asset
+
+
+def test_approval_cas_rechecks_output_after_waiting_for_video_lock(env):
+    vid = env["make"]("RENDERED")
+    first = env["outputs"][vid]
+    locker = env["connect"]()
+    locker.execute("SELECT id FROM studio.videos WHERE id=%s FOR UPDATE", (vid,))
+    results, errors = [], []
+    def decide():
+        try:
+            results.append(approve(env, vid, S.RENDERED, output_asset_id=first, reason="reviewed", qa_override=True))
+        except Exception as exc:
+            errors.append(exc)
+    thread = threading.Thread(target=decide)
+    thread.start()
+    second = insert_output(locker, vid, 2)
+    locker.commit()
+    locker.close()
+    thread.join(timeout=10)
+    assert not errors and not thread.is_alive() and results == [False]
+    assert status(env, vid) == "RENDERED"
+    assert approve(env, vid, S.RENDERED, output_asset_id=second, reason="reviewed", qa_override=True)
+    assert env["approvals"].get(vid).output_asset_id == second
+
+
+def test_approval_races_render_completion_without_approving_unreviewed_output(env):
+    vid = env["make"]("RENDERED")
+    first = env["outputs"][vid]
+    asset_id, job_id, key = uuid.uuid4().hex, uuid.uuid4().hex, uuid.uuid4().hex * 2
+    env["conn"].execute("INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license) VALUES (%s, 'video', %s, 'new.mp4', 'test', 'test', 'ok')", (asset_id, key))
+    env["conn"].execute("INSERT INTO studio.render_jobs(id, video_id, status, attempt) VALUES (%s, %s, 'RUNNING', 2)", (job_id, vid))
+    env["conn"].commit()
+    asset = Asset(id=asset_id, kind=AssetKind.video, cache_key=key, path="new.mp4", provider="test", model="test", license="ok")
+    jobs = PostgresRenderJobRepository(env["connect"])
+    barrier = threading.Barrier(2)
+    results, errors = {}, []
+    def run(name, action):
+        try:
+            barrier.wait(timeout=5)
+            results[name] = action()
+        except Exception as exc:
+            errors.append(exc)
+    threads = [
+        threading.Thread(target=run, args=("approval", lambda: approve(env, vid, S.RENDERED, output_asset_id=first, reason="reviewed", qa_override=True))),
+        threading.Thread(target=run, args=("render", lambda: jobs.complete(job_id, asset, QaReport(passed=False, failures=["test"])))),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not errors and all(not thread.is_alive() for thread in threads)
+    assert results["approval"] != results["render"]
+    if results["approval"]:
+        assert env["approvals"].get(vid).output_asset_id == first
+        assert jobs.approved_output(vid).id == first
+    else:
+        assert status(env, vid) == "RENDERED"
+        assert jobs.latest_output(vid).id == asset_id
+
+
+def test_early_abort_cannot_remove_claim_with_external_session(env):
+    vid = env["make"]("APPROVED")
+    pub = env["pubs"].claim(60, 5)
+    assert env["pubs"].set_upload_uri(pub.id, pub.attempt, URI, False)
+    assert not env["pubs"].abort_before_delivery(pub.id, pub.attempt)
+    assert env["pubs"].get(vid).upload_uri == URI
+
+
+def test_unexposed_expired_preparation_can_be_cancelled_without_consuming_claim(env):
+    vid = env["make"]("APPROVED")
+    pub = env["pubs"].claim(60, 5)
+    assert not env["pubs"].abort_before_delivery(pub.id, 2)
+    assert env["pubs"].abort_before_delivery(pub.id, 1)
+    assert env["pubs"].get(vid) is None
+    assert env["pubs"].claim(60, 5).video_id == vid
+
+
+def test_approval_rejects_legacy_render_without_completion_timestamp(env):
+    vid = env["make"]()
+    env["conn"].execute("UPDATE studio.render_jobs SET finished_at=NULL WHERE video_id=%s", (vid,))
+    env["conn"].commit()
+    assert not approve(env, vid)
+    assert status(env, vid) == "AWAITING_APPROVAL"
+
+
+def test_claim_and_lookup_use_approved_output_not_a_later_render(env):
+    vid = env["make"]()
+    first = env["outputs"][vid]
+    assert approve(env, vid)
+    second = insert_output(env["conn"], vid, 2)
+    env["conn"].commit()
+    jobs = PostgresRenderJobRepository(env["connect"])
+    assert jobs.latest_output(vid).id == second
+    assert jobs.approved_output(vid).id == first
+    assert env["pubs"].claim(60, 5).video_id == vid
 
 
 # ---------- decisão ----------
@@ -119,7 +229,7 @@ def test_claim_only_takes_approved_videos_and_opens_a_lease(env):
     assert env["pubs"].claim(1800, 5) is None
     vid = env["make"]("APPROVED")
     when = datetime.now(timezone.utc) + timedelta(days=2)
-    env["conn"].execute("INSERT INTO studio.approvals(video_id, decision, publish_at) VALUES (%s, 'approved', %s)", (vid, when))
+    env["conn"].execute("UPDATE studio.approvals SET publish_at=%s WHERE video_id=%s", (when, vid))
     env["conn"].commit()
     pub = env["pubs"].claim(1800, 5)
     assert pub.video_id == vid and pub.status == PublicationStatus.UPLOADING and pub.attempt == 1 and pub.publish_at == when and pub.privacy == "private"

@@ -30,6 +30,7 @@ async function send(action) {
   const v = (id) => document.getElementById(id).value.trim();
   const body = {};
   if (action === 'approve') {
+    body.output_asset_id = form.dataset.outputAssetId;
     body.title = v('title'); body.description = v('description');
     body.tags = v('tags') ? v('tags').split(',').map((t) => t.trim()).filter(Boolean) : [];
     if (v('publish_at')) body.publish_at = new Date(v('publish_at')).toISOString();
@@ -56,7 +57,7 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
     qa_failed = p.qa is not None and not p.qa.passed
     parts = [f"<h1>{e(p.default_title)}</h1>",
              f'<p><span class="badge">{e(v.status.value)}</span> <span class="badge">{e(v.format.value)}</span> Tema: {e(v.topic)}</p>']
-    player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file"><track kind="captions" srclang="pt-BR" label="Português" '
+    player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file?output_asset_id={e(p.output_asset_id)}"><track kind="captions" srclang="pt-BR" label="Português" '
               f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="bad" role="alert">Sem arquivo de vídeo renderizado.</p>'
     qa = "<p>Sem relatório de QA.</p>"
     if p.qa is not None:
@@ -77,7 +78,7 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
         if qa_failed:
             override = ('<label for="override_reason">O QA reprovou. Para aprovar mesmo assim, explique o motivo '
                         '<span class="hint">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea>')
-        review = (f'<h2>Decisão</h2><form id="review" data-base="{base}" onsubmit="return false">'
+        review = (f'<h2>Decisão</h2><form id="review" data-base="{base}" data-output-asset-id="{e(p.output_asset_id or "")}" onsubmit="return false">'
                   f'<label for="title">Título <span class="hint">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
                   f'<input id="title" maxlength="100" value="{e(p.default_title)}">'
                   f'<label for="description">Descrição <span class="hint">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'

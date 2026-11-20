@@ -151,6 +151,8 @@ class RenderJobRepository(Protocol):
     def latest(self, video_id: str) -> RenderJob | None: ...
     def latest_output(self, video_id: str) -> Asset | None:
         """Asset do vídeo final do job SUCCEEDED mais recente (é ele que a API serve)."""
+    def output(self, video_id: str, asset_id: str) -> Asset | None: ...
+    def approved_output(self, video_id: str) -> Asset | None: ...
     def start(self, job_id: str) -> bool:
         """QUEUED → RUNNING numa operação só; False se outro executor pegou."""
     def alive(self, job_id: str) -> bool:
@@ -176,7 +178,7 @@ class RenderStorage(Protocol):
 
 class ApprovalRepository(Protocol):
     def decide(self, video_id: str, expected: VideoStatus, decision: str, *, title: str, description: str, tags: list[str],
-               publish_at: "datetime | None", reason: str, qa_override: bool) -> bool:
+               publish_at: "datetime | None", reason: str, qa_override: bool, output_asset_id: str | None = None) -> bool:
         """Numa transação: estado expected → APPROVED/REJECTED (se expected é RENDERED, passa por AWAITING_APPROVAL), grava os
         metadados do vídeo e a linha de `approvals`. False se o estado já não é `expected`."""
     def get(self, video_id: str) -> Approval | None: ...
@@ -187,6 +189,8 @@ class PublicationRepository(Protocol):
         """Reivindica atomicamente um vídeo APPROVED sem publicação prévia; nunca retoma tentativa ambígua."""
     def get(self, video_id: str) -> Publication | None: ...
     def get_by_id(self, publication_id: str) -> Publication | None: ...
+    def abort_before_delivery(self, publication_id: str, attempt: int) -> bool:
+        """Somente antes de entregar o claim: remove tentativa sem sessão ou resultado externo."""
     def set_upload_uri(self, publication_id: str, attempt: int, uri: str, replace: bool) -> Publication | None:
         """Só na tentativa atual, UPLOADING e sem URI (ou com replace). None caso contrário."""
     def mark_uploaded(self, publication_id: str, youtube_video_id: str) -> Publication | None:

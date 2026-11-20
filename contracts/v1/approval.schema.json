@@ -22,6 +22,18 @@
       "title": "Decision",
       "type": "string"
     },
+    "output_asset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output Asset Id"
+    },
     "publish_at": {
       "anyOf": [
         {

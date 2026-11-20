@@ -113,6 +113,11 @@ class Pubs:
         self.items[PUB] = self.pub
         return True
 
+    def abort_before_delivery(self, publication_id, attempt):
+        self.calls.append(("abort_before_delivery", attempt))
+        self.items.pop(publication_id, None)
+        return True
+
     def retry(self, video_id):
         return self.pub if self.pub.status == PublicationStatus.FAILED else None
 
@@ -123,6 +128,9 @@ class Jobs:
 
     def latest_output(self, video_id):
         return Asset(id="9" * 32, kind=AssetKind.video, cache_key="d" * 64, path="projects/p/videos/v/final-x.mp4", provider="ffmpeg", model="f", license="g") if self.output else None
+
+    def approved_output(self, video_id):
+        return self.latest_output(video_id)
 
 
 class Files:
@@ -154,7 +162,7 @@ def approver(v, **kw):
 def test_approve_awaiting_sets_defaults_and_decides_once():
     v = Videos()
     use, a = approver(v)
-    video, changed = use.execute(V)
+    video, changed = use.execute(V, output_asset_id="9" * 32)
     assert changed and video.status == S.APPROVED and video.title == "ADE 2026" and video.description.startswith("O Amsterdam Dance Event")
     kw = a.calls[0][2]
     assert a.calls[0][:2] == (S.AWAITING_APPROVAL, "approved") and kw["qa_override"] is False and kw["publish_at"] is None
@@ -163,7 +171,7 @@ def test_approve_awaiting_sets_defaults_and_decides_once():
 def test_approving_twice_decides_only_once():
     v = Videos()
     use, a = approver(v)
-    use.execute(V)
+    use.execute(V, output_asset_id="9" * 32)
     video, changed = use.execute(V)
     assert not changed and video.status == S.APPROVED and len(a.calls) == 1
 
@@ -172,7 +180,7 @@ def test_approve_uses_the_reviewer_metadata_and_schedule():
     v = Videos()
     use, a = approver(v)
     when = NOW + timedelta(days=1)
-    use.execute(V, title="  Meu título ", description="Resumo", tags=["ade", "ADE", "dança"], publish_at=when)
+    use.execute(V, output_asset_id="9" * 32, title="  Meu título ", description="Resumo", tags=["ade", "ADE", "dança"], publish_at=when)
     kw = a.calls[0][2]
     assert kw["title"] == "Meu título" and kw["tags"] == ["ade", "dança"] and kw["publish_at"] == when
 
@@ -182,7 +190,7 @@ def test_approve_refuses_bad_metadata_without_deciding(kw):
     v = Videos()
     use, a = approver(v)
     with pytest.raises(InvalidPublishData):
-        use.execute(V, **kw)
+        use.execute(V, output_asset_id="9" * 32, **kw)
     assert a.calls == [] and v.video.status == S.AWAITING_APPROVAL
 
 
@@ -194,7 +202,7 @@ def test_failed_qa_needs_an_override_reason():
         with pytest.raises(StateConflict, match="override_reason"):
             use.execute(V, override_reason=reason)
     assert a.calls == []
-    use.execute(V, override_reason="narração é intencionalmente baixa")
+    use.execute(V, output_asset_id="9" * 32, override_reason="narração é intencionalmente baixa")
     assert a.calls[0][0] == S.RENDERED and a.calls[0][2]["qa_override"] is True and a.calls[0][2]["reason"].startswith("narração")
 
 
@@ -211,7 +219,7 @@ def test_approve_lost_race_and_unknown_video():
     use, a = approver(v)
     a.refuse = True
     with pytest.raises(StateConflict, match="changed"):
-        use.execute(V)
+        use.execute(V, output_asset_id="9" * 32)
     v.exists = False
     with pytest.raises(VideoNotFound):
         use.execute(V)
@@ -242,7 +250,7 @@ def claimer(tmp_path, pubs=None, **kw):
 def test_claim_builds_the_youtube_body_with_credits_sources_and_declarations(tmp_path):
     item = claimer(tmp_path).execute(900, 4)
     body = item.youtube_body
-    assert item.file_size == 1234 and item.content_type == "video/mp4" and item.file_path == f"/studio/videos/{V}/file" and item.thumbnail_path.endswith("/thumbnail")
+    assert item.file_size == 1234 and item.content_type == "video/mp4" and item.file_path == f"/studio/videos/{V}/file?output_asset_id={'9' * 32}" and item.thumbnail_path.endswith("/thumbnail")
     assert body["snippet"]["title"] == "Título" and body["snippet"]["tags"] == ["ade"]
     assert "Foto de Ana no Pexels" in body["snippet"]["description"] and "amsterdam-dance-event.nl" in body["snippet"]["description"]
     assert body["status"]["privacyStatus"] == "private" and body["status"]["containsSyntheticMedia"] is True and "publishAt" not in body["status"]
@@ -251,7 +259,57 @@ def test_claim_builds_the_youtube_body_with_credits_sources_and_declarations(tmp
 def test_claim_schedules_only_a_future_time(tmp_path):
     future = datetime.now(timezone.utc) + timedelta(days=2)
     assert claimer(tmp_path, Pubs(publish_at=future)).execute().youtube_body["status"]["publishAt"].endswith("Z")
-    assert "publishAt" not in claimer(tmp_path, Pubs(publish_at=datetime.now(timezone.utc) - timedelta(hours=1))).execute().youtube_body["status"]
+    pubs = Pubs(publish_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    with pytest.raises(StateConflict, match="schedule"):
+        claimer(tmp_path, pubs).execute()
+    assert pubs.calls[-1][0] == "abort_before_delivery" and PUB not in pubs.items
+
+
+def test_claim_rejects_time_that_would_be_in_past_after_youtube_second_rounding(tmp_path, monkeypatch):
+    now = datetime(2027, 1, 1, 12, 0, 0, 700000, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.studio.application.publishing._utc_now", lambda: now)
+    pubs = Pubs(publish_at=now + timedelta(milliseconds=200))
+    with pytest.raises(StateConflict, match="schedule"):
+        claimer(tmp_path, pubs).execute()
+    assert pubs.calls[-1][0] == "abort_before_delivery"
+
+
+def test_schedule_expiring_during_preparation_cancels_before_delivery(tmp_path, monkeypatch):
+    now = datetime(2027, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    times = iter([now, now + timedelta(seconds=2)])
+    monkeypatch.setattr("app.studio.application.publishing._utc_now", lambda: next(times))
+    pubs = Pubs(publish_at=now + timedelta(seconds=1))
+    with pytest.raises(StateConflict, match="schedule"):
+        claimer(tmp_path, pubs).execute()
+    assert PUB not in pubs.items
+
+
+def test_schedule_expiry_refuses_to_cancel_if_claim_might_have_external_effect(tmp_path):
+    pubs = Pubs(publish_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    pubs.abort_before_delivery = lambda publication_id, attempt: False
+    with pytest.raises(StateConflict, match="cannot be safely cancelled"):
+        claimer(tmp_path, pubs).execute()
+    assert PUB in pubs.items
+
+
+def test_claim_fails_closed_when_description_cannot_fit(tmp_path):
+    pubs = Pubs()
+    use = claimer(tmp_path, pubs)
+    use.snaps.list = lambda video_id: [SourceSnapshot(id="2" * 32, video_id=V, url="https://example.org/" + "a" * 5100,
+                                                      content_sha256="d" * 64, text="t")]
+    assert use.execute() is None
+    assert pubs.pub.status == PublicationStatus.FAILED
+
+
+def test_claim_fails_closed_on_unexpected_preparation_error(tmp_path):
+    pubs = Pubs()
+    use = claimer(tmp_path, pubs)
+    def broken(video_id):
+        raise RuntimeError("unavailable")
+    use.snaps.list = broken
+    with pytest.raises(RuntimeError, match="unavailable"):
+        use.execute()
+    assert pubs.pub.status == PublicationStatus.FAILED
 
 
 def test_claim_returns_none_when_nothing_is_pending_and_fails_on_a_missing_file(tmp_path):
@@ -331,3 +389,9 @@ def test_preview_collects_what_the_reviewer_needs(tmp_path):
     assert preview.has_file and preview.default_title == "ADE 2026" and preview.default_description.startswith("O Amsterdam")
     assert preview.credits == ["Foto de Ana no Pexels (https://pexels.com/@ana)"] and preview.sources == ["https://www.amsterdam-dance-event.nl/en/about"]
     assert len(preview.scenes) == 2 and preview.qa.passed and preview.approval is None
+
+
+def test_preview_does_not_offer_revision_when_render_file_is_missing(tmp_path):
+    v = Videos(S.RENDERED, QaReport(passed=False, failures=["audio"]))
+    preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path, exists=False)).execute(V)
+    assert not preview.has_file and preview.output_asset_id is None

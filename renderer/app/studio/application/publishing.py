@@ -24,6 +24,10 @@ class PublicationConflict(RuntimeError):
     """O vídeo já tem outro ID do YouTube registrado."""
 
 
+class _ScheduleExpired(StateConflict):
+    pass
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -33,7 +37,7 @@ class Approve:
         self.videos, self.scripts, self.approvals, self.clock = videos, scripts, approvals, clock
 
     def execute(self, video_id: str, *, title: str | None = None, description: str | None = None, tags: list[str] | None = None,
-                publish_at: datetime | None = None, override_reason: str | None = None) -> tuple[Video, bool]:
+                publish_at: datetime | None = None, override_reason: str | None = None, output_asset_id: str | None = None) -> tuple[Video, bool]:
         """Idempotente: vídeo já aprovado/publicado devolve (vídeo, False) sem nova decisão."""
         video = _require_video(self.videos, video_id)
         if video.status in (VideoStatus.APPROVED, VideoStatus.PUBLISHED):
@@ -48,6 +52,8 @@ class Approve:
             override = True
         else:
             raise StateConflict(f"approve needs AWAITING_APPROVAL (or RENDERED with override_reason), got {video.status.value}")
+        if not output_asset_id:
+            raise StateConflict("the reviewed render revision is required; reload the preview")
         script = self.scripts.latest(video_id)
         final_title, final_desc, final_tags = validate_metadata(
             title if title is not None else (video.title or default_title(video.topic)),
@@ -55,8 +61,8 @@ class Approve:
             tags if tags is not None else video.tags)
         when = validate_publish_at(publish_at, self.clock())
         if not self.approvals.decide(video_id, video.status, "approved", title=final_title, description=final_desc, tags=final_tags,
-                                     publish_at=when, reason=reason, qa_override=override):
-            raise StateConflict("the video state changed, reload and try again")
+                                     publish_at=when, reason=reason, qa_override=override, output_asset_id=output_asset_id):
+            raise StateConflict("the video state or render changed, reload and try again")
         return _require_video(self.videos, video_id), True
 
 
@@ -104,17 +110,34 @@ class ClaimPublication:
         pub = self.pubs.claim(lease_seconds, max_attempts)
         if pub is None:
             return None
-        video = _require_video(self.videos, pub.video_id)
-        output = self.jobs.latest_output(video.id)
-        path = self.files.resolve(output.path, "mp4") if output else None
-        if path is None:
-            self.pubs.fail(pub.id, pub.attempt, "the rendered file is missing")
+        try:
+            if pub.publish_at and pub.publish_at.replace(microsecond=0) <= _utc_now():
+                if not self.pubs.abort_before_delivery(pub.id, pub.attempt):
+                    raise _ScheduleExpired("publication schedule expired and claim cannot be safely cancelled; human reconciliation required")
+                raise _ScheduleExpired("publication schedule has expired; reschedule before claiming")
+            video = _require_video(self.videos, pub.video_id)
+            output = self.jobs.approved_output(video.id)
+            path = self.files.resolve(output.path, "mp4") if output else None
+            if path is None:
+                raise InvalidPublishData("the rendered file is missing")
+            credits, sources = credits_and_sources(self.scripts, self.assets, self.snaps, video.id)
+            description = build_description(video.description, credits, sources, synthetic=True)
+            body = youtube_insert_body(video.title or default_title(video.topic), description, video.tags, pub.publish_at)
+            item = ClaimItem(pub, body, Path(path).stat().st_size, "video/mp4", f"/studio/videos/{video.id}/file?output_asset_id={output.id}", f"/studio/videos/{video.id}/thumbnail")
+            if pub.publish_at and pub.publish_at.replace(microsecond=0) <= _utc_now():
+                if not self.pubs.abort_before_delivery(pub.id, pub.attempt):
+                    raise _ScheduleExpired("publication schedule expired and claim cannot be safely cancelled; human reconciliation required")
+                raise _ScheduleExpired("publication schedule has expired; reschedule before claiming")
+            return item
+        except _ScheduleExpired:
+            raise
+        except InvalidPublishData as exc:
+            if not self.pubs.fail(pub.id, pub.attempt, str(exc)):
+                raise StateConflict("could not record publication failure") from exc
             return None
-        credits, sources = credits_and_sources(self.scripts, self.assets, self.snaps, video.id)
-        description = build_description(video.description, credits, sources, synthetic=True)
-        when = pub.publish_at if pub.publish_at and pub.publish_at > _utc_now() else None  # horário que já passou: fica privado, sem agendar
-        body = youtube_insert_body(video.title or default_title(video.topic), description, video.tags, when)
-        return ClaimItem(pub, body, Path(path).stat().st_size, "video/mp4", f"/studio/videos/{video.id}/file", f"/studio/videos/{video.id}/thumbnail")
+        except Exception:
+            self.pubs.fail(pub.id, pub.attempt, "publication preparation failed; human reconciliation required")
+            raise
 
 
 class _Pubs:
@@ -216,6 +239,7 @@ class Preview:
     default_description: str
     approval: Approval | None
     publication: Publication | None
+    output_asset_id: str | None
 
 
 class GetPreview:
@@ -226,14 +250,16 @@ class GetPreview:
 
     def execute(self, video_id: str) -> Preview:
         video = _require_video(self.videos, video_id)
-        output = self.jobs.latest_output(video_id) if video.status in SERVABLE else None
+        output = (self.jobs.approved_output(video_id) if video.status in (VideoStatus.APPROVED, VideoStatus.PUBLISHED)
+                  else self.jobs.latest_output(video_id)) if video.status in SERVABLE else None
+        has_file = bool(output and self.files.resolve(output.path, "mp4"))
         credits, sources = credits_and_sources(self.scripts, self.assets, self.snaps, video_id)
         script = self.scripts.latest(video_id)
         return Preview(video=video, scenes=self.scripts.scenes(video_id), qa=video.qa_report,
-                       has_file=bool(output and self.files.resolve(output.path, "mp4")), sources=sources, credits=credits,
+                       has_file=has_file, sources=sources, credits=credits,
                        default_title=video.title or default_title(video.topic),
                        default_description=video.description or default_description(script.text if script else ""),
-                       approval=self.approvals.get(video_id), publication=self.pubs.get(video_id))
+                       approval=self.approvals.get(video_id), publication=self.pubs.get(video_id), output_asset_id=output.id if has_file else None)
 
 
 @dataclass(frozen=True)

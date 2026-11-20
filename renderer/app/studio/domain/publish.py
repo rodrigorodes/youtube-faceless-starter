@@ -80,12 +80,18 @@ def build_description(base: str, credits: list[str], sources: list[str], synthet
     if unique_sources:
         parts.append("Fontes:\n" + "\n".join(unique_sources))
     tail = "\n\n".join(parts)
-    base = base.strip()
-    room = DESC_MAX - len(tail) - (2 if tail else 0)
-    if len(base) > room:
-        base = base[:max(0, room - 1)].rstrip() + "…" if room > 1 else ""
-    text = "\n\n".join(p for p in (base, tail) if p)
-    return text.replace("<", "").replace(">", "")[:DESC_MAX]
+    _no_angle(tail, "credits and sources")
+    tail_bytes = len(tail.encode("utf-8"))
+    if tail_bytes > DESC_MAX:
+        raise InvalidPublishData("credits and sources exceed the YouTube description limit")
+    base = base.strip().replace("<", "").replace(">", "")
+    room = DESC_MAX - tail_bytes - (2 if tail and base else 0)
+    if room < 0:
+        base = ""
+    elif len(base.encode("utf-8")) > room:
+        suffix = "…" if room >= 3 else ""
+        base = base.encode("utf-8")[:room - len(suffix.encode("utf-8"))].decode("utf-8", "ignore").rstrip() + suffix
+    return "\n\n".join(p for p in (base, tail) if p)
 
 
 def srt_to_vtt(srt: str) -> str:

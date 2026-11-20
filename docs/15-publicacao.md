@@ -8,7 +8,7 @@ Fluxo: `AWAITING_APPROVAL` → (humano) `APPROVED` → (n8n) upload privado → 
 
 ## Prévia e decisão
 - `GET /studio/videos/{id}/preview`: página com player, legenda, QA, roteiro, fontes e créditos. HTML escapado, CSP com nonce.
-- `POST /studio/videos/{id}/approve` (título, descrição, tags, `publish_at`, `override_reason`) e `/reject` (`reason`). Repetir é seguro (`changed: false`).
+- `POST /studio/videos/{id}/approve` exige `output_asset_id` do render revisado, além dos campos opcionais título, descrição, tags, `publish_at` e `override_reason`; `/reject` recebe `reason`. A prévia anexa a revisão do player. Clientes da API podem obter o ID do job concluído em `GET /studio/videos/{id}/render` e devem visualizar o arquivo com `GET /studio/videos/{id}/file?output_asset_id=<id>` antes de enviar a decisão. Se outro render terminar, a aprovação antiga retorna 409. Repetir uma decisão já gravada é seguro (`changed: false`).
 - Vídeo `RENDERED` (QA reprovado) só é aprovado com `override_reason`; fica gravado em `studio.approvals`.
 - Título ≤ 100, descrição ≤ 4000, ≤ 15 tags, sem `<` ou `>`. `publish_at` precisa de fuso e ficar entre 15 min e 1 ano.
 - A transição genérica `/transition` não aprova nem publica (403).
@@ -23,7 +23,9 @@ Fluxo: `AWAITING_APPROVAL` → (humano) `APPROVED` → (n8n) upload privado → 
 | `POST /studio/videos/{id}/publication/retry` | desabilitada: retorna 409; exige reconciliação humana |
 | `POST /studio/publications/{id}/thumbnail-set` | marca a miniatura |
 
-O corpo do YouTube é sempre `private` (com `publishAt` quando agendado), `selfDeclaredMadeForKids=false`, `containsSyntheticMedia=true`. A descrição final acrescenta aviso de IA, créditos de imagem e fontes.
+O claim retorna o caminho do asset aprovado, não o último render arbitrário. Aprovações legadas sem referência confiável retornam 409 e exigem reconciliação humana. Um agendamento vencido retorna 409 antes do claim, sem criar publicação; o erro é informado na resposta, não há registro de auditoria separado nem endpoint de reagendamento.
+
+O corpo do YouTube é sempre `private` (com `publishAt` quando agendado), `selfDeclaredMadeForKids=false`, `containsSyntheticMedia=true`. A descrição final acrescenta aviso de IA, créditos de imagem e fontes, com limite de 5.000 bytes UTF-8. Se os créditos e fontes não couberem integralmente, a preparação falha em vez de cortá-los.
 
 ## Workflow n8n `workflows/03-publish-approved.json`
 1. Importe pela interface do n8n (a CLI não importa estes JSONs) e vincule a credencial `youTubeOAuth2Api` nos nós Check session, New session, Upload e Set thumbnail. Vincule também a credencial separada `studio_worker` nos nós do renderer conforme [autenticação local](17-studio-auth.md).

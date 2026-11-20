@@ -189,6 +189,7 @@ class ApproveIn(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=50)
     publish_at: datetime | None = None
     override_reason: str | None = Field(default=None, max_length=500)
+    output_asset_id: str | None = None
 
 
 class RejectIn(BaseModel):
@@ -432,15 +433,15 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         job, qa = run(lambda uc: rendering(uc).get.execute(check_id(video_id)))
         return RenderStatusOut(job=job, qa_report=qa)
 
-    def served(video_id: str, kind: str, media_type: str, filename: str):
-        path = run(lambda uc: rendering(uc).file.execute(check_id(video_id), kind))
+    def served(video_id: str, kind: str, media_type: str, filename: str, output_asset_id: str | None = None):
+        path = run(lambda uc: rendering(uc).file.execute(check_id(video_id), kind, check_id(output_asset_id) if output_asset_id else None))
         if path is None:
             raise HTTPException(404, "rendered file not available")
         return FileResponse(path, media_type=media_type, filename=filename)
 
     @router.get("/videos/{video_id}/file")
-    def video_file(video_id: str):
-        return served(video_id, "mp4", "video/mp4", f"{video_id}.mp4")
+    def video_file(video_id: str, output_asset_id: str | None = None):
+        return served(video_id, "mp4", "video/mp4", f"{video_id}.mp4", output_asset_id)
 
     @router.get("/videos/{video_id}/subtitles")
     def video_subtitles(video_id: str):
@@ -463,7 +464,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         body = body or ApproveIn()
         video, changed = run(lambda uc: publishing(uc).approve.execute(
             check_id(video_id), title=body.title, description=body.description, tags=body.tags, publish_at=body.publish_at,
-            override_reason=body.override_reason))
+            override_reason=body.override_reason, output_asset_id=check_id(body.output_asset_id) if body.output_asset_id else None))
         return DecisionOut(video=video, changed=changed)
 
     @router.post("/videos/{video_id}/reject", response_model=DecisionOut)

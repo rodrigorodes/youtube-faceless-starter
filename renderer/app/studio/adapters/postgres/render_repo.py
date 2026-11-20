@@ -91,7 +91,27 @@ class PostgresRenderJobRepository(_Base):
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cols = ", ".join("a." + c.strip() for c in _ASSET_COLUMNS.split(","))
             cur.execute(f"SELECT {cols} "
-                        "FROM studio.render_jobs j JOIN studio.assets a ON a.id = j.output_asset_id "
-                        "WHERE j.video_id = %s AND j.status = 'SUCCEEDED' ORDER BY j.finished_at DESC, j.attempt DESC LIMIT 1", (check_id(video_id),))
+                        "FROM (SELECT output_asset_id, finished_at FROM studio.render_jobs WHERE video_id = %s AND status = 'SUCCEEDED' "
+                        "ORDER BY finished_at DESC, attempt DESC LIMIT 1) j JOIN studio.assets a ON a.id = j.output_asset_id "
+                        "WHERE j.finished_at IS NOT NULL", (check_id(video_id),))
+            row = cur.fetchone()
+            return _asset(row) if row else None
+
+    def output(self, video_id: str, asset_id: str) -> Asset | None:
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cols = ", ".join("a." + c.strip() for c in _ASSET_COLUMNS.split(","))
+            cur.execute(f"SELECT {cols} FROM studio.render_jobs j JOIN studio.assets a ON a.id = j.output_asset_id "
+                        "WHERE j.video_id = %s AND j.status = 'SUCCEEDED' AND j.finished_at IS NOT NULL AND a.id = %s LIMIT 1",
+                        (check_id(video_id), check_id(asset_id)))
+            row = cur.fetchone()
+            return _asset(row) if row else None
+
+    def approved_output(self, video_id: str) -> Asset | None:
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cols = ", ".join("a." + c.strip() for c in _ASSET_COLUMNS.split(","))
+            cur.execute(f"SELECT {cols} FROM studio.approvals p JOIN studio.render_jobs j ON j.video_id = p.video_id "
+                        "AND j.output_asset_id = p.output_asset_id AND j.status = 'SUCCEEDED' AND j.finished_at IS NOT NULL "
+                        "JOIN studio.assets a ON a.id = p.output_asset_id WHERE p.video_id = %s AND p.decision = 'approved' LIMIT 1",
+                        (check_id(video_id),))
             row = cur.fetchone()
             return _asset(row) if row else None

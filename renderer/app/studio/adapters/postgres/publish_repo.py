@@ -6,6 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from ...application.publishing import PublicationConflict
+from ...application.editorial import StateConflict
 from ...domain.contracts import Approval, Publication, VideoStatus
 from ...domain.ids import check_id
 from ...domain.states import assert_transition
@@ -17,7 +18,7 @@ _PUB = "id, video_id, youtube_video_id, upload_uri, status, publish_at, privacy,
 
 class PostgresApprovalRepository(_Base):
     def decide(self, video_id: str, expected: VideoStatus, decision: str, *, title: str, description: str, tags: list[str],
-               publish_at: datetime | None, reason: str, qa_override: bool) -> bool:
+               publish_at: datetime | None, reason: str, qa_override: bool, output_asset_id: str | None = None) -> bool:
         target = VideoStatus.APPROVED if decision == "approved" else VideoStatus.REJECTED
         with _translated():
             if expected == VideoStatus.RENDERED:  # vídeo com QA reprovado: passa pela revisão e decide na mesma transação
@@ -29,15 +30,22 @@ class PostgresApprovalRepository(_Base):
                 row = conn.execute("SELECT status FROM studio.videos WHERE id = %s FOR UPDATE", (check_id(video_id),)).fetchone()
                 if row is None or row[0] != expected.value:
                     return False
+                if decision == "approved":
+                    if not output_asset_id:
+                        return False
+                    latest = conn.execute("SELECT output_asset_id, finished_at FROM studio.render_jobs WHERE video_id = %s AND status = 'SUCCEEDED' "
+                                          "ORDER BY finished_at DESC, attempt DESC LIMIT 1", (video_id,)).fetchone()
+                    if not latest or latest[1] is None or latest[0] != check_id(output_asset_id):
+                        return False
                 conn.execute("UPDATE studio.videos SET status = %s, title = %s, description = %s, tags = %s, updated_at = now() WHERE id = %s",
                              (target.value, title, description, Jsonb(tags), video_id))
-                conn.execute("INSERT INTO studio.approvals(video_id, decision, reason, qa_override, publish_at) VALUES (%s, %s, %s, %s, %s)",
-                             (video_id, decision, reason, qa_override, publish_at))
+                conn.execute("INSERT INTO studio.approvals(video_id, decision, reason, qa_override, publish_at, output_asset_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                             (video_id, decision, reason, qa_override, publish_at, output_asset_id if decision == "approved" else None))
                 return True
 
     def get(self, video_id: str) -> Approval | None:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT video_id, decision, reason, qa_override, publish_at, created_at FROM studio.approvals WHERE video_id = %s", (check_id(video_id),))
+            cur.execute("SELECT video_id, decision, reason, qa_override, publish_at, created_at, output_asset_id FROM studio.approvals WHERE video_id = %s", (check_id(video_id),))
             row = cur.fetchone()
             return Approval.model_validate(row) if row else None
 
@@ -52,6 +60,16 @@ class PostgresPublicationRepository(_Base):
             if row is None:
                 return None
             video_id = row["id"]
+            cur.execute("SELECT a.output_asset_id, a.publish_at, EXISTS (SELECT 1 FROM studio.render_jobs j "
+                        "WHERE j.video_id = a.video_id AND j.status = 'SUCCEEDED' AND j.finished_at IS NOT NULL AND j.output_asset_id = a.output_asset_id) AS valid "
+                        "FROM studio.approvals a WHERE a.video_id = %s AND a.decision = 'approved'", (video_id,))
+            approval = cur.fetchone()
+            if not approval or not approval["output_asset_id"] or not approval["valid"]:
+                raise StateConflict("approved render is unavailable or has no trusted revision; human reconciliation required")
+            if approval["publish_at"] is not None:
+                cur.execute("SELECT date_trunc('second', %s::timestamptz) <= clock_timestamp() AS expired", (approval["publish_at"],))
+                if cur.fetchone()["expired"]:
+                    raise StateConflict("publication schedule has expired; reschedule before claiming")
             cur.execute(f"INSERT INTO studio.publications(id, video_id, status, attempt, lease_until, publish_at) VALUES (%s, %s, 'UPLOADING', 1, "
                         f"now() + %s * interval '1 second', (SELECT publish_at FROM studio.approvals WHERE video_id = %s)) "
                         f"ON CONFLICT (video_id) DO NOTHING RETURNING {_PUB}",
@@ -70,6 +88,13 @@ class PostgresPublicationRepository(_Base):
 
     def get_by_id(self, publication_id: str) -> Publication | None:
         return self._one(f"SELECT {_PUB} FROM studio.publications WHERE id = %s", (check_id(publication_id),))
+
+    def abort_before_delivery(self, publication_id: str, attempt: int) -> bool:
+        # Exclusivamente pelo preparador, antes de devolver o claim a qualquer executor.
+        with _translated(), self._connect() as conn:
+            return conn.execute("DELETE FROM studio.publications WHERE id = %s AND attempt = %s AND status = 'UPLOADING' "
+                                "AND upload_uri IS NULL AND youtube_video_id IS NULL",
+                                (check_id(publication_id), attempt)).rowcount == 1
 
     def set_upload_uri(self, publication_id: str, attempt: int, uri: str, replace: bool) -> Publication | None:
         return self._one(f"UPDATE studio.publications SET upload_uri = %s, updated_at = now() WHERE id = %s AND attempt = %s AND status = 'UPLOADING' "

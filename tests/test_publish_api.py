@@ -32,11 +32,62 @@ def rendered(client, **kw):
     return vid
 
 
+def output_id(client, vid):
+    return client.get(f"/studio/videos/{vid}/render").json()["job"]["output_asset_id"]
+
+
+def test_approval_requires_the_render_revision(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    response = client.post(f"/studio/videos/{vid}/approve")
+    assert response.status_code in (409, 422)
+    assert status(client, vid) == "AWAITING_APPROVAL"
+
+
+def test_qa_failed_rerender_rejects_stale_approval_even_if_status_unchanged(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path, renderer="nosound:x")
+    vid = rendered(client)
+    first = output_id(client, vid)
+    page = client.get(f"/studio/videos/{vid}/preview").text
+    assert first in page
+    assert client.post(f"/studio/videos/{vid}/render").status_code == 202
+    second = output_id(client, vid)
+    assert first != second and status(client, vid) == "RENDERED"
+    assert client.get(f"/studio/videos/{vid}/file?output_asset_id={first}").status_code == 404
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": first, "override_reason": "revisado"}).status_code == 409
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": second, "override_reason": "revisado"}).status_code == 200
+    assert migrated.execute("SELECT output_asset_id FROM studio.approvals WHERE video_id=%s", (vid,)).fetchone() == (second,)
+    item = client.post("/studio/publications/claim").json()["item"]
+    assert item["file_path"].endswith(f"?output_asset_id={second}")
+    assert client.get(item["file_path"]).status_code == 200
+
+
+def test_legacy_approval_cannot_be_claimed(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    migrated.execute("UPDATE studio.videos SET status='APPROVED' WHERE id=%s", (vid,))
+    migrated.execute("INSERT INTO studio.approvals(video_id, decision) VALUES (%s, 'approved')", (vid,))
+    migrated.commit()
+    assert client.post("/studio/publications/claim").status_code == 409
+    assert migrated.execute("SELECT count(*) FROM studio.publications WHERE video_id=%s", (vid,)).fetchone() == (0,)
+
+
+def test_expired_schedule_is_reported_without_creating_a_claim(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)}).status_code == 200
+    migrated.execute("UPDATE studio.approvals SET publish_at=now()-interval '1 minute' WHERE video_id=%s", (vid,))
+    migrated.commit()
+    response = client.post("/studio/publications/claim")
+    assert response.status_code == 409 and "schedule" in response.json()["detail"]
+    assert migrated.execute("SELECT count(*) FROM studio.publications WHERE video_id=%s", (vid,)).fetchone() == (0,)
+
+
 def test_full_flow_approve_twice_publishes_once_and_records_the_id(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = rendered(client)
     assert status(client, vid) == "AWAITING_APPROVAL"
-    first = client.post(f"/studio/videos/{vid}/approve", json={"title": "ADE 2026 em 40 segundos", "tags": ["ade", "música"]})
+    first = client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "title": "ADE 2026 em 40 segundos", "tags": ["ade", "música"]})
     second = client.post(f"/studio/videos/{vid}/approve")
     assert first.status_code == second.status_code == 200 and first.json()["changed"] is True and second.json()["changed"] is False
     assert second.json()["video"]["title"] == "ADE 2026 em 40 segundos" and status(client, vid) == "APPROVED"
@@ -44,7 +95,7 @@ def test_full_flow_approve_twice_publishes_once_and_records_the_id(migrated, dsn
 
     item = client.post("/studio/publications/claim").json()["item"]
     pub = item["publication"]
-    assert pub["video_id"] == vid and pub["attempt"] == 1 and item["file_size"] > 1000 and item["file_path"] == f"/studio/videos/{vid}/file"
+    assert pub["video_id"] == vid and pub["attempt"] == 1 and item["file_size"] > 1000 and item["file_path"] == f"/studio/videos/{vid}/file?output_asset_id={output_id(client, vid)}"
     body = item["youtube_body"]
     assert body["snippet"]["title"] == "ADE 2026 em 40 segundos" and body["snippet"]["tags"] == ["ade", "música"]
     assert body["status"] == {"privacyStatus": "private", "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}
@@ -67,7 +118,7 @@ def test_full_flow_approve_twice_publishes_once_and_records_the_id(migrated, dsn
 def test_expired_uploader_is_not_resumed_and_session_is_preserved(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = rendered(client)
-    client.post(f"/studio/videos/{vid}/approve")
+    client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)})
     pub = client.post("/studio/publications/claim", json={"lease_seconds": 20}).json()["item"]["publication"]
     client.post(f"/studio/publications/{pub['id']}/upload-uri", json={"attempt": 1, "upload_uri": URI})
     migrated.execute("UPDATE studio.publications SET lease_until = now() - interval '1 second'")  # o n8n "morreu": o lease vence
@@ -80,7 +131,7 @@ def test_expired_uploader_is_not_resumed_and_session_is_preserved(migrated, dsn,
 def test_failure_reports(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = rendered(client)
-    client.post(f"/studio/videos/{vid}/approve")
+    client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)})
     pid = client.post("/studio/publications/claim").json()["item"]["publication"]["id"]
     assert client.post(f"/studio/publications/{pid}/failed", json={"attempt": 1, "error": "HTTP 503", "retryable": True}).json()["status"] == "UPLOADING"
     assert client.post("/studio/publications/claim").json() == {"item": None}
@@ -97,9 +148,9 @@ def test_inputs_are_validated(migrated, dsn, tmp_path):
     vid = rendered(client)
     soon = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
     for body in ({"title": "a<b"}, {"title": " "}, {"tags": ["a,b"]}, {"publish_at": soon}, {"publish_at": "2030-01-01T10:00:00"}):
-        assert client.post(f"/studio/videos/{vid}/approve", json=body).status_code == 422, body
+        assert client.post(f"/studio/videos/{vid}/approve", json={**body, "output_asset_id": output_id(client, vid)}).status_code == 422, body
     assert status(client, vid) == "AWAITING_APPROVAL"
-    client.post(f"/studio/videos/{vid}/approve", json={"publish_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()})
+    client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "publish_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()})
     pid = client.post("/studio/publications/claim").json()["item"]["publication"]["id"]
     assert client.post(f"/studio/publications/{pid}/upload-uri", json={"attempt": 1, "upload_uri": "https://evil.example/upload/youtube/v3/videos?upload_id=a"}).status_code == 422
     assert client.post(f"/studio/publications/{pid}/uploaded", json={"youtube_video_id": "curto"}).status_code == 422
@@ -116,7 +167,7 @@ def test_scheduled_publication_carries_publish_at_into_the_youtube_body(migrated
     client, _ = make_client(dsn, tmp_path)
     vid = rendered(client)
     when = datetime.now(timezone.utc) + timedelta(days=1)
-    client.post(f"/studio/videos/{vid}/approve", json={"publish_at": when.isoformat()})
+    client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "publish_at": when.isoformat()})
     status_ = client.post("/studio/publications/claim").json()["item"]["youtube_body"]["status"]
     assert status_["privacyStatus"] == "private" and status_["publishAt"].endswith("Z") and status_["publishAt"][:13] == when.strftime("%Y-%m-%dT%H")
 
@@ -137,7 +188,7 @@ def test_qa_failed_video_is_approved_only_with_a_recorded_override(migrated, dsn
     assert client.post(f"/studio/videos/{vid}/approve").status_code == 409
     assert client.post(f"/studio/videos/{vid}/approve", json={"override_reason": "   "}).status_code == 409
     assert status(client, vid) == "RENDERED"
-    assert client.post(f"/studio/videos/{vid}/approve", json={"override_reason": "teste de um vídeo sem áudio"}).status_code == 200
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "override_reason": "teste de um vídeo sem áudio"}).status_code == 200
     row = migrated.execute("SELECT qa_override, reason FROM studio.approvals WHERE video_id=%s", (vid,)).fetchone()
     assert row == (True, "teste de um vídeo sem áudio") and status(client, vid) == "APPROVED"
 
@@ -159,10 +210,10 @@ def test_preview_page_is_escaped_locked_down_and_complete(migrated, dsn, tmp_pat
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and "<script>alert(1)" not in page and "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     nonce = csp.split("script-src 'nonce-")[1].split("'")[0]
     assert f'<script nonce="{nonce}">' in page and "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and r.headers["cache-control"] == "no-store"
-    assert f'src="/studio/videos/{vid}/file"' in page and 'kind="captions"' in page and "AWAITING_APPROVAL" in page
+    assert f'src="/studio/videos/{vid}/file?output_asset_id={output_id(client, vid)}"' in page and 'kind="captions"' in page and "AWAITING_APPROVAL" in page
     assert 'id="approve"' in page and 'for="title"' in page and 'role="status"' in page and "QA aprovado" in page
-    assert client.post(f"/studio/videos/{vid}/approve").status_code == 422  # o título padrão (o tema) tem "<": o revisor precisa corrigir
-    assert client.post(f"/studio/videos/{vid}/approve", json={"title": "Título limpo"}).status_code == 200
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)}).status_code == 422  # o título padrão tem "<"
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "title": "Título limpo"}).status_code == 200
     approved = client.get(f"/studio/videos/{vid}/preview").text
     assert 'id="approve"' not in approved and "aprovado" in approved  # sem formulário depois da decisão
     assert client.get(f"/studio/videos/{'0' * 32}/preview").status_code == 404 and client.get(f"/studio/videos/{'A' * 32}/preview").status_code == 422

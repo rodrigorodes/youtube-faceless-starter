@@ -145,12 +145,17 @@ class GetRenderFile:
     def __init__(self, videos: VideoRepository, jobs: RenderJobRepository, files: RenderStorage):
         self.videos, self.jobs, self.files = videos, jobs, files
 
-    def execute(self, video_id: str, kind: str):
+    def execute(self, video_id: str, kind: str, output_asset_id: str | None = None):
         """Serve o arquivo do asset do render bem-sucedido mais recente, nunca um nome fixo."""
         video = _require_video(self.videos, video_id)
         if video.status not in self.SERVABLE:
             return None
-        asset = self.jobs.latest_output(video_id)
+        if video.status in (VideoStatus.APPROVED, VideoStatus.PUBLISHED):
+            asset = self.jobs.approved_output(video_id)
+            if output_asset_id and (not asset or asset.id != output_asset_id):
+                return None
+        else:
+            asset = self.jobs.output(video_id, output_asset_id) if output_asset_id else self.jobs.latest_output(video_id)
         return self.files.resolve(asset.path, kind) if asset else None
 
 

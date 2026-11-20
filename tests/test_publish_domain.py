@@ -59,13 +59,27 @@ def test_description_adds_credits_sources_and_ai_note_within_the_limit():
     assert "https://www.amsterdam-dance-event.nl/en/about" in d and "inteligência artificial" in d.lower()
     big = build_description("x" * 6000, credits=["c"] * 3, sources=["https://a.example"], synthetic=True)
     assert len(big) <= 5000 and "https://a.example" in big  # corta o texto-base, não os créditos
-    assert "<" not in build_description("a", credits=["x<y>z"], sources=[], synthetic=False)  # YouTube recusa < e >
+    with pytest.raises(InvalidPublishData):
+        build_description("a", credits=["x<y>z"], sources=[], synthetic=False)  # não mutilar créditos
 
 
 def test_vtt_conversion():
     srt = "1\n00:00:00,300 --> 00:00:02,500\nOlá, mundo.\n\n2\n00:00:02,500 --> 00:00:04,000\nSegunda.\n"
     assert srt_to_vtt(srt) == "WEBVTT\n\n00:00:00.300 --> 00:00:02.500\nOlá, mundo.\n\n00:00:02.500 --> 00:00:04.000\nSegunda.\n"
     assert srt_to_vtt("") == "WEBVTT\n"
+
+
+def test_description_counts_utf8_bytes_and_preserves_full_tail():
+    credit = "Crédito: " + "á" * 400
+    source = "https://example.org/" + "é" * 300
+    text = build_description("á" * 4000, [credit], [source], True)
+    assert len(text.encode("utf-8")) <= 5000
+    assert credit in text and source in text
+
+
+def test_description_rejects_tail_that_cannot_fit_without_truncation():
+    with pytest.raises(InvalidPublishData):
+        build_description("base", ["á" * 2500], ["https://example.org"], True)
 
 
 def test_youtube_id_and_upload_uri_validation():

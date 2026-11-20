@@ -162,6 +162,7 @@ class Approval(_Model):
     qa_override: bool = False        # aprovado mesmo com o QA reprovado (exige motivo)
     publish_at: datetime | None = None
     created_at: datetime | None = None
+    output_asset_id: str | None = None
 
 
 class UsageEntry(_Model):
