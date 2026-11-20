@@ -115,15 +115,23 @@ def test_month_usage_and_unattributed_usage(repo_env):
 
     v = videos.create_video(p_id, "Tema Uso", VideoFormat.short)
 
-    # 1. known free (cost 0.0, model ends with :free) -> known
-    # 2. known paid (cost 0.50) -> known
-    # 3. unknown (cost 0.0, paid model) -> unknown
+    # 1. known free (cost 0.0, model ends with :free) -> Sem custo
+    # 2. known paid (cost 0.50, sem confirmação) -> Estimado
+    # 3. unknown (cost 0.0, paid model) -> Desconhecido
     conn.execute(
         "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
         "VALUES (%s, 'text', 'opencode', 'gpt:free', 0.0), "
         "(%s, 'image', 'veo', 'veo-model', 0.50), "
         "(%s, 'text', 'opencode', 'gpt-4o-paid', 0.0)",
         (v.id, v.id, v.id),
+    )
+    # 4. confirmed ACTUAL: a coluna de tipo precisa chegar ao painel
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd, "
+        "cost_confirmation_kind, cost_confirmed_amount, cost_confirmation_reference, "
+        "cost_confirmed_by, cost_confirmed_at) "
+        "VALUES (%s, 'render', 'opencode', 'gpt-paid', 0.50, 'ACTUAL', 0.50, 'ref', 'tester', now())",
+        (v.id,),
     )
     # Unattributed call (video_id is NULL)
     conn.execute(
@@ -132,10 +140,17 @@ def test_month_usage_and_unattributed_usage(repo_env):
     )
     conn.commit()
 
-    known_usd, calls, unknown_calls = repo.month_usage()
-    assert known_usd == pytest.approx(0.50)
-    assert calls == 4
-    assert unknown_calls == 2
+    rows = repo.month_usage()
+    assert len(rows) == 5
+    assert {row[3] for row in rows} == {"ACTUAL", None}
+
+    from app.studio.application.panel import cost_breakdown
+
+    breakdown = cost_breakdown(rows)
+    assert breakdown.real_usd == pytest.approx(0.50)
+    assert breakdown.estimate_usd == pytest.approx(0.50)
+    assert breakdown.free_calls == 1
+    assert breakdown.unknown_calls == 2
 
     unattributed = repo.unattributed_usage()
     assert len(unattributed) == 1

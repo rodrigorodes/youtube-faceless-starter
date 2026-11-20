@@ -2,16 +2,129 @@
 import re
 import urllib.parse
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from enum import Enum
 
 from ..domain.categories import ProjectCategory
 from ..domain.contracts import VideoFormat
-from ..domain.panel import CostSummary, Stage, classify, cost_text, is_known_cost, topic_key
+from ..domain.panel import Stage, classify, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
 from .ports import CategoryRepository, PanelRepository, PubInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
+
+
+class CostKind(str, Enum):
+    """Rótulo de custo exibido ao operador. Espelha `usage_ledger.cost_confirmation_kind`."""
+
+    REAL = "real"           # ACTUAL: cobrança comprovada
+    ESTIMATE = "estimate"   # ESTIMATE (ou valor positivo ainda sem confirmação)
+    FREE = "free"           # FREE ou gratuidade reconhecida pelo provedor/modelo
+    UNKNOWN = "unknown"     # sem confirmação e sem custo conhecido
+
+
+def cost_kind(kind: str | None, provider: str, model: str, cost_usd: float) -> CostKind:
+    """Classifica um lançamento do ledger nos quatro rótulos, sem inventar separação.
+
+    A coluna `cost_confirmation_kind` é a fonte de verdade. Sem confirmação, o valor só é
+    conhecido pelas regras de gratuidade já existentes: um zero reconhecido é "Sem custo"; um
+    valor positivo não confirmado é uma estimativa (a cobrança ainda não foi comprovada); o
+    restante é desconhecido — nunca tratado como zero.
+    """
+    if kind == "ACTUAL":
+        return CostKind.REAL
+    if kind == "ESTIMATE":
+        return CostKind.ESTIMATE
+    if kind == "FREE":
+        return CostKind.FREE
+    if not is_known_cost(provider, model, cost_usd):
+        return CostKind.UNKNOWN
+    return CostKind.FREE if cost_usd == 0.0 else CostKind.ESTIMATE
+
+
+_COST_LABELS = {
+    CostKind.REAL: "Real",
+    CostKind.ESTIMATE: "Estimado",
+    CostKind.FREE: "Sem custo",
+    CostKind.UNKNOWN: "Desconhecido",
+}
+
+
+def cost_label(kind: CostKind) -> str:
+    return _COST_LABELS[kind]
+
+
+@dataclass(frozen=True)
+class CostBreakdown:
+    """Custo somado por rótulo. Nunca funde real e estimado num único número."""
+
+    real_usd: float = 0.0
+    real_calls: int = 0
+    estimate_usd: float = 0.0
+    estimate_calls: int = 0
+    free_calls: int = 0
+    unknown_calls: int = 0
+
+    @property
+    def calls(self) -> int:
+        return self.real_calls + self.estimate_calls + self.free_calls + self.unknown_calls
+
+    @property
+    def known_usd(self) -> float:
+        return self.real_usd + self.estimate_usd
+
+
+def cost_breakdown(rows: Iterable[tuple[str, str, float, str | None]]) -> CostBreakdown:
+    real = estimate = 0.0
+    real_calls = estimate_calls = free_calls = unknown_calls = 0
+    for provider, model, cost_usd, kind in rows:
+        classified = cost_kind(kind, provider, model, cost_usd)
+        if classified is CostKind.REAL:
+            real += cost_usd
+            real_calls += 1
+        elif classified is CostKind.ESTIMATE:
+            estimate += cost_usd
+            estimate_calls += 1
+        elif classified is CostKind.FREE:
+            free_calls += 1
+        else:
+            unknown_calls += 1
+    return CostBreakdown(real, real_calls, estimate, estimate_calls, free_calls, unknown_calls)
+
+
+def sum_breakdowns(breakdowns: Iterable[CostBreakdown]) -> CostBreakdown:
+    items = list(breakdowns)
+    if not items:
+        return CostBreakdown()
+    return CostBreakdown(
+        real_usd=sum(b.real_usd for b in items),
+        real_calls=sum(b.real_calls for b in items),
+        estimate_usd=sum(b.estimate_usd for b in items),
+        estimate_calls=sum(b.estimate_calls for b in items),
+        free_calls=sum(b.free_calls for b in items),
+        unknown_calls=sum(b.unknown_calls for b in items),
+    )
+
+
+def _usd(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def cost_summary_text(b: CostBreakdown) -> str:
+    """Texto rotulado por categoria. Ausência de uso e gratuidade nunca viram 'US$ 0,00'."""
+    if b.calls == 0:
+        return "sem registro de uso"
+    parts = []
+    if b.real_calls:
+        parts.append(f"Real US$ {_usd(b.real_usd)}")
+    if b.estimate_calls:
+        parts.append(f"Estimado US$ {_usd(b.estimate_usd)}")
+    if b.free_calls:
+        parts.append(cost_label(CostKind.FREE))
+    if b.unknown_calls:
+        parts.append(cost_label(CostKind.UNKNOWN))
+    return " · ".join(parts) if parts else "sem registro de uso"
 
 
 @dataclass(frozen=True)
@@ -21,6 +134,7 @@ class MonthCost:
     cap_usd: float
     unknown_calls: int
     percent: float | None
+    breakdown: CostBreakdown = field(default_factory=CostBreakdown)
 
 
 @dataclass(frozen=True)
@@ -122,16 +236,13 @@ class BuildPanel:
         projects = self.repo.projects()
         totals = {stage: 0 for stage in Stage}
 
-        grouped_videos: dict[str, list[tuple[VideoRow, Stage, CostSummary, VideoItem]]] = defaultdict(list)
+        grouped_videos: dict[str, list[tuple[VideoRow, Stage, CostBreakdown, VideoItem]]] = defaultdict(list)
 
         for r in rows:
             st = classify(r.status, job=r.job_status, step_running=r.step_running, publication=r.publication_status)
             totals[st] += 1
 
-            known = sum(c for p, m, c in r.cost_rows if is_known_cost(p, m, c))
-            calls = len(r.cost_rows)
-            unknown = sum(1 for p, m, c in r.cost_rows if not is_known_cost(p, m, c))
-            c_summary = CostSummary(known, calls, unknown)
+            c_summary = cost_breakdown(r.cost_rows)
 
             actions = []
             if st in (Stage.AWAITING_APPROVAL, Stage.APPROVED, Stage.COMPLETED):
@@ -144,7 +255,7 @@ class BuildPanel:
                 topic=r.topic,
                 title=r.title,
                 stage=st,
-                cost_text=cost_text(c_summary),
+                cost_text=cost_summary_text(c_summary),
                 updated_at=r.updated_at,
                 actions=actions,
                 format=r.format,
@@ -159,39 +270,34 @@ class BuildPanel:
             label = re.sub(r"\s+", " ", entries[0][0].topic).strip()
 
             counts = {stage: 0 for stage in Stage}
-            total_known = 0.0
-            total_calls = 0
-            total_unknown = 0
             v_items = []
 
             for r, st, c_sum, item in entries:
                 counts[st] += 1
-                total_known += c_sum.known_usd
-                total_calls += c_sum.calls
-                total_unknown += c_sum.unknown_calls
                 v_items.append(item)
 
-            group_cost = CostSummary(total_known, total_calls, total_unknown)
+            group_cost = sum_breakdowns(c_sum for _, _, c_sum, _ in entries)
             topic_groups.append(TopicGroup(
                 key=key,
                 label=label,
                 counts=counts,
-                cost_text=cost_text(group_cost),
+                cost_text=cost_summary_text(group_cost),
                 videos=v_items,
             ))
 
         # Order groups by most recent video update
         topic_groups.sort(key=lambda g: g.videos[0].updated_at, reverse=True)
 
-        m_known, m_calls, m_unknown = self.repo.month_usage()
-        m_cost = CostSummary(m_known, m_calls, m_unknown)
+        m_breakdown = cost_breakdown(self.repo.month_usage())
+        m_known = m_breakdown.known_usd
         percent = (m_known / self.monthly_cap_usd * 100.0) if self.monthly_cap_usd > 0 else None
         month = MonthCost(
-            text=cost_text(m_cost),
+            text=cost_summary_text(m_breakdown),
             known_usd=m_known,
             cap_usd=self.monthly_cap_usd,
-            unknown_calls=m_unknown,
+            unknown_calls=m_breakdown.unknown_calls,
             percent=percent,
+            breakdown=m_breakdown,
         )
 
         trend_views: list[TrendItemView] = []
@@ -212,12 +318,9 @@ class BuildPanel:
                     if r.topic_key in grouped_videos:
                         entries = grouped_videos[r.topic_key]
                         c_counts = {stage: 0 for stage in Stage}
-                        t_known = sum(c_sum.known_usd for _, _, c_sum, _ in entries)
-                        t_calls = sum(c_sum.calls for _, _, c_sum, _ in entries)
-                        t_unknown = sum(c_sum.unknown_calls for _, _, c_sum, _ in entries)
                         for _, st, _, _ in entries:
                             c_counts[st] += 1
-                        t_cost_text = cost_text(CostSummary(t_known, t_calls, t_unknown))
+                        t_cost_text = cost_summary_text(sum_breakdowns(c_sum for _, _, c_sum, _ in entries))
                     else:
                         c_counts = {stage: 0 for stage in Stage}
                         t_cost_text = "Nenhum vídeo ainda"
@@ -347,11 +450,11 @@ class BuildPanel:
             raise VideoNotFound(video_id)
 
         st = classify(d.video.status, job=d.video.job_status, step_running=d.video.step_running, publication=d.video.publication_status)
-        usage_tuples = [(u.provider, u.model, u.cost_usd) for u in d.usage] if d.usage else d.video.cost_rows
-        known = sum(c for p, m, c in usage_tuples if is_known_cost(p, m, c))
-        calls = len(usage_tuples)
-        unknown = sum(1 for p, m, c in usage_tuples if not is_known_cost(p, m, c))
-        c_text = cost_text(CostSummary(known, calls, unknown))
+        usage_rows = (
+            [(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) for u in d.usage]
+            if d.usage else d.video.cost_rows
+        )
+        c_text = cost_summary_text(cost_breakdown(usage_rows))
 
         return VideoDetailView(
             video=d.video,

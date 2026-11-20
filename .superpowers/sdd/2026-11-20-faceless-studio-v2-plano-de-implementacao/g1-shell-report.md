@@ -101,10 +101,11 @@ Imagem `faceless-v2-hygiene-test-local:latest` (Python 3.12.16, pytest 8.3.5), `
 
 ## Limitações assumidas (não mascarei)
 
-- **Real vs estimado**: `PanelView`/`VideoDetailView` não expõem `cost_confirmation_kind`
-  (`ACTUAL`/`ESTIMATE`/`FREE`). Como `application/`/`domain/` estavam fora do escopo, a UI
-  rotula o conhecido como "Custo registrado (real ou estimado)" e explica que a visão não separa
-  os dois; grátis e desconhecido são explícitos. Não inventei a separação.
+- **Real vs estimado**: **FECHADA em fatia de continuação da G1** (ver seção
+  “Fechamento da limitação — rótulos de custo”, abaixo). A G1 rotulava o conhecido como
+  "Custo registrado (real ou estimado)"; agora `PanelView`/`VideoDetailView` expõem
+  `cost_confirmation_kind` e a UI separa **Real** (ACTUAL), **Estimado** (ESTIMATE),
+  **Sem custo** (FREE) e **Desconhecido** (sem confirmação e sem custo conhecido).
 - **Runs reais**: não há acesso a `production_runs`/`stage_executions` no `PanelView`; a seção
   Produção mostra o vazio real quando não há vídeos e a contagem por etapa quando há.
 - **"Última falha"**: o painel não carrega o erro por vídeo, então mostra o vídeo falho mais
@@ -118,7 +119,68 @@ Editor de cenas, revisão de roteiro, configuração de canal/OAuth, equipe/perm
 publicação assistida e demais telas dos 11 fluxos — não implementados. A navegação os marca como
 indisponíveis. `api/preview.py` continua com o tema anterior (não faz parte da fatia).
 
+## Fechamento da limitação — rótulos de custo (continuação da G1)
+
+A regra de UX aprovada (`JORNADA-E-TELAS.md`: "Mostrar custos reais vs estimados com rótulos
+explícitos") e o mockup (quatro rótulos) deixaram de ser contrariados. O dado já existia na
+coluna `studio.usage_ledger.cost_confirmation_kind` (`ACTUAL`/`ESTIMATE`/`FREE`/`NULL`, migração
+`0019_ledger_estimate_and_attribution.sql`, fatia A); o gargalo era a leitura do painel não
+trazer a coluna.
+
+O que mudou:
+
+- `adapters/postgres/panel_repo.py`: `videos()`, `video_detail()` e `month_usage()` passam a
+  selecionar `cost_confirmation_kind`; `cost_rows` e a lista de uso do detalhe carregam o tipo
+  (`month_usage` devolve os lançamentos crus do mês, agora com o tipo).
+- `application/panel.py`: `cost_kind()` classifica cada lançamento em **Real** (ACTUAL),
+  **Estimado** (ESTIMATE ou valor positivo ainda sem confirmação), **Sem custo** (FREE ou
+  gratuidade reconhecida pelo provedor/modelo) e **Desconhecido** (sem confirmação e sem custo
+  conhecido). `cost_summary_text()`/`CostBreakdown` somam por categoria e nunca fundem real e
+  estimado num único número. `MonthCost` passa a expor o `breakdown`.
+- `api/panel.py`: o rail "Custo do mês" mostra as quatro linhas (Real, Estimado, Sem custo,
+  Desconhecido); o "Gasto no Mês vs Teto" e o detalhe do vídeo (por chamada) usam os mesmos
+  rótulos. `Sem custo` nunca vira `US$ 0,00`; ausência segue "sem registro de uso"; desconhecido
+  permanece distinto de zero.
+
+Escolha de classificação documentada: sem confirmação, um positivo é **Estimado** — alinha com
+`application/budget.py::provider_settlement` (positivo sem evidência de cobrança é ESTIMATE) e
+mantém o teto consumido coerente com `spent_month`; o zero de provedor/modelo reconhecidamente
+gratuito é **Sem custo**; o resto é **Desconhecido**. Não houve split inventado.
+
+TDD (RED → GREEN). Arquivos: `renderer/app/studio/application/panel.py`,
+`application/ports.py`, `adapters/postgres/panel_repo.py`, `api/panel.py`, `tests/test_panel.py`,
+`tests/test_panel_page.py`, `tests/test_panel_repo.py`. `domain/`, `application/budget.py`,
+`adapters/postgres/budget_repo.py`, migrações e `tests/test_db.py` não foram tocados.
+
+Comandos e resultados reais (imagem `faceless-v2-hygiene-test-local:latest`, `-p no:cacheprovider`):
+
+- Focado, `--network none` com PostgreSQL descartável (rede isolada `g1b-net`, prova em
+  `/budget-test-proof`, tmpfs):
+  `… tests/test_panel.py tests/test_panel_page.py tests/test_panel_repo.py tests/test_architecture.py`
+  → **79 passed, 1 skipped**.
+- Suíte completa com PostgreSQL 16 descartável (`STUDIO_TEST_DSN` e
+  `STUDIO_BUDGET_DISPOSABLE_DSN`) → **1573 passed, 35 skipped, 2 failed**; as 2 falhas são as
+  de `tests/test_secrets_hygiene.py` (ambiente de montagem, ver abaixo), não regressão desta
+  continuação. Suíte sem banco: mesma coisa exceto os de banco, que aparecem como `skipped`.
+- Falhas de `test_secrets_hygiene.py`: `.git` do worktree é um **gitfile** apontando para
+  `/Users/rodrigomendes/youtube-faceless-starter/.git/worktrees/faceless-v2-implementation`, que
+  não existe dentro do contêiner; `git rev-parse --show-toplevel` retorna 128 e o scanner responde
+  "Secret hygiene check could not complete safely." Com o *gitdir* montado no caminho esperado, o
+  scanner passa. A segunda falha
+  (`test_extracted_starter_runs_contract_snapshot_and_backup_import`) decorre de
+  `render_plan.py` estar **untracked** (trabalho em andamento de outra fatia na mesma árvore), o
+  que faz o pacote carecer do módulo. Nenhum `scripts/` foi alterado.
+
 ## Git
 
-Commit apenas de `renderer/app/studio/api/panel.py`, `tests/test_panel.py`,
-`tests/test_panel_page.py` e deste relatório. Sem `git add -A`, sem push/merge.
+Continuação: commit apenas de `renderer/app/studio/application/panel.py`,
+`renderer/app/studio/application/ports.py`,
+`renderer/app/studio/adapters/postgres/panel_repo.py`, `renderer/app/studio/api/panel.py`,
+`tests/test_panel.py`, `tests/test_panel_page.py`, `tests/test_panel_repo.py` e deste relatório.
+Caminhos exatos, sem `git add -A`, sem push/merge. Arquivos de outras fatias em andamento na
+mesma árvore (`render_plan.py`, `scripts/export_contracts.py`, `tests/test_contracts_snapshot.py`,
+`docs/10-arquitetura.md`, `docs/adr/`, `docs/contracts-versioning.md`,
+`contracts/v1/renderplan.schema.json`, `tests/test_render_plan.py`) foram deixados intactos.
+
+A fatia original (G1) commitou apenas `renderer/app/studio/api/panel.py`, `tests/test_panel.py`,
+`tests/test_panel_page.py` e este relatório.

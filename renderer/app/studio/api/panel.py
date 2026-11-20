@@ -4,9 +4,9 @@ Sem dependências externas; todo texto é escapado e a CSP é protegida por nonc
 import html
 import secrets
 
-from ..application.panel import PanelView, VideoDetailView
+from ..application.panel import CostKind, PanelView, VideoDetailView, cost_kind
 from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
-from ..domain.panel import Stage, is_known_cost
+from ..domain.panel import Stage
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -43,28 +43,9 @@ def _state_badge(stage: Stage, count: int | None = None) -> str:
     )
 
 
-def _cost_parts(text: str) -> tuple[str, str]:
-    """Classifica o texto de custo no que a visão realmente sabe: grátis, desconhecido ou registrado."""
-    if text == "sem registro de uso":
-        return "none", text
-    if "(gratuito)" in text:
-        return "free", text
-    if "sem custo informado" in text:
-        if text.startswith("US$ 0,00 + "):
-            return "unknown", text[len("US$ 0,00 + "):]
-        return "mixed", text
-    return "known", text
-
-
 def _cost_html(text: str) -> str:
-    kind, value = _cost_parts(text)
-    if kind == "none":
-        return '<span class="cost-origin">sem registro de uso</span>'
-    if kind == "free":
-        return f'<span class="cost-origin">Custo: {e(value)}</span>'
-    if kind == "unknown":
-        return f'<span class="cost-origin">Custo desconhecido: {e(value)}</span>'
-    return f'<span class="cost-origin">Custo registrado: {e(value)}</span>'
+    """Renderiza um custo já rotulado (Real/Estimado/Sem custo/Desconhecido)."""
+    return f'<span class="cost-origin">{e(text)}</span>'
 
 CSS = """
 :root {
@@ -2000,22 +1981,16 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </div>
     """
 
-    month_kind, month_value = _cost_parts(view.month.text)
-    if month_kind == "none":
+    month_breakdown = view.month.breakdown
+    if month_breakdown.calls == 0:
         month_display = "Sem registro de uso"
         month_origin = "Nenhuma chamada de IA registrada no mês."
-    elif month_kind == "unknown":
-        month_display = f"Desconhecido — {month_value}"
-        month_origin = "Custo desconhecido não é exibido como zero."
-    elif month_kind == "mixed":
-        month_display = month_value
-        month_origin = "Custo registrado no ledger; chamadas sem custo informado são desconhecidas."
-    elif month_kind == "free":
-        month_display = month_value
-        month_origin = "Cobrança gratuita registrada."
     else:
-        month_display = month_value
-        month_origin = "Custo registrado no ledger; esta visão não separa real de estimado."
+        month_display = view.month.text
+        month_origin = (
+            "Real é cobrança confirmada; estimado aguarda reconciliação. "
+            "“Sem custo” nunca vira valor e “desconhecido” não é zero."
+        )
 
     budget_bar_html = ""
     if view.month.percent is not None and view.month.known_usd > 0:
@@ -2096,7 +2071,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             <h3>Status por fase</h3>
             <ul class="status-list">{status_items}</ul>
           </div>
-          <p class="cost-note">Custos: <strong>gratuito</strong> e <strong>desconhecido</strong> são explícitos; os demais valores são <strong>registrados</strong> no ledger e esta visão não separa real de estimado. Ausência de custo é exibida como “sem registro de uso”, nunca como zero.</p>
+          <p class="cost-note">Custos rotulados por tipo: <strong>Real</strong> (cobrança confirmada), <strong>Estimado</strong> (ainda sem confirmação), <strong>Sem custo</strong> e <strong>Desconhecido</strong>. Real e estimado nunca são fundidos num único número; ausência de uso é “sem registro de uso” e nunca vira zero.</p>
         """
 
     action_videos = [
@@ -2172,12 +2147,10 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         """
 
     rail_cost_rows = [
-        ("Custo registrado (real ou estimado)",
-         f"US$ {view.month.known_usd:.2f}".replace(".", ",") if view.month.known_usd > 0 else "nenhum"),
-        ("Sem custo (gratuito)", "não detalhado nesta visão"),
-        ("Custo desconhecido",
-         f"{view.month.unknown_calls} chamada(s) sem custo informado" if view.month.unknown_calls else "nenhum"),
-        ("Sem registro de uso", "sim" if month_kind == "none" else "não"),
+        ("Real", f"US$ {view.month.breakdown.real_usd:.2f}".replace(".", ",") if view.month.breakdown.real_calls else "nenhum"),
+        ("Estimado", f"US$ {view.month.breakdown.estimate_usd:.2f}".replace(".", ",") if view.month.breakdown.estimate_calls else "nenhum"),
+        ("Sem custo", f"{view.month.breakdown.free_calls} chamada(s)" if view.month.breakdown.free_calls else "nenhum"),
+        ("Desconhecido", f"{view.month.breakdown.unknown_calls} chamada(s)" if view.month.breakdown.unknown_calls else "nenhum"),
     ]
     rail_cost_html = "".join(
         f'<div class="kv"><span>{e(label)}</span><span>{e(value)}</span></div>'
@@ -2270,9 +2243,9 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     """
 
     budget_state_html = (
-        f"Custo registrado: US$ {view.month.known_usd:.2f}".replace(".", ",")
-        if view.month.known_usd > 0
-        else "Não disponível: nenhum custo confirmado neste mês."
+        f"Custo do mês: {view.month.text}"
+        if month_breakdown.calls > 0
+        else "Não disponível: nenhuma chamada registrada neste mês."
     )
     side_card_html = f"""
         <div class="side-card">
@@ -2422,7 +2395,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       <section class="card" aria-labelledby="h-custo">
         <h2 id="h-custo">Custo do mês</h2>
         {rail_cost_html}
-        <p class="fine">Estimativa não é custo cobrado; custo desconhecido não é tratado como zero. Esta visão não separa real de estimado.</p>
+        <p class="fine">Real é cobrança confirmada; estimado aguarda reconciliação e consome o teto até lá. “Sem custo” nunca vira valor e “desconhecido” não é zero.</p>
       </section>
       <section class="card" aria-labelledby="h-falha">
         <h2 id="h-falha">Última falha</h2>
@@ -2945,13 +2918,15 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
         usage_html.append('<tr><td colspan="4" class="empty">Sem registro de uso de IA para este vídeo.</td></tr>')
     else:
         for usage in view.usage:
-            if is_known_cost(usage.provider, usage.model, usage.cost_usd):
-                if usage.cost_usd == 0.0:
-                    cost_str = "gratuito (US$ 0,00)"
-                else:
-                    cost_str = f"registrado: US$ {usage.cost_usd:.4f}"
+            kind = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model, usage.cost_usd)
+            if kind is CostKind.REAL:
+                cost_str = f"Real: US$ {usage.cost_usd:.2f}".replace(".", ",")
+            elif kind is CostKind.ESTIMATE:
+                cost_str = f"Estimado: US$ {usage.cost_usd:.2f}".replace(".", ",")
+            elif kind is CostKind.FREE:
+                cost_str = "Sem custo"
             else:
-                cost_str = '<span style="color: var(--warn);">Não informado</span>'
+                cost_str = '<span style="color: var(--warn);">Desconhecido</span>'
             usage_html.append(f"""
               <tr>
                 <td>{e(usage.step)}</td>
@@ -3144,7 +3119,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
             <p>ID do vídeo: <code>{e(v.id)}</code></p>
             <div>
               <h3>Registro de Uso de Modelos</h3>
-              <p class="cost-note">Custo: “gratuito”, “registrado” e “não informado” são explícitos. Esta visão não separa real de estimado.</p>
+              <p class="cost-note">Cada chamada vem rotulada: “Real”, “Estimado”, “Sem custo” ou “Desconhecido”. Real e estimado nunca são fundidos.</p>
               <table>
                 <thead>
                   <tr>

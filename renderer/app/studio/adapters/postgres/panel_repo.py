@@ -13,7 +13,6 @@ from ...application.ports import (
 )
 from ...domain.contracts import JobStatus, PublicationStatus, VideoFormat, VideoStatus
 from ...domain.ids import check_id
-from ...domain.panel import is_known_cost
 from .editorial_repo import _Base
 from .repo import _translated
 
@@ -44,7 +43,7 @@ class PostgresPanelRepository(_Base):
                 p.status AS publication_status,
                 left(p.error, 300) AS pub_error,
                 COALESCE(
-                    (SELECT jsonb_agg(jsonb_build_array(u.provider, u.model, u.cost_usd) ORDER BY u.id)
+                    (SELECT jsonb_agg(jsonb_build_array(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) ORDER BY u.id)
                      FROM studio.usage_ledger u WHERE u.video_id = v.id),
                     '[]'::jsonb
                 ) AS costs
@@ -68,7 +67,7 @@ class PostgresPanelRepository(_Base):
 
         out: list[VideoRow] = []
         for r in rows:
-            costs = [(item[0], item[1], float(item[2])) for item in (r["costs"] or [])]
+            costs = [(item[0], item[1], float(item[2]), item[3]) for item in (r["costs"] or [])]
             err = r["pub_error"] or r["render_error"]
             out.append(VideoRow(
                 id=r["id"],
@@ -124,14 +123,14 @@ class PostgresPanelRepository(_Base):
 
             # 3. Usage
             cur.execute("""
-                SELECT step, provider, model, cost_usd, created_at
+                SELECT step, provider, model, cost_usd, cost_confirmation_kind, created_at
                 FROM studio.usage_ledger
                 WHERE video_id = %s
                 ORDER BY id
             """, (v_id,))
             usage_rows = cur.fetchall()
 
-        costs = [(u["provider"], u["model"], float(u["cost_usd"])) for u in usage_rows]
+        costs = [(u["provider"], u["model"], float(u["cost_usd"]), u["cost_confirmation_kind"]) for u in usage_rows]
         video_row = VideoRow(
             id=vr["id"],
             project_id=vr["project_id"],
@@ -167,6 +166,7 @@ class PostgresPanelRepository(_Base):
                 model=u["model"],
                 cost_usd=float(u["cost_usd"]),
                 created_at=u["created_at"],
+                cost_confirmation_kind=u["cost_confirmation_kind"],
             )
             for u in usage_rows
         ]
@@ -187,25 +187,19 @@ class PostgresPanelRepository(_Base):
             publication=pub,
         )
 
-    def month_usage(self) -> tuple[float, int, int]:
+    def month_usage(self) -> list[tuple[str, str, float, str | None]]:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""
-                SELECT provider, model, cost_usd
+                SELECT provider, model, cost_usd, cost_confirmation_kind
                 FROM studio.usage_ledger
                 WHERE created_at >= date_trunc('month', now())
+                ORDER BY id
             """)
             rows = cur.fetchall()
-
-        known_sum = 0.0
-        calls = len(rows)
-        unknown_calls = 0
-        for r in rows:
-            p, m, c = r["provider"], r["model"], float(r["cost_usd"])
-            if is_known_cost(p, m, c):
-                known_sum += c
-            else:
-                unknown_calls += 1
-        return (known_sum, calls, unknown_calls)
+        return [
+            (r["provider"], r["model"], float(r["cost_usd"]), r["cost_confirmation_kind"])
+            for r in rows
+        ]
 
     def unattributed_usage(self) -> list[tuple[str, str, float]]:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
