@@ -1,5 +1,15 @@
 # Publicar no YouTube (workflow V2)
 
+> **Legado — não ative nem use para novos vídeos.** Este fluxo não consulta o
+> Studio nem exige aprovação antes do upload e aceita visibilidade pública.
+> Ele não cumpre a política atual do projeto. O workflow legado instalado
+> anteriormente no n8n pode continuar ativo independentemente deste arquivo;
+> desative-o no n8n antes de usar o Studio. O fluxo de substituição está em
+> [15-publicacao.md](15-publicacao.md), mas também permanece inativo até as
+> correções de segurança e concorrência indicadas nessa página.
+>
+> As instruções abaixo são histórico do V2, não um procedimento recomendado.
+
 Workflow: `workflows/02-create-and-publish.json` (**Faceless V2 - Create and Publish Short (private)**).
 Fluxo: **Webhook → Render Video → Init YouTube Upload → Download MP4 → Upload to YouTube → resposta** (com respostas de erro).
 
@@ -24,11 +34,11 @@ Fluxo: **Webhook → Render Video → Init YouTube Upload → Download MP4 → U
 
 Com só `youtube.upload` o token **não lê nem altera** vídeos depois do upload (só envia). Para ler status ou editar seria preciso outro escopo.
 
-## 3. Importar e ligar o workflow
+## 3. Importação histórica — não ativar
 
 1. *Workflows → Import from File* → `workflows/02-create-and-publish.json`.
 2. Nos nós **Init YouTube Upload** e **Upload to YouTube**, selecione a credencial `youtube_videos_app`.
-3. **Ative** o workflow (toggle *Active*) para usar `/webhook/faceless-publish`.
+3. Não ative o workflow legado; ele contorna a aprovação.
 
 Nota: a importação **pela CLI** (`n8n import:workflow`) falha com esses JSONs (falta `id`/`versionId`). Use a interface.
 
