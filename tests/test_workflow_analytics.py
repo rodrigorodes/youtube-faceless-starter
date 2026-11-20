@@ -22,6 +22,9 @@ def test_workflow_is_inactive_and_uses_separate_readonly_credential():
     assert nodes["Read analytics"]["parameters"]["authentication"] == "genericCredentialType"
     assert "youtube_videos_app" not in json.dumps(wf)
     assert nodes["Store metrics"]["parameters"]["url"] == "http://renderer:8000/studio/analytics/metrics"
+    assert nodes["Store metrics"]["parameters"]["genericAuthType"] == "httpHeaderAuth"
+    assert nodes["Store metrics"]["credentials"]["httpHeaderAuth"]["name"] == "studio_worker"
+    assert nodes["Store metrics"]["parameters"]["options"]["redirect"]["redirect"]["followRedirects"] is False
     assert "https://youtubeanalytics.googleapis.com/v2/reports" in nodes["Read analytics"]["parameters"]["url"]
 
 

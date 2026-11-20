@@ -59,7 +59,7 @@ def make_client(dsn, tmp_path, text="demo:x"):
     studio = Studio(Settings(database_url=dsn, storage_root=tmp_path), environ={"STUDIO_TEXT": text}, fetcher=FakeFetcher())
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
 
 
 @pytest.fixture()

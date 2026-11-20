@@ -40,9 +40,18 @@ def test_workflow_ships_inactive_with_a_private_youtube_body_coming_from_the_ren
     assert "privacyStatus" not in json.dumps(WF)  # a privacidade é decidida no renderer (sempre private), não no workflow
 
 
-def test_only_youtube_nodes_use_the_oauth_credential_and_never_follow_redirects_on_the_session():
-    with_cred = {n for n, v in NODES.items() if "credentials" in v}
-    assert with_cred == {"Check session", "New session", "Upload", "Set thumbnail"}
+def test_youtube_and_renderer_use_separate_credentials():
+    oauth = {n for n, v in NODES.items() if "youTubeOAuth2Api" in v.get("credentials", {})}
+    assert oauth == {"Check session", "New session", "Upload", "Set thumbnail"}
+    renderer = {"Claim", "Save session", "Download MP4", "Mark uploaded",
+                "Download thumbnail", "Mark thumbnail", "Report failure"}
+    for name in renderer:
+        params = NODES[name]["parameters"]
+        assert params["authentication"] == "genericCredentialType"
+        assert params["genericAuthType"] == "httpHeaderAuth"
+        assert params["options"]["redirect"]["redirect"]["followRedirects"] is False
+        assert NODES[name]["credentials"]["httpHeaderAuth"]["name"] == "studio_worker"
+    assert {n for n, v in NODES.items() if "httpHeaderAuth" in v.get("credentials", {})} == renderer
     for name in ("Check session", "Upload"):  # 308 = "incompleto", não redirecionamento
         assert NODES[name]["parameters"]["options"]["redirect"]["redirect"]["followRedirects"] is False
 

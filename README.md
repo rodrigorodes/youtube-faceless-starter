@@ -100,6 +100,6 @@ Resposta: `{id, topic, status, script, duration_seconds, video_url, note}`.
 - Serviços HTTP são expostos apenas em `127.0.0.1`; não abra as portas para a internet sem autenticação, HTTPS e revisão de segurança.
 - Proteja `.env` e os volumes do Docker; faça backup de `pg_data`, `n8n_data` e `storage/`.
 - O n8n pode mudar parâmetros entre versões. O JSON foi preparado para importação, mas **não foi validado contra uma instância n8n em execução neste ambiente**.
-- O renderizador é demonstrativo, usa execução síncrona, sem fila ou autenticação interna, e gera slides silenciosos. Não use como serviço público.
+- O endpoint legado `/videos` não tem autenticação. Para `/studio`, configure a [autenticação local](docs/17-studio-auth.md); não use o renderer como serviço público.
 - Confirme preços, limites, licenças e requisitos de acesso dos serviços de IA antes de ativar faturamento.
 - O n8n é distribuído sob licença fair-code; confira os termos para seu caso de uso.

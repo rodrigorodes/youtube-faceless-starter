@@ -102,7 +102,7 @@ def make_client(dsn, tmp_path, voice="tone:ok", renderer="ffmpeg:rich", executor
     studio = Studio(Settings(database_url=dsn, storage_root=tmp_path), environ=environ, executor=executor or SyncExecutor())
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
-    return TestClient(app), studio
+    return TestClient(app, headers={"Authorization": "Bearer test-worker-token"}), studio
 
 
 @pytest.fixture()

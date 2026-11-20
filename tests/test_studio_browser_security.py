@@ -32,5 +32,5 @@ def test_same_origin_and_internal_clients_reach_application():
     app.include_router(make_router(lambda: None, lambda: False))
     client = TestClient(app, base_url="http://localhost:8000")
     path = "/studio/videos/" + "a" * 32 + "/approve"
-    assert client.post(path, headers={"Origin": "http://localhost:8000"}).status_code == 503
-    assert client.post(path).status_code == 503
+    assert client.post(path, auth=("test-user", "test-browser-password"), headers={"Origin": "http://localhost:8000"}).status_code == 503
+    assert client.post(path, headers={"Authorization": "Bearer test-worker-token"}).status_code == 503

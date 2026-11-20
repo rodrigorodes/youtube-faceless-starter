@@ -22,7 +22,7 @@ def make_client(dsn, tmp_path, image="placeholder:gradient", **env):
     studio = Studio(Settings(database_url=dsn, storage_root=tmp_path), environ=environ)
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
 
 
 @pytest.fixture()
@@ -109,7 +109,7 @@ def test_veo_not_implemented_when_cap_is_released_is_502(conn, dsn, tmp_path):
     studio = Studio(Settings(database_url=dsn, storage_root=tmp_path, max_cost_video=10.0), environ={"STUDIO_TEXT": "demo:x", "STUDIO_IMAGE": "veo:v"})
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
     vid = fact_checked_video(client)
     client.post(f"/studio/videos/{vid}/storyboard")
     assert client.post(f"/studio/videos/{vid}/assets").status_code == 502

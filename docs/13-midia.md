@@ -1,5 +1,8 @@
 # Storyboard e mídia (P03)
 
+> Os exemplos abaixo são históricos: chamadas ao Studio agora exigem
+> [credencial configurada](17-studio-auth.md). Não copie segredos para comandos ou logs.
+
 Depois da checagem factual (`FACT_CHECKED`), cada cena ganha uma imagem. Estados: `FACT_CHECKED → STORYBOARDED → ASSETS_READY`.
 Os dois passos têm endpoint próprio; o `/transition` genérico responde `403` para esses destinos.
 

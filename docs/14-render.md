@@ -1,5 +1,8 @@
 # Narração e renderização (P04)
 
+> Os exemplos abaixo são históricos: chamadas ao Studio agora exigem
+> [credencial configurada](17-studio-auth.md). Não copie segredos para comandos ou logs.
+
 Depois das imagens (`ASSETS_READY`), o estúdio narra cada cena, monta o vídeo, mede a qualidade e entrega o MP4 com legenda.
 Estados: `ASSETS_READY → RENDERED → AWAITING_APPROVAL`. O render é **assíncrono**: o vídeo longo estoura qualquer timeout síncrono.
 

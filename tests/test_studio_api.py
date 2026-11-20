@@ -21,7 +21,7 @@ DEAD = "postgresql://x:y@127.0.0.1:1/z"
 def client_for(studio):
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
 
 
 @pytest.fixture()
@@ -101,7 +101,7 @@ def test_health_with_db(dsn, conn, tmp_path, monkeypatch):
 @pytest.mark.parametrize("url", [None, DEAD])
 def test_health_and_studio_survive_db_down(url, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "studio", Studio(Settings(database_url=url, storage_root=tmp_path)))
-    c = TestClient(main.app)
+    c = TestClient(main.app, headers={"Authorization": "Bearer test-worker-token"})
     r = c.get("/health")
     assert r.status_code == 200 and r.json()["status"] == "ok" and r.json()["ffmpeg"] is True and r.json()["studio_db"] == "unavailable"
     assert c.post("/studio/projects", json={"name": "x"}).status_code == 503

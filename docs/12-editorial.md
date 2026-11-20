@@ -1,5 +1,8 @@
 # Fluxo editorial: fontes, roteiro e checagem factual (P02)
 
+> Os exemplos abaixo são históricos: chamadas ao Studio agora exigem
+> [credencial configurada](17-studio-auth.md). Não copie segredos para comandos ou logs.
+
 Do tema ao roteiro verificado, tudo pela API do estúdio (`/studio`, porta 8000, só local). O estado do vídeo segue
 `IDEA → SCRIPTED → FACT_CHECKED`; nada avança para mídia, vídeo ou upload sem passar pela checagem.
 

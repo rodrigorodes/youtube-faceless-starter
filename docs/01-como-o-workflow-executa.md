@@ -123,7 +123,7 @@ O renderer (`renderer/app/main.py`, endpoint `POST /videos`) executa, **de forma
 | `duration_seconds` fora de 10–60 ou `topic` curto demais | O renderer responde **422** (testado). Pelo n8n, o chamador recebe **HTTP 200 com corpo vazio** (testado). |
 | Body vazio ou campos ausentes no webhook | Funciona: o workflow aplica os padrões (`topic`, 30 s, `documentary`) (testado) |
 | Renderização demorada | O n8n espera até 240 s; o renderer permite até 150 s **por chamada** de FFmpeg (5 chamadas). Se o n8n desistir, o renderer pode continuar trabalhando. |
-| Várias chamadas simultâneas | Sem fila nem limite: disputam CPU. O renderer não tem autenticação. |
+| Várias chamadas simultâneas | Sem fila nem limite no fluxo legado: disputam CPU. `/videos` não tem autenticação; veja [autenticação do Studio](17-studio-auth.md). |
 | Falha no meio | Pode sobrar pasta em `storage/jobs/` sem MP4 correspondente |
 | Workflow não ativo e uso de `/webhook/...` | 404 do n8n |
 | `/webhook-test/...` sem *Listen for test event* | 404 do n8n |

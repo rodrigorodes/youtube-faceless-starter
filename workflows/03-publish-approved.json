@@ -62,12 +62,25 @@
       ],
       "parameters": {
         "sendHeaders": false,
-        "options": {},
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        },
         "method": "POST",
         "url": "http://renderer:8000/studio/publications/claim",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lease_seconds: $json.lease_seconds }) }}"
+        "jsonBody": "={{ JSON.stringify({ lease_seconds: $json.lease_seconds }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
       }
     },
     {
@@ -506,12 +519,25 @@
       ],
       "parameters": {
         "sendHeaders": false,
-        "options": {},
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        },
         "method": "POST",
         "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/upload-uri' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, upload_uri: $json.upload_uri, replace: true }) }}"
+        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, upload_uri: $json.upload_uri, replace: true }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
       }
     },
     {
@@ -606,7 +632,12 @@
               "outputPropertyName": "data"
             }
           },
-          "timeout": 900000
+          "timeout": 900000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
         },
         "url": "={{ 'http://renderer:8000' + $json.file_path }}",
         "headerParameters": {
@@ -616,6 +647,13 @@
               "value": "={{ 'bytes=' + $json.offset + '-' }}"
             }
           ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
         }
       }
     },
@@ -829,16 +867,29 @@
       ],
       "parameters": {
         "sendHeaders": false,
-        "options": {},
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        },
         "method": "POST",
         "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/uploaded' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ youtube_video_id: $json.youtube_id }) }}"
+        "jsonBody": "={{ JSON.stringify({ youtube_video_id: $json.youtube_id }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "retryOnFail": true,
       "maxTries": 5,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
+      }
     },
     {
       "id": "w3",
@@ -873,9 +924,21 @@
               "outputPropertyName": "data"
             }
           },
-          "timeout": 60000
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
         },
-        "url": "={{ 'http://renderer:8000' + $('Build context').first().json.thumb_path }}"
+        "url": "={{ 'http://renderer:8000' + $('Build context').first().json.thumb_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
       }
     },
     {
@@ -962,9 +1025,22 @@
       ],
       "parameters": {
         "sendHeaders": false,
-        "options": {},
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        },
         "method": "POST",
-        "url": "={{ 'http://renderer:8000/studio/publications/' + $('Build context').first().json.pid + '/thumbnail-set' }}"
+        "url": "={{ 'http://renderer:8000/studio/publications/' + $('Build context').first().json.pid + '/thumbnail-set' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
       }
     },
     {
@@ -989,14 +1065,27 @@
       ],
       "parameters": {
         "sendHeaders": false,
-        "options": {},
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        },
         "method": "POST",
         "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/failed' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, error: $json.error || 'unknown error', retryable: $json.retryable === true }) }}"
+        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, error: $json.error || 'unknown error', retryable: $json.retryable === true }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "studio_worker"
+        }
+      }
     }
   ],
   "connections": {

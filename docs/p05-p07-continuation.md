@@ -13,11 +13,10 @@
   executores já existentes. Não há exactly-once entre banco, n8n e YouTube.
 - A API `/studio` confere `Host` e rejeita `Origin` diferente; a lista padrão
   permite `localhost`, `127.0.0.1` e `renderer`, configurável por
-  `STUDIO_ALLOWED_HOSTS`. Isso mitiga CSRF e DNS rebinding no navegador, mas
-  **não autentica clientes**: mantenha a API acessível apenas localmente.
-- O fluxo ainda exige autenticação na API. A URI da sessão é omitida das
-  respostas comuns; o claim fornece dados ao worker sem autenticação.
-  Faltam timeout/renovação do lease, tratamento de
+  `STUDIO_ALLOWED_HOSTS`. Host/Origin não autenticam clientes. A autenticação
+  local separada exige configuração explícita: veja [17](17-studio-auth.md).
+- A URI da sessão é omitida das respostas comuns; o claim autenticado fornece
+  dados ao worker. Faltam timeout/renovação do lease, tratamento de
   falhas dos nós n8n e teste de interrupção real seguro. Não executar novos
   uploads até resolver os riscos; não expor o renderer à rede.
 - Reconciliação: mantenha o workflow inativo, identifique e pare todos os
@@ -29,16 +28,12 @@
   o banco para forçar retry. Ainda não existe procedimento de retomada segura
   implementado, nem botão que autorize novo upload.
 
-### Autenticação pendente
+### Autenticação local v1
 
-Host/Origin não são identidade. Antes de habilitar, implementar e testar
-autorização para todas as rotas sensíveis (inclusive aprovação, arquivo e
-callbacks), com credencial de serviço do n8n provisionada fora do Git e enviada
-por canal protegido, rotação/revogação e comparação segura. O navegador precisa
-de sessão própria autenticada e proteção CSRF; não embutir o segredo do worker
-em HTML/JavaScript. Configurar credenciais no n8n e isolamento de rede, testar
-acessos ausentes/incorretos e fluxos legítimos. Isso é desenho pendente, não
-proteção existente. Não ativar o workflow 03 nem expor a API enquanto pendente.
+O código prevê Basic para navegador e Bearer separado para worker, mas a
+instalação ativa precisa ser provisionada e validada conforme [17](17-studio-auth.md).
+Não ativar o workflow 03 por causa dos demais riscos de publicação acima;
+não expor o HTTP local à rede.
 
 ## P06 e P07: versões iniciais, com pendências
 

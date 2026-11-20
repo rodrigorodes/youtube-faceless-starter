@@ -1,5 +1,8 @@
 # Validação real no Lenovo (P01, Task 11)
 
+> Os comandos históricos do Studio exigem adaptação para a
+> [autenticação local](17-studio-auth.md); não coloque segredos em comandos ou logs.
+
 > **Status: PENDENTE.** Este roteiro só vira "concluído" quando você colar abaixo a saída real. Eu não consigo executar nada no Lenovo.
 > Suposição: Windows 11 + Docker Desktop (WSL2). Se for Linux, use os comandos de `docs/02-configuracao-macos.md` no lugar dos de PowerShell.
 

@@ -1,6 +1,10 @@
 """Rotas /studio. Só falam com casos de uso; nunca com repositório ou banco."""
 from collections.abc import Callable
 from datetime import date, datetime
+import base64
+import binascii
+import hashlib
+import hmac
 import os
 from urllib.parse import urlsplit
 
@@ -48,6 +52,37 @@ def _browser_guard(request: Request) -> None:
         expected = f"{request.url.scheme}://{request.headers['host']}"
         if origin.lower() != expected.lower():
             raise HTTPException(403, "origin not allowed")
+
+
+def _same_secret(left: str, right: str) -> bool:
+    return hmac.compare_digest(hashlib.sha256(left.encode()).digest(), hashlib.sha256(right.encode()).digest())
+
+
+def _authenticate(request: Request) -> None:
+    user = os.getenv("STUDIO_BROWSER_USER", "")
+    password = os.getenv("STUDIO_BROWSER_PASSWORD", "")
+    worker = os.getenv("STUDIO_WORKER_TOKEN", "")
+    if not user or not password or not worker or ":" in user or _same_secret(password, worker):
+        raise HTTPException(503, "studio authentication not configured")
+    header = request.headers.get("authorization", "")
+    scheme, _, value = header.partition(" ")
+    browser = False
+    if scheme.lower() == "basic":
+        try:
+            decoded = base64.b64decode(value, validate=True).decode("utf-8")
+            supplied_user, separator, supplied_password = decoded.partition(":")
+            browser = bool(separator) and _same_secret(supplied_user, user) and _same_secret(supplied_password, password)
+        except (ValueError, UnicodeError, binascii.Error):
+            pass
+        if browser:
+            if request.method not in ("GET", "HEAD", "OPTIONS") and not request.headers.get("origin"):
+                raise HTTPException(403, "origin required")
+            return
+    elif scheme.lower() == "bearer" and _same_secret(value, worker):
+        if request.headers.get("origin") is not None:
+            raise HTTPException(403, "worker requests must not have origin")
+        return
+    raise HTTPException(401, "authentication required", headers={"WWW-Authenticate": 'Basic realm="Studio", charset="UTF-8"'})
 
 
 class ProjectIn(BaseModel):
@@ -184,7 +219,7 @@ class TransitionIn(BaseModel):
 
 
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
-    router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard)])
+    router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard), Depends(_authenticate)])
 
     def run(fn):
         uc = get_use_cases()
