@@ -418,3 +418,156 @@ def test_fetch_youtube_trends_handles_http_error(monkeypatch):
         fetch_youtube_trends("fake-key", ["query1"])
     assert "403" in str(exc_info.value) or "Quota exceeded" in str(exc_info.value)
 
+
+def test_refresh_trends_calls_popular_fetcher_on_default_refresh():
+    import uuid
+    from app.studio.application.categories import RefreshTrends
+    from app.studio.domain.categories import ProjectCategory
+
+    p_id = uuid.uuid4().hex
+
+    c_id = uuid.uuid4().hex
+
+    class FakeCatRepo:
+        def list(self, project_id):
+            return [ProjectCategory(c_id, project_id, "Tech", ["AI 2026"])]
+
+    class FakeIngest:
+        def __init__(self):
+            self.ingested_items = []
+
+        def execute(self, project_id, items):
+            self.ingested_items.extend(items)
+            return len(items)
+
+    pillar_called = []
+    popular_called = []
+
+    def mock_fetcher(key, queries):
+        pillar_called.append((key, queries))
+        return [dummy_trend_item(q) for q in queries]
+
+    def mock_popular(key, region, max_results):
+        popular_called.append((key, region, max_results))
+        return [dummy_trend_item(f"Popular in {region}")]
+
+    ingest = FakeIngest()
+    refresh = RefreshTrends(
+        repo=FakeCatRepo(),
+        ingest=ingest,
+        fetcher=mock_fetcher,
+        popular_fetcher=mock_popular,
+        environ={"YOUTUBE_API_KEY": "fake-key"},
+    )
+
+    count = refresh.execute(p_id)
+    assert count == 3  # 1 pillar + 1 BR + 1 US
+    assert len(pillar_called) == 1
+    assert pillar_called[0] == ("fake-key", ["AI 2026"])
+    assert popular_called == [
+        ("fake-key", "BR", 10),
+        ("fake-key", "US", 10),
+    ]
+
+
+def test_refresh_trends_bypasses_popular_fetcher_on_custom_queries():
+    import uuid
+    from app.studio.application.categories import RefreshTrends
+
+    p_id = uuid.uuid4().hex
+
+    class FakeCatRepo:
+        def list(self, project_id):
+            return []
+
+    class FakeIngest:
+        def execute(self, project_id, items):
+            return len(items)
+
+    popular_called = []
+
+    def mock_fetcher(key, queries):
+        return [dummy_trend_item(q) for q in queries]
+
+    def mock_popular(key, region, max_results):
+        popular_called.append((key, region, max_results))
+        return [dummy_trend_item("pop")]
+
+    refresh = RefreshTrends(
+        repo=FakeCatRepo(),
+        ingest=FakeIngest(),
+        fetcher=mock_fetcher,
+        popular_fetcher=mock_popular,
+        environ={"YOUTUBE_API_KEY": "fake-key"},
+    )
+
+    count = refresh.execute(p_id, custom_queries=["Custom Query"])
+    assert count == 1
+    assert popular_called == []
+
+
+def test_refresh_trends_popular_fetcher_resilience():
+    import uuid
+    from app.studio.application.categories import RefreshTrends
+
+    p_id = uuid.uuid4().hex
+
+    class FakeCatRepo:
+        def list(self, project_id):
+            return []
+
+    class FakeIngest:
+        def execute(self, project_id, items):
+            return len(items)
+
+    def mock_fetcher(key, queries):
+        return [dummy_trend_item(queries[0])]
+
+    def failing_popular(key, region, max_results):
+        raise RuntimeError("Network timeout connecting to YouTube")
+
+    refresh = RefreshTrends(
+        repo=FakeCatRepo(),
+        ingest=FakeIngest(),
+        fetcher=mock_fetcher,
+        popular_fetcher=failing_popular,
+        environ={"YOUTUBE_API_KEY": "fake-key"},
+    )
+
+    # Should not raise RuntimeError, should return count from pillar items
+    count = refresh.execute(p_id)
+    assert count == 1
+
+
+def test_refresh_trends_endpoint_includes_popular_trends(conn, dsn, tmp_path):
+    migrate(conn)
+    conn.commit()
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    project = videos.create_project("Canal Pop", niche="Geral", language="pt-BR")
+
+    popular_regions = []
+
+    def mock_yt_fetcher(key: str, queries: list[str]) -> list[TrendItem]:
+        return [dummy_trend_item(queries[0])]
+
+    def mock_pop_fetcher(key: str, region: str, max_results: int) -> list[TrendItem]:
+        popular_regions.append(region)
+        return [dummy_trend_item(f"Popular {region}")]
+
+    token_file = tmp_path / "token.env"
+    token_file.write_text("YOUTUBE_API_KEY=test-yt-key-123\n", encoding="utf-8")
+
+    settings = Settings(database_url=dsn, storage_root=tmp_path, token_env_path=token_file)
+    studio = Studio(settings, youtube_fetcher=mock_yt_fetcher, youtube_popular_fetcher=mock_pop_fetcher)
+    app = FastAPI()
+    app.include_router(make_router(studio.use_cases, studio.ping))
+    client = TestClient(app)
+
+    r = client.post(f"/studio/projects/{project.id}/trends/refresh", headers=WORKER_HEADER)
+    assert r.status_code == 200
+    assert r.json() == {"stored": 3}  # 1 default pillar + 1 BR + 1 US
+    assert popular_regions == ["BR", "US"]
+
+
+

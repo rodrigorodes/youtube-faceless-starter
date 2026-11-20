@@ -23,7 +23,7 @@ from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
-from .adapters.youtube_trends import fetch_youtube_trends
+from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
@@ -104,11 +104,12 @@ CONNECT_OPTIONS = "-c lock_timeout=5000 -c statement_timeout=15000"  # nenhuma c
 class Studio:
     """Inicializa o banco sob demanda. Sem banco, o app segue de pé em modo degradado."""
 
-    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None):
+    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None, youtube_popular_fetcher=None):
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
         self._youtube_fetcher = youtube_fetcher
+        self._youtube_popular_fetcher = youtube_popular_fetcher
         self.bridge_alerts = BridgeAlerts()
         register("text", "opencode", lambda model: OpenCodeText(model, settings.bridge_token, settings.bridge_url))
         register("text", "demo", DemoText)
@@ -237,6 +238,7 @@ class Studio:
             token_env_path=s.token_env_path,
             videos_repo=repo,
             fetcher=self._youtube_fetcher or fetch_youtube_trends,
+            popular_fetcher=self._youtube_popular_fetcher or fetch_popular_trends,
             environ=self.environ,
         )
         panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)

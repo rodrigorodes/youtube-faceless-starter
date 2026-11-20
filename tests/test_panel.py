@@ -266,3 +266,102 @@ def test_panel_matches_trend_category_and_exposes_categories():
     assert view.trends[0].category_name == "Música Eletrônica"
 
 
+def test_build_panel_extracts_video_metadata_and_region():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    from app.studio.application.ports import TrendRecord
+
+    t_br = TrendRecord(
+        id="t_br",
+        project_id="p1",
+        topic="Video Viral BR",
+        topic_key="video viral br",
+        source_name="YouTube Brasil (Em Alta)",
+        source_url="https://www.youtube.com/feed/trending",
+        observed_at=now,
+        window_start=now - timedelta(days=7),
+        window_end=now,
+        metric_name="views",
+        metric_value=1200000.0,
+        evidence=[
+            {
+                "title": "Clipe Viral BR",
+                "url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+                "channel": "Canal Brasil",
+                "views": 1200000,
+                "published_at": "2026-11-19T14:30:00Z",
+            }
+        ],
+    )
+    t_global = TrendRecord(
+        id="t_global",
+        project_id="p1",
+        topic="Global Hit Video",
+        topic_key="global hit video",
+        source_name="YouTube Global (Em Alta)",
+        source_url="https://www.youtube.com/feed/trending",
+        observed_at=now,
+        window_start=now - timedelta(days=7),
+        window_end=now,
+        metric_name="views",
+        metric_value=5000000.0,
+        evidence=[
+            {
+                "title": "Global Hit",
+                "url": "https://youtu.be/9bZkp7q19f0",
+                "channel": "Worldwide Music",
+                "views": 5000000,
+                "published_at": datetime(2026, 11, 18, 9, 0, tzinfo=timezone.utc),
+            }
+        ],
+    )
+    t_pillar = TrendRecord(
+        id="t_pillar",
+        project_id="p1",
+        topic="Pillar Tech Topic",
+        topic_key="pillar tech topic",
+        source_name="YouTube Data API",
+        source_url="https://www.googleapis.com/youtube/v3/search",
+        observed_at=now,
+        window_start=now - timedelta(days=7),
+        window_end=now,
+        metric_name="views",
+        metric_value=300000.0,
+        evidence=[],
+    )
+
+    repo = FakePanelRepo()
+    trends = FakeTrendRepo(records=[t_br, t_global, t_pillar], last_collected=now)
+    panel = BuildPanel(repo, 15.0, lambda: now, trends=trends)
+    view = panel.execute(days=7)
+
+    assert len(view.trends) == 3
+
+    # BR popular trend
+    br_view = next(t for t in view.trends if t.topic == "Video Viral BR")
+    assert br_view.region == "BR"
+    assert br_view.video_id == "dQw4w9WgXcQ"
+    assert br_view.thumbnail_url == "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+    assert br_view.video_url == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+    assert br_view.channel_title == "Canal Brasil"
+    assert br_view.published_text == "19/11/2026"
+
+    # Global popular trend
+    global_view = next(t for t in view.trends if t.topic == "Global Hit Video")
+    assert global_view.region == "GLOBAL"
+    assert global_view.video_id == "9bZkp7q19f0"
+    assert global_view.thumbnail_url == "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg"
+    assert global_view.video_url == "https://youtu.be/9bZkp7q19f0"
+    assert global_view.channel_title == "Worldwide Music"
+    assert global_view.published_text == "18/11/2026"
+
+    # Pillar trend (no region, no evidence)
+    pillar_view = next(t for t in view.trends if t.topic == "Pillar Tech Topic")
+    assert pillar_view.region is None
+    assert pillar_view.video_id is None
+    assert pillar_view.thumbnail_url is None
+    assert pillar_view.video_url is None
+    assert pillar_view.channel_title is None
+    assert pillar_view.published_text is None
+
+
+

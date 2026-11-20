@@ -92,6 +92,7 @@ class RefreshTrends:
         worker_token: str | None = None,
         videos_repo: VideoRepository | None = None,
         fetcher: Callable[[str, list[str]], list[TrendItem]] | None = None,
+        popular_fetcher: Callable[[str, str, int], list[TrendItem]] | None = None,
         environ: Mapping[str, str] | None = None,
     ):
         self.repo = repo
@@ -100,6 +101,7 @@ class RefreshTrends:
         self.worker_token = worker_token
         self.videos_repo = videos_repo
         self.fetcher = fetcher
+        self.popular_fetcher = popular_fetcher
         self.environ = environ
 
     def _get_api_key(self) -> str:
@@ -123,18 +125,42 @@ class RefreshTrends:
 
         if custom_queries:
             queries = clean_queries(custom_queries)
-        else:
-            categories = self.repo.list(p_id)
-            queries = []
-            for cat in categories:
-                for q in cat.queries:
-                    if q not in queries:
-                        queries.append(q)
-            if not queries:
-                queries = DEFAULT_REFRESH_QUERIES.copy()
+            key = self._get_api_key()
+            items = self.fetcher(key, queries)
+            if not items:
+                raise YouTubeApiError("No trend topics returned by YouTube Data API for queries")
+            return self.ingest.execute(p_id, items)
+
+        categories = self.repo.list(p_id)
+        queries = []
+        for cat in categories:
+            for q in cat.queries:
+                if q not in queries:
+                    queries.append(q)
+        if not queries:
+            queries = DEFAULT_REFRESH_QUERIES.copy()
 
         key = self._get_api_key()
-        items = self.fetcher(key, queries)
-        if not items:
+        all_items: list[TrendItem] = []
+        if queries:
+            items = self.fetcher(key, queries)
+            if items:
+                all_items.extend(items)
+
+        if self.popular_fetcher:
+            try:
+                br_items = self.popular_fetcher(key, "BR", 10)
+                if br_items:
+                    all_items.extend(br_items)
+            except Exception:
+                pass
+            try:
+                us_items = self.popular_fetcher(key, "US", 10)
+                if us_items:
+                    all_items.extend(us_items)
+            except Exception:
+                pass
+
+        if not all_items:
             raise YouTubeApiError("No trend topics returned by YouTube Data API for queries")
-        return self.ingest.execute(p_id, items)
+        return self.ingest.execute(p_id, all_items)

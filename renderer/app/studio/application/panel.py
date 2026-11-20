@@ -1,5 +1,6 @@
 """Caso de uso de construção da visão operacional do painel do Studio."""
 import re
+import urllib.parse
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -56,6 +57,12 @@ class TrendItemView:
     create_action: bool
     category_id: str | None = None
     category_name: str | None = None
+    video_id: str | None = None
+    thumbnail_url: str | None = None
+    video_url: str | None = None
+    channel_title: str | None = None
+    published_text: str | None = None
+    region: str | None = None
 
 
 @dataclass(frozen=True)
@@ -242,6 +249,52 @@ class BuildPanel:
                             if found:
                                 break
 
+                    region = None
+                    if r.source_name == "YouTube Brasil (Em Alta)":
+                        region = "BR"
+                    elif r.source_name == "YouTube Global (Em Alta)":
+                        region = "GLOBAL"
+
+                    video_id = None
+                    thumbnail_url = None
+                    video_url = None
+                    channel_title = None
+                    published_text = None
+
+                    if r.evidence:
+                        ev = r.evidence[0]
+                        video_url = ev.get("url")
+                        if video_url:
+                            try:
+                                parsed = urllib.parse.urlparse(video_url)
+                                if "youtu.be" in parsed.netloc:
+                                    video_id = parsed.path.lstrip("/").split("/")[0] or None
+                                else:
+                                    qs = urllib.parse.parse_qs(parsed.query)
+                                    if "v" in qs and qs["v"]:
+                                        video_id = qs["v"][0]
+                            except Exception:
+                                pass
+                            if not video_id:
+                                m = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]+)", video_url)
+                                if m:
+                                    video_id = m.group(1)
+
+                        if video_id:
+                            thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+                        channel_title = ev.get("channel")
+
+                        pub = ev.get("published_at")
+                        if isinstance(pub, str):
+                            try:
+                                dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+                                published_text = dt.strftime("%d/%m/%Y")
+                            except ValueError:
+                                published_text = None
+                        elif isinstance(pub, datetime):
+                            published_text = pub.strftime("%d/%m/%Y")
+
                     trend_views.append(TrendItemView(
                         topic=r.topic,
                         key=r.topic_key,
@@ -256,6 +309,12 @@ class BuildPanel:
                         create_action=create_action,
                         category_id=matched_cat_id,
                         category_name=matched_cat_name,
+                        video_id=video_id,
+                        thumbnail_url=thumbnail_url,
+                        video_url=video_url,
+                        channel_title=channel_title,
+                        published_text=published_text,
+                        region=region,
                     ))
 
         return PanelView(
