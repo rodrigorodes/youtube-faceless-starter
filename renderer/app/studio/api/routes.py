@@ -21,6 +21,7 @@ from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.render import RenderRefused
 from ..domain.publish import InvalidPublishData, srt_to_vtt
 from .preview import render_preview
+from .panel import render_panel, render_video
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
@@ -444,6 +445,27 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "panel services unavailable")
             return uc.panel.detail(check_id(video_id))
         return run(get_detail)
+
+    @router.get("/panel", response_class=HTMLResponse)
+    def panel_html(days: int = 7, project_id: str | None = None):
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = check_id(project_id) if project_id else None
+            view = uc.panel.execute(days=days, project_id=p_id)
+            return render_panel(view)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/videos/{video_id}", response_class=HTMLResponse)
+    def panel_video_detail_html(video_id: str):
+        def get_detail_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            detail = uc.panel.detail(check_id(video_id))
+            return render_video(detail)
+        page, headers = run(get_detail_page)
+        return HTMLResponse(page, headers=headers)
 
     @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)
     def render_status(video_id: str):
