@@ -4,6 +4,7 @@ import base64
 
 import httpx
 
+from ..application.budget import PreEffectFailure
 from ..application.config import ProviderNotFound
 from ..application.ports import ImageResult, ModelUnavailable
 from ..domain.contracts import UsageEntry
@@ -39,7 +40,7 @@ class OpenCodeImage:
                 self._alerts.observe(False)
             declared = None
         if declared != self.model:
-            raise ModelUnavailable(f"bridge image model ({declared or 'not declared'}) differs from the configured {self.model}; "
+            raise PreEffectFailure(f"bridge image model ({declared or 'not declared'}) differs from the configured {self.model}; "
                                    "update scripts/opencode-bridge.py and OPENCODE_IMAGE_MODEL")
         self._verified = True
 
@@ -74,4 +75,9 @@ class OpenCodeImage:
                 last = exc
                 break
         status = f" (HTTP {last.response.status_code})" if isinstance(last, httpx.HTTPStatusError) else ""
-        raise ModelUnavailable(f"OpenCode image failed: {type(last).__name__}{status}; is scripts/opencode-bridge.py running?") from None
+        message = f"OpenCode image failed: {type(last).__name__}{status}; is scripts/opencode-bridge.py running?"
+        # 4xx ou conexão nunca estabelecida: nenhuma imagem paga foi gerada; erro de leitura/5xx é ambíguo.
+        if isinstance(last, (httpx.ConnectError, httpx.ConnectTimeout)) or (
+                isinstance(last, httpx.HTTPStatusError) and last.response.status_code < 500):
+            raise PreEffectFailure(message) from None
+        raise ModelUnavailable(message) from None

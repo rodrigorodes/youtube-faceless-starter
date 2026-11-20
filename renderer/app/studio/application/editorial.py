@@ -2,6 +2,7 @@
 import json
 import re
 from collections.abc import Callable
+from decimal import Decimal
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -10,6 +11,7 @@ from ..domain.claims import extract_claims
 from ..domain.contracts import Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem, VideoStatus
 from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
+from .budget import PaidOperationGuard, paid_key, provider_settlement
 if TYPE_CHECKING:
     from .ideas import ScoreIdeas
 from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotRepository, SourceFetcher, TextModel,
@@ -18,6 +20,11 @@ from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotR
 MAX_SOURCE_CHARS = 200_000
 MIN_SCENES, MAX_SCENES = 2, 20
 MAX_PROMPT_CHARS = 3900  # o bridge recusa prompt acima de 4000 caracteres
+
+
+def _usd(value) -> Decimal:
+    """Converte a estimativa float do provedor em Decimal exato do texto, nunca por arredondamento binário."""
+    return Decimal(str(value))
 
 
 class VideoNotFound(LookupError):
@@ -185,10 +192,12 @@ def _fit_prompt(topic: str, claims: list[Claim], scene_count: int) -> list[Claim
 class GenerateScript:
     def __init__(self, videos: VideoRepository, snaps: SnapshotRepository, scripts: ScriptRepository,
                  text_model: TextModel | None, guard: CostGuard, usage: UsageRepository,
-                 model_for: Callable[[str], TextModel] | None = None):
-        """`model_for(project_id)` escolhe o modelo pela configuração do projeto; sem ele vale `text_model`."""
+                 model_for: Callable[[str], TextModel] | None = None, paid: PaidOperationGuard | None = None):
+        """`model_for(project_id)` escolhe o modelo pela configuração do projeto; sem ele vale `text_model`.
+        Com `paid`, a chamada paga só acontece sob reserva de orçamento e o custo é confirmado pelo guard."""
         self.videos, self.snaps, self.scripts = videos, snaps, scripts
         self.text_model, self.guard, self.usage, self.model_for = text_model, guard, usage, model_for
+        self.paid = paid
 
     def execute(self, video_id: str, scene_count: int = 6) -> Script:
         if not MIN_SCENES <= scene_count <= MAX_SCENES:
@@ -204,9 +213,16 @@ class GenerateScript:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
         prompt = build_prompt(video.topic, claims, scene_count)
         model = self.model_for(video.project_id) if self.model_for else self.text_model
-        self.guard.check(video_id, model.cost_estimate(prompt))  # antes da chamada
-        result = model.complete(prompt, json_schema=_SCHEMA)
-        self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a resposta for recusada
+        estimate = model.cost_estimate(prompt)
+        if self.paid is None:
+            self.guard.check(video_id, estimate)  # antes da chamada
+            result = model.complete(prompt, json_schema=_SCHEMA)
+            self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a resposta for recusada
+        else:
+            key = paid_key("script", video_id, getattr(model, "model", ""), model.name, prompt)
+            result = self.paid.run(key, video_id, _usd(estimate),
+                                   call=lambda: model.complete(prompt, json_schema=_SCHEMA),
+                                   settle=lambda res: provider_settlement(res.usage))
         drafts = parse_drafts(result.text, {c.id for c in claims})
         cited = sorted({c for d in drafts for c in d.claim_ids})
         script = self.scripts.save_and_advance(video_id, "\n".join(d.narration for d in drafts), drafts, cited,

@@ -274,7 +274,9 @@ def test_migration_preserves_legacy_zero_as_unknown(conn, dsn, tmp_path):
     conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_usd) "
                  "VALUES ('image', 'opencode', 'model', 0.05)")
     conn.commit()
-    assert migrate(conn) == ["0015_ledger_cost_confirmation"]
+    applied = migrate(conn)
+    assert "0015_ledger_cost_confirmation" in applied  # migra o legado sem promover zeros
+    assert "0017_paid_operations" in applied
     assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE cost_confirmation_kind IS NULL").fetchone()[0] == 2
     conn.commit()
     repo = PostgresBudgetRepository(

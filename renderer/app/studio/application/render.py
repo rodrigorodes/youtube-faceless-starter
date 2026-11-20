@@ -4,9 +4,11 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 
-from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, VideoStatus
+from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, UsageEntry, VideoStatus
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, evaluate_qa, make_cues, scene_length, to_srt
+from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
@@ -16,6 +18,15 @@ from .ports import (AssetRepository, QaAnalyzer, RenderJobRepository, Renderer, 
 
 class RenderRefused(ValueError):
     """O vídeo não pode ser renderizado (ex.: passaria do limite de duração do formato)."""
+
+
+def _voice_settlement(voice: Voice, text: str, seconds: float):
+    """Confirma o custo da voz: grátis só quando comprovadamente zero; estimativa positiva é incerta."""
+    estimate = getattr(voice, "cost_estimate", None)
+    if callable(estimate) and Decimal(str(estimate(text))) != 0:
+        return None  # a voz não informa custo real: não presumir ACTUAL a partir de estimativa
+    entry = UsageEntry(step="voice", provider=voice.name, model=getattr(voice, "model", "") or "local", cost_usd=0.0)
+    return provider_settlement(entry)
 
 
 def _scenes_with_assets(videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, video_id: str):
@@ -58,10 +69,10 @@ class StartRender:
 class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], analyzer: QaAnalyzer,
-                 steps=None):
+                 steps=None, paid: PaidOperationGuard | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.analyzer = voice_for, renderer_for, analyzer
-        self.steps = steps
+        self.steps, self.paid = steps, paid
 
     def execute(self, job_id: str) -> None:
         """Roda um job. Nunca levanta (a exceção iria para um Future que ninguém lê): qualquer falha vira job FAILED
@@ -110,7 +121,16 @@ class RunRender:
         wavs, seconds = [], []
         for scene, _ in pairs:
             wav = work / f"speech_{scene.idx:03d}.wav"
-            seconds.append(voice.speak(scene.narration, wav))
+            if self.paid is None:
+                seconds.append(voice.speak(scene.narration, wav))
+            else:
+                key = paid_key("voice", video.id, job.id, scene.idx, voice.name, scene.narration)
+                estimate = getattr(voice, "cost_estimate", None)
+                amount = Decimal(str(estimate(scene.narration))) if callable(estimate) else Decimal("0")
+                seconds.append(self.paid.run(
+                    key, video.id, amount,
+                    call=lambda s=scene, w=wav: voice.speak(s.narration, w),
+                    settle=lambda secs, t=scene.narration: _voice_settlement(voice, t, secs)))
             wavs.append(wav)
         lengths = [scene_length(s) for s in seconds]
         total, limit = sum(lengths), MAX_SECONDS[video.format]

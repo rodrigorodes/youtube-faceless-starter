@@ -5,6 +5,7 @@ O bridge não suporta saída estruturada, então `json_schema` é ignorado e a r
 """
 import httpx
 
+from ..application.budget import PreEffectFailure
 from ..application.config import ProviderNotFound
 from ..application.ports import ModelUnavailable, TextResult
 from ..domain.contracts import UsageEntry
@@ -38,5 +39,10 @@ class OpenCodeText:
             if self._alerts is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
                 self._alerts.observe(False)
             status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
-            raise ModelUnavailable(f"OpenCode bridge failed: {type(exc).__name__}{status}; is scripts/opencode-bridge.py running?") from None
+            message = f"OpenCode bridge failed: {type(exc).__name__}{status}; is scripts/opencode-bridge.py running?"
+            # Requisição recusada (4xx) ou nunca enviada (conexão): nenhum efeito externo pago.
+            if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)) or (
+                    isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500):
+                raise PreEffectFailure(message) from None
+            raise ModelUnavailable(message) from None
         return TextResult(text=text, usage=UsageEntry(step="text", provider=self.name, model=self.model, cost_usd=0.0))

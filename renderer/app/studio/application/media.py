@@ -2,10 +2,12 @@
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 
 from ..domain.contracts import Asset, AssetKind, VideoStatus
 from ..domain.ids import asset_cache_key
 from ..domain.media import ASPECT_FOR, build_image_prompt
+from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import CostGuard, StateConflict, _require_video
 from .ports import AssetRepository, AssetStore, ImageModel, ProductionLock, ScriptRepository, UsageRepository, VideoRepository
 
@@ -38,9 +40,11 @@ class ProduceResult:
 
 class ProduceAssets:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, store: AssetStore,
-                 guard: CostGuard, usage: UsageRepository, image_for: Callable[[str], ImageModel], lock: ProductionLock):
+                 guard: CostGuard, usage: UsageRepository, image_for: Callable[[str], ImageModel], lock: ProductionLock,
+                 paid: PaidOperationGuard | None = None):
         self.videos, self.scripts, self.assets, self.store = videos, scripts, assets, store
         self.guard, self.usage, self.image_for, self.lock = guard, usage, image_for, lock
+        self.paid = paid
 
     def execute(self, video_id: str) -> ProduceResult:
         """Retomável: cena já vinculada é pulada; imagem já no cache é reaproveitada; só o que falta é gerado.
@@ -75,9 +79,16 @@ class ProduceAssets:
         return ProduceResult(generated, reused)
 
     def _generate(self, video_id: str, model: ImageModel, prompt: str, aspect: str, key: str) -> Asset:
-        self.guard.check(video_id, model.cost_estimate(prompt))  # antes da chamada
-        result = model.generate(prompt, aspect=aspect)
-        self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a imagem for recusada
+        estimate = model.cost_estimate(prompt)
+        if self.paid is None:
+            self.guard.check(video_id, estimate)  # antes da chamada
+            result = model.generate(prompt, aspect=aspect)
+            self.usage.record(video_id, result.usage)  # a chamada aconteceu: contabiliza mesmo se a imagem for recusada
+        else:
+            op_key = paid_key("image", video_id, key)
+            result = self.paid.run(op_key, video_id, Decimal(str(estimate)),
+                                   call=lambda: model.generate(prompt, aspect=aspect),
+                                   settle=lambda res: provider_settlement(res.usage))
         if not result.license.strip():
             raise AssetRefused("image without a registered license")
         if result.mime not in ALLOWED_MIME:
