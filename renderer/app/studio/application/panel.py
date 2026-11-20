@@ -5,10 +5,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from ..domain.categories import ProjectCategory
 from ..domain.panel import CostSummary, Stage, classify, cost_text, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
-from .ports import PanelRepository, PubInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
+from .ports import CategoryRepository, PanelRepository, PubInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ class TrendItemView:
     counts: dict[Stage, int]
     cost_text: str
     create_action: bool
+    category_id: str | None = None
+    category_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,8 @@ class PanelView:
     trends: list[TrendItemView] = field(default_factory=list)
     trends_status: str = "never_collected"
     last_collected_at: datetime | None = None
+    categories: list[ProjectCategory] = field(default_factory=list)
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -81,11 +86,19 @@ class VideoDetailView:
 
 
 class BuildPanel:
-    def __init__(self, repo: PanelRepository, monthly_cap_usd: float, clock: Callable[[], datetime], trends: TrendRepository | None = None):
+    def __init__(
+        self,
+        repo: PanelRepository,
+        monthly_cap_usd: float,
+        clock: Callable[[], datetime],
+        trends: TrendRepository | None = None,
+        categories_repo: CategoryRepository | None = None,
+    ):
         self.repo = repo
         self.monthly_cap_usd = monthly_cap_usd
         self.clock = clock
         self.trends = trends
+        self.categories_repo = categories_repo
 
     def execute(self, days: int = 7, project_id: str | None = None) -> PanelView:
         if days not in (7, 14, 30):
@@ -175,6 +188,11 @@ class BuildPanel:
         trends_status = "never_collected"
         last_col = None
 
+        categories: list[ProjectCategory] = []
+        target_project_id = project_id or (projects[0][0] if projects else None)
+        if self.categories_repo is not None and target_project_id:
+            categories = self.categories_repo.list(target_project_id)
+
         if self.trends is not None:
             last_col = self.trends.last_collected_at(project_id)
             if last_col is not None:
@@ -200,6 +218,30 @@ class BuildPanel:
                     )
                     is_stale = r.observed_at < since
                     create_action = len(r.topic) <= 300
+
+                    matched_cat_id = None
+                    matched_cat_name = None
+                    rec_cat_id = getattr(r, "category_id", None)
+                    if rec_cat_id:
+                        for cat in categories:
+                            if cat.id == rec_cat_id:
+                                matched_cat_id = cat.id
+                                matched_cat_name = cat.name
+                                break
+                    if not matched_cat_id:
+                        topic_lower = r.topic.lower()
+                        for cat in categories:
+                            found = False
+                            for q in cat.queries:
+                                q_lower = q.lower()
+                                if q_lower in topic_lower or any(q_lower in ev.get("title", "").lower() for ev in r.evidence):
+                                    matched_cat_id = cat.id
+                                    matched_cat_name = cat.name
+                                    found = True
+                                    break
+                            if found:
+                                break
+
                     trend_views.append(TrendItemView(
                         topic=r.topic,
                         key=r.topic_key,
@@ -212,6 +254,8 @@ class BuildPanel:
                         counts=c_counts,
                         cost_text=t_cost_text,
                         create_action=create_action,
+                        category_id=matched_cat_id,
+                        category_name=matched_cat_name,
                     ))
 
         return PanelView(
@@ -225,6 +269,8 @@ class BuildPanel:
             trends=trend_views,
             trends_status=trends_status,
             last_collected_at=last_col,
+            categories=categories,
+            project_id=target_project_id,
         )
 
     def detail(self, video_id: str) -> VideoDetailView:

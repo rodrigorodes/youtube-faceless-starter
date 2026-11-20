@@ -239,7 +239,7 @@ class Studio:
             fetcher=self._youtube_fetcher or fetch_youtube_trends,
             environ=self.environ,
         )
-        panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo)
+        panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,

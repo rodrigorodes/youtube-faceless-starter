@@ -593,6 +593,151 @@ details summary::-webkit-details-marker { display: none !important; }
   flex-shrink: 0;
 }
 
+/* Trends Actions and Category Pills */
+.trends-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.cat-pills-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.85rem 0;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.cat-pill:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+  background: var(--surface-elevated);
+}
+.cat-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+.cat-pill-btn {
+  background: transparent;
+  border-style: dashed;
+}
+.cat-pill-btn:hover {
+  border-style: solid;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.chip-category {
+  background: var(--surface-elevated);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Category Management Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  backdrop-filter: blur(2px);
+}
+.modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+.modal-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.cat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.cat-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-elevated);
+  gap: 0.75rem;
+}
+.cat-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.cat-item-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 /* Topic Groups / Videos Details */
 .topic-group-card {
   margin-bottom: 1.25rem;
@@ -703,11 +848,34 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </details>
     """
 
+    current_project_id = view.project_id or (view.projects[0][0] if view.projects else "")
+
+    pills = [f'<button type="button" class="cat-pill active" data-category-id="all">Todas ({len(view.trends)})</button>']
+    for cat in view.categories:
+        cat_count = sum(1 for t in view.trends if t.category_id == cat.id)
+        pills.append(f'<button type="button" class="cat-pill" data-category-id="{e(cat.id)}">{e(cat.name)} ({cat_count})</button>')
+    pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-add-pillar-pill">+ Novo Pilar</button>')
+    cat_pills_html = f'<div class="cat-pills-bar">{"".join(pills)}</div>'
+
+    action_buttons_html = f"""
+      <div class="trends-actions">
+        <button type="button" class="btn btn-compact" id="btn-refresh-trends" data-project-id="{e(current_project_id)}">🔄 Buscar Agora</button>
+        <button type="button" class="btn btn-compact" id="btn-manage-categories" data-project-id="{e(current_project_id)}">⚙️ Gerenciar Categorias ({len(view.categories)})</button>
+      </div>
+    """
+
     if view.trends_status == "never_collected" or not view.trends:
         trends_html = f"""
-          <div class="card" style="margin-bottom: 1.75rem;" id="trending-section">
-            <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem;">🔥 Temas em Alta nos Últimos {days} Dias</div>
-            <div style="font-size: 0.85rem; color: var(--text-muted);">Ainda não há coleta de tendências registrada para o período selecionado.</div>
+          <div class="card trends-card" style="margin-bottom: 1.75rem;" id="trending-section">
+            <div class="trends-header">
+              <div class="trends-title">
+                <span>🔥 Temas em Alta nos Últimos {days} Dias</span>
+              </div>
+              {action_buttons_html}
+            </div>
+            {cat_pills_html}
+            <div id="trends-refresh-feedback" class="form-feedback" style="margin-bottom: 0.5rem;"></div>
+            <div class="empty" style="padding: 1.5rem 1rem;">Ainda não há coleta de tendências registrada para o período selecionado. Clique em <strong>Buscar Agora</strong> para atualizar.</div>
           </div>
         """
     else:
@@ -734,15 +902,17 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             )
 
             metric_badge = f'<span class="chip-metric" style="color: var(--info); font-weight: 600;">📊 {e(t.metric_text)}</span>' if t.metric_text else ""
+            cat_badge = f'<span class="chip-metric chip-category">🏷️ {e(t.category_name)}</span>' if t.category_name else ""
             completed_count = t.counts.get(Stage.COMPLETED, 0)
             in_prod_count = t.counts.get(Stage.IN_PRODUCTION, 0)
 
             items_html.append(f"""
-              <div class="trend-item">
+              <div class="trend-item" data-category-id="{e(t.category_id or '')}">
                 <div class="trend-top-row">
                   <div>
                     <div class="trend-topic-name">{e(t.topic)}</div>
                     <div class="trend-badges">
+                      {cat_badge}
                       {metric_badge}
                       <span class="chip-metric">🎬 {completed_count} concluídos · {in_prod_count} em produção</span>
                       <span class="chip-metric">💰 Custo: {e(t.cost_text)}</span>
@@ -760,10 +930,15 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               <div class="trends-title">
                 <span>🔥 Temas em Alta nos Últimos {days} Dias</span>{stale_badge}
               </div>
-              <div class="trends-source">
-                Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+              <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+                <div class="trends-source">
+                  Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e(view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+                </div>
+                {action_buttons_html}
               </div>
             </div>
+            {cat_pills_html}
+            <div id="trends-refresh-feedback" class="form-feedback" style="margin-bottom: 0.5rem;"></div>
             {''.join(items_html)}
           </div>
         """
@@ -823,6 +998,66 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               </details>
             """)
         body_html = "".join(topic_blocks)
+
+    cat_items = []
+    if not view.categories:
+        categories_list_html = '<div class="empty" style="padding: 1rem; font-size: 0.85rem;" id="empty-cat-msg">Nenhum pilar cadastrado ainda. Preencha o formulário abaixo para adicionar o primeiro.</div>'
+    else:
+        for c in view.categories:
+            queries_str = ", ".join(c.queries)
+            queries_disp = e(queries_str) if c.queries else "Nenhum termo definido"
+            cat_items.append(f"""
+              <div class="cat-list-item" data-category-id="{e(c.id)}">
+                <div class="cat-item-info">
+                  <strong style="color: var(--text);">{e(c.name)}</strong>
+                  <span style="color: var(--text-muted); font-size: 0.78rem;">Termos: {queries_disp}</span>
+                </div>
+                <div class="cat-item-actions">
+                  <button type="button" class="btn btn-compact btn-edit-category" data-id="{e(c.id)}" data-name="{e(c.name)}" data-queries="{e(queries_str)}">Editar</button>
+                  <button type="button" class="btn btn-compact btn-delete-category" data-id="{e(c.id)}" data-name="{e(c.name)}" style="color: var(--bad); border-color: var(--bad);">Excluir</button>
+                </div>
+              </div>
+            """)
+        categories_list_html = "".join(cat_items)
+
+    modal_html = f"""
+      <div class="modal-overlay" id="categories-modal" role="dialog" aria-modal="true" aria-labelledby="modal-categories-title">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="modal-title" id="modal-categories-title">Gerenciar Categorias (Pilares de Conteúdo)</div>
+            <button type="button" class="modal-close" id="btn-close-modal" aria-label="Fechar">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div>
+              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">Pilares Cadastrados</div>
+              <div class="cat-list" id="modal-categories-list">
+                {categories_list_html}
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border); padding-top: 1rem;">
+              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.65rem;" id="category-form-title">Novo Pilar de Conteúdo</div>
+              <form id="form-category" style="display: flex; flex-direction: column; gap: 0.85rem;">
+                <input type="hidden" id="category-id" name="id" value="">
+                <div>
+                  <label for="category-name">Nome do Pilar</label>
+                  <input type="text" id="category-name" name="name" minlength="1" maxlength="100" placeholder="Ex: Tecnologia e IA" required>
+                </div>
+                <div>
+                  <label for="category-queries">Termos de Busca <span style="font-weight: 400; opacity: 0.75;">(separados por vírgula, máx 10)</span></label>
+                  <input type="text" id="category-queries" name="queries" placeholder="Ex: IA, inteligência artificial, ChatGPT">
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary" id="btn-save-category">Salvar Pilar</button>
+                  <button type="button" class="btn btn-compact" id="btn-cancel-edit-category" style="display: none;">Cancelar</button>
+                  <div id="category-form-feedback" class="form-feedback"></div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    """
 
     pct_width = min(100.0, max(0.0, view.month.percent or 0.0))
 
@@ -935,6 +1170,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </div>
     </main>
   </div>
+  {modal_html}
   <script nonce="{nonce}">
     const form = document.getElementById('create-video-form');
     if (form) {{
@@ -992,6 +1228,211 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         }}
         if (input) {{
           setTimeout(() => input.focus(), 200);
+        }}
+      }});
+    }}
+
+    // Category Filtering
+    const categoryPills = document.querySelectorAll('.cat-pill[data-category-id]');
+    const trendItems = document.querySelectorAll('.trend-item');
+    categoryPills.forEach((pill) => {{
+      pill.addEventListener('click', () => {{
+        categoryPills.forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        const catId = pill.dataset.categoryId;
+        trendItems.forEach((item) => {{
+          if (catId === 'all' || item.dataset.categoryId === catId) {{
+            item.style.display = '';
+          }} else {{
+            item.style.display = 'none';
+          }}
+        }});
+      }});
+    }});
+
+    // Modal Open & Close
+    const modal = document.getElementById('categories-modal');
+    const btnManage = document.getElementById('btn-manage-categories');
+    const btnAddPillarPill = document.getElementById('btn-add-pillar-pill');
+    const btnCloseModal = document.getElementById('btn-close-modal');
+
+    function openCatModal() {{
+      if (modal) {{
+        modal.style.display = 'flex';
+        resetCategoryForm();
+      }}
+    }}
+    function closeCatModal() {{
+      if (modal) modal.style.display = 'none';
+    }}
+
+    if (btnManage) btnManage.addEventListener('click', openCatModal);
+    if (btnAddPillarPill) btnAddPillarPill.addEventListener('click', openCatModal);
+    if (btnCloseModal) btnCloseModal.addEventListener('click', closeCatModal);
+    if (modal) {{
+      modal.addEventListener('click', (ev) => {{
+        if (ev.target === modal) closeCatModal();
+      }});
+    }}
+    document.addEventListener('keydown', (ev) => {{
+      if (ev.key === 'Escape' && modal && modal.style.display === 'flex') {{
+        closeCatModal();
+      }}
+    }});
+
+    // Category Form Reset & Edit
+    const catForm = document.getElementById('form-category');
+    const catFormTitle = document.getElementById('category-form-title');
+    const catIdInput = document.getElementById('category-id');
+    const catNameInput = document.getElementById('category-name');
+    const catQueriesInput = document.getElementById('category-queries');
+    const btnSaveCat = document.getElementById('btn-save-category');
+    const btnCancelEdit = document.getElementById('btn-cancel-edit-category');
+    const catFeedback = document.getElementById('category-form-feedback');
+
+    function resetCategoryForm() {{
+      if (catIdInput) catIdInput.value = '';
+      if (catNameInput) catNameInput.value = '';
+      if (catQueriesInput) catQueriesInput.value = '';
+      if (catFormTitle) catFormTitle.textContent = 'Novo Pilar de Conteúdo';
+      if (btnSaveCat) {{
+        btnSaveCat.textContent = 'Salvar Pilar';
+        btnSaveCat.disabled = false;
+      }}
+      if (btnCancelEdit) btnCancelEdit.style.display = 'none';
+      if (catFeedback) catFeedback.textContent = '';
+    }}
+
+    if (btnCancelEdit) {{
+      btnCancelEdit.addEventListener('click', resetCategoryForm);
+    }}
+
+    document.querySelectorAll('.btn-edit-category').forEach((btn) => {{
+      btn.addEventListener('click', () => {{
+        const id = btn.dataset.id || '';
+        const name = btn.dataset.name || '';
+        const queries = btn.dataset.queries || '';
+        if (catIdInput) catIdInput.value = id;
+        if (catNameInput) {{
+          catNameInput.value = name;
+          catNameInput.focus();
+        }}
+        if (catQueriesInput) catQueriesInput.value = queries;
+        if (catFormTitle) catFormTitle.textContent = 'Editar Pilar: ' + name;
+        if (btnSaveCat) btnSaveCat.textContent = 'Atualizar Pilar';
+        if (btnCancelEdit) btnCancelEdit.style.display = '';
+        if (catFeedback) catFeedback.textContent = '';
+      }});
+    }});
+
+    // Category Form Submit
+    const activeProjectId = "{e(current_project_id)}";
+    if (catForm) {{
+      catForm.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const id = (catIdInput && catIdInput.value.trim()) || null;
+        const name = catNameInput ? catNameInput.value.trim() : '';
+        if (!name) return;
+
+        const rawQueries = catQueriesInput ? catQueriesInput.value : '';
+        const queries = rawQueries
+          .split(',')
+          .map((q) => q.trim())
+          .filter((q) => q.length > 0);
+
+        if (btnSaveCat) btnSaveCat.disabled = true;
+        if (catFeedback) catFeedback.textContent = 'Salvando pilar...';
+
+        try {{
+          const payload = {{ name: name, queries: queries }};
+          if (id) payload.id = id;
+
+          const res = await fetch('/studio/projects/' + encodeURIComponent(activeProjectId) + '/categories', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify(payload)
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok) {{
+            if (catFeedback) catFeedback.textContent = 'Pilar salvo com sucesso! Atualizando...';
+            setTimeout(() => location.reload(), 600);
+          }} else if (res.status === 409) {{
+            if (catFeedback) catFeedback.textContent = 'Já existe um pilar com este nome no projeto.';
+            if (btnSaveCat) btnSaveCat.disabled = false;
+          }} else {{
+            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            if (catFeedback) catFeedback.textContent = 'Erro: ' + errMsg;
+            if (btnSaveCat) btnSaveCat.disabled = false;
+          }}
+        }} catch (err) {{
+          if (catFeedback) catFeedback.textContent = 'Falha de rede: ' + err.message;
+          if (btnSaveCat) btnSaveCat.disabled = false;
+        }}
+      }});
+    }}
+
+    // Category Delete
+    document.querySelectorAll('.btn-delete-category').forEach((btn) => {{
+      btn.addEventListener('click', async () => {{
+        const catId = btn.dataset.id;
+        const catName = btn.dataset.name || 'este pilar';
+        if (!catId) return;
+        if (!confirm('Deseja excluir o pilar "' + catName + '"?')) return;
+
+        btn.disabled = true;
+        if (catFeedback) catFeedback.textContent = 'Excluindo pilar...';
+
+        try {{
+          const res = await fetch('/studio/projects/' + encodeURIComponent(activeProjectId) + '/categories/' + encodeURIComponent(catId), {{
+            method: 'DELETE'
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok) {{
+            if (catFeedback) catFeedback.textContent = 'Pilar excluído com sucesso! Atualizando...';
+            setTimeout(() => location.reload(), 600);
+          }} else {{
+            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            if (catFeedback) catFeedback.textContent = 'Erro ao excluir: ' + errMsg;
+            btn.disabled = false;
+          }}
+        }} catch (err) {{
+          if (catFeedback) catFeedback.textContent = 'Falha de rede: ' + err.message;
+          btn.disabled = false;
+        }}
+      }});
+    }});
+
+    // Refresh Trends
+    const btnRefresh = document.getElementById('btn-refresh-trends');
+    const refreshFeedback = document.getElementById('trends-refresh-feedback');
+    if (btnRefresh) {{
+      btnRefresh.addEventListener('click', async () => {{
+        btnRefresh.disabled = true;
+        const origText = btnRefresh.textContent;
+        btnRefresh.textContent = '🔄 Buscando...';
+        if (refreshFeedback) refreshFeedback.textContent = 'Consultando YouTube Data API com seus pilares de conteúdo...';
+
+        try {{
+          const res = await fetch('/studio/projects/' + encodeURIComponent(activeProjectId) + '/trends/refresh', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{}})
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok) {{
+            const count = typeof data.stored === 'number' ? data.stored : 0;
+            if (refreshFeedback) refreshFeedback.textContent = 'Coleta concluída (' + count + ' temas encontrados)! Atualizando...';
+            setTimeout(() => location.reload(), 800);
+          }} else {{
+            const msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            if (refreshFeedback) refreshFeedback.textContent = 'Erro na coleta: ' + msg;
+            btnRefresh.disabled = false;
+            btnRefresh.textContent = origText;
+          }}
+        }} catch (err) {{
+          if (refreshFeedback) refreshFeedback.textContent = 'Falha de rede: ' + err.message;
+          btnRefresh.disabled = false;
+          btnRefresh.textContent = origText;
         }}
       }});
     }}

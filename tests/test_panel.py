@@ -1,4 +1,5 @@
 import sys
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -217,4 +218,51 @@ def test_panel_joins_trends_with_existing_videos_by_topic_key():
     assert t_view.topic == "ADE Lineup 2026"
     assert t_view.counts[Stage.AWAITING_APPROVAL] == 1
     assert t_view.stale is False
+
+
+def test_panel_matches_trend_category_and_exposes_categories():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    from app.studio.application.ports import TrendRecord
+    from app.studio.domain.categories import ProjectCategory
+
+    c_id = uuid.uuid4().hex
+    p_id = uuid.uuid4().hex
+
+    cat = ProjectCategory(
+        id=c_id,
+        project_id=p_id,
+        name="Música Eletrônica",
+        queries=["ADE", "Tomorrowland"],
+    )
+
+    class FakeCatRepo:
+        def list(self, project_id: str):
+            return [cat]
+
+    t_rec = TrendRecord(
+        id="t1",
+        project_id=p_id,
+        topic="ADE Lineup 2026 Revelado",
+        topic_key="ade lineup 2026 revelado",
+        source_name="YouTube Data API",
+        source_url="https://www.googleapis.com/youtube/v3/search",
+        observed_at=now,
+        window_start=now - timedelta(days=7),
+        window_end=now,
+        metric_name="views",
+        metric_value=500000.0,
+        evidence=[],
+    )
+
+    repo = FakePanelRepo(projects_list=[(p_id, "Canal Eletrônico")])
+    trends = FakeTrendRepo(records=[t_rec], last_collected=now)
+    panel = BuildPanel(repo, 15.0, lambda: now, trends=trends, categories_repo=FakeCatRepo())
+    view = panel.execute(days=7)
+
+    assert len(view.categories) == 1
+    assert view.categories[0].name == "Música Eletrônica"
+    assert len(view.trends) == 1
+    assert view.trends[0].category_id == cat.id
+    assert view.trends[0].category_name == "Música Eletrônica"
+
 

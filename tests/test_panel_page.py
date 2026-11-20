@@ -224,3 +224,83 @@ def test_panel_page_trend_create_button_wires_to_form(client_env):
     assert "btn-create-from-trend" in r.text
 
 
+def test_panel_page_renders_category_pills_and_management_modal(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    cat_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO studio.project_categories (id, project_id, name, queries) VALUES (%s, %s, %s, %s)",
+        (cat_id, p_id, "Tecnologia", ["IA", "ChatGPT"]),
+    )
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (
+            %s, %s, 'Novidades de IA em 2026', 'novidades de ia em 2026',
+            'YouTube Data API', 'https://www.googleapis.com/youtube/v3/search',
+            %s, %s, %s, 'views', 500000,
+            '[{"title": "IA Revoluciona Produção", "channel": "Tech Today", "url": "https://youtube.com/watch?v=2", "views": 500000}]'::jsonb
+        )
+        """,
+        (uuid.uuid4().hex, p_id, now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    # Pílulas de filtro
+    assert "Todas (" in r.text
+    assert "Tecnologia (" in r.text
+    assert "+ Novo Pilar" in r.text or "btn-add-pillar" in r.text
+
+    # Botões de ação do painel
+    assert "Buscar Agora" in r.text
+    assert "Gerenciar Categorias" in r.text
+
+    # Modal de gerenciamento
+    assert 'id="categories-modal"' in r.text
+    assert 'id="form-category"' in r.text
+    assert "btn-save-category" in r.text
+
+    # Badge de categoria no item de tendência associado
+    assert "Tecnologia" in r.text
+    assert "data-category-id=" in r.text
+
+
+def test_panel_page_category_xss_safety(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    cat_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO studio.project_categories (id, project_id, name, queries) VALUES (%s, %s, %s, %s)",
+        (cat_id, p_id, "<script>alert('cat')</script>", ["<img src=x onerror=alert(2)>"]),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "<script>alert('cat')</script>" not in r.text
+    assert "&lt;script&gt;alert(&#x27;cat&#x27;)&lt;/script&gt;" in r.text or "&lt;script&gt;alert('cat')&lt;/script&gt;" in r.text
+    assert "<img src=x" not in r.text
+    assert "innerHTML" not in r.text
+
+
+def test_panel_page_empty_trends_still_shows_category_actions(client_env):
+    client = client_env["client"]
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Buscar Agora" in r.text
+    assert "Gerenciar Categorias" in r.text
+    assert 'id="categories-modal"' in r.text
+
+
+
