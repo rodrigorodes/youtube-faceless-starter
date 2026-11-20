@@ -46,6 +46,16 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 - **Auditoria de Custos:** Lista todas as chamadas de IA registradas para o vídeo (passo, provedor, modelo e custo em dólares).
 - **Publicação:** Exibe o status da tentativa de upload e eventuais mensagens de erro de rede.
 
+### 6. Seção de Temas em Alta (Fase B)
+- **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`).
+- **Verificabilidade:** Cada tema exibe a fonte oficial (`YouTube Data API`), o link direto, a data/hora da consulta e as visualizações agregadas dos principais vídeos da janela.
+- **Status do Período:**
+  - Se a consulta estiver dentro da janela do filtro, exibe os tópicos normalmente.
+  - Se a última consulta for mais antiga que o filtro, exibe a etiqueta `Desatualizado`.
+  - Se ainda não houve ingestão, exibe `Ainda não há coleta de tendências registrada para o período selecionado.` (sem inventar dados).
+- **Criar Vídeo deste Tema:**
+  - O botão preenche automaticamente o campo de tema no formulário `+ Novo Vídeo` e abre o formulário para o operador revisar o projeto e formato antes de criar.
+
 ## Política de Custo Honesto
 - Quando todos os modelos usados forem comprovadamente gratuitos (ex.: `:free`, placeholders ou síntese local Piper TTS), o painel exibe `US$ 0,00 (gratuito)`.
 - Se houver modelos pagos cujo custo não foi informado pelo provedor, o painel **nunca** exibe zero falso. Ele informa claramente: `US$ X,XX + N chamadas sem custo informado`.

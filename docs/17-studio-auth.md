@@ -24,8 +24,9 @@ O guard de host continua ativo; `STUDIO_ALLOWED_HOSTS` não autentica usuários.
 No n8n crie uma credencial **Header Auth** chamada `studio_worker`, com nome
 de cabeçalho `Authorization` e valor `Bearer ` seguido do token provisionado
 em `STUDIO_WORKER_TOKEN`. O valor fica na credencial do n8n, nunca no JSON.
-Depois de importar os workflows 03 e 04 inativos, selecione essa credencial
-em todos os seus nós HTTP que chamam o renderer; a associação pelo nome pode
+Depois de importar os workflows 03, 04 e 05 inativos, selecione essa credencial
+em todos os seus nós HTTP que chamam o renderer (incluindo `/studio/analytics/metrics`
+e `/studio/trends`); a associação pelo nome pode
 precisar de seleção manual no n8n. Mantenha as credenciais OAuth do YouTube
 separadas. Não ative workflows até verificar configuração e autorizações.
 Na rotação, atualize renderer e credencial n8n de forma coordenada: requisições
