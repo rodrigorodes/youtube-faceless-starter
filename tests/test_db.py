@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories"]
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations"]
     assert migrate(conn) == []
 
 
@@ -34,14 +34,14 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
     migrate(conn)
     for t in ("projects", "videos", "scripts", "scenes", "assets", "render_jobs", "publications",
               "source_snapshots", "step_runs", "usage_ledger", "video_metrics", "fact_checks", "trend_topics",
-              "project_categories"):
+              "project_categories", "budget_reservations"):
         assert table_exists(conn, t), t
 
 
@@ -164,4 +164,3 @@ def test_project_categories_constraints_and_trend_link(conn):
     conn.execute("DELETE FROM studio.project_categories WHERE id = %s", (cat_id,))
     row = conn.execute("SELECT category_id FROM studio.trend_topics WHERE id = %s", (trend_id,)).fetchone()
     assert row[0] is None
-
