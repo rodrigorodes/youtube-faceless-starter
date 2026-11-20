@@ -187,6 +187,52 @@ def test_non_finding_item_fails_closed_in_publishable():
     assert qa.severity_counts["blocking"] == 1
 
 
+def blocking_iterator():
+    return (finding(severity="blocking") for _ in range(2))
+
+
+def test_properties_do_not_consume_single_use_findings_and_fail_closed():
+    qa = report().model_copy(update={"findings": blocking_iterator()})
+    assert qa.is_publishable is False
+    assert qa.severity_counts["blocking"] >= 1
+    assert qa.is_publishable is False
+    assert qa.severity_counts["blocking"] >= 1
+    assert len(qa.blocking_findings) == 1
+
+
+def test_gate_rejects_single_use_findings_iterator_without_prior_read():
+    qa = report().model_copy(update={"findings": blocking_iterator()})
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+
+
+def test_gate_rejects_single_use_findings_iterator_after_prior_read():
+    qa = report().model_copy(update={"findings": blocking_iterator()})
+    _ = qa.severity_counts
+    assert qa.is_publishable is False
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+
+
+@pytest.mark.parametrize("collection", ["list", "set", "dict", "iterator"])
+def test_gate_rejects_non_tuple_collections(collection):
+    values = {
+        "list": [finding(check_id="audio")],
+        "set": {finding(check_id="audio")},
+        "dict": {"codec": finding(check_id="audio")},
+        "iterator": iter((finding(check_id="audio"),)),
+    }
+    qa = report().model_copy(update={"findings": values[collection]})
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+
+
+def test_gate_rejects_non_tuple_checks_run():
+    qa = report().model_copy(update={"checks_run": ["codec"]})
+    with pytest.raises(InvalidReportState):
+        approve(report=qa, latest=version(), requested=version())
+
+
 @pytest.mark.parametrize("severity", ["BLOCKING", "crit", "blocking "])
 def test_gate_rejects_tampered_finding_severity(severity):
     base = finding(severity="info")
@@ -476,6 +522,49 @@ def test_invisible_text_is_rejected_in_finding(field, invisible):
 def test_invisible_text_is_rejected_in_coverage_reason(invisible):
     with pytest.raises(ValidationError):
         coverage(status="not_verified", reason=invisible)
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029"])
+def test_unicode_line_separators_are_rejected_in_single_line_text(separator):
+    with pytest.raises(ValidationError):
+        finding(suggested_action="a" + separator + "b")
+    with pytest.raises(ValidationError):
+        coverage(status="not_verified", reason="a" + separator + "b")
+    with pytest.raises(ValidationError):
+        report(render_id="render" + separator + "1")
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029"])
+def test_unicode_line_separators_are_rejected_in_evidence(separator):
+    with pytest.raises(ValidationError):
+        finding(evidence="a" + separator + "b")
+
+
+@pytest.mark.parametrize("space", ["\u00a0", "\u3000"])
+@pytest.mark.parametrize("field", ["render_id", "checksum"])
+def test_interior_unicode_spaces_are_rejected_in_report_identity(field, space):
+    value = "render-1" if field == "render_id" else SHA_A
+    with pytest.raises(ValidationError):
+        report(**{field: value[:4] + space + value[4:]})
+
+
+@pytest.mark.parametrize("space", ["\u00a0", "\u3000"])
+@pytest.mark.parametrize("field", ["check_id", "finding_id"])
+def test_interior_unicode_spaces_are_rejected_in_finding_identity(field, space):
+    value = "codec" if field == "check_id" else "f-1"
+    with pytest.raises(ValidationError):
+        finding(**{field: value[:2] + space + value[2:]})
+
+
+def test_gate_rejects_interior_unicode_spaces_in_identities():
+    with pytest.raises(InvalidRenderId):
+        approve(report=report(), latest=version(render_id="render\u00a01"), requested=version())
+    with pytest.raises(InvalidChecksum):
+        approve(
+            report=report(),
+            latest=version(checksum=SHA_A[:8] + "\u3000" + SHA_A[8:]),
+            requested=version(),
+        )
 
 
 def test_newline_is_allowed_in_evidence_but_not_in_suggested_action():

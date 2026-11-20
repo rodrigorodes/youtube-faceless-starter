@@ -46,7 +46,18 @@ Fronteiras deliberadas:
   string não vazia e visível passa. Quem calcula o checksum é o renderer.
 - **Texto visível.** Identificadores, motivo de cobertura, ação sugerida e
   evidência recusam ``Cc``/``Cf``/``Cs`` (controle, formato — inclui ZWSP, ZWNJ,
-  BOM e override bidi — e surrogates). ``\\n`` é aceito somente em evidência.
+  BOM e override bidi — e surrogates) e os separadores ``Zl``/``Zp``
+  (U+2028/U+2029). Identidades também recusam qualquer espaço Unicode interior
+  (espaço comum, NBSP U+00A0, U+3000). ``\\n`` é aceito somente em evidência.
+- **Estado contornado é revalidado, não presumido.** ``model_copy`` e
+  ``model_construct`` pulam a validação do modelo e ``frozen``. O gate não
+  decide sobre o objeto vivo: exige que ``findings`` e ``checks_run`` sejam
+  exatamente ``tuple`` (lista, conjunto, dict e iterador de uso único são
+  recusados com ``InvalidReportState``), materializa uma única cópia canônica
+  com ``model_dump``/``model_validate`` e decide sempre sobre ela. Se a
+  revalidação produzir um relatório semanticamente equivalente, ele é usado; se
+  não, é recusado. A garantia de imutabilidade e de tipos vale para o caminho
+  ``model_validate``/``load_versioned``.
 
 Limites explícitos: este contrato **não verifica se os checks foram realmente
 executados**, não valida o conteúdo de mídia (codec, frame preto, loudness etc.)
@@ -61,9 +72,18 @@ Limites do gate, para não superestimar a garantia:
   passa), não digest recalculado.
 - ``generated_at`` futuro é aceito e não é usado para frescor/idade do relatório.
 - ``model_copy``/``model_construct`` contornam ``frozen`` e a validação do
-  modelo: a garantia de imutabilidade vale para o caminho
+  modelo: a garantia de imutabilidade/tipos vale para o caminho
   ``model_validate``/``load_versioned``. O gate revalida o relatório antes de
-  decidir, de modo que um estado contornado é recusado (``InvalidReportState``).
+  decidir: estado contornado é **revalidado**; se a revalidação produzir um
+  relatório semanticamente equivalente, ele é usado, e se não, é recusado
+  (``InvalidReportState``). ``findings``/``checks_run`` que não sejam
+  exatamente ``tuple`` são recusados antes de qualquer leitura.
+- **Falsos positivos conscientes de ``Cc``/``Cf``/``Zl``/``Zp``.** A disciplina
+  de texto recusa ``ZWNJ`` em texto legítimo como o persa ``میخواهم``, ``ZWJ``
+  em emoji e ``RLM``, além de ``\\r\\n`` e tab em evidência. Isso é uma troca
+  deliberada por previsibilidade: o produtor de QA redige a evidência, e
+  ``ffprobe`` em Linux não emite CRLF. Uma fatia futura pode permitir ``\\r\\n``
+  e tab **apenas** em evidência, com teste próprio, se o fluxo real exigir.
 
 Nota de integração: já existe um ``QaReport`` legado em ``domain/contracts.py``
 (``passed``/``failures``/``metrics``) usado pelo render atual. Este módulo é o
@@ -100,6 +120,9 @@ SEVERITIES: tuple[Severity, ...] = ("blocking", "warning", "info")
 # contornado por model_copy — é bloqueante (falha fechada).
 NON_BLOCKING_SEVERITIES: tuple[str, ...] = ("warning", "info")
 INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
+# Separadores de linha/parágrafo Unicode: quebra ambígua em log é vetor de
+# confusão, então são recusados até em evidência (onde só "\n" é permitido).
+AMBIGUOUS_LINE_BREAK_CATEGORIES = frozenset({"Zl", "Zp"})
 
 
 def _reject_unsafe_characters(value: str, *, allow_newline: bool = False) -> str:
@@ -118,19 +141,31 @@ def _reject_unsafe_characters(value: str, *, allow_newline: bool = False) -> str
     return value
 
 
+def _reject_ambiguous_line_breaks(value: str) -> str:
+    for character in value:
+        if unicodedata.category(character) in AMBIGUOUS_LINE_BREAK_CATEGORIES:
+            raise ValueError("text must not contain Unicode line or paragraph separators")
+    return value
+
+
 def _identity_text(value: str) -> str:
-    """Identidade exata: sem espaços nas bordas e sem caracteres invisíveis."""
+    """Identidade exata: um token sem espaços (nem invisíveis) em qualquer posição."""
     if value != value.strip():
         raise ValueError("identity must not have leading or trailing whitespace")
-    return _reject_unsafe_characters(value)
+    if any(character.isspace() for character in value):
+        raise ValueError("identity must not contain whitespace")
+    _reject_unsafe_characters(value)
+    return _reject_ambiguous_line_breaks(value)
 
 
 def _single_line_text(value: str) -> str:
-    return _reject_unsafe_characters(value)
+    _reject_unsafe_characters(value)
+    return _reject_ambiguous_line_breaks(value)
 
 
 def _multiline_text(value: str) -> str:
-    return _reject_unsafe_characters(value, allow_newline=True)
+    _reject_unsafe_characters(value, allow_newline=True)
+    return _reject_ambiguous_line_breaks(value)
 
 
 Identity = Annotated[str, StringConstraints(min_length=1), AfterValidator(_identity_text)]
@@ -154,8 +189,8 @@ def _is_check_identifier(value: object) -> bool:
 
 
 def _has_executed_check(checks_run: object) -> bool:
-    """Falha fechada: exige ao menos um identificador de check válido e visível."""
-    if not isinstance(checks_run, tuple):
+    """Falha fechada: exige ``tuple`` exata com ao menos um check válido e visível."""
+    if type(checks_run) is not tuple:
         return False
     return any(_is_check_identifier(item) for item in checks_run)
 
@@ -266,6 +301,11 @@ class QaReport(_Model):
         a contagem falha fechada e nunca levanta ``KeyError``.
         """
         counts: dict[Severity, int] = {severity: 0 for severity in SEVERITIES}
+        if type(getattr(self, "findings", None)) is not tuple:
+            # Coleção contornada (lista, set, dict, iterador de uso único): não
+            # dá para enumerar com segurança; conta um bloqueio não verificável.
+            counts["blocking"] += 1
+            return counts
         for item in self.findings:
             severity = getattr(item, "severity", None)
             key = severity if severity in SEVERITIES else "blocking"
@@ -275,6 +315,9 @@ class QaReport(_Model):
     @property
     def blocking_findings(self) -> tuple[QaFinding, ...]:
         """Achados que impedem a publicação — falha fechada para estado contornado."""
+        if type(getattr(self, "findings", None)) is not tuple:
+            # Iterador de uso único consumiria a decisão; trata como bloqueio.
+            return (self.findings,)
         return tuple(
             item
             for item in self.findings
@@ -285,8 +328,10 @@ class QaReport(_Model):
     def is_publishable(self) -> bool:
         """Relatório publicável: cobertura verificada com check executado e sem ``blocking``.
 
-        Cobre o que o relatório pode decidir sozinho. O vínculo com a versão
-        mais recente continua sendo regra exclusiva do gate
+        Cobre o que o relatório pode decidir sozinho. ``findings``/``checks_run``
+        fora de ``tuple`` contam como bloqueio (falha fechada, sem consumir
+        iterador): a propriedade nunca aprova estado contornado. O vínculo com a
+        versão mais recente continua sendo regra exclusiva do gate
         (``approve``/``assert_publishable``), que também revalida o estado.
         """
         coverage = getattr(self, "coverage", None)
@@ -401,6 +446,18 @@ def _require_valid_instant(report: QaReport) -> None:
         raise InvalidGeneratedAt(str(exc)) from exc
 
 
+def _require_materialized_collections(report: QaReport) -> None:
+    """Exatamente ``tuple``: lista/set/dict/iterador é estado contornado, não cobertura."""
+    if type(getattr(report, "findings", None)) is not tuple:
+        raise InvalidReportState(
+            "report findings must be an exact tuple, not a mutable or single-use collection"
+        )
+    if type(getattr(report, "checks_run", None)) is not tuple:
+        raise InvalidReportState(
+            "report checks_run must be an exact tuple, not a mutable or single-use collection"
+        )
+
+
 def _revalidate_report(report: QaReport) -> QaReport:
     """Revalida o estado pelo caminho canônico, cobrindo ``model_copy``/``model_construct``."""
     try:
@@ -428,13 +485,15 @@ def approve(
     2. identidade de render/checksum vazia, com espaço nas bordas ou invisível
        (``InvalidRenderId``/``InvalidChecksum``);
     3. instante de geração inválido (``InvalidGeneratedAt``);
-    4. cobertura não verificada ou sem check executado válido
+    4. ``findings``/``checks_run`` que não sejam exatamente ``tuple``
+       (``InvalidReportState``);
+    5. cobertura não verificada ou sem check executado válido
        (``CoverageNotVerified``);
-    5. estado do relatório que não revalida — ex.: severidade contornada por
-       ``model_copy`` (``InvalidReportState``);
-    6. ``requested`` diferente do mais recente (``RenderSuperseded``);
-    7. relatório de outro render (``ReportForOtherRender``);
-    8. achados ``blocking``, com contagem falha fechada (``BlockingFindings``).
+    6. estado restante do relatório que não revalida — revalidado e usado se
+       semanticamente equivalente; recusado se não (``InvalidReportState``);
+    7. ``requested`` diferente do mais recente (``RenderSuperseded``);
+    8. relatório de outro render (``ReportForOtherRender``);
+    9. achados ``blocking``, com contagem falha fechada (``BlockingFindings``).
 
     O retorno é a identidade que o ato de publicar deve reutilizar, sem
     reconsultar "o mais recente" depois — evita aprovar uma versão e publicar
@@ -446,6 +505,7 @@ def approve(
     _require_identity(requested.render_id, requested.checksum, "requested")
     _effective(report)
     _require_valid_instant(report)
+    _require_materialized_collections(report)
     _require_verified_coverage(report)
     clean = _revalidate_report(report)
 
