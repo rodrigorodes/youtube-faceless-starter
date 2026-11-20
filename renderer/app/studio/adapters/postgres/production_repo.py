@@ -11,6 +11,7 @@ retomado a etapa. Etapa órfã (lease vencido) só é retomada por `claim_stage`
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
@@ -28,6 +29,8 @@ from ...domain.production_run import (
     OutboxEvent,
     ProductionIdempotencyConflict,
     ProductionRun,
+    ProductionRunLockTimeout,
+    ProductionRunReferencedEntityNotFound,
     ProductionStage,
     ProgressEventType,
     RunCreation,
@@ -43,6 +46,7 @@ from ...domain.production_run import (
     StageTransition,
     StageTransitionResult,
     assert_run_transition,
+    canonical_idempotency_key,
 )
 from .repo import _translated
 
@@ -119,6 +123,22 @@ def _token(value: Any) -> int:
     return value
 
 
+@contextmanager
+def _production_errors():
+    """Erros do Postgres com significado de domínio próprio, antes da tradução genérica.
+
+    Entra depois de `_translated` (e portanto sai primeiro): contenção de lock não é
+    indisponibilidade e referência inexistente não é erro interno.
+    """
+    try:
+        yield
+    except psycopg.errors.LockNotAvailable as exc:
+        raise ProductionRunLockTimeout("production run row is locked; retry the operation") from exc
+    except psycopg.errors.ForeignKeyViolation as exc:
+        raise ProductionRunReferencedEntityNotFound(
+            "production run references a video or channel profile that does not exist") from exc
+
+
 class PostgresProductionRunRepository:
     """Implementa `application.ports.ProductionRunRepository` sobre `studio.production_*`."""
 
@@ -137,9 +157,9 @@ class PostgresProductionRunRepository:
         video_id = check_id(video_id)
         if channel_id is not None:
             channel_id = check_id(channel_id)
-        idempotency_key = _text(idempotency_key, "idempotency key", 200)
+        idempotency_key = canonical_idempotency_key(idempotency_key)
         ordered = self._dag.validate_stages(self._dag.stages if stages is None else stages)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             inserted = _one(
                 conn,
                 f"INSERT INTO studio.production_runs(run_id, video_id, channel_id, idempotency_key, state) "
@@ -174,7 +194,7 @@ class PostgresProductionRunRepository:
 
     def get_run(self, run_id: str) -> ProductionRun | None:
         run_id = check_id(run_id)
-        with _translated(), self._connect() as conn:
+        with _translated(), _production_errors(), self._connect() as conn:
             row = _one(conn, f"SELECT {_RUN_COLS} FROM studio.production_runs WHERE run_id = %s", (run_id,))
             return _run(row) if row is not None else None
 
@@ -186,7 +206,7 @@ class PostgresProductionRunRepository:
         stage = self._stage(stage_id)
         owner = _text(owner, "lease owner", 200)
         lease_seconds = _lease_seconds(lease_seconds)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return StageClaim(StageClaimResult.UNKNOWN)
@@ -238,7 +258,7 @@ class PostgresProductionRunRepository:
         owner = _text(owner, "lease owner", 200)
         fencing_token = _token(fencing_token)
         lease_seconds = _lease_seconds(lease_seconds)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             if self._lock_run(conn, run_id) is None:
                 return LeaseResult.UNKNOWN
             renewed = _one(
@@ -262,7 +282,7 @@ class PostgresProductionRunRepository:
         owner = _text(owner, "lease owner", 200)
         fencing_token = _token(fencing_token)
         checkpoint = self._checkpoint(checkpoint)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return StageTransition(StageTransitionResult.UNKNOWN)
@@ -311,7 +331,7 @@ class PostgresProductionRunRepository:
         fencing_token = _token(fencing_token)
         error = _text(error, "stage error", 2000)
         checkpoint = self._checkpoint(checkpoint)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return StageTransition(StageTransitionResult.UNKNOWN)
@@ -354,7 +374,7 @@ class PostgresProductionRunRepository:
     def pause_run(self, run_id: str, reason: str) -> RunTransition:
         run_id = check_id(run_id)
         reason = _text(reason, "pause reason", 2000)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return RunTransition(RunTransitionResult.UNKNOWN)
@@ -376,14 +396,23 @@ class PostgresProductionRunRepository:
                        {"from": state.value, "to": RunState.WAITING_HUMAN.value, "reason": reason})
             return RunTransition(RunTransitionResult.APPLIED, _run(updated))
 
-    def resume_run(self, run_id: str) -> RunTransition:
+    def resume_run(self, run_id: str, expected_state: RunState) -> RunTransition:
+        """Retoma somente se o estado persistido for exatamente `expected_state` (precondição).
+
+        Leases de etapas ainda em execução são revogados e o `fencing_token` é incrementado, então a
+        geração anterior de workers não consegue mais escrever (ela recebe `LOST`). A prova de
+        aprovação humana versionada (gate de QA por hash/versão) entra em D2, no checkpoint da
+        etapa `approval`; aqui a pré-condição é apenas o estado declarado pelo chamador.
+        """
         run_id = check_id(run_id)
-        with _translated(), self._connect() as conn, conn.transaction():
+        if not isinstance(expected_state, RunState):
+            raise TypeError("expected state must be a RunState")
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return RunTransition(RunTransitionResult.UNKNOWN)
             state = RunState(run_row["state"])
-            if state not in _RESUMABLE_RUN_STATES:
+            if state is not expected_state or state not in _RESUMABLE_RUN_STATES:
                 return RunTransition(RunTransitionResult.NOT_ALLOWED, _run(run_row))
             assert_run_transition(state, RunState.RUNNING)
             updated = _one(
@@ -392,8 +421,11 @@ class PostgresProductionRunRepository:
                 f"updated_at = statement_timestamp() WHERE run_id = %s RETURNING {_RUN_COLS}",
                 (run_id,),
             )
-            conn.execute("UPDATE studio.stage_executions SET state = 'PENDING', updated_at = statement_timestamp() "
-                         "WHERE run_id = %s AND state = 'WAITING_HUMAN'", (run_id,))
+            # Revoga a geração anterior: sem lease e com token novo, o dono antigo só recebe LOST.
+            conn.execute("UPDATE studio.stage_executions SET state = 'PENDING', "
+                         "fencing_token = fencing_token + 1, lease_owner = NULL, lease_expires_at = NULL, "
+                         "updated_at = statement_timestamp() "
+                         "WHERE run_id = %s AND state IN ('WAITING_HUMAN', 'RUNNING')", (run_id,))
             self._emit(conn, run_id, ProgressEventType.RUN_STATE_CHANGED,
                        {"from": state.value, "to": RunState.RUNNING.value, "reason": None})
             return RunTransition(RunTransitionResult.APPLIED, _run(updated))
@@ -401,7 +433,7 @@ class PostgresProductionRunRepository:
     def cancel_run(self, run_id: str, reason: str) -> RunTransition:
         run_id = check_id(run_id)
         reason = _text(reason, "cancel reason", 2000)
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             run_row = self._lock_run(conn, run_id)
             if run_row is None:
                 return RunTransition(RunTransitionResult.UNKNOWN)
@@ -436,13 +468,13 @@ class PostgresProductionRunRepository:
             sql += " AND run_id = %s"
             params += (run_id,)
         sql += " ORDER BY id LIMIT %s"
-        with _translated(), self._connect() as conn:
+        with _translated(), _production_errors(), self._connect() as conn:
             return [_event(row) for row in _all(conn, sql, (*params, limit))]
 
     def ack_outbox(self, event_id: int) -> AckResult:
         if isinstance(event_id, bool) or not isinstance(event_id, int) or event_id < 1:
             raise ValueError("outbox event id must be a positive integer")
-        with _translated(), self._connect() as conn, conn.transaction():
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             acked = _one(
                 conn,
                 "UPDATE studio.production_outbox SET acked_at = statement_timestamp() "
@@ -497,11 +529,15 @@ class PostgresProductionRunRepository:
     def _write_guard(self, conn: psycopg.Connection, run_row: dict, stage_row: dict, owner: str,
                      fencing_token: int) -> StageTransitionResult | None:
         """CAS de escrita: estado atual, dono, token e lease válido. None significa autorizado."""
+        # Token primeiro: geração anterior é `LOST` mesmo que a etapa já tenha mudado de estado
+        # (resume revoga o lease e incrementa o token). Token atual fora de RUNNING é `NOT_RUNNING`.
+        if stage_row["fencing_token"] != fencing_token:
+            return StageTransitionResult.LOST
         if StageState(stage_row["state"]) is not StageState.RUNNING:
             return StageTransitionResult.NOT_RUNNING
-        if RunState(run_row["state"]) is not RunState.RUNNING:
+        if stage_row["lease_owner"] != owner:
             return StageTransitionResult.LOST
-        if stage_row["lease_owner"] != owner or stage_row["fencing_token"] != fencing_token:
+        if RunState(run_row["state"]) is not RunState.RUNNING:
             return StageTransitionResult.LOST
         now = _one(conn, "SELECT statement_timestamp() AS now")["now"]
         expires = stage_row["lease_expires_at"]

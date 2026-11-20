@@ -14,11 +14,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+import unicodedata
 
 from .ids import check_id
 
 SCHEMA_VERSION = 1
 EVENT_VERSION = 1
+MAX_IDEMPOTENCY_KEY_LENGTH = 200
+INVISIBLE_IDENTITY_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 class ExplicitResult(str, Enum):
@@ -121,6 +124,46 @@ class AckResult(ExplicitResult):
 
 class ProductionError(RuntimeError):
     """Base das falhas de execução de produção."""
+
+
+class ProductionRunLockTimeout(ProductionError):
+    """Outra transação mantém o run travado além do `lock_timeout`: contend, não indisponibilidade.
+
+    Repetir depois é seguro: nenhuma escrita foi confirmada por esta operação.
+    """
+
+
+class ProductionRunReferencedEntityNotFound(ProductionError):
+    """O vídeo ou o perfil de canal referenciado pelo run não existe (FK recusada pelo banco)."""
+
+
+class InvalidIdempotencyKey(ValueError):
+    """A chave de idempotência não está na forma canônica aceita."""
+
+
+def canonical_idempotency_key(value: object) -> str:
+    """Valida e devolve a chave canônica: byte-a-byte, minúscula, sem espaço ou invisível.
+
+    A identidade é a string canônica exata. Variantes com padding, caixa diferente ou caracteres
+    invisíveis são **recusadas**, nunca normalizadas: uma variante pode ser um retry acidental do
+    mesmo pedido ou um pedido diferente — e os dois não podem colidir silenciosamente. O cliente
+    deve enviar a chave já canônica; comparação e unicidade no banco são byte-a-byte.
+    """
+    if not isinstance(value, str):
+        raise InvalidIdempotencyKey("idempotency key must be a string")
+    if not value:
+        raise InvalidIdempotencyKey("idempotency key is required")
+    if len(value) > MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise InvalidIdempotencyKey("idempotency key is too long")
+    if value != value.strip():
+        raise InvalidIdempotencyKey("idempotency key must not have leading or trailing whitespace")
+    if any(character.isspace() for character in value):
+        raise InvalidIdempotencyKey("idempotency key must not contain whitespace")
+    if any(unicodedata.category(character) in INVISIBLE_IDENTITY_CATEGORIES for character in value):
+        raise InvalidIdempotencyKey("idempotency key must not contain control or invisible characters")
+    if value != value.casefold():
+        raise InvalidIdempotencyKey("idempotency key must be lowercase canonical; case variants are refused")
+    return value
 
 
 class ProductionIdempotencyConflict(ValueError):
@@ -349,10 +392,7 @@ class ProductionRun:
         check_id(self.video_id)
         if self.channel_id is not None:
             check_id(self.channel_id)
-        if not isinstance(self.idempotency_key, str) or not self.idempotency_key.strip():
-            raise ValueError("idempotency key is required")
-        if len(self.idempotency_key) > 200:
-            raise ValueError("idempotency key is too long")
+        canonical_idempotency_key(self.idempotency_key)
         if not isinstance(self.state, RunState):
             raise TypeError("state must be a RunState")
         if isinstance(self.schema_version, bool) or not isinstance(self.schema_version, int) or self.schema_version < 1:

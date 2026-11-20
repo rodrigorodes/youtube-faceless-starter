@@ -334,7 +334,7 @@ def test_pausing_a_run_releases_the_worker_and_resume_reclaims_the_stage(product
     assert complete(repo, ProductionStage.RESEARCH).result is StageTransitionResult.NOT_RUNNING
     assert repo.pause_run(RUN, "de novo").result is RunTransitionResult.NOT_ALLOWED
 
-    resumed = repo.resume_run(RUN)
+    resumed = repo.resume_run(RUN, RunState.WAITING_HUMAN)
     assert resumed.result is RunTransitionResult.APPLIED
     assert resumed.run is not None and resumed.run.state is RunState.RUNNING
     assert stage_row(conn, "research")[0] == "PENDING"
@@ -344,18 +344,18 @@ def test_pausing_a_run_releases_the_worker_and_resume_reclaims_the_stage(product
 
 
 def test_pause_from_created_is_allowed_and_resume_from_created_is_not(production_db):
-    from app.studio.domain.production_run import RunTransitionResult
+    from app.studio.domain.production_run import RunState, RunTransitionResult
 
     repo, _ = production_db
     create(repo)
-    assert repo.resume_run(RUN).result is RunTransitionResult.NOT_ALLOWED
+    assert repo.resume_run(RUN, RunState.CREATED).result is RunTransitionResult.NOT_ALLOWED
     assert repo.pause_run(RUN, "aguardando aprovação").result is RunTransitionResult.APPLIED
-    assert repo.resume_run(RUN).result is RunTransitionResult.APPLIED
+    assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.APPLIED
 
 
 def test_cancel_terminates_the_run_and_its_open_stages(production_db):
-    from app.studio.domain.production_run import (ProductionStage, RunTransitionResult, StageClaimResult,
-                                                  StageState)
+    from app.studio.domain.production_run import (ProductionStage, RunState, RunTransitionResult,
+                                                  StageClaimResult, StageState)
 
     repo, conn = production_db
     create(repo)
@@ -367,12 +367,12 @@ def test_cancel_terminates_the_run_and_its_open_stages(production_db):
     state, _, _, lease_owner, lease_expires_at, _, _, _ = stage_row(conn, "research")
     assert state == StageState.CANCELLED.value and (lease_owner, lease_expires_at) == (None, None)
     assert claim(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER).result is StageClaimResult.RUN_NOT_ACTIVE
-    assert repo.resume_run(RUN).result is RunTransitionResult.NOT_ALLOWED
+    assert repo.resume_run(RUN, RunState.CANCELLED).result is RunTransitionResult.NOT_ALLOWED
     assert repo.cancel_run(RUN, "de novo").result is RunTransitionResult.NOT_ALLOWED
 
 
 def test_failed_stage_persists_a_checkpoint_and_resume_retries_it(production_db):
-    from app.studio.domain.production_run import (Checkpoint, ProductionStage, RunTransitionResult,
+    from app.studio.domain.production_run import (Checkpoint, ProductionStage, RunState, RunTransitionResult,
                                                   StageClaimResult, StageTransitionResult)
 
     repo, conn = production_db
@@ -387,7 +387,7 @@ def test_failed_stage_persists_a_checkpoint_and_resume_retries_it(production_db)
     assert run_row(conn)[0] == "FAILED" and "research" in run_row(conn)[1]
     assert claim(repo, ProductionStage.RESEARCH).result is StageClaimResult.RUN_NOT_ACTIVE
 
-    assert repo.resume_run(RUN).result is RunTransitionResult.APPLIED
+    assert repo.resume_run(RUN, RunState.FAILED).result is RunTransitionResult.APPLIED
     assert run_row(conn)[0] == "RUNNING"
     assert stage_row(conn, "research")[0] == "FAILED"
     retried = claim(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER)
@@ -406,13 +406,13 @@ def test_failed_stage_persists_a_checkpoint_and_resume_retries_it(production_db)
 
 
 def test_completing_without_a_checkpoint_keeps_the_previous_one(production_db):
-    from app.studio.domain.production_run import Checkpoint, ProductionStage, StageTransitionResult
+    from app.studio.domain.production_run import Checkpoint, ProductionStage, RunState, StageTransitionResult
 
     repo, conn = production_db
     create(repo)
     claim(repo, ProductionStage.RESEARCH)
     fail(repo, ProductionStage.RESEARCH, checkpoint=Checkpoint({"cursor": 1}, 1))
-    repo.resume_run(RUN)
+    repo.resume_run(RUN, RunState.FAILED)
     claim(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER)
     assert complete(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER, token=2).result is StageTransitionResult.APPLIED
     assert stage_row(conn, "research")[5] == {"cursor": 1}
@@ -543,3 +543,273 @@ def test_repository_uses_the_injected_guarded_connection(production_db, monkeypa
     with pytest.raises(ValueError, match="proof"):
         create(repo)
     assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+
+
+# -- bordas da revisão: chave canônica, tradução de erros, leases e cobertura -------------------
+
+
+def fanout_repository(dsn):
+    """DAG com fan-out (research → script/factcheck) para exercitar escrita concorrente real."""
+    from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+    from app.studio.domain.production_run import ProductionStage, StageDag
+
+    proof = os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"]
+    dag = StageDag({
+        ProductionStage.RESEARCH: (),
+        ProductionStage.SCRIPT: (ProductionStage.RESEARCH,),
+        ProductionStage.FACTCHECK: (ProductionStage.RESEARCH,),
+    })
+    return PostgresProductionRunRepository(lambda: verified_test_connect(dsn, proof), dag)
+
+
+def test_idempotency_key_variants_do_not_create_extra_runs(production_db):
+    from app.studio.domain.production_run import CreateRunResult, InvalidIdempotencyKey
+
+    repo, conn = production_db
+    assert create(repo, key="order-42").result is CreateRunResult.CREATED
+    # Padrão do gate de QA: identidade exata, sem normalização silenciosa.
+    for spelling in ("order-42 ", " order-42", "ORDER-42", "Order-42"):
+        with pytest.raises(InvalidIdempotencyKey):
+            create(repo, run_id=OTHER_RUN, key=spelling)
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+    assert create(repo, key="order-42").result is CreateRunResult.EXISTING
+
+
+def test_create_run_with_a_missing_video_or_channel_is_a_domain_error(production_db):
+    from app.studio.domain.production_run import ProductionRunReferencedEntityNotFound
+
+    repo, conn = production_db
+    with pytest.raises(ProductionRunReferencedEntityNotFound):
+        create(repo, video="9" * 32)
+    with pytest.raises(ProductionRunReferencedEntityNotFound):
+        create(repo, channel_id="8" * 32)
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+
+
+def test_lock_contention_is_reported_separately_from_an_outage(production_db, dsn):
+    from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+    from app.studio.domain.production_run import ProductionRunLockTimeout, ProductionStage, StageClaimResult
+
+    repo, conn = production_db
+    proof = os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"]
+    create(repo)
+
+    def connect():
+        connection = verified_test_connect(dsn, proof)
+        connection.execute("SET lock_timeout = '200ms'")
+        connection.commit()
+        return connection
+
+    limited = PostgresProductionRunRepository(connect)
+    holder = verified_test_connect(dsn, proof)
+    try:
+        with holder.transaction():
+            holder.execute("SELECT 1 FROM studio.production_runs WHERE run_id = %s FOR UPDATE", (RUN,))
+            with pytest.raises(ProductionRunLockTimeout):
+                limited.claim_stage(RUN, ProductionStage.RESEARCH, OWNER, 60)
+            assert run_row(conn)[0] == "CREATED"  # contenção não escreveu nada
+    finally:
+        holder.close()
+    assert claim(repo, ProductionStage.RESEARCH).result is StageClaimResult.CLAIMED
+
+
+def test_fan_out_stages_run_concurrently_and_the_run_succeeds(production_db, dsn):
+    from app.studio.domain.production_run import (RunState, RunTransitionResult, StageClaimResult,
+                                                  StageTransitionResult)
+
+    _, conn = production_db
+    repo = fanout_repository(dsn)
+    create(repo)
+    assert claim(repo, "research").result is StageClaimResult.CLAIMED
+    assert claim(repo, "script").result is StageClaimResult.DEPENDENCIES_PENDING
+    assert complete(repo, "research").result is StageTransitionResult.APPLIED
+    script = claim(repo, "script")
+    factcheck = claim(repo, "factcheck", owner=OTHER_OWNER)
+    assert script.result is StageClaimResult.CLAIMED and factcheck.result is StageClaimResult.CLAIMED
+    assert script.execution.fencing_token == 1 and factcheck.execution.fencing_token == 1
+    assert conn.execute("SELECT count(*) FROM studio.stage_executions WHERE state = 'RUNNING'").fetchone()[0] == 2
+    assert complete(repo, "script").result is StageTransitionResult.APPLIED
+    assert run_row(conn)[0] == RunState.RUNNING.value
+    assert complete(repo, "factcheck", owner=OTHER_OWNER).result is StageTransitionResult.APPLIED
+    assert run_row(conn)[0] == RunState.SUCCEEDED.value
+    # fan-out também é retomável quando o run não mudou de estado
+    assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.NOT_ALLOWED
+
+
+def test_resume_revokes_leases_so_the_previous_generation_cannot_write(production_db, dsn):
+    from app.studio.domain.production_run import (ProductionStage, RunState, RunTransitionResult,
+                                                  StageClaimResult, StageTransitionResult)
+
+    _, conn = production_db
+    repo = fanout_repository(dsn)
+    create(repo)
+    claim(repo, "research")
+    complete(repo, "research")
+    claim(repo, "script")
+    claim(repo, "factcheck", owner=OTHER_OWNER)
+    assert fail(repo, "script").result is StageTransitionResult.APPLIED
+    assert run_row(conn)[0] == RunState.FAILED.value
+    state, _, token, owner, expires, _, _, _ = stage_row(conn, "factcheck")
+    assert (state, owner) == ("RUNNING", OTHER_OWNER) and expires is not None
+
+    resumed = repo.resume_run(RUN, RunState.FAILED)
+    assert resumed.result is RunTransitionResult.APPLIED
+    state, _, next_token, next_owner, next_expires, _, _, _ = stage_row(conn, "factcheck")
+    assert (state, next_owner, next_expires) == ("PENDING", None, None)
+    assert next_token == token + 1  # geração anterior invalidada, mesmo sem novo claim
+
+    stale = repo.complete_stage(RUN, ProductionStage.FACTCHECK, OTHER_OWNER, token)
+    assert stale.result is StageTransitionResult.LOST
+    assert stage_row(conn, "factcheck")[0] == "PENDING"
+    reclaimed = claim(repo, "factcheck", owner=OTHER_OWNER)
+    assert reclaimed.result is StageClaimResult.CLAIMED
+    assert reclaimed.execution.fencing_token == next_token + 1
+
+
+def test_resume_refuses_a_divergent_expected_state(production_db):
+    from app.studio.domain.production_run import ProductionStage, RunState, RunTransitionResult
+
+    repo, conn = production_db
+    create(repo)
+    claim(repo, ProductionStage.RESEARCH)
+    fail(repo, ProductionStage.RESEARCH)
+    assert run_row(conn)[0] == "FAILED"
+    events_before = conn.execute("SELECT count(*) FROM studio.production_outbox").fetchone()[0]
+    assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.NOT_ALLOWED
+    assert repo.resume_run(RUN, RunState.CREATED).result is RunTransitionResult.NOT_ALLOWED
+    assert run_row(conn)[0] == "FAILED"
+    assert conn.execute("SELECT count(*) FROM studio.production_outbox").fetchone()[0] == events_before
+    with pytest.raises(TypeError):
+        repo.resume_run(RUN, "FAILED")  # type: ignore[arg-type]
+    assert repo.resume_run(RUN, RunState.FAILED).result is RunTransitionResult.APPLIED
+
+
+def test_lease_expiry_uses_the_database_clock(production_db):
+    import time
+
+    from app.studio.domain.production_run import ProductionStage, StageClaimResult
+
+    repo, conn = production_db
+    create(repo)
+    assert claim(repo, ProductionStage.RESEARCH, lease_seconds=2).result is StageClaimResult.CLAIMED
+    assert claim(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER).result is StageClaimResult.BUSY
+    time.sleep(2.2)  # lease REAL de 2 s; quem decide a expiração é o relógio do banco
+    expired_in_database = conn.execute(
+        "SELECT lease_expires_at <= statement_timestamp() FROM studio.stage_executions "
+        "WHERE run_id = %s AND stage_id = 'research'", (RUN,)).fetchone()[0]
+    assert expired_in_database is True
+    assert claim(repo, ProductionStage.RESEARCH, owner=OTHER_OWNER).result is StageClaimResult.CLAIMED
+
+
+def test_adapter_never_reads_the_process_clock():
+    from pathlib import Path
+
+    import app.studio.adapters.postgres.production_repo as module
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+    for forbidden in ("datetime.now", "utcnow", "time.time", "time.monotonic"):
+        assert forbidden not in source
+
+
+def test_outbox_failure_rolls_back_every_state_change(production_db):
+    from app.studio.domain.production_run import ProductionStage, RunState, RunTransitionResult, StageClaimResult
+
+    repo, conn = production_db
+    create(repo)
+    conn.execute("CREATE FUNCTION studio.reject_outbox() RETURNS trigger LANGUAGE plpgsql AS "
+                 "$$ BEGIN RAISE EXCEPTION 'outbox unavailable'; END $$")
+    conn.execute("CREATE TRIGGER reject_outbox BEFORE INSERT ON studio.production_outbox "
+                 "FOR EACH ROW EXECUTE FUNCTION studio.reject_outbox()")
+    conn.commit()
+
+    def reject_only(event_type):
+        conn.execute("CREATE OR REPLACE FUNCTION studio.reject_outbox() RETURNS trigger LANGUAGE plpgsql AS "
+                     f"$$ BEGIN IF NEW.event_type = '{event_type}' THEN RAISE EXCEPTION 'outbox unavailable'; "
+                     "END IF; RETURN NEW; END $$")
+        conn.commit()
+
+    # create: run + etapas + evento, tudo ou nada
+    reject_only("production.run.created")
+    with pytest.raises(psycopg.errors.RaiseException):
+        create(repo, run_id=OTHER_RUN, key="run-2")
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+    assert conn.execute("SELECT count(*) FROM studio.stage_executions WHERE run_id = %s",
+                        (OTHER_RUN,)).fetchone()[0] == 0
+
+    # claim: o run não pode virar RUNNING sem o evento da etapa
+    reject_only("production.stage.claimed")
+    with pytest.raises(psycopg.errors.RaiseException):
+        claim(repo, ProductionStage.RESEARCH)
+    assert run_row(conn)[0] == RunState.CREATED.value
+    assert stage_row(conn, "research")[0] == "PENDING"
+
+    # fail e complete: a etapa não muda sem o evento dela
+    conn.execute("DROP TRIGGER reject_outbox ON studio.production_outbox")
+    conn.commit()
+    assert claim(repo, ProductionStage.RESEARCH).result is StageClaimResult.CLAIMED
+    conn.execute("CREATE TRIGGER reject_outbox BEFORE INSERT ON studio.production_outbox "
+                 "FOR EACH ROW EXECUTE FUNCTION studio.reject_outbox()")
+    conn.commit()
+    reject_only("production.stage.failed")
+    with pytest.raises(psycopg.errors.RaiseException):
+        fail(repo, "research")
+    assert stage_row(conn, "research")[0] == "RUNNING"
+    assert run_row(conn)[0] == RunState.RUNNING.value
+    reject_only("production.stage.completed")
+    with pytest.raises(psycopg.errors.RaiseException):
+        complete(repo, "research")
+    assert stage_row(conn, "research")[0] == "RUNNING"
+
+    # pause e cancel: run e etapas não mudam sem o evento do run
+    reject_only("production.run.state_changed")
+    with pytest.raises(psycopg.errors.RaiseException):
+        repo.pause_run(RUN, "pausa")
+    assert run_row(conn)[0] == RunState.RUNNING.value
+    with pytest.raises(psycopg.errors.RaiseException):
+        repo.cancel_run(RUN, "cancelamento")
+    assert run_row(conn)[0] == RunState.RUNNING.value
+    state, _, _, owner, expires, _, _, _ = stage_row(conn, "research")
+    assert state == "RUNNING" and owner == OWNER and expires is not None
+    conn.execute("DROP TRIGGER reject_outbox ON studio.production_outbox")
+    conn.commit()
+    assert repo.pause_run(RUN, "pausa").result is RunTransitionResult.APPLIED
+
+
+def test_schema_keeps_only_indexes_the_repository_uses(conn):
+    migrate(conn)
+
+    def indexes(table):
+        return {row[0] for row in conn.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = 'studio' AND tablename = %s", (table,))}
+
+    # Sem consulta por video_id nem varredura de lease: não há índice morto no schema.
+    assert indexes("production_runs") == {"production_runs_pkey", "production_runs_idempotency_key_key"}
+    assert indexes("stage_executions") == {"stage_executions_pkey"}
+    # A outbox realmente consulta `acked_at IS NULL ORDER BY id`.
+    assert indexes("production_outbox") == {"production_outbox_pkey", "production_outbox_unacked_idx"}
+
+
+def test_postgres_adapter_matches_the_production_run_port(production_db):
+    import inspect
+
+    from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+    from app.studio.application.ports import ProductionRunRepository
+
+    repo, _ = production_db
+
+    def shape(function):
+        return [(parameter.name, parameter.kind, parameter.default)
+                for parameter in inspect.signature(function).parameters.values()]
+
+    checked = 0
+    for name in dir(ProductionRunRepository):
+        if name.startswith("_"):
+            continue
+        member = getattr(ProductionRunRepository, name)
+        if not inspect.isfunction(member):
+            continue
+        checked += 1
+        assert isinstance(repo, PostgresProductionRunRepository)
+        assert callable(getattr(repo, name)), name
+        assert shape(getattr(PostgresProductionRunRepository, name)) == shape(member), name
+    assert checked == 11

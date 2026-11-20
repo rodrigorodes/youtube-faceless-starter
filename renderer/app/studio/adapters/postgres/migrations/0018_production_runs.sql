@@ -7,6 +7,8 @@ CREATE TABLE studio.production_runs (
     -- Perfil de canal opcional (um canal é um projeto). RESTRICT preserva a trilha da execução.
     channel_id text REFERENCES studio.channel_profiles(id) ON DELETE RESTRICT,
     -- Uma execução por chave: replay devolve a execução existente, nunca cria a segunda.
+    -- A chave é identidade byte-a-byte canônica (minúscula, sem espaço/invisível), validada no
+    -- domínio; variantes de caixa/padding são recusadas em vez de normalizadas.
     idempotency_key text NOT NULL UNIQUE CHECK (length(idempotency_key) BETWEEN 1 AND 200),
     state text NOT NULL DEFAULT 'CREATED'
         CHECK (state IN ('CREATED', 'RUNNING', 'WAITING_HUMAN', 'PAUSED', 'FAILED', 'CANCELLED', 'SUCCEEDED')),
@@ -20,7 +22,9 @@ CREATE TABLE studio.production_runs (
         OR (reason IS NOT NULL AND btrim(reason) <> '')
     )
 );
-CREATE INDEX production_runs_video_idx ON studio.production_runs (video_id);
+-- Sem índice extra em production_runs: as consultas atuais usam a PK (`run_id`); `video_id` ainda
+-- não é filtro de nenhuma consulta do repositório e a coluna é coberta pela FK. Um índice para
+-- vídeo/lease entra junto da consulta que o usar (D2/painel), não antes.
 
 CREATE TABLE studio.stage_executions (
     run_id text NOT NULL REFERENCES studio.production_runs(run_id) ON DELETE CASCADE,
@@ -49,9 +53,9 @@ CREATE TABLE studio.stage_executions (
         OR (checkpoint IS NOT NULL AND checkpoint_version IS NOT NULL)
     )
 );
--- Recuperação de etapa órfã procura leases RUNNING vencidos.
-CREATE INDEX stage_executions_active_lease_idx ON studio.stage_executions (lease_expires_at)
-    WHERE state = 'RUNNING';
+-- Nenhum índice de lease: não há varredura por `lease_expires_at` (a etapa é acessada pela PK
+-- `(run_id, stage_id)` e a expiração é conferida na própria linha travada). Se D2 introduzir uma
+-- consulta de etapa órfã, crie o índice parcial junto dela.
 
 CREATE TABLE studio.production_outbox (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -70,7 +74,10 @@ CREATE TABLE studio.production_outbox (
 -- Consumidores leem só o que ainda não foi confirmado, na ordem de gravação.
 CREATE INDEX production_outbox_unacked_idx ON studio.production_outbox (id) WHERE acked_at IS NULL;
 
--- Rollback manual (seguro enquanto nenhum consumidor depender da outbox; ordem reversa das FKs):
+-- Rollback manual (seguro enquanto nenhum consumidor depender da outbox; ordem reversa das FKs).
+-- O DELETE em schema_migrations é obrigatório: sem ele migrate() considera a versão já aplicada e
+-- nunca recria as tabelas.
 --   DROP TABLE studio.production_outbox;
 --   DROP TABLE studio.stage_executions;
 --   DROP TABLE studio.production_runs;
+--   DELETE FROM studio.schema_migrations WHERE version = '0018_production_runs';

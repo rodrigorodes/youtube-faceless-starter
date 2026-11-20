@@ -18,9 +18,13 @@ from app.studio.domain.production_run import (  # noqa: E402
     CreateRunResult,
     ExplicitResult,
     IncompleteStageSet,
+    InvalidIdempotencyKey,
     InvalidPipeline,
     InvalidProductionTransition,
+    ProductionError,
     ProductionRun,
+    ProductionRunLockTimeout,
+    ProductionRunReferencedEntityNotFound,
     ProductionStage,
     ProgressEventType,
     RunState,
@@ -34,6 +38,7 @@ from app.studio.domain.production_run import (  # noqa: E402
     UnknownStageDependency,
     assert_run_transition,
     assert_stage_transition,
+    canonical_idempotency_key,
     can_run_transition,
     can_stage_transition,
 )
@@ -171,3 +176,23 @@ def test_production_run_validates_ids_and_key():
 def test_progress_event_names_are_versioned_strings():
     assert ProgressEventType.RUN_STATE_CHANGED.value == "production.run.state_changed"
     assert ProgressEventType.STAGE_COMPLETED.value == "production.stage.completed"
+
+
+def test_idempotency_key_is_canonical_and_is_not_normalized():
+    """Identidade byte-a-byte: só a forma canônica (minúscula, sem espaço/invisível) é aceita."""
+    assert canonical_idempotency_key("order-42") == "order-42"
+    assert ProductionRun("a" * 32, "b" * 32, "order-42").idempotency_key == "order-42"
+    for spelling in ("order-42 ", " order-42", "ORDER-42", "Order-42", "order 42", "order\t42",
+                     "order\u200b42", "order\u00a042"):
+        with pytest.raises(InvalidIdempotencyKey):
+            canonical_idempotency_key(spelling)
+    for bad in ("", "x" * 201, None, 42):
+        with pytest.raises(InvalidIdempotencyKey):
+            canonical_idempotency_key(bad)
+    with pytest.raises(InvalidIdempotencyKey):
+        ProductionRun("a" * 32, "b" * 32, "ORDER-42")
+
+
+def test_database_contention_and_missing_references_have_domain_errors():
+    assert issubclass(ProductionRunLockTimeout, ProductionError)
+    assert issubclass(ProductionRunReferencedEntityNotFound, ProductionError)

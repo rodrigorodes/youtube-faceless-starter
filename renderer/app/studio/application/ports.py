@@ -14,7 +14,7 @@ from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
-                                     RunCreation, RunTransition, StageClaim, StageTransition)
+                                     RunCreation, RunState, RunTransition, StageClaim, StageTransition)
 
 
 @dataclass(frozen=True)
@@ -320,6 +320,11 @@ class ProductionRunRepository(Protocol):
 
     Os retornos são enums explícitos (nunca booleano ambíguo). A outbox é gravada na mesma
     transação da mudança de estado; o chamador só executa efeito externo após `CLAIMED`.
+
+    Erros com significado próprio (nunca 500 genérico): `InvalidIdempotencyKey` (chave fora da forma
+    canônica), `ProductionIdempotencyConflict` (replay divergente),
+    `ProductionRunReferencedEntityNotFound` (vídeo/canal inexistente) e `ProductionRunLockTimeout`
+    (contenção de lock: repetir).
     """
 
     def create_run(self, run_id: str, video_id: str, idempotency_key: str, *,
@@ -327,7 +332,9 @@ class ProductionRunRepository(Protocol):
                    stages: Sequence[ProductionStage] | None = None) -> RunCreation:
         """Cria o run e as etapas PENDING numa transação; replay da chave devolve `EXISTING`.
 
-        A mesma chave com outra solicitação (vídeo, canal ou conjunto de estágios) é conflito.
+        A chave é identidade byte-a-byte canônica (minúscula, sem espaço/invisível): variantes são
+        recusadas, nunca normalizadas. A mesma chave com outra solicitação (vídeo, canal ou conjunto
+        de estágios) é conflito.
         """
 
     def get_run(self, run_id: str) -> ProductionRun | None: ...
@@ -353,8 +360,13 @@ class ProductionRunRepository(Protocol):
     def pause_run(self, run_id: str, reason: str) -> RunTransition:
         """Pausa humana persistida: run e etapa em execução viram WAITING_HUMAN, sem lease ativo."""
 
-    def resume_run(self, run_id: str) -> RunTransition:
-        """Retoma WAITING_HUMAN/PAUSED/FAILED: run volta a RUNNING e etapas aguardando viram PENDING."""
+    def resume_run(self, run_id: str, expected_state: RunState) -> RunTransition:
+        """Retoma somente se o estado persistido for `expected_state`; divergência é recusada.
+
+        Revoga leases e incrementa o `fencing_token` das etapas abertas: a geração anterior não
+        escreve mais. A prova de aprovação humana versionada (gate de QA) é D2 e entrará como
+        referência do checkpoint da etapa `approval`.
+        """
 
     def cancel_run(self, run_id: str, reason: str) -> RunTransition:
         """Cancela o run e as etapas abertas numa transação; estados terminais recusam."""
