@@ -140,13 +140,13 @@ def test_upload_result_classification(response, state, retryable):
 
 
 @pytestmark_node
-def test_config_clamps_the_lease_and_only_allows_known_debug_points():
+def test_config_ignores_untrusted_debug_and_lease_parameters():
     def cfg(body):
         out = subprocess.run([node, "-e", "const code = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).nodes.find(n=>n.name==='Config').parameters.jsCode;"
                               "console.log(JSON.stringify(new Function('$input', code)({first: () => ({json: JSON.parse(process.argv[2])})})))",
                               str(ROOT / "workflows" / "03-publish-approved.json"), json.dumps(body)], capture_output=True, text=True, check=True).stdout
         return json.loads(out)[0]["json"]
-    assert cfg({}) == {"lease_seconds": 1800, "debug_wait_after": ""}
-    assert cfg({"body": {"lease_seconds": 30, "debug_wait_after": "upload"}}) == {"lease_seconds": 30, "debug_wait_after": "upload"}
-    assert cfg({"body": {"lease_seconds": 5, "debug_wait_after": "rm -rf"}}) == {"lease_seconds": 1800, "debug_wait_after": ""}
-    assert cfg({"body": {"lease_seconds": 99999}})["lease_seconds"] == 1800
+    expected = {"lease_seconds": 5400, "debug_wait_after": ""}
+    assert cfg({}) == expected
+    assert cfg({"body": {"lease_seconds": 20, "debug_wait_after": "upload"}}) == expected
+    assert cfg({"body": {"lease_seconds": 99999}}) == expected

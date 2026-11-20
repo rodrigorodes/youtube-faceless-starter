@@ -31,7 +31,9 @@ O corpo do YouTube é sempre `private` (com `publishAt` quando agendado), `selfD
 3. Retomada: com sessão gravada, consulta `PUT Content-Range: bytes */N`. 200/201 = concluído; 308 = envia só o restante; 404/410 interrompe para reconciliação manual, sem criar outra sessão.
 4. Miniatura (JPEG 1280×720 da 1ª cena) 60 s depois do upload; falha não é fatal.
 
-Parâmetros de teste do webhook: `lease_seconds` (20–7200) e `debug_wait_after` (`init` ou `upload`, espera 45 s para simular queda).
+O workflow usa lease de 5.400 segundos e ignora parâmetros do webhook para
+alterar o lease ou introduzir pausas de depuração. Isso reduz sobreposições,
+mas **não impede** que um processo antigo continue após vencer o lease.
 
 ## Validado em execução real
 - Queda do n8n com a sessão de upload já gravada: ao reiniciar, a mesma publicação foi reivindicada (tentativa 2), a consulta à sessão voltou concluída com o ID e o vídeo virou `PUBLISHED`, privado, sem duplicar.

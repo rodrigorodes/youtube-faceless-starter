@@ -48,7 +48,7 @@
         80
       ],
       "parameters": {
-        "jsCode": "const body = ($input.first().json || {}).body || {};\nconst lease = Number(body.lease_seconds);\nreturn [{ json: {\n  lease_seconds: Number.isFinite(lease) && lease >= 20 && lease <= 7200 ? lease : 1800,\n  debug_wait_after: ['init', 'upload'].includes(body.debug_wait_after) ? body.debug_wait_after : '',\n} }];"
+        "jsCode": "// O webhook não controla lease nem pontos de depuração.\nreturn [{ json: { lease_seconds: 5400, debug_wait_after: '' } }];"
       }
     },
     {
