@@ -428,6 +428,23 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return uc.analytics.weekly(start, end)
         return run(weekly)
 
+    @router.get("/panel/data")
+    def panel_data(days: int = 7, project_id: str | None = None):
+        def get_data(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = check_id(project_id) if project_id else None
+            return uc.panel.execute(days=days, project_id=p_id)
+        return run(get_data)
+
+    @router.get("/panel/videos/{video_id}/data")
+    def panel_video_detail_data(video_id: str):
+        def get_detail(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            return uc.panel.detail(check_id(video_id))
+        return run(get_detail)
+
     @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)
     def render_status(video_id: str):
         job, qa = run(lambda uc: rendering(uc).get.execute(check_id(video_id)))

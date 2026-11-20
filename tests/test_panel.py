@@ -7,8 +7,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.application.editorial import VideoNotFound
+from app.studio.application.errors import InvalidInput
 from app.studio.application.panel import BuildPanel, MonthCost, PanelView, TopicGroup, VideoDetailView, VideoItem
-from app.studio.application.use_cases import InvalidInput
 from app.studio.application.ports import PubInfo, StepInfo, UsageInfo, VideoDetail, VideoRow
 from app.studio.domain.contracts import JobStatus, PublicationStatus, VideoFormat, VideoStatus
 from app.studio.domain.panel import Stage

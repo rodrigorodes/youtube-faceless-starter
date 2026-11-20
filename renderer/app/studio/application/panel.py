@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 
 from ..domain.panel import CostSummary, Stage, classify, cost_text, is_known_cost, topic_key
 from .editorial import VideoNotFound
+from .errors import InvalidInput
 from .ports import PanelRepository, PubInfo, StepInfo, UsageInfo, VideoRow
-from .use_cases import InvalidInput
 
 
 @dataclass(frozen=True)

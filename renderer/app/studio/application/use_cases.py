@@ -7,6 +7,7 @@ from .editorial import Editorial
 from .media import Media
 from .publishing import Publishing
 from .render import Rendering
+from .panel import BuildPanel
 from .ports import VideoRepository
 from .analytics import Analytics
 from .observability import Resume
@@ -15,11 +16,7 @@ from .observability import Resume
 class ProjectNotFound(LookupError):
     pass
 
-from .errors import ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
-
-
-class InvalidInput(ValueError):
-    """Dado recusado pela persistência (ex.: byte NUL em texto)."""
+from .errors import InvalidInput, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
 
 
 class CreateProject:
@@ -69,9 +66,11 @@ class UseCases:
     publishing: Publishing | None = None
     analytics: Analytics | None = None
     resume: Resume | None = None
+    panel: BuildPanel | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
                   rendering: Rendering | None = None, publishing: Publishing | None = None,
-                  analytics: Analytics | None = None, resume: Resume | None = None) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume)
+                  analytics: Analytics | None = None, resume: Resume | None = None,
+                  panel: BuildPanel | None = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo), editorial, media, rendering, publishing, analytics, resume, panel)
