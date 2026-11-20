@@ -53,3 +53,4 @@ stateDiagram-v2
 | `Claim` | `contracts/v1/claim.schema.json` |
 | `FactCheckReport` | `contracts/v1/factcheckreport.schema.json` |
 | `Approval` | `contracts/v1/approval.schema.json` |
+| `RenderPlan` | `contracts/v1/renderplan.schema.json` |
