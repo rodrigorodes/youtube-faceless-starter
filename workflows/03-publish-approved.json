@@ -1,0 +1,1419 @@
+{
+  "name": "Faceless Studio - Publish approved videos (private)",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Every 2 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "t2",
+      "name": "Run now (webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "faceless-publish-approved",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const body = ($input.first().json || {}).body || {};\nconst lease = Number(body.lease_seconds);\nreturn [{ json: {\n  lease_seconds: Number.isFinite(lease) && lease >= 20 && lease <= 7200 ? lease : 1800,\n  debug_wait_after: ['init', 'upload'].includes(body.debug_wait_after) ? body.debug_wait_after : '',\n} }];"
+      }
+    },
+    {
+      "id": "h1",
+      "name": "Claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        80
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {},
+        "method": "POST",
+        "url": "http://renderer:8000/studio/publications/claim",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lease_seconds: $json.lease_seconds }) }}"
+      }
+    },
+    {
+      "id": "i1",
+      "name": "Has item?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "i1-c",
+              "leftValue": "={{ $json.item !== null && $json.item !== undefined }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n0",
+      "name": "Nothing to publish",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c1",
+      "name": "Build context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const it = $input.first().json.item;\nconst cfg = $('Config').first().json;\nreturn [{ json: {\n  pid: it.publication.id, attempt: it.publication.attempt, upload_uri: it.publication.upload_uri || '',\n  size: it.file_size, file_path: it.file_path, thumb_path: it.thumbnail_path, body: it.youtube_body, offset: 0,\n  debug_wait_after: cfg.debug_wait_after,\n} }];"
+      }
+    },
+    {
+      "id": "i2",
+      "name": "Has session?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "i2-c",
+              "leftValue": "={{ !!$json.upload_uri }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h2",
+      "name": "Check session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        -80
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "method": "PUT",
+        "url": "={{ $json.upload_uri }}",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Range",
+              "value": "={{ 'bytes */' + $json.size }}"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      }
+    },
+    {
+      "id": "c2",
+      "name": "Session state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -80
+      ],
+      "parameters": {
+        "jsCode": "function classify(s) {\n  if (s >= 200 && s < 300) return 'ok';\n  if (s === 308) return 'partial';\n  if (s === 404 || s === 410) return 'expired';\n  if (s === 0 || s === 429 || s >= 500) return 'retry';\n  return 'fatal';\n}\nfunction why(r, status) {\n  let m = '';\n  try { m = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || ''); } catch (e) { m = ''; }\n  const net = r.error ? (r.error.message || String(r.error)) : '';\n  return ('HTTP ' + status + ' ' + (net || m)).replace(/\\s+/g, ' ').slice(0, 300);\n}\nconst YT_ID = /^[A-Za-z0-9_-]{11}$/;\nconst ctx = $('Build context').first().json;\nconst r = $input.first().json;\nconst status = r.statusCode || 0;\nconst kind = classify(status);\nif (kind === 'ok') {\n  const id = r.body && r.body.id;\n  if (typeof id === 'string' && YT_ID.test(id)) return [{ json: { ...ctx, state: 'done', youtube_id: id } }];\n  return [{ json: { ...ctx, state: 'fatal', error: 'the upload session is complete but the response has no video id', retryable: false } }];\n}\nif (kind === 'partial') {\n  const range = (r.headers && (r.headers.range || r.headers.Range)) || '';\n  const m = /bytes=0-(\\d+)/.exec(range);\n  const offset = m ? Number(m[1]) + 1 : 0;\n  return [{ json: { ...ctx, state: 'partial', offset: offset < ctx.size ? offset : 0 } }];\n}\nif (kind === 'expired') return [{ json: { ...ctx, state: 'expired', upload_uri: '' } }];\nreturn [{ json: { ...ctx, state: kind, error: why(r, status), retryable: kind === 'retry' } }];"
+      }
+    },
+    {
+      "id": "s1",
+      "name": "Session state?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1920,
+        -80
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s1-done",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "done",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "done"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s1-partial",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "partial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "partial"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s1-expired",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "expired",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "expired"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s1-retry",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s1-fatal",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h3",
+      "name": "New session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        200
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        },
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Upload-Content-Type",
+              "value": "video/mp4"
+            },
+            {
+              "name": "X-Upload-Content-Length",
+              "value": "={{ $json.size }}"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      }
+    },
+    {
+      "id": "c3",
+      "name": "Session created",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        200
+      ],
+      "parameters": {
+        "jsCode": "function classify(s) {\n  if (s >= 200 && s < 300) return 'ok';\n  if (s === 308) return 'partial';\n  if (s === 404 || s === 410) return 'expired';\n  if (s === 0 || s === 429 || s >= 500) return 'retry';\n  return 'fatal';\n}\nfunction why(r, status) {\n  let m = '';\n  try { m = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || ''); } catch (e) { m = ''; }\n  const net = r.error ? (r.error.message || String(r.error)) : '';\n  return ('HTTP ' + status + ' ' + (net || m)).replace(/\\s+/g, ' ').slice(0, 300);\n}\nconst YT_ID = /^[A-Za-z0-9_-]{11}$/;\nconst ctx = $('Build context').first().json;\nconst r = $input.first().json;\nconst status = r.statusCode || 0;\nconst kind = classify(status);\nconst loc = r.headers && (r.headers.location || r.headers.Location);\nif (kind === 'ok' && typeof loc === 'string' && loc) return [{ json: { ...ctx, state: 'ok', upload_uri: loc, offset: 0 } }];\nconst retry = kind === 'retry';\nreturn [{ json: { ...ctx, upload_uri: '', state: retry ? 'retry' : 'fatal', error: kind === 'ok' ? 'no upload session URL in the response' : why(r, status), retryable: retry } }];"
+      }
+    },
+    {
+      "id": "s2",
+      "name": "Session created?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2640,
+        200
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s2-ok",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "ok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ok"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s2-retry",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s2-fatal",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h4",
+      "name": "Save session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        200
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {},
+        "method": "POST",
+        "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/upload-uri' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, upload_uri: $json.upload_uri, replace: true }) }}"
+      }
+    },
+    {
+      "id": "c4",
+      "name": "Session saved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        200
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: $('Session created').first().json }];"
+      }
+    },
+    {
+      "id": "i3",
+      "name": "Debug stop after init?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "i3-c",
+              "leftValue": "={{ $json.debug_wait_after === 'init' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w1",
+      "name": "Debug wait (init)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3600,
+        120
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 45,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "c5",
+      "name": "Plan upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3840,
+        40
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: $input.first().json }];"
+      }
+    },
+    {
+      "id": "h5",
+      "name": "Download MP4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4080,
+        40
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 900000
+        },
+        "url": "={{ 'http://renderer:8000' + $json.file_path }}",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Range",
+              "value": "={{ 'bytes=' + $json.offset + '-' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "h6",
+      "name": "Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4320,
+        40
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 1800000
+        },
+        "method": "PUT",
+        "url": "={{ $('Plan upload').first().json.upload_uri }}",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            },
+            {
+              "name": "Content-Range",
+              "value": "={{ 'bytes ' + $('Plan upload').first().json.offset + '-' + ($('Plan upload').first().json.size - 1) + '/' + $('Plan upload').first().json.size }}"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      }
+    },
+    {
+      "id": "c6",
+      "name": "Upload result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        40
+      ],
+      "parameters": {
+        "jsCode": "function classify(s) {\n  if (s >= 200 && s < 300) return 'ok';\n  if (s === 308) return 'partial';\n  if (s === 404 || s === 410) return 'expired';\n  if (s === 0 || s === 429 || s >= 500) return 'retry';\n  return 'fatal';\n}\nfunction why(r, status) {\n  let m = '';\n  try { m = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || ''); } catch (e) { m = ''; }\n  const net = r.error ? (r.error.message || String(r.error)) : '';\n  return ('HTTP ' + status + ' ' + (net || m)).replace(/\\s+/g, ' ').slice(0, 300);\n}\nconst YT_ID = /^[A-Za-z0-9_-]{11}$/;\nconst ctx = $('Plan upload').first().json;\nconst r = $input.first().json;\nconst status = r.statusCode || 0;\nconst kind = classify(status);\nif (kind === 'ok') {\n  const id = r.body && r.body.id;\n  if (typeof id === 'string' && YT_ID.test(id)) return [{ json: { ...ctx, state: 'ok', youtube_id: id } }];\n  return [{ json: { ...ctx, state: 'fatal', error: 'the upload finished but the response has no video id', retryable: false } }];\n}\n// 308 (incompleto), 5xx, 429 ou queda de conexão: a próxima reivindicação consulta a sessão e continua de onde parou\nconst retry = kind === 'retry' || kind === 'partial' || kind === 'expired';\nreturn [{ json: { ...ctx, state: retry ? 'retry' : 'fatal', error: why(r, status), retryable: retry } }];"
+      }
+    },
+    {
+      "id": "s3",
+      "name": "Upload result?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        4800,
+        40
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s3-ok",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "ok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ok"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s3-retry",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "s3-fatal",
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "i4",
+      "name": "Debug stop after upload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5040,
+        -40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "i4-c",
+              "leftValue": "={{ $json.debug_wait_after === 'upload' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w2",
+      "name": "Debug wait (upload)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        5280,
+        -120
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 45,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "h7",
+      "name": "Mark uploaded",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5520,
+        -40
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {},
+        "method": "POST",
+        "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/uploaded' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ youtube_video_id: $json.youtube_id }) }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "w3",
+      "name": "Wait for processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        5760,
+        -40
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 60,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "h8",
+      "name": "Download thumbnail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6000,
+        -40
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 60000
+        },
+        "url": "={{ 'http://renderer:8000' + $('Build context').first().json.thumb_path }}"
+      }
+    },
+    {
+      "id": "h9",
+      "name": "Set thumbnail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6240,
+        -40
+      ],
+      "parameters": {
+        "sendHeaders": true,
+        "options": {
+          "timeout": 120000
+        },
+        "method": "POST",
+        "url": "={{ 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=' + $('Mark uploaded').first().json.youtube_video_id }}",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 60000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "name": "youtube_videos_app"
+        }
+      }
+    },
+    {
+      "id": "i5",
+      "name": "Thumbnail set?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6480,
+        -40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "i5-c",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "h10",
+      "name": "Mark thumbnail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6720,
+        -120
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {},
+        "method": "POST",
+        "url": "={{ 'http://renderer:8000/studio/publications/' + $('Build context').first().json.pid + '/thumbnail-set' }}"
+      }
+    },
+    {
+      "id": "n1",
+      "name": "Thumbnail skipped (non-fatal)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        6720,
+        40
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "h11",
+      "name": "Report failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3120,
+        440
+      ],
+      "parameters": {
+        "sendHeaders": false,
+        "options": {},
+        "method": "POST",
+        "url": "={{ 'http://renderer:8000/studio/publications/' + $json.pid + '/failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ attempt: $json.attempt, error: $json.error || 'unknown error', retryable: $json.retryable === true }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every 2 minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim": {
+      "main": [
+        [
+          {
+            "node": "Has item?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has item?": {
+      "main": [
+        [
+          {
+            "node": "Build context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing to publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build context": {
+      "main": [
+        [
+          {
+            "node": "Has session?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has session?": {
+      "main": [
+        [
+          {
+            "node": "Check session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "New session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check session": {
+      "main": [
+        [
+          {
+            "node": "Session state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session state": {
+      "main": [
+        [
+          {
+            "node": "Session state?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session state?": {
+      "main": [
+        [
+          {
+            "node": "Mark uploaded",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "New session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New session": {
+      "main": [
+        [
+          {
+            "node": "Session created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session created": {
+      "main": [
+        [
+          {
+            "node": "Session created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session created?": {
+      "main": [
+        [
+          {
+            "node": "Save session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save session": {
+      "main": [
+        [
+          {
+            "node": "Session saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session saved": {
+      "main": [
+        [
+          {
+            "node": "Debug stop after init?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug stop after init?": {
+      "main": [
+        [
+          {
+            "node": "Debug wait (init)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug wait (init)": {
+      "main": [
+        [
+          {
+            "node": "Plan upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan upload": {
+      "main": [
+        [
+          {
+            "node": "Download MP4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download MP4": {
+      "main": [
+        [
+          {
+            "node": "Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload": {
+      "main": [
+        [
+          {
+            "node": "Upload result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload result": {
+      "main": [
+        [
+          {
+            "node": "Upload result?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload result?": {
+      "main": [
+        [
+          {
+            "node": "Debug stop after upload?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug stop after upload?": {
+      "main": [
+        [
+          {
+            "node": "Debug wait (upload)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark uploaded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug wait (upload)": {
+      "main": [
+        [
+          {
+            "node": "Mark uploaded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark uploaded": {
+      "main": [
+        [
+          {
+            "node": "Wait for processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for processing": {
+      "main": [
+        [
+          {
+            "node": "Download thumbnail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download thumbnail": {
+      "main": [
+        [
+          {
+            "node": "Set thumbnail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set thumbnail": {
+      "main": [
+        [
+          {
+            "node": "Thumbnail set?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thumbnail set?": {
+      "main": [
+        [
+          {
+            "node": "Mark thumbnail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Thumbnail skipped (non-fatal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
