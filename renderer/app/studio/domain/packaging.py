@@ -14,14 +14,26 @@ Fronteiras deliberadas:
   invariantes estruturais (título não vazio, sem espaço/controle inválido,
   capítulos ordenados etc.) e ``limit_violations`` usa os defaults
   ``CONFIGURED_*`` ou um ``PackagingLimits`` explícito, sem consultar a API.
-- **Texto público é canônico e sem spoofing.** Título, descrição, tags, fontes,
-  CTA, capítulos, justificativas e nomes recusam caracteres de controle e de
-  formato (``Cc``/``Cf``/``Cs``). Isso inclui override bidirecional (U+202E) e
-  joiners (U+200C/U+200D): não há lista de ``Cf`` legítimo, então sequências de
-  emoji que dependem de ZWJ são recusadas no título. Comparações de
-  duplicidade aplicam NFKC (dobra variantes de compatibilidade, largura total e
-  ligaduras usadas em spoofing), colapso de espaços e *casefold*; tags são
-  armazenadas em NFC.
+- **Texto público: exibição x identidade.** A regra é explícita e assimétrica.
+  Campos de **exibição** (título, descrição, CTA, título de capítulo, título e
+  justificativa de variante, rationale de decisão, prosa de declaração de
+  promessa e de estimativa) aceitam U+200D (ZWJ), necessário para emoji
+  composto como ``👨‍👩‍👧`` e ``👩‍💻``, e aceitam a sequência de *tag
+  characters* (U+E0020–U+E007F) de bandeira subdivisionária somente logo após
+  U+1F3F4 (🏴). Campos de **identidade** (tags, ``variant_id``,
+  ``thumbnail_concept``, nome/URL de fonte e ``decided_by``) recusam ZWJ e tag
+  characters: caractere invisível criaria identidades visualmente iguais sem
+  que a normalização canônica as una. Em todos os campos são recusados ``Cc``,
+  ``Cs``, ``Zl``, ``Zp`` e os demais ``Cf`` — em especial bidi (U+202E,
+  U+200E/U+200F, U+2066–U+2069) e BOM (U+FEFF). A heurística de bandeira exige
+  U+1F3F4 imediatamente antes e não toca em controles bidi, então não abre
+  caminho para spoofing direcional. Quebra de linha só é representável por
+  ``\\n`` na descrição; U+2028/U+2029 são sempre recusados.
+- **NFKC é conservador, com falso positivo declarado.** A chave de identidade
+  dobra compatibilidade: ``Ⅻ``/``XII``, ``①``/``1`` e ``ﬁm``/``fim`` contam como
+  duplicados. Isso é desejável em tags, mas é falso positivo para títulos de
+  capítulo e de variante. O trade-off é aceito para evitar lookalikes; a
+  cobertura de variantes de compatibilidade é de um único teste.
 - **Fontes são declaradas, não certificadas.** Toda afirmação factual exige
   fonte, então o pacote sempre tem pelo menos uma fonte declarada. O contrato
   não consegue julgar se uma afirmação é factual nem se as fontes bastam ou são
@@ -35,7 +47,9 @@ Fronteiras deliberadas:
   é considerada revisada quando existe ``HumanVariantDecision`` humana para a
   variante (o gate de publicação pertence a F7-04/F7-05). A recusa é registrada
   em ``HumanVariantDecision(decision="reject")``, com autor humano e instante
-  com fuso. Não há campo ``chosen``/``auto_selected`` na variante.
+  com fuso. A decisão referencia o ``variant_id`` **exato** armazenado, sem
+  normalização; a forma canônica serve só para detectar duplicidade. Não há
+  campo ``chosen``/``auto_selected`` na variante.
 - **Desempenho não é fato.** Não há campo de CTR garantido nem previsão de
   desempenho apresentada como resultado. Se houver estimativa, ela é
   ``UnverifiedPerformanceEstimate``: rótulo fixo ``unverified_estimate`` e
@@ -44,12 +58,14 @@ Fronteiras deliberadas:
   humana exige autor identificado, instante com fuso e ``automatic`` sempre
   falso; não existe caminho no contrato para marcar uma variante como escolhida
   automaticamente.
-- **Garantia de validação, não de runtime.** ``model_validate``,
-  ``model_validate_json`` e ``load_versioned`` aplicam todas as invariantes.
-  Atalhos do Pydantic como ``model_construct`` e ``model_copy(update=...)`` não
-  revalidam: podem furar ``Literal[False]``, a regra de zero ou três variantes e
-  as demais checagens. Consumidores que recebem dados de fora devem revalidar
-  pelo caminho de validação antes de publicar.
+- **Schema 2 e revalidação.** ``VideoPackaging.schema_version`` é 2 porque
+  ``title_claim`` passou a ser obrigatório; o validador global de ``contracts``
+  continua em schema 1 para outras entidades e não é o loader deste pacote.
+  Carregue com ``VideoPackaging.model_validate``/``model_validate_json``.
+  ``model_construct`` e ``model_copy(update=...)`` não revalidam: podem furar
+  ``Literal[False]``, a regra de zero ou três variantes, o schema 2 e as demais
+  invariantes. Consumidores que recebem dados de fora devem revalidar pelo
+  caminho de validação antes de publicar.
 """
 
 import unicodedata
@@ -83,20 +99,60 @@ CONFIGURED_TAG_MAX_CHARS = 100
 CONFIGURED_MAX_TAGS = 500
 CONFIGURED_TOTAL_TAG_CHARS = 500
 
+# Versão do contrato do pacote. Subiu para 2 quando ``title_claim`` passou a ser
+# obrigatório; payloads schema 1 anteriores não têm essa declaração e portanto
+# não são equivalentes. Nada persiste o pacote nesta fatia.
+PACKAGING_SCHEMA_VERSION = 2
 
-def _reject_unsafe_characters(value: str, *, allow_newline: bool = False) -> str:
-    """Recusa controle e formato que quebram ou disfarçam texto público.
 
-    ``Cf`` inclui override bidirecional (U+202E) e joiners (U+200C/U+200D); não
-    há ``Cf`` considerado legítimo neste contrato. ``Cs`` cobre surrogates
-    isolados e ``Cc`` cobre nulos, sino e tabulações. Apenas ``\\n`` é permitido
-    na descrição.
+_ZWJ = "\u200d"
+_FLAG_BASE = "\U0001F3F4"
+_EMOJI_TAG_START = "\U000E0020"
+_EMOJI_TAG_END = "\U000E007F"
+_FORBIDDEN_CATEGORIES = {"Cc", "Cf", "Cs", "Zl", "Zp"}
+
+
+def _reject_unsafe_characters(
+    value: str,
+    *,
+    allow_newline: bool = False,
+    allow_zwj: bool = False,
+    allow_flag_tag_sequence: bool = False,
+) -> str:
+    """Recusa controle, format e separadores de linha invisíveis.
+
+    ``Zl``/``Zp`` (U+2028/U+2029) quebram linha mesmo sem ``\\n`` e são sempre
+    recusados; ``\\n`` só passa quando ``allow_newline``.
+
+    ``allow_zwj`` vale apenas para texto de exibição: U+200D é legítimo em emoji
+    composto. Em campos de identidade (tag, id, URL, conceito, autor) ele fica
+    proibido porque um caractere invisível criaria lookalikes que a comparação
+    canônica não une. Os demais ``Cf`` — bidi (U+202E, U+200E/U+200F,
+    U+2066–U+2069) e BOM (U+FEFF) — continuam proibidos em qualquer campo.
+
+    ``allow_flag_tag_sequence`` aceita U+E0020–U+E007F (``Cf``) somente enquanto
+    imediatamente após U+1F3F4, como em 🏴󠁧󠁢󠁥󠁮󠁧󠁿. A heurística exige o
+    caractere-base de bandeira e não cobre nenhum controle bidi.
     """
+    in_flag_tag_sequence = False
     for character in value:
-        if character == "\n" and allow_newline:
+        if (
+            allow_flag_tag_sequence
+            and in_flag_tag_sequence
+            and _EMOJI_TAG_START <= character <= _EMOJI_TAG_END
+        ):
             continue
-        if unicodedata.category(character) in {"Cc", "Cf", "Cs"}:
-            raise ValueError("text must not contain control or format characters")
+        if character == "\n" and allow_newline:
+            in_flag_tag_sequence = False
+            continue
+        category = unicodedata.category(character)
+        if category not in _FORBIDDEN_CATEGORIES:
+            in_flag_tag_sequence = allow_flag_tag_sequence and character == _FLAG_BASE
+            continue
+        if category == "Cf" and allow_zwj and character == _ZWJ:
+            in_flag_tag_sequence = False
+            continue
+        raise ValueError("text must not contain control, format or line separator characters")
     return value
 
 
@@ -105,13 +161,23 @@ def _validate_title_text(value: str) -> str:
         raise ValueError("title must not be blank")
     if value != value.strip():
         raise ValueError("title must not have leading or trailing whitespace")
-    return _reject_unsafe_characters(value)
+    return _reject_unsafe_characters(value, allow_zwj=True, allow_flag_tag_sequence=True)
 
 
 def _validate_description_text(value: str) -> str:
     if not value.strip():
         raise ValueError("description must not be blank")
-    return _reject_unsafe_characters(value, allow_newline=True)
+    return _reject_unsafe_characters(
+        value, allow_newline=True, allow_zwj=True, allow_flag_tag_sequence=True
+    )
+
+
+def _validate_display_text(value: str) -> str:
+    return _reject_unsafe_characters(value, allow_zwj=True, allow_flag_tag_sequence=True)
+
+
+def _validate_identity_text(value: str) -> str:
+    return _reject_unsafe_characters(value)
 
 
 def _aware_instant(value: datetime) -> datetime:
@@ -128,6 +194,11 @@ def _canonical_key(value: str) -> str:
     parecer diferente sendo a mesma identidade. A normalização é só para
     comparação; o valor armazenado preserva a forma editorial escolhida (tags em
     NFC).
+
+    Trade-off declarado: ``Ⅻ``/``XII``, ``①``/``1`` e ``ﬁm``/``fim`` contam como
+    duplicados. Isso é conservador e desejável em tags, mas é falso positivo para
+    títulos de capítulo e de variante. A cobertura de compatibilidade é de um
+    único teste.
     """
     normalized = unicodedata.normalize("NFKC", value)
     return " ".join(normalized.split()).casefold()
@@ -135,10 +206,15 @@ def _canonical_key(value: str) -> str:
 
 TitleText = Annotated[str, AfterValidator(_validate_title_text)]
 DescriptionText = Annotated[str, AfterValidator(_validate_description_text)]
-SafeText = Annotated[
+DisplayText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
-    AfterValidator(_reject_unsafe_characters),
+    AfterValidator(_validate_display_text),
+]
+IdentityText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+    AfterValidator(_validate_identity_text),
 ]
 
 
@@ -159,8 +235,8 @@ class SourceCitation(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    name: SafeText
-    url: SafeText | None = None
+    name: IdentityText
+    url: IdentityText | None = None
 
 
 class Chapter(_Model):
@@ -169,7 +245,7 @@ class Chapter(_Model):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     start_seconds: Seconds
-    title: SafeText
+    title: DisplayText
 
     @property
     def timestamp(self) -> str:
@@ -187,7 +263,7 @@ class TitleClaim(_Model):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: ClaimKind
-    statement: SafeText | None = None
+    statement: DisplayText | None = None
 
     @model_validator(mode="after")
     def _statement_matches_kind(self):
@@ -204,8 +280,8 @@ class UnverifiedPerformanceEstimate(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    statement: SafeText
-    basis: SafeText
+    statement: DisplayText
+    basis: DisplayText
     label: Literal["unverified_estimate"] = "unverified_estimate"
     guarantees_performance: Literal[False] = False
 
@@ -220,10 +296,10 @@ class PackagingVariant(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    variant_id: SafeText
+    variant_id: IdentityText
     title: TitleText
-    thumbnail_concept: SafeText
-    rationale: SafeText
+    thumbnail_concept: IdentityText
+    rationale: DisplayText
     title_claim: TitleClaim
     performance_estimate: UnverifiedPerformanceEstimate | None = None
 
@@ -231,17 +307,19 @@ class PackagingVariant(_Model):
 class HumanVariantDecision(_Model):
     """Aceite ou recusa registrados por revisor humano identificado.
 
-    Uma revisão posterior pertence a uma nova revisão do pacote; o pacote aceita
-    no máximo uma decisão por variante. Edição pós-aprovação de metadados é
-    fluxo de F7-07 e não é modelada aqui.
+    O ``variant_id`` é comparado exatamente com o valor armazenado na variante;
+    a chave canônica serve apenas para detectar duplicidade. Uma revisão
+    posterior pertence a uma nova revisão do pacote; o pacote aceita no máximo
+    uma decisão por variante. Edição pós-aprovação de metadados é fluxo de F7-07
+    e não é modelada aqui.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    variant_id: SafeText
+    variant_id: IdentityText
     decision: DecisionKind
-    rationale: SafeText
-    decided_by: SafeText
+    rationale: DisplayText
+    decided_by: IdentityText
     decided_at: datetime
     automatic: Literal[False] = False
 
@@ -256,16 +334,26 @@ class VideoPackaging(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    schema_version: Annotated[int, Field(strict=True)] = PACKAGING_SCHEMA_VERSION
     revision: Revision = 1
     title: TitleText
     title_claim: TitleClaim
     description: DescriptionText
-    tags: tuple[SafeText, ...] = ()
+    tags: tuple[IdentityText, ...] = ()
     chapters: tuple[Chapter, ...] = ()
     sources: tuple[SourceCitation, ...] = Field(min_length=1)
-    cta: SafeText
+    cta: DisplayText
     variants: tuple[PackagingVariant, ...] = ()
     decisions: tuple[HumanVariantDecision, ...] = ()
+
+    @field_validator("schema_version")
+    @classmethod
+    def _known_version(cls, value: int) -> int:
+        if value != PACKAGING_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported schema_version {value!r}; expected {PACKAGING_SCHEMA_VERSION}"
+            )
+        return value
 
     @field_validator("tags")
     @classmethod
@@ -335,20 +423,20 @@ class VideoPackaging(_Model):
     def _decisions_reference_existing_variants_once(self):
         if not self.decisions:
             return self
-        known = {_canonical_key(item.variant_id) for item in self.variants}
+        known = {item.variant_id for item in self.variants}
         seen = set()
         for item in self.decisions:
-            key = _canonical_key(item.variant_id)
-            if key not in known:
+            if item.variant_id not in known:
                 raise ValueError(
-                    f"decision references unknown variant {item.variant_id!r}"
+                    f"decision references unknown variant {item.variant_id!r}; "
+                    "it must match the stored variant_id exactly"
                 )
-            if key in seen:
+            if item.variant_id in seen:
                 raise ValueError(
                     f"duplicate decision for variant {item.variant_id!r}; "
                     "a later review belongs to a new packaging revision"
                 )
-            seen.add(key)
+            seen.add(item.variant_id)
         return self
 
     def unreviewed_sensational_variant_ids(self) -> tuple[str, ...]:
@@ -358,12 +446,12 @@ class VideoPackaging(_Model):
         tenha passado por um revisor. Tratar isso como gate de publicação é
         responsabilidade de F7-04/F7-05.
         """
-        decided = {_canonical_key(item.variant_id) for item in self.decisions}
+        decided = {item.variant_id for item in self.decisions}
         return tuple(
             item.variant_id
             for item in self.variants
             if item.title_claim.kind == "declared_sensational_claim"
-            and _canonical_key(item.variant_id) not in decided
+            and item.variant_id not in decided
         )
 
     def limit_violations(self, limits: PackagingLimits | None = None) -> tuple[str, ...]:

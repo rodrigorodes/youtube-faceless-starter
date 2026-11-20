@@ -15,7 +15,6 @@ import pytest
 from pydantic import ValidationError
 
 from app.studio.domain import packaging
-from app.studio.domain.contracts import load_versioned
 from app.studio.domain.packaging import (
     CONFIGURED_DESCRIPTION_MAX_CHARS,
     CONFIGURED_MAX_TAGS,
@@ -90,6 +89,14 @@ def decision(**changes):
     return HumanVariantDecision(**values)
 
 
+FAMILY_EMOJI = "\U0001F468\u200D\U0001F469\u200D\U0001F467"  # 👨‍👩‍👧
+TECH_EMOJI = "\U0001F469\u200D\U0001F4BB"  # 👩‍💻
+ENGLAND_FLAG = (
+    "\U0001F3F4"
+    "\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"
+)  # 🏴󠁧󠁢󠁥󠁮󠁧󠁿
+
+
 # --- pacote válido ---------------------------------------------------------
 
 
@@ -99,7 +106,7 @@ def test_valid_package_round_trips_with_every_part():
     restored = VideoPackaging.model_validate_json(original.model_dump_json())
 
     assert restored == original
-    assert restored.schema_version == 1
+    assert restored.schema_version == 2
     assert restored.revision == 1
     assert restored.title == "O custo real de manter uma máquina parada"
     assert restored.tags == ("manutenção", "custo industrial")
@@ -192,13 +199,42 @@ def test_description_accepts_multiline_but_rejects_blank_and_nul():
     "value",
     [
         "Título\u202ecom override bidi",
-        "Título\u200dcom ZWJ",
+        "Título\u2066com isolamento bidi",
+        "Título\u200fcom marca direcional",
+        "Título\ufeffcom BOM",
         "Título\u200ccom ZWNJ",
     ],
 )
-def test_title_rejects_bidi_override_and_format_joiners(value):
+def test_title_rejects_bidi_controls_bom_and_non_zwj_format(value):
     with pytest.raises(ValidationError):
         package(title=value)
+
+
+@pytest.mark.parametrize("emoji", [FAMILY_EMOJI, TECH_EMOJI, ENGLAND_FLAG])
+def test_composed_emoji_is_accepted_in_display_text(emoji):
+    item = package(
+        title=f"Família {emoji} no trabalho",
+        description=f"Descrição com {emoji} e a referência declarada.",
+        cta=f"Inscreva-se {emoji}",
+        chapters=(Chapter(start_seconds=0, title=f"Abertura {emoji}"),),
+        variants=(
+            variant("v1", f"Primeiro conceito {emoji}"),
+            variant("v2", "Segundo conceito"),
+            variant("v3", "Terceiro conceito"),
+        ),
+    )
+
+    assert emoji in item.title
+    assert emoji in item.description
+    assert emoji in item.cta
+    assert emoji in item.chapters[0].title
+    assert emoji in item.variants[0].title
+    assert emoji in variant("v1", rationale=f"Justificativa {emoji}").rationale
+
+
+def test_emoji_tag_characters_are_only_accepted_after_a_flag_base():
+    with pytest.raises(ValidationError):
+        package(title="Texto \U000E0067 solto")
 
 
 @pytest.mark.parametrize(
@@ -206,20 +242,23 @@ def test_title_rejects_bidi_override_and_format_joiners(value):
     [
         lambda: package(tags=("tag\x00",)),
         lambda: package(tags=("tag\u202e",)),
+        lambda: package(tags=("tag\u200d",)),
         lambda: package(sources=(SourceCitation(name="Fonte\x00"),)),
         lambda: package(sources=(SourceCitation(name="Fonte\u200d"),)),
         lambda: package(sources=(SourceCitation(name="Fonte", url="https://example.org/\x00"),)),
+        lambda: package(sources=(SourceCitation(name="Fonte", url="https://example.org/\u200d"),)),
         lambda: package(cta="Inscreva-se\x07"),
-        lambda: package(cta="Inscreva-se\u200d"),
+        lambda: package(cta="Inscreva-se\u202e"),
         lambda: package(chapters=(Chapter(start_seconds=0, title="Abertura\x00"),)),
         lambda: package(chapters=(Chapter(start_seconds=0, title="Abertura\u202e"),)),
         lambda: variant("v1", rationale="Justificativa\x00"),
         lambda: variant("v1", rationale="Justificativa\u202e"),
         lambda: variant("v1", thumbnail_concept="Conceito\u200d"),
-        lambda: variant(variant_id="v\x001"),
+        lambda: variant(variant_id="v\u200d1"),
         lambda: TitleClaim(kind="verifiable_promise", statement="Promessa\x00"),
         lambda: TitleClaim(kind="verifiable_promise", statement="Promessa\u202e"),
         lambda: decision(decided_by="revisor\x00"),
+        lambda: decision(decided_by="revisor\u200d"),
         lambda: decision(rationale="Decisão\u202e"),
         lambda: UnverifiedPerformanceEstimate(statement="Estimativa\x00", basis="Base"),
         lambda: UnverifiedPerformanceEstimate(statement="Estimativa", basis="Base\u202e"),
@@ -228,6 +267,43 @@ def test_title_rejects_bidi_override_and_format_joiners(value):
 def test_control_and_format_characters_are_rejected_in_every_public_text(build):
     with pytest.raises(ValidationError):
         build()
+
+
+def build_with_separator(where, separator):
+    if where == "title":
+        return package(title=f"Antes{separator}Depois")
+    if where == "description":
+        return package(description=f"Antes{separator}Depois")
+    if where == "cta":
+        return package(cta=f"Antes{separator}Depois")
+    if where == "chapter":
+        return package(chapters=(Chapter(start_seconds=0, title=f"Antes{separator}Depois"),))
+    if where == "tag":
+        return package(tags=(f"tag{separator}quebrada",))
+    if where == "variant_title":
+        return variant("v1", f"Título{separator}quebrado")
+    return variant("v1", rationale=f"Justificativa{separator}quebrada")
+
+
+@pytest.mark.parametrize(
+    ("separator", "where"),
+    [
+        (separator, where)
+        for separator in ("\u2028", "\u2029")
+        for where in (
+            "title",
+            "description",
+            "cta",
+            "chapter",
+            "tag",
+            "variant_title",
+            "rationale",
+        )
+    ],
+)
+def test_line_and_paragraph_separators_are_rejected_everywhere(separator, where):
+    with pytest.raises(ValidationError):
+        build_with_separator(where, separator)
 
 
 # --- limites configurados, não verificados ---------------------------------
@@ -261,6 +337,14 @@ def test_contract_documents_that_consumers_must_revalidate():
 
     assert "revalid" in doc
     assert "model_construct" in doc
+
+
+def test_contract_documents_the_zwj_display_identity_asymmetry():
+    doc = (packaging.__doc__ or "").lower()
+
+    assert "zwj" in doc
+    assert "identidade" in doc
+    assert "exibição" in doc
 
 
 def test_limit_violations_uses_the_explicit_limits_passed_in():
@@ -560,6 +644,15 @@ def test_decisions_must_reference_an_existing_variant_once():
         package(decisions=(decision(), decision(decision="reject")))
 
 
+def test_decisions_must_use_the_exact_stored_variant_id():
+    assert package(decisions=(decision(variant_id="v1"),)).decisions[0].variant_id == "v1"
+
+    with pytest.raises(ValidationError):
+        package(decisions=(decision(variant_id="V1"),))
+    with pytest.raises(ValidationError):
+        package(decisions=(decision(variant_id="\uff56\uff11"),))
+
+
 # --- declaração de promessa versus afirmação sensacionalista ---------------
 
 
@@ -661,18 +754,31 @@ def test_variant_itself_cannot_be_marked_as_chosen_automatically():
 # --- versão ----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("value", [2, 0, 99])
+def test_package_schema_version_is_two_because_title_claim_became_required():
+    assert package().schema_version == 2
+    assert package(schema_version=2).schema_version == 2
+
+
+@pytest.mark.parametrize("value", [1, 0, 3, 99])
 def test_unknown_schema_version_is_rejected(value):
     with pytest.raises(ValidationError):
         package(schema_version=value)
 
 
-def test_load_versioned_refuses_missing_schema_version():
+def test_absent_schema_version_defaults_to_two_and_old_payloads_are_rejected():
     data = package().model_dump()
     data.pop("schema_version")
+    assert VideoPackaging.model_validate(data).schema_version == 2
 
-    with pytest.raises(ValueError):
-        load_versioned(VideoPackaging, data)
+    version_one = package().model_dump()
+    version_one["schema_version"] = 1
+    with pytest.raises(ValidationError):
+        VideoPackaging.model_validate(version_one)
+
+    without_claim = package().model_dump()
+    without_claim.pop("title_claim")
+    with pytest.raises(ValidationError):
+        VideoPackaging.model_validate(without_claim)
 
 
 def test_revision_must_be_a_positive_integer():
