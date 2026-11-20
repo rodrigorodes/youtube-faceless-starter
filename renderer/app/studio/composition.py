@@ -25,6 +25,7 @@ from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
+from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
 from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
@@ -43,6 +44,7 @@ from .application.analytics import Analytics
 from .application.panel import BuildPanel
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
+from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
@@ -245,6 +247,7 @@ class Studio:
         list_categories = ListCategories(category_repo, repo)
         save_category = SaveCategory(category_repo, repo)
         delete_category = DeleteCategory(category_repo)
+        channel_repo = PostgresChannelProfileRepository(connect)
         refresh_trends = RefreshTrends(
             repo=category_repo,
             ingest=ingest_trends,
@@ -260,7 +263,12 @@ class Studio:
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
                                   categories_repo=category_repo, list_categories=list_categories,
                                   save_category=save_category, delete_category=delete_category,
-                                  refresh_trends=refresh_trends)
+                                  refresh_trends=refresh_trends,
+                                  channel_profiles_repo=channel_repo,
+                                  create_channel_profile=CreateChannelProfile(channel_repo, repo),
+                                  get_channel_profile=GetChannelProfile(channel_repo, repo),
+                                  update_channel_profile=UpdateChannelProfile(channel_repo),
+                                  list_channel_profiles=ListChannelProfiles(channel_repo))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
