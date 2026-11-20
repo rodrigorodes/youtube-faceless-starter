@@ -40,3 +40,9 @@ autenticação multiusuário ou para exposição pública. Ambas as credenciais 
 acesso a todas as rotas Studio: o token do worker não restringe privilégios e
 deve ser protegido como a senha do navegador. A autenticação Studio não protege
 webhooks do n8n nem os endpoints legados `/videos`.
+
+O workflow 03 processa a URI de sessão de upload: ela pode ficar registrada
+no histórico de execuções do n8n e no banco do Studio. Trate ambos, seus backups
+e os acessos administrativos como sensíveis; não compartilhe execuções nem
+reproduza a URI em logs ou capturas de tela. Uma credencial ausente no JSON
+do workflow não implica ausência de dados sensíveis durante a execução.
