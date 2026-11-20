@@ -1,13 +1,15 @@
 """Rotas /studio. Só falam com casos de uso; nunca com repositório ou banco."""
 from collections.abc import Callable
+from datetime import date, datetime
+import os
+from urllib.parse import urlsplit
 
-from datetime import datetime
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from ..application.config import ProviderNotFound
+from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
@@ -29,6 +31,23 @@ RESERVED_TARGETS = {VideoStatus.APPROVED, VideoStatus.REJECTED, VideoStatus.PUBL
                     VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
 # Retomar de FAILED não pode saltar etapas com gate; a retomada validada é a P06.
 POST_GATE = {VideoStatus.FACT_CHECKED, VideoStatus.STORYBOARDED, VideoStatus.ASSETS_READY, VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL}
+
+
+def _browser_guard(request: Request) -> None:
+    """Bloqueia DNS rebinding e origens de navegador diferentes; não substitui autenticação de rede."""
+    allowed = {x.strip().lower() for x in os.getenv("STUDIO_ALLOWED_HOSTS", "localhost,127.0.0.1,renderer").split(",") if x.strip()}
+    try:
+        host = urlsplit("//" + request.headers.get("host", ""))
+        if not host.hostname or host.hostname.lower() not in allowed or host.username or host.password:
+            raise ValueError
+        host.port
+    except ValueError:
+        raise HTTPException(403, "host not allowed") from None
+    origin = request.headers.get("origin")
+    if origin:
+        expected = f"{request.url.scheme}://{request.headers['host']}"
+        if origin.lower() != expected.lower():
+            raise HTTPException(403, "origin not allowed")
 
 
 class ProjectIn(BaseModel):
@@ -165,7 +184,7 @@ class TransitionIn(BaseModel):
 
 
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
-    router = APIRouter(prefix="/studio", tags=["studio"])
+    router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard)])
 
     def run(fn):
         uc = get_use_cases()
@@ -301,6 +320,35 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def start_render(video_id: str):
         return run(lambda uc: rendering(uc).start.execute(check_id(video_id)))
 
+    @router.post("/videos/{video_id}/resume", status_code=202, response_model=RenderJob)
+    def resume_video(video_id: str):
+        def resume(uc):
+            if uc.resume is None:
+                raise HTTPException(503, "recovery services unavailable")
+            return uc.resume.execute(check_id(video_id))
+        return run(resume)
+
+    @router.post("/analytics/metrics", status_code=204)
+    def upsert_metric(body: DailyMetric):
+        def upsert(uc):
+            if uc.analytics is None:
+                raise HTTPException(503, "analytics services unavailable")
+            if uc.get_video.execute(body.video_id) is None:
+                raise VideoNotFound(body.video_id)
+            uc.analytics.upsert(body)
+        run(upsert)
+        return Response(status_code=204)
+
+    @router.get("/analytics/weekly")
+    def weekly_analytics(start: date, end: date):
+        if end < start or (end - start).days > 6:
+            raise HTTPException(422, "report interval must be at most seven days")
+        def weekly(uc):
+            if uc.analytics is None:
+                raise HTTPException(503, "analytics services unavailable")
+            return uc.analytics.weekly(start, end)
+        return run(weekly)
+
     @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)
     def render_status(video_id: str):
         job, qa = run(lambda uc: rendering(uc).get.execute(check_id(video_id)))
@@ -357,11 +405,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "thumbnail not available")
         return Response(data, media_type="image/jpeg")
 
-    @router.get("/videos/{video_id}/publication", response_model=Publication | None)
+    @router.get("/videos/{video_id}/publication", response_model=Publication | None, response_model_exclude={"upload_uri"})
     def get_publication(video_id: str):
         return run(lambda uc: publishing(uc).get.execute(check_id(video_id)))
 
-    @router.post("/videos/{video_id}/publication/retry", response_model=Publication)
+    @router.post("/videos/{video_id}/publication/retry", response_model=Publication, response_model_exclude={"upload_uri"})
     def retry_publication(video_id: str):
         return run(lambda uc: publishing(uc).retry.execute(check_id(video_id)))
 
@@ -372,19 +420,19 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             publication=item.publication, youtube_body=item.youtube_body, file_size=item.file_size, content_type=item.content_type,
             file_path=item.file_path, thumbnail_path=item.thumbnail_path))
 
-    @router.post("/publications/{publication_id}/upload-uri", response_model=Publication)
+    @router.post("/publications/{publication_id}/upload-uri", response_model=Publication, response_model_exclude={"upload_uri"})
     def set_upload_uri(publication_id: str, body: UploadUriIn):
         return run(lambda uc: publishing(uc).set_uri.execute(check_id(publication_id), body.attempt, body.upload_uri, body.replace))
 
-    @router.post("/publications/{publication_id}/uploaded", response_model=Publication)
+    @router.post("/publications/{publication_id}/uploaded", response_model=Publication, response_model_exclude={"upload_uri"})
     def uploaded(publication_id: str, body: UploadedIn):
         return run(lambda uc: publishing(uc).uploaded.execute(check_id(publication_id), body.youtube_video_id))
 
-    @router.post("/publications/{publication_id}/failed", response_model=Publication)
+    @router.post("/publications/{publication_id}/failed", response_model=Publication, response_model_exclude={"upload_uri"})
     def failed(publication_id: str, body: FailedIn):
         return run(lambda uc: publishing(uc).failed.execute(check_id(publication_id), body.attempt, body.error, body.retryable))
 
-    @router.post("/publications/{publication_id}/thumbnail-set", response_model=Publication)
+    @router.post("/publications/{publication_id}/thumbnail-set", response_model=Publication, response_model_exclude={"upload_uri"})
     def thumbnail_set(publication_id: str):
         return run(lambda uc: publishing(uc).thumbnail_set.execute(check_id(publication_id)))
 

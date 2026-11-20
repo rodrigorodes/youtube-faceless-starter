@@ -52,7 +52,8 @@ def test_full_flow_approve_twice_publishes_once_and_records_the_id(migrated, dsn
     assert client.post("/studio/publications/claim").json() == {"item": None}  # lease vigente: nada para outro worker
 
     pid = pub["id"]
-    assert client.post(f"/studio/publications/{pid}/upload-uri", json={"attempt": 1, "upload_uri": URI}).json()["upload_uri"] == URI
+    assert "upload_uri" not in client.post(f"/studio/publications/{pid}/upload-uri", json={"attempt": 1, "upload_uri": URI}).json()
+    assert "upload_uri" not in client.get(f"/studio/videos/{vid}/publication").json()
     done = client.post(f"/studio/publications/{pid}/uploaded", json={"youtube_video_id": YT})
     assert done.status_code == 200 and done.json()["status"] == "UPLOADED" and status(client, vid) == "PUBLISHED"
     assert client.post(f"/studio/publications/{pid}/uploaded", json={"youtube_video_id": YT}).status_code == 200  # repetir é seguro

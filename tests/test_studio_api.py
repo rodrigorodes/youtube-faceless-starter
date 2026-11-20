@@ -44,6 +44,24 @@ def test_create_and_get_video(client, video_id):
     assert r.status_code == 200 and r.json()["status"] == "IDEA" and r.json()["privacy"] == "private"
 
 
+def test_resume_refuses_video_without_assets(client, video_id):
+    assert client.post(f"/studio/videos/{video_id}/resume").status_code == 409
+
+
+def test_metrics_upsert_and_weekly_report(client, video_id):
+    url = "/studio/analytics/metrics"
+    metric = {"video_id": video_id, "date": "2026-11-10", "views": 5}
+    assert client.post(url, json=metric).status_code == 204
+    metric["views"] = 9
+    assert client.post(url, json=metric).status_code == 204
+    response = client.get("/studio/analytics/weekly", params={"start": "2026-11-09", "end": "2026-11-15"})
+    assert response.status_code == 200
+    assert response.json()[0]["views"] == 9
+    assert response.json()[0]["sample_small"] is True
+    assert response.json()[0]["suggestion"] is None
+    assert client.get("/studio/analytics/weekly", params={"start": "2026-11-01", "end": "2026-11-15"}).status_code == 422
+
+
 def test_video_for_unknown_project_is_404(client):
     r = client.post("/studio/videos", json={"project_id": "0" * 32, "topic": "ADE 2026", "format": "short"})
     assert r.status_code == 404
