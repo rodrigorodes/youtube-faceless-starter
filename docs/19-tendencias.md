@@ -51,6 +51,43 @@ A credencial de leitura do YouTube fica **exclusivamente no n8n** (nunca no `.en
 
 ---
 
+## Pilares de Conteúdo e Categorias por Projeto
+
+Para evitar que o canal dependa de buscas genéricas e sem foco editorial, o Studio organiza as tendências em **Pilares de Conteúdo** (categorias fixas por projeto).
+
+### 1. Conceito Editorial
+- Cada projeto/canal possui seus pilares estratégicos (exemplo para Música Eletrônica: `Festivais & Lineups`, `DJs & Bastidores`, `Rankings & Charts`).
+- Cada pilar possui uma lista curada de termos de busca (`queries`), limitados a **no máximo 10 termos por categoria** para evitar consumo descontrolado da cota da YouTube Data API.
+- Tópicos coletados são associados automaticamente ao pilar correspondente tanto pela chave quanto por correspondência léxica de termos de busca nos títulos de evidências.
+
+### 2. Endpoints da API de Categorias e Tendências
+
+As operações de categorias são autenticadas por `STUDIO_WORKER_TOKEN` (Bearer) ou autenticação do navegador (Basic Auth com CSRF):
+
+- **Listar Categorias:**
+  - `GET /studio/projects/{project_id}/categories`
+  - Retorna a lista de pilares cadastrados, ordenados por nome.
+- **Criar ou Atualizar Categoria:**
+  - `POST /studio/projects/{project_id}/categories`
+  - Payload:
+    ```json
+    {
+      "id": "opcional (se omitido, gera novo id hex32)",
+      "name": "Festivais & Lineups",
+      "queries": ["ADE 2026", "Tomorrowland Brasil", "Ultra Brasil"]
+    }
+    ```
+  - Validações: nome entre 1 e 100 caracteres; máximo de 10 queries; lista de queries deduplicada e sem termos em branco.
+- **Excluir Categoria:**
+  - `DELETE /studio/projects/{project_id}/categories/{category_id}`
+  - Remove o pilar. No banco de dados, `studio.trend_topics.category_id` possui `ON DELETE SET NULL`, preservando as tendências já salvas.
+- **Atualização sob Demanda de Tendências:**
+  - `POST /studio/projects/{project_id}/trends/refresh`
+  - Payload opcional: `{"queries": ["termo customizado"]}`. Se omitido, utiliza as queries agregadas de todos os pilares do projeto.
+  - Consulta a YouTube Data API v3, armazena os tópicos e evidências e retorna a contagem de registros persistidos.
+
+---
+
 ## Status da Coleta e Exibição no Painel
 - **Atualizado:** Consulta realizada dentro da janela do filtro selecionado.
 - **Desatualizado (stale):** Se a última consulta bem-sucedida for mais antiga que o período selecionado (ex.: consulta de 10 dias atrás para um filtro de 7 dias), o painel exibe um aviso explícito de que os dados estão desatualizados.

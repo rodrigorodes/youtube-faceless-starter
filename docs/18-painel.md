@@ -46,8 +46,15 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
 - **Auditoria de Custos:** Lista todas as chamadas de IA registradas para o vídeo (passo, provedor, modelo e custo em dólares).
 - **Publicação:** Exibe o status da tentativa de upload e eventuais mensagens de erro de rede.
 
-### 6. Seção de Temas em Alta (Fase B)
-- **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`).
+### 6. Seção de Temas em Alta e Pilares de Conteúdo
+- **Origem dos Dados:** Ingestão diária de tópicos e evidências da YouTube Data API v3 (workflow `05-trends-daily.json`) ou coleta sob demanda acionada diretamente no painel.
+- **Pilares de Conteúdo (Categorias):**
+  - Barra de pílulas (*chips*) no topo da seção: **Todas (N)**, cada pilar com seu contador de tópicos correspondentes e o botão de atalho **+ Novo Pilar**.
+  - O clique em uma pílula filtra os tópicos na tela instantaneamente, destacando apenas os temas pertencentes ao pilar escolhido.
+  - Cada cartão de tema exibe o distintivo com o pilar associado (ex.: `🏷️ Festivais & Lineups`).
+- **Ações Rápidas na Barra:**
+  - **🔄 Buscar Agora:** Dispara atualização sob demanda via YouTube Data API v3 (`POST /studio/projects/{id}/trends/refresh`), trazendo evidências e visualizações recentes sem esperar o agendamento noturno.
+  - **⚙️ Gerenciar Categorias:** Abre o modal de gerenciamento de pilares para cadastrar novos pilares, ajustar termos de busca curados (até 10 por pilar) ou remover pilares existentes.
 - **Verificabilidade:** Cada tema exibe a fonte oficial (`YouTube Data API`), o link direto, a data/hora da consulta e as visualizações agregadas dos principais vídeos da janela.
 - **Status do Período:**
   - Se a consulta estiver dentro da janela do filtro, exibe os tópicos normalmente.
@@ -55,6 +62,14 @@ O painel do Faceless Studio é a interface visual para acompanhar a produção d
   - Se ainda não houve ingestão, exibe `Ainda não há coleta de tendências registrada para o período selecionado.` (sem inventar dados).
 - **Criar Vídeo deste Tema:**
   - O botão preenche automaticamente o campo de tema no formulário `+ Novo Vídeo` e abre o formulário para o operador revisar o projeto e formato antes de criar.
+
+### 7. Gerenciamento de Pilares de Conteúdo (Modal)
+- O modal permite definir os eixos editoriais estratégicos do canal.
+- Cada pilar possui um nome (1 a 100 caracteres) e até 10 termos curados de busca separados por vírgula.
+- Ações no modal:
+  - **Editar:** Carrega o pilar no formulário inferior para ajustes de nome e termos.
+  - **Excluir:** Remove o pilar com confirmação (os tópicos vinculados são mantidos com categoria desvinculada).
+  - **Novo Pilar:** Salva o novo pilar e atualiza a barra de pílulas no painel.
 
 ## Política de Custo Honesto
 - Quando todos os modelos usados forem comprovadamente gratuitos (ex.: `:free`, placeholders ou síntese local Piper TTS), o painel exibe `US$ 0,00 (gratuito)`.
@@ -74,7 +89,8 @@ barra superior com o filtro de período e o card do teto mensal no rodapé do me
 de formulário (inputs, selects, textareas) têm estilo próprio, com foco visível. O tema segue
 o modo claro/escuro do sistema. A prévia de aprovação usa o mesmo visual.
 
-![Painel](images/painel-dashboard.png)
+![Painel com Pilares de Conteúdo](images/painel-dashboard.png)
+![Modal de Gerenciamento de Categorias](images/painel-categorias-modal.png)
 ![Formulário de novo vídeo](images/painel-form-novo-video.png)
 ![Detalhe do vídeo](images/painel-detalhe-video.png)
 ![Prévia e aprovação](images/painel-preview.png)
