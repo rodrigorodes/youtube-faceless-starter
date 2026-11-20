@@ -82,8 +82,21 @@ Migração `0020_paid_operation_attempt_and_budget_indexes.sql` (quatro dígitos
 - `paid_operations.attempt` (default 1, CHECK `attempt >= 1`).
 - Índices: `usage_ledger(created_at)`, `usage_ledger(video_id)`,
   `budget_reservations(created_at)`, `paid_operations(state, updated_at)`.
+- **Os índices de `usage_ledger` NÃO removem a varredura de tabela do cálculo do teto** (medido com
+  ~50k linhas): o aggregate de reserva em `_reserve_within` soma `usage_ledger` com `FILTER` que
+  dependem de `bounds` (`date_trunc`), sem predicado empurrável para índice, e o plano continua
+  `Seq Scan` — ~11 ms **com e sem** os índices. O que eles servem de fato é o **pré-check do
+  `CostGuard`**: `usage_ledger_video_id_idx` por `spent_video` e `usage_ledger_created_at_idx` por
+  `spent_month` e `panel.month_usage`. Já `paid_operations_state_updated_at_idx` é usado pela
+  consulta de operações RESERVED paradas e `budget_reservations_created_at_idx` pela listagem de
+  reservas antigas.
 - **Janelas de lock documentadas no arquivo**:
   - `ADD COLUMN ... DEFAULT constante` é metadata-only no PG >= 11, mas toma ACCESS EXCLUSIVE breve.
+  - O `CHECK (attempt >= 1)` criado no mesmo ALTER é **validado por varredura completa** da tabela sob
+    ACCESS EXCLUSIVE (~55 ms por 1M de linhas), custo que o comentário original do `ADD COLUMN`
+    escondia. Em tabela grande, o padrão `NOT VALID` + `VALIDATE CONSTRAINT` se aplica **igualmente
+    aqui** (não só à `0019`): `ADD CONSTRAINT ... CHECK (...) NOT VALID` (ACCESS EXCLUSIVE breve, sem
+    varredura) + `VALIDATE CONSTRAINT` em migração separada (SHARE UPDATE EXCLUSIVE).
   - `CREATE INDEX` sem `CONCURRENTLY` toma SHARE lock e **bloqueia escritas** durante a construção;
     `CONCURRENTLY` não roda dentro da transação de migração. Com tabela grande, criar o índice
     concurrentemente fora da migração antes de aplicar a versão.
@@ -98,6 +111,11 @@ Migração `0020_paid_operation_attempt_and_budget_indexes.sql` (quatro dígitos
 1. Só a chamada que recebeu `CREATED` executa o provedor.
 2. `RELEASED` = seguro repetir: o próximo `begin` com as mesmas entradas reabre (`CREATED`, nova
    reserva, `attempt + 1`). Entradas diferentes continuam `IdempotencyConflict`.
+   - **Invariante de adapter:** a reabertura de `RELEASED` não recobra **porque** nenhum adapter
+     levanta `PreEffectFailure` depois de um efeito externo já ocorrido. Hoje vale:
+     `PreEffectFailure` só é levantado pré-efeito (bridge, validação e `settle`). É hipótese a
+     manter — se um adapter passar a levantá-lo pós-efeito, reabrir vira replay pago e a garantia de
+     "não cobrar duas vezes" cai.
 3. `CONFIRMED` é terminal: replay levanta `OperationSettled` e **não** executa de novo. Reutilizar o
    resultado/asset perdido é responsabilidade do coordenador (D2).
 4. `UNCERTAIN` mantém a reserva e bloqueia até `confirm`, `release` ou `reconcile_actual` explícitos.
@@ -143,6 +161,11 @@ docker run --rm --network f1c-net \
 
 - Focados (`test_budget_guard.py`, `test_budget_http.py`, `test_paid_operations.py`,
   `test_budget_reservations.py`): **115 passed**.
+- **Revalidação da correção de documentação** (só comentários de SQL e este relatório; nenhum
+  `CREATE/ALTER/CHECK`, asserção ou código executável tocado): os quatro focados rodaram de novo com
+  **115 passed** em `--network none` (Postgres descartável também em `--network none`, com o runner
+  compartilhando o namespace de loopback via `--network container:`) e as guardas de
+  `tests/conftest.py`.
 - `tests/test_db.py`: **13 passed, 2 failed** — falha esperada e **não corrigida de propósito**:
   a instrução desta rodada proíbe tocar em `tests/test_db.py`. As duas listas de migração
   (`test_migrate_applies_once` e `test_failed_migration_rolls_back_and_is_not_recorded`, linhas 25 e
@@ -192,7 +215,8 @@ engolido; voz por conteúdo sem cobrança dupla, com replay grátis só quando `
 - **Atomicidade**: reserva + intenção e confirmação (ledger + estado + remoção da reserva) são
   transacionais; queda no meio deixa `RESERVED`/`UNCERTAIN` para reconciliação.
 - **Índices**: a `0020` usa `CREATE INDEX` transacional (bloqueia escritas na construção); em tabela
-  grande, criar concurrentemente fora da migração.
+  grande, criar concurrentemente fora da migração. Os índices de `usage_ledger` servem ao pré-check
+  do `CostGuard`, **não** ao aggregate de reserva, que segue `Seq Scan` (ver "Performance e migração").
 - **Testes de PostgreSQL** exigem banco exclusivamente descartável e prova privada; sem isso são
   ignorados, não aprovados.
 - **Arquivos compartilhados**: `composition.py` não foi tocado nesta rodada; `tests/test_db.py` foi
