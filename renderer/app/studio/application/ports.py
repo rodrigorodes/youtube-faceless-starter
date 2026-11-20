@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..domain.render import Cue
+from ..domain.trends import TrendItem
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
@@ -268,4 +269,27 @@ class PanelRepository(Protocol):
     def video_detail(self, video_id: str) -> VideoDetail | None: ...
     def month_usage(self) -> tuple[float, int, int]: ...
     def unattributed_usage(self) -> list[tuple[str, str, float]]: ...
+
+
+@dataclass(frozen=True)
+class TrendRecord:
+    id: str
+    project_id: str
+    topic: str
+    topic_key: str
+    source_name: str
+    source_url: str
+    observed_at: datetime
+    window_start: datetime
+    window_end: datetime
+    metric_name: str | None
+    metric_value: float | None
+    evidence: list[dict]
+
+
+class TrendRepository(Protocol):
+    def upsert(self, project_id: str, items: list[TrendItem]) -> int: ...
+    def list(self, project_id: str | None, since: datetime) -> list[TrendRecord]: ...
+    def last_collected_at(self, project_id: str | None) -> datetime | None: ...
+
 
