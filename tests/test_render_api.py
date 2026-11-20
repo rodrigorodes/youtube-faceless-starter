@@ -80,6 +80,9 @@ class SyncExecutor:
     def submit(self, fn, *args):
         fn(*args)
 
+    def shutdown(self, wait=True, cancel_futures=False):
+        self.closed = (wait, cancel_futures)
+
 
 class Deferred:
     def __init__(self):
@@ -234,6 +237,7 @@ def test_shutdown_does_not_wait_and_startup_sweeps_leftover_work_dirs(migrated, 
     client, studio = make_client(dsn, tmp_path)
     assert studio.use_cases() is not None and not leftover.exists() and (tmp_path / "projects" / ("1" * 32)).exists()
     studio.shutdown()  # não levanta nem espera
+    assert studio._executor.closed == (False, True)
 
 
 def test_startup_cleanup_failing_does_not_break_the_app_and_retries_later(migrated, dsn, tmp_path, monkeypatch):
