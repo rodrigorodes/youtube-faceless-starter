@@ -30,9 +30,11 @@ O corpo do YouTube é sempre `private` (com `publishAt` quando agendado), `selfD
 Parâmetros de teste do webhook: `lease_seconds` (20–7200) e `debug_wait_after` (`init` ou `upload`, espera 45 s para simular queda).
 
 ## Validado em execução real
-Upload interrompido por queda do n8n foi retomado na mesma publicação (tentativa 2), sem duplicar, com ID registrado e vídeo `PUBLISHED`, privado.
+- Queda do n8n com a sessão de upload já gravada: ao reiniciar, a mesma publicação foi reivindicada (tentativa 2), a consulta à sessão voltou concluída com o ID e o vídeo virou `PUBLISHED`, privado, sem duplicar.
+- Só esse ramo ("sessão já concluída") foi exercitado de ponta a ponta. Os ramos 308 (envia só o restante) e 404/410 (nova sessão) têm teste da classificação (`tests/test_workflow_publish.py`), mas não rodaram contra o YouTube.
+- Miniatura: o YouTube recusou ("doesn't have permissions to upload and set custom video thumbnails"): **miniatura personalizada exige canal verificado**. A falha não é fatal; `thumbnail_set` fica `false`. Verifique o canal em youtube.com/verify para habilitar.
+- Ao testar o webhook, envie `Content-Type: application/json`; sem ele o corpo é ignorado e `debug_wait_after`/`lease_seconds` não valem.
 
 ## Não verificado
-- Miniatura personalizada exigir canal verificado.
 - Expiração do token OAuth fora do modo Testing (em Testing expira em 7 dias).
 - Efeito real de `publishAt`.
