@@ -3,7 +3,55 @@ import random
 import time
 import json
 import logging
+import threading
 from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
+
+
+class BridgeAlerts:
+    """Passive, process-local observation; never contacts the bridge itself."""
+    def __init__(self, *, clock=time.monotonic, max_age=300.0):
+        self._clock, self._max_age = clock, max_age
+        self._lock = threading.Lock()
+        self._state, self._observed_at = "unknown", None
+
+    def status(self):
+        with self._lock:
+            if self._observed_at is None or self._clock() - self._observed_at >= self._max_age:
+                return "unknown"
+            return self._state
+
+    def observe(self, reachable: bool):
+        with self._lock:
+            observed_at = self._clock()
+            previous = self._state if self._observed_at is not None and observed_at - self._observed_at < self._max_age else "unknown"
+            self._state = "reachable" if reachable else "unreachable"
+            self._observed_at = observed_at
+            if not reachable and previous != "unreachable":
+                logging.getLogger("studio.alerts").warning('{"event":"bridge_unreachable"}')
+
+
+def oauth_expiry_status(expires_at=None, *, now=None, warning_window=timedelta(days=7)):
+    """Classify trusted expiry metadata, not token validity or authorization."""
+    now = datetime.now(timezone.utc) if now is None else now
+    if not isinstance(warning_window, timedelta) or warning_window < timedelta(0):
+        raise ValueError("warning_window must be a non-negative timedelta")
+    if (not isinstance(expires_at, datetime) or expires_at.utcoffset() is None
+            or not isinstance(now, datetime) or now.utcoffset() is None):
+        return "unknown"
+    remaining = expires_at - now
+    if remaining <= timedelta(0):
+        return "expired"
+    if remaining <= warning_window:
+        return "expiring"
+    return "not_expiring"
+
+
+def check_oauth_expiry(expires_at=None, *, now=None, warning_window=timedelta(days=7)):
+    status = oauth_expiry_status(expires_at, now=now, warning_window=warning_window)
+    if status in ("expiring", "expired"):
+        logging.getLogger("studio.alerts").warning('{"event":"oauth_%s"}', status)
+    return status
 
 
 def retry_transient(operation, *, attempts=3, sleep=time.sleep, random_value=random.random):

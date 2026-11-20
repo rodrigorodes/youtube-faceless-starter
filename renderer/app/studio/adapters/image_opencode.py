@@ -13,12 +13,13 @@ class OpenCodeImage:
     name = "opencode"
 
     def __init__(self, model: str, token: str, base_url: str = "http://host.docker.internal:8787",
-                 transport: httpx.BaseTransport | None = None, timeout: float = 120.0, paid_estimate_usd: float = 0.05):
+                 transport: httpx.BaseTransport | None = None, timeout: float = 120.0, paid_estimate_usd: float = 0.05, alerts=None):
         if not (token or "").strip():
             raise ProviderNotFound("opencode image provider requires OPENCODE_BRIDGE_TOKEN")
         self.model, self._token, self._base = model, token.strip(), base_url.rstrip("/")
         self._transport, self._timeout, self._paid = transport, timeout, paid_estimate_usd
         self._verified = False
+        self._alerts = alerts
 
     def cost_estimate(self, prompt: str) -> float:
         return 0.0 if self.model.split("#", 1)[0].endswith(":free") else self._paid
@@ -29,8 +30,13 @@ class OpenCodeImage:
         if self._verified:
             return
         try:
-            declared = client.get(f"{self._base}/health").json().get("image_model")
-        except (httpx.HTTPError, ValueError, AttributeError):
+            response = client.get(f"{self._base}/health")
+            if self._alerts is not None:
+                self._alerts.observe(True)
+            declared = response.json().get("image_model")
+        except (httpx.HTTPError, ValueError, AttributeError) as exc:
+            if self._alerts is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                self._alerts.observe(False)
             declared = None
         if declared != self.model:
             raise ModelUnavailable(f"bridge image model ({declared or 'not declared'}) differs from the configured {self.model}; "
@@ -46,6 +52,8 @@ class OpenCodeImage:
                 with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
                     self._check_bridge(client)
                     response = client.post(f"{self._base}/image", headers={"Authorization": f"Bearer {self._token}"}, json={"prompt": prompt})
+                    if self._alerts is not None:
+                        self._alerts.observe(True)
                     response.raise_for_status()
                     payload = response.json()
                     raw = base64.b64decode(payload["data"], validate=True)
@@ -59,6 +67,8 @@ class OpenCodeImage:
                 if exc.response.status_code < 500:
                     break
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                if self._alerts is not None:
+                    self._alerts.observe(False)
                 last = exc  # nada foi enviado: seguro repetir
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
                 last = exc

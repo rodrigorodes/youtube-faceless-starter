@@ -33,7 +33,7 @@ from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
 from .application.analytics import Analytics
-from .application.observability import Resume
+from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
@@ -96,6 +96,7 @@ class Studio:
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
+        self.bridge_alerts = BridgeAlerts()
         register("text", "opencode", lambda model: OpenCodeText(model, settings.bridge_token, settings.bridge_url))
         register("text", "demo", DemoText)
         register("image", "opencode", lambda model: OpenCodeImage(model, settings.bridge_token, settings.bridge_url, paid_estimate_usd=settings.paid_image_usd))
@@ -149,6 +150,16 @@ class Studio:
         """Não espera render em andamento (o SIGTERM não pode travar por minutos); o job fica para o reaper/próxima subida."""
         self._executor.shutdown(wait=False, cancel_futures=True)
 
+    def _build_provider(self, kind: str, spec: str):
+        name, sep, model = spec.partition(":")
+        if sep and name == "opencode":
+            if kind == "text":
+                return OpenCodeText(model, self.settings.bridge_token, self.settings.bridge_url, alerts=self.bridge_alerts)
+            if kind == "image":
+                return OpenCodeImage(model, self.settings.bridge_token, self.settings.bridge_url,
+                                     paid_estimate_usd=self.settings.paid_image_usd, alerts=self.bridge_alerts)
+        return build(kind, spec)
+
     def _wire(self) -> UseCases:
         s, connect = self.settings, self._connect
         repo, snaps, scripts = PostgresVideoRepository(connect), PostgresSnapshotRepository(connect), PostgresScriptRepository(connect)
@@ -160,7 +171,7 @@ class Studio:
                 spec = getattr(ProjectConfig.resolve(project.config if project else {}, self.environ), kind)
             except ValueError as exc:
                 raise ProviderNotFound(str(exc)) from exc
-            return build(kind, spec)
+            return self._build_provider(kind, spec)
 
         def text_for(project_id: str | None):
             return provider_for("text", project_id)
