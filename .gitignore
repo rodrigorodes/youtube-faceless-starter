@@ -14,3 +14,6 @@ backups/*
 !backups/.gitkeep
 storage/cache/
 storage/projects/
+client_secret*.json
+credentials/
+*.credentials.json
