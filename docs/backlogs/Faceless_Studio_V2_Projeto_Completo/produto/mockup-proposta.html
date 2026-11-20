@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Faceless Studio V2 — proposta de UI</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg-app: #0a0f19;
+    --bg-canvas: #101827;
+    --surface: #131b2d;
+    --surface-raised: #1b263e;
+    --border: #2a3350;
+    --border-soft: #1f2942;
+    --text: #e6e9f5;
+    --text-muted: #aab3c8;
+    --text-dim: #7f8aa6;
+    --accent: #7c3aed;
+    --accent-strong: #5b08f6;
+    --accent-soft: #331e7e;
+    --accent-contrast: #ffffff;
+    --success: #74d6a6;
+    --success-surface: #12322a;
+    --success-contrast: #06130d;
+    --info: #0abcff;
+    --info-surface: #0b2c3f;
+    --warn: #e3b341;
+    --warn-surface: #33270e;
+    --danger: #ff5a6e;
+    --danger-surface: #38141c;
+    --gold: #e3b341;
+    --radius: 18px;
+    --gap: 20px;
+    accent-color: var(--accent);
+    scrollbar-color: var(--border) var(--bg-app);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background-color: var(--bg-app);
+    background-image: radial-gradient(1200px 620px at 72% -8%, #241b52 0%, transparent 62%);
+    background-repeat: no-repeat;
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--text); text-decoration: none; }
+  :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 6px; }
+  .skip {
+    position: absolute; left: -9999px; top: 0; background: var(--accent); color: var(--accent-contrast);
+    padding: 10px 16px; z-index: 10;
+  }
+  .skip:focus { left: 12px; top: 12px; }
+  .app {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr) 300px;
+    gap: var(--gap);
+    padding: 18px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    background: linear-gradient(180deg, #0c1222, #0a0f19);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    padding: 18px 14px;
+    display: flex; flex-direction: column; gap: 22px;
+    height: fit-content; position: sticky; top: 18px;
+  }
+  .brand { display: flex; gap: 10px; align-items: center; padding: 0 6px; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(160deg, var(--accent-strong), #9d6bff); color: #fff;
+    font-weight: 700; font-size: 13px;
+  }
+  .brand-name { font-weight: 700; letter-spacing: .2px; }
+  .brand-sub { font-size: 11px; color: var(--text-dim); }
+  .nav-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--text-dim); margin: 0 0 8px 8px;
+  }
+  .nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .nav a, .nav .is-disabled {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 10px; font-size: 14px; min-height: 40px;
+  }
+  .nav a:hover { background: var(--surface-raised); }
+  .nav a[aria-current="page"] {
+    background: linear-gradient(90deg, var(--accent-soft), #241a4f);
+    box-shadow: inset 0 0 0 1px #4b32a8;
+    font-weight: 600;
+  }
+  .nav .is-disabled { color: var(--text-dim); cursor: not-allowed; white-space: nowrap; }
+  .nav .is-disabled em {
+    margin-left: auto; font-style: normal; font-size: 10px; letter-spacing: .04em;
+    border: 1px solid var(--border); padding: 2px 6px; border-radius: 999px; white-space: nowrap;
+  }
+  .ico { width: 18px; height: 18px; flex: none; opacity: .95; }
+  .side-card { border: 1px solid var(--border-soft); border-radius: 12px; padding: 12px; background: var(--surface); }
+  .side-card h2 { font-size: 12px; margin: 0 0 8px; color: var(--text-muted); font-weight: 600; }
+  .side-card p { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+  .mock-flag {
+    margin-top: auto; font-size: 11px; color: var(--text-dim);
+    border-top: 1px dashed var(--border); padding-top: 12px;
+  }
+
+  /* ---------- main ---------- */
+  main { display: grid; gap: var(--gap); min-width: 0; }
+  .hero {
+    background: linear-gradient(135deg, #1a1440 0%, #141b30 55%, #121a2b 100%);
+    border: 1px solid var(--border-soft);
+    border-radius: 18px; padding: 26px 26px 22px;
+    position: relative; overflow: hidden;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: auto -80px -120px auto; width: 320px; height: 320px;
+    background: radial-gradient(circle, #7c3aed55, transparent 70%); pointer-events: none;
+  }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  h1 {
+    font-size: clamp(28px, 3.2vw, 42px); line-height: 1.08; margin: 0 0 10px;
+    letter-spacing: -.035em; font-weight: 700;
+  }
+  .accent-word {
+    background: linear-gradient(92deg, #b79bff 0%, #7c3aed 45%, var(--gold) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { margin: 0 0 18px; color: var(--text-muted); max-width: 60ch; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab {
+    border: 1px solid var(--border); background: #0f1626; color: var(--text-muted);
+    padding: 8px 14px; border-radius: 10px; font-size: 13px; cursor: pointer;
+  }
+  .tab[aria-selected="true"] {
+    background: linear-gradient(180deg, #2a1f63, #1c1548); color: #fff;
+    border-color: #4b32a8; box-shadow: 0 0 0 1px #4b32a855 inset;
+  }
+  .idea-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; gap: 10px; align-items: center; }
+  .input {
+    background: #0c1322; border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 12px 14px; font-size: 14px; min-height: 46px; width: 100%;
+  }
+  .input::placeholder { color: var(--text-dim); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+    min-height: 46px; padding: 0 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--surface-raised); color: var(--text); cursor: pointer;
+  }
+  .btn:hover { background: #243050; }
+  .btn-primary {
+    background: linear-gradient(180deg, var(--accent-strong), #6d1df0);
+    border-color: #7f3bff; color: var(--accent-contrast);
+    box-shadow: 0 6px 18px #5b08f655;
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost { background: transparent; }
+  .note { margin: 12px 0 0; font-size: 12px; color: var(--text-dim); }
+
+  section.block { display: grid; gap: 12px; }
+  .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h2 { font-size: 18px; margin: 0; letter-spacing: -.2px; }
+  h3 { font-size: 15px; margin: 0 0 4px; }
+  .muted { color: var(--text-muted); }
+  .dim { color: var(--text-dim); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: var(--radius); padding: 18px;
+  }
+  .card.empty { border-style: dashed; background: #101728; }
+
+  /* stepper (espelha a jornada; desabilitado enquanto não há execução) */
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+  .steps li {
+    font-size: 12px; color: var(--text-dim); border: 1px solid var(--border-soft);
+    background: #0d1424; border-radius: 999px; padding: 6px 12px; min-height: 32px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .steps li[aria-current="step"] {
+    color: var(--text-muted); border-color: #3a4570; background: #141c30;
+  }
+  .steps li .n { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+  .fine { margin: 12px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-dim); }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .spread { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+
+  /* badges de estado */
+  .state { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+           padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; }
+  .state .glyph { font-size: 11px; line-height: 1; }
+  .s-done { color: var(--success); background: var(--success-surface); border-color: #1f6b4e; }
+  .s-run  { color: var(--info);    background: var(--info-surface);    border-color: #14567a; }
+  .s-act  { color: var(--warn);    background: var(--warn-surface);    border-color: #6b4a1c; }
+  .s-fail { color: var(--danger);  background: var(--danger-surface);  border-color: #7a2436; }
+  .state-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* cards de ação */
+  .next { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .next .card { display: grid; gap: 10px; }
+  .next .card p { margin: 0; font-size: 13px; }
+
+  /* lista de vídeos */
+  .list { display: grid; gap: 0; }
+  .item {
+    display: grid; grid-template-columns: minmax(0,1.6fr) auto auto auto;
+    gap: 14px; align-items: center; padding: 14px 4px; border-top: 1px solid var(--border-soft);
+  }
+  .item:first-child { border-top: 0; }
+  .item-title { font-weight: 600; }
+  .item-sub { font-size: 12px; color: var(--text-dim); }
+  .cost { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .cost b { color: var(--text); font-weight: 600; }
+
+  /* tendências */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip {
+    border: 1px solid var(--border); background: #0f1626; color: var(--text-muted);
+    border-radius: 999px; padding: 7px 13px; font-size: 12.5px; cursor: pointer; min-height: 36px;
+  }
+  .chip[aria-pressed="true"] { background: #2a1f63; color: #fff; border-color: #5b3ad0; }
+  .trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .trend { padding: 14px; display: grid; gap: 8px; }
+  .trend .region { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); }
+  .trend .metrics { display: flex; gap: 10px; font-size: 12px; color: var(--text-muted); }
+  .thumb { height: 76px; border-radius: 10px; background: linear-gradient(135deg,#241a4f,#0f1626); display: grid; place-items: center; color: #8b7fd0; font-size: 11px; }
+
+  /* rail */
+  .rail { display: grid; gap: var(--gap); align-content: start; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border-soft); font-size: 13px; }
+  .kv:first-of-type { border-top: 0; }
+  .kv span:last-child { font-weight: 600; }
+  .tag { font-size: 10.5px; color: var(--text-dim); margin-left: 6px; }
+
+  /* avançado */
+  details.advanced { background: #0e1524; border: 1px solid var(--border-soft); border-radius: var(--radius); }
+  details.advanced > summary {
+    cursor: pointer; padding: 14px 18px; font-size: 13px; color: var(--text-muted);
+    list-style: none; display: flex; align-items: center; gap: 8px; min-height: 44px;
+  }
+  details.advanced > summary::-webkit-details-marker { display: none; }
+  details.advanced[open] > summary { border-bottom: 1px solid var(--border-soft); }
+  details.advanced .body { padding: 14px 18px; font-size: 12.5px; color: var(--text-muted); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #c7b8ff; }
+
+  @media (max-width: 1180px) {
+    .app { grid-template-columns: 220px minmax(0,1fr); }
+    .rail { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+    .sidebar { position: static; gap: 14px; }
+    /* navegação ativa em faixa horizontal (compacta) */
+    .nav ul:first-of-type { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+    .nav ul:first-of-type li { flex: none; }
+    .nav a { padding: 8px 12px; min-height: 38px; white-space: nowrap; }
+    /* itens indisponíveis em duas colunas, sem empilhar uma tela inteira */
+    .nav ul:last-of-type { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .nav .is-disabled { font-size: 12.5px; padding: 7px 8px; min-height: 34px; }
+    .nav .is-disabled em { display: none; }
+    .idea-row { grid-template-columns: minmax(0, 1fr); }
+    .item { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .item .btn { width: 100%; }
+    h1 { font-size: 26px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#conteudo">Ir para o conteúdo</a>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">FS</div>
+      <div>
+        <div class="brand-name">Faceless Studio V2</div>
+        <div class="brand-sub">YouTube Automation</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Principal">
+      <p class="nav-label">Operação</p>
+      <ul>
+        <li><a href="#conteudo" aria-current="page"><span class="ico" aria-hidden="true">⌂</span> Início</a></li>
+        <li><a href="#producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+        <li><a href="#tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
+        <li><a href="#videos"><span class="ico" aria-hidden="true">▷</span> Vídeos</a></li>
+      </ul>
+
+      <p class="nav-label" style="margin-top:16px">Indisponível nesta versão</p>
+      <ul>
+        <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">◎</span> Canais <em>em breve</em></span></li>
+        <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">▦</span> Analytics <em>em breve</em></span></li>
+        <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">☰</span> Equipe <em>SaaS</em></span></li>
+        <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">⚙</span> Configurações <em>em breve</em></span></li>
+      </ul>
+    </nav>
+
+    <div class="side-card">
+      <h2>Orçamento do mês</h2>
+      <p>Não disponível: nenhum custo confirmado neste mês.</p>
+    </div>
+
+    <p class="mock-flag">Mockup de proposta · dados ilustrativos</p>
+  </aside>
+
+  <main id="conteudo">
+    <header class="hero">
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Um comando, do briefing à publicação</p>
+      <h1>Transforme uma ideia em um vídeo <span class="accent-word">publicado</span></h1>
+      <p class="lede">Roteiro, imagens, narração, edição, thumbnail, publicação e análise — com dois pontos de aprovação humana e teto de custo.</p>
+
+      <div class="tabs" role="tablist" aria-label="Origem do vídeo">
+        <button class="tab" role="tab" aria-selected="true" id="tab-ideia" aria-controls="p-ideia">Minha ideia</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-tend" aria-controls="p-tend">Tendência</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-serie" aria-controls="p-serie">Série / Playlist</button>
+      </div>
+
+      <form class="idea-row" id="p-ideia" role="tabpanel" aria-labelledby="tab-ideia" onsubmit="return false">
+        <label class="skip" for="tema">Tema do vídeo</label>
+        <input class="input" id="tema" placeholder="Como a OpenAI ganha dinheiro?">
+        <label class="skip" for="dur">Duração alvo</label>
+        <select class="input" id="dur" style="width:auto">
+          <option>480 s (8 min)</option>
+          <option>60 s</option>
+          <option>180 s</option>
+        </select>
+        <label class="skip" for="voz">Voz</label>
+        <select class="input" id="voz" style="width:auto">
+          <option>pt-BR · Faber (Piper)</option>
+        </select>
+        <button class="btn btn-primary" type="submit">✦ Produzir vídeo</button>
+      </form>
+      <p class="note">A produção começa no modo assistido. Você aprova o roteiro e o preview antes de qualquer publicação.</p>
+    </header>
+
+    <section class="block" id="producao" aria-labelledby="h-producao">
+      <div class="block-head">
+        <h2 id="h-producao">Produção</h2>
+        <div class="state-legend" aria-label="Legenda de estados">
+          <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span>
+          <span class="state s-run"><span class="glyph" aria-hidden="true">▶</span> Em execução</span>
+          <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+        </div>
+      </div>
+
+      <article class="card empty">
+        <h3>Nenhuma execução registrada</h3>
+        <p class="muted">Quando você produzir um vídeo, o andamento aparece aqui com etapa atual, próxima ação e custo.</p>
+        <ol class="steps" aria-label="Etapas da produção">
+          <li><span class="n">1</span> Roteiro</li>
+          <li><span class="n">2</span> Fontes</li>
+          <li><span class="n">3</span> Fact-check</li>
+          <li><span class="n">4</span> Cenas</li>
+          <li><span class="n">5</span> Voz</li>
+          <li><span class="n">6</span> Render</li>
+          <li><span class="n">7</span> QA</li>
+          <li><span class="n">8</span> Publicação</li>
+        </ol>
+        <p class="fine">Etapas exibidas sem estado: nenhuma foi iniciada. Não há percentual porque não existe execução registrada.</p>
+      </article>
+    </section>
+
+    <section class="block" aria-labelledby="h-prox">
+      <h2 id="h-prox">Precisa de você</h2>
+      <div class="next">
+        <article class="card">
+          <div class="spread"><h3>Revisar roteiro</h3><span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span></div>
+          <p class="muted">“Como a OpenAI ganha dinheiro?” · 8 cenas · 7 min 40 s estimados</p>
+          <p class="dim">Aprovar ou editar antes de gerar storyboard e voz.</p>
+          <div class="row"><button class="btn btn-primary">Revisar roteiro</button><button class="btn btn-ghost">Ver cenas</button></div>
+        </article>
+        <article class="card">
+          <div class="spread"><h3>Preview pronto para aprovação</h3><span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span></div>
+          <p class="muted">2 alertas não bloqueantes de QA · render <code>sha256:9f2c…</code></p>
+          <p class="dim">Aprovar libera thumbnail e metadados. Publicação pública pede confirmação extra.</p>
+          <div class="row"><button class="btn btn-primary">Abrir preview</button></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" id="tendencias" aria-labelledby="h-tend">
+      <div class="block-head">
+        <h2 id="h-tend">Tendências</h2>
+        <span class="dim" style="font-size:12px">Fonte: YouTube Brasil · YouTube EUA · atualizado há 2 h</span>
+      </div>
+      <search>
+        <div class="filters" aria-label="Filtros de tendências">
+          <button class="chip" aria-pressed="true">Brasil</button>
+          <button class="chip" aria-pressed="false">EUA</button>
+          <button class="chip" aria-pressed="false">Origem desconhecida</button>
+          <button class="chip" aria-pressed="false">Todos os pilares</button>
+        </div>
+      </search>
+
+      <div class="trends">
+        <article class="card trend">
+          <div class="thumb" aria-hidden="true">miniatura</div>
+          <span class="region">Brasil</span>
+          <h3>O novo modelo de IA que está assumindo o mercado</h3>
+          <div class="metrics"><span>1,2 mi views</span><span>há 2 dias</span></div>
+          <button class="btn" style="min-height:38px">Usar tendência</button>
+        </article>
+        <article class="card trend">
+          <div class="thumb" aria-hidden="true">miniatura</div>
+          <span class="region">EUA</span>
+          <h3>Google vs OpenAI: quem lidera agentes em 2026?</h3>
+          <div class="metrics"><span>890 mil views</span><span>há 1 dia</span></div>
+          <button class="btn" style="min-height:38px">Usar tendência</button>
+        </article>
+        <article class="card trend">
+          <div class="thumb" aria-hidden="true">miniatura</div>
+          <span class="region">Origem desconhecida</span>
+          <h3>Registro histórico sem região declarada</h3>
+          <div class="metrics"><span>650 mil views</span><span>há 4 dias</span></div>
+          <button class="btn" style="min-height:38px">Usar tendência</button>
+        </article>
+      </div>
+      <div><button class="btn btn-ghost" aria-expanded="false">Ver mais tendências (+2)</button></div>
+    </section>
+
+    <section class="block" id="videos" aria-labelledby="h-videos">
+      <h2 id="h-videos">Vídeos</h2>
+      <div class="card" style="padding:8px 18px">
+        <div class="list">
+          <div class="item">
+            <div><div class="item-title">Como a OpenAI ganha dinheiro?</div><div class="item-sub">Canal: IA e Tecnologia · 7 min 40 s</div></div>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span>
+            <span class="cost"><b>Real</b> US$ 0,07</span>
+            <button class="btn btn-ghost" style="min-height:38px">Abrir</button>
+          </div>
+          <div class="item">
+            <div><div class="item-title">Agentes de IA na prática</div><div class="item-sub">Etapa atual: imagens · próxima ação: nenhuma</div></div>
+            <span class="state s-run"><span class="glyph" aria-hidden="true">▶</span> Em execução</span>
+            <span class="cost"><b>Estimado</b> US$ 0,05</span>
+            <button class="btn btn-ghost" style="min-height:38px">Acompanhar</button>
+          </div>
+          <div class="item">
+            <div><div class="item-title">O que muda com o novo modelo</div><div class="item-sub">Roteiro aguardando aprovação há 3 h</div></div>
+            <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+            <span class="cost"><b>Sem custo</b></span>
+            <button class="btn btn-primary" style="min-height:38px">Revisar roteiro</button>
+          </div>
+          <div class="item">
+            <div><div class="item-title">Bastidores: como escolhemos os temas</div><div class="item-sub">Custo não confirmado pelo provedor</div></div>
+            <span class="state s-fail"><span class="glyph" aria-hidden="true">×</span> Falhou</span>
+            <span class="cost"><b>Desconhecido</b></span>
+            <button class="btn btn-ghost" style="min-height:38px">Ver correção</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <details class="advanced">
+      <summary><span aria-hidden="true">▸</span> Avançado — diagnóstico (IDs, traces, uso de modelos)</summary>
+      <div class="body">
+        <p style="margin:0 0 8px">Somente para depuração. Não é necessário para operar o fluxo.</p>
+        <p style="margin:0">run_id <code>run_7f3a</code> · video_id <code>vid_2b91</code> · stage_id <code>render</code> · trace <code>4f2c1a</code></p>
+        <p style="margin:8px 0 0">Uso de modelos: 3 chamadas · 1.240 tokens · 1 render · 1 chamada de imagem (estimada).</p>
+      </div>
+    </details>
+  </main>
+
+  <aside class="rail" aria-label="Resumo">
+    <section class="card" aria-labelledby="h-custo">
+      <h2 id="h-custo">Custo do mês</h2>
+      <div class="kv"><span>Real confirmado <span class="tag">ACTUAL</span></span><span>US$ 0,07</span></div>
+      <div class="kv"><span>Estimado <span class="tag">ESTIMATE</span></span><span>US$ 0,05</span></div>
+      <div class="kv"><span>Sem custo <span class="tag">FREE</span></span><span>2 chamadas</span></div>
+      <div class="kv"><span>Custo desconhecido</span><span>1 registro</span></div>
+      <p class="fine">Estimativa não é custo cobrado. O teto consome o valor estimado até a reconciliação; custo desconhecido não é tratado como zero.</p>
+    </section>
+
+    <section class="card" aria-labelledby="h-falha">
+      <h2 id="h-falha">Última falha</h2>
+      <p style="margin:0 0 6px"><strong>Render interrompido</strong></p>
+      <p class="muted" style="margin:0 0 6px; font-size:13px">O que fazer: revisar a cena 3 (narração longa para o tempo da imagem) e tentar novamente.</p>
+      <p class="dim" style="margin:0 0 12px; font-size:12px">Detalhe técnico disponível em Avançado.</p>
+      <button class="btn btn-primary" style="width:100%">Tentar novamente</button>
+    </section>
+
+    <section class="card" aria-labelledby="h-fase">
+      <h2 id="h-fase">Estado das fases</h2>
+      <div class="kv"><span>F0 Segurança e docs</span><span class="state s-done" style="padding:2px 8px">✓</span></div>
+      <div class="kv"><span>F1 Reservas e execução</span><span class="state s-act" style="padding:2px 8px">parcial</span></div>
+      <div class="kv"><span>F5 Audiovisual</span><span class="state s-act" style="padding:2px 8px">domínio</span></div>
+      <div class="kv"><span>F6 QA</span><span class="state s-act" style="padding:2px 8px">contrato</span></div>
+      <div class="kv"><span>F8 Publicação</span><span class="state s-fail" style="padding:2px 8px">não iniciada</span></div>
+      <div class="kv"><span>F11 SaaS</span><span class="state s-fail" style="padding:2px 8px">adiada</span></div>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
