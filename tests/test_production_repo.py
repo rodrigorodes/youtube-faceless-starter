@@ -813,3 +813,102 @@ def test_postgres_adapter_matches_the_production_run_port(production_db):
         assert callable(getattr(repo, name)), name
         assert shape(getattr(PostgresProductionRunRepository, name)) == shape(member), name
     assert checked == 11
+
+def test_database_enforces_the_canonical_idempotency_key(conn):
+    migrate(conn)
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'p')", (PROJECT,))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'topic', 'short')",
+                 (VIDEO, PROJECT))
+    conn.commit()
+    insert = "INSERT INTO studio.production_runs(run_id, video_id, idempotency_key) VALUES (%s, %s, %s)"
+    # Defesa em profundidade: mesmo INSERT direto não consegue gravar chave não canônica.
+    for index, bad in enumerate(("ORDER-99", "café-42", "cafe\u0301-42", "order-\uFE0F-42",
+                                 "ｏｒｄｅｒ-42", "order\u201342", "оrder-42", "order 42")):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(insert, (f"{index + 1:032x}", VIDEO, bad))
+        conn.rollback()
+    conn.execute(insert, (RUN, VIDEO, "order-42"))
+    conn.commit()
+    assert conn.execute("SELECT idempotency_key FROM studio.production_runs").fetchone()[0] == "order-42"
+
+
+def test_unicode_key_variants_are_rejected_without_creating_runs(production_db):
+    from app.studio.domain.production_run import CreateRunResult, InvalidIdempotencyKey
+
+    repo, conn = production_db
+    for index, spelling in enumerate(("café-42", "cafe\u0301-42", "order-\uFE0F-42", "order\u201342")):
+        with pytest.raises(InvalidIdempotencyKey):
+            create(repo, run_id=f"{index + 1:032x}", key=spelling)
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+    assert create(repo, key="cafe-42").result is CreateRunResult.CREATED
+
+
+def test_resume_emits_a_revoked_event_for_each_open_stage(production_db, dsn):
+    from app.studio.domain.production_run import RunState, RunTransitionResult
+
+    _, conn = production_db
+    repo = fanout_repository(dsn)
+    create(repo)
+    claim(repo, "research")
+    complete(repo, "research")
+    claim(repo, "script")
+    claim(repo, "factcheck", owner=OTHER_OWNER)
+    fail(repo, "script")
+    last_id = conn.execute("SELECT max(id) FROM studio.production_outbox").fetchone()[0]
+    assert repo.resume_run(RUN, RunState.FAILED).result is RunTransitionResult.APPLIED
+    events = conn.execute(
+        "SELECT id, stage_id, payload FROM studio.production_outbox "
+        "WHERE event_type = 'production.stage.revoked' ORDER BY id").fetchall()
+    assert len(events) == 1
+    event_id, stage_id, payload = events[0]
+    assert event_id > last_id
+    assert (stage_id, payload["from"], payload["to"], payload["fencing_token"], payload["attempt"]) == \
+        ("factcheck", "RUNNING", "PENDING", 2, 1)
+    run_event = conn.execute(
+        "SELECT id FROM studio.production_outbox WHERE event_type = 'production.run.state_changed' "
+        "ORDER BY id DESC LIMIT 1").fetchone()[0]
+    assert event_id < run_event  # revogação e mudança do run na mesma transação, nessa ordem
+
+
+def test_pause_then_resume_reports_the_waited_stage_as_revoked(production_db):
+    from app.studio.domain.production_run import ProductionStage, RunState, RunTransitionResult
+
+    repo, conn = production_db
+    create(repo)
+    claim(repo, ProductionStage.RESEARCH)
+    assert repo.pause_run(RUN, "aguardando humano").result is RunTransitionResult.APPLIED
+    assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.APPLIED
+    row = conn.execute("SELECT payload FROM studio.production_outbox "
+                       "WHERE event_type = 'production.stage.revoked'").fetchone()
+    assert row is not None
+    payload = row[0]
+    assert (payload["stage_id"], payload["from"], payload["to"], payload["fencing_token"]) == \
+        ("research", "WAITING_HUMAN", "PENDING", 2)
+    assert stage_row(conn, "research")[0] == "PENDING"
+
+
+def test_resume_revocation_events_are_atomic(production_db):
+    from app.studio.domain.production_run import ProductionStage, RunState, RunTransitionResult
+
+    repo, conn = production_db
+    create(repo)
+    claim(repo, ProductionStage.RESEARCH)
+    assert repo.pause_run(RUN, "aguardando humano").result is RunTransitionResult.APPLIED
+    token_before = stage_row(conn, "research")[2]
+    conn.execute("CREATE FUNCTION studio.reject_outbox() RETURNS trigger LANGUAGE plpgsql AS "
+                 "$$ BEGIN IF NEW.event_type = 'production.stage.revoked' THEN "
+                 "RAISE EXCEPTION 'outbox unavailable'; END IF; RETURN NEW; END $$")
+    conn.execute("CREATE TRIGGER reject_outbox BEFORE INSERT ON studio.production_outbox "
+                 "FOR EACH ROW EXECUTE FUNCTION studio.reject_outbox()")
+    conn.commit()
+    with pytest.raises(psycopg.errors.RaiseException):
+        repo.resume_run(RUN, RunState.WAITING_HUMAN)
+    assert run_row(conn)[0] == "WAITING_HUMAN"  # run e etapas voltaram juntos
+    state, _, token_after, owner, expires, _, _, _ = stage_row(conn, "research")
+    assert (state, owner, expires) == ("WAITING_HUMAN", None, None)
+    assert token_after == token_before
+    assert conn.execute("SELECT count(*) FROM studio.production_outbox "
+                        "WHERE event_type = 'production.stage.revoked'").fetchone()[0] == 0
+    conn.execute("DROP TRIGGER reject_outbox ON studio.production_outbox")
+    conn.commit()
+    assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.APPLIED

@@ -7,9 +7,11 @@ CREATE TABLE studio.production_runs (
     -- Perfil de canal opcional (um canal é um projeto). RESTRICT preserva a trilha da execução.
     channel_id text REFERENCES studio.channel_profiles(id) ON DELETE RESTRICT,
     -- Uma execução por chave: replay devolve a execução existente, nunca cria a segunda.
-    -- A chave é identidade byte-a-byte canônica (minúscula, sem espaço/invisível), validada no
-    -- domínio; variantes de caixa/padding são recusadas em vez de normalizadas.
-    idempotency_key text NOT NULL UNIQUE CHECK (length(idempotency_key) BETWEEN 1 AND 200),
+    -- Defesa em profundidade: o banco repete a whitelist canônica do domínio. O regex ASCII
+    -- minúsculo implica NFC, sem espaço/controle/invisível e sem variantes de caixa, fullwidth ou
+    -- homóglifos; um INSERT direto fora da forma é recusado.
+    idempotency_key text NOT NULL UNIQUE
+        CHECK (length(idempotency_key) BETWEEN 1 AND 200 AND idempotency_key ~ '^[a-z0-9._:-]+$'),
     state text NOT NULL DEFAULT 'CREATED'
         CHECK (state IN ('CREATED', 'RUNNING', 'WAITING_HUMAN', 'PAUSED', 'FAILED', 'CANCELLED', 'SUCCEEDED')),
     reason text CHECK (reason IS NULL OR (length(reason) BETWEEN 1 AND 2000 AND btrim(reason) <> '')),
@@ -64,7 +66,7 @@ CREATE TABLE studio.production_outbox (
                                                           'assets', 'render', 'qa', 'approval', 'publish')),
     event_type text NOT NULL CHECK (event_type IN ('production.run.created', 'production.run.state_changed',
                                                    'production.stage.claimed', 'production.stage.completed',
-                                                   'production.stage.failed')),
+                                                   'production.stage.failed', 'production.stage.revoked')),
     event_version integer NOT NULL DEFAULT 1 CHECK (event_version >= 1),
     payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
     created_at timestamptz NOT NULL DEFAULT now(),

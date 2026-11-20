@@ -14,14 +14,15 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import unicodedata
+import re
 
 from .ids import check_id
 
 SCHEMA_VERSION = 1
 EVENT_VERSION = 1
 MAX_IDEMPOTENCY_KEY_LENGTH = 200
-INVISIBLE_IDENTITY_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+# Whitelist fechada: forma canônica da chave de idempotência. Ver canonical_idempotency_key.
+CANONICAL_IDEMPOTENCY_KEY = re.compile(r"[a-z0-9._:-]+")
 
 
 class ExplicitResult(str, Enum):
@@ -73,6 +74,10 @@ class ProgressEventType(str, Enum):
     `production.stage.claimed`: run_id, stage_id, attempt, fencing_token, lease_owner, lease_expires_at
     `production.stage.completed`: run_id, stage_id, attempt, fencing_token, checkpoint_version
     `production.stage.failed`: run_id, stage_id, attempt, fencing_token, error
+    `production.stage.revoked`: run_id, stage_id, from, to ("PENDING"), attempt, fencing_token
+
+    No `resume_run`, os eventos `stage.revoked` das etapas revogadas precedem o
+    `run.state_changed`, todos na mesma transação (ordem de `stage_id`).
     """
 
     RUN_CREATED = "production.run.created"
@@ -80,6 +85,7 @@ class ProgressEventType(str, Enum):
     STAGE_CLAIMED = "production.stage.claimed"
     STAGE_COMPLETED = "production.stage.completed"
     STAGE_FAILED = "production.stage.failed"
+    STAGE_REVOKED = "production.stage.revoked"
 
 
 class StageClaimResult(ExplicitResult):
@@ -142,12 +148,15 @@ class InvalidIdempotencyKey(ValueError):
 
 
 def canonical_idempotency_key(value: object) -> str:
-    """Valida e devolve a chave canônica: byte-a-byte, minúscula, sem espaço ou invisível.
+    """Valida e devolve a chave canônica: ASCII minúsculo em ``[a-z0-9._:-]``.
 
-    A identidade é a string canônica exata. Variantes com padding, caixa diferente ou caracteres
-    invisíveis são **recusadas**, nunca normalizadas: uma variante pode ser um retry acidental do
-    mesmo pedido ou um pedido diferente — e os dois não podem colidir silenciosamente. O cliente
-    deve enviar a chave já canônica; comparação e unicidade no banco são byte-a-byte.
+    A identidade é a string canônica **byte-a-byte**; nada é normalizado. A regra é uma
+    whitelist fechada, não uma lista de caracteres proibidos: assim ficam recusados, de uma vez,
+    padding, caixa diferente, marcas combinantes (``Mn``/``Mc``/``Me``, incluindo VS16 e CGJ),
+    controles e invisíveis (``Cc``/``Cf``/``Cs``/``Zl``/``Zp``), formas NFC/NFD divergentes,
+    fullwidth e homóglifos (cirílico, en dash etc.). Uma blacklist Unicode seria interminável e
+    sempre incompleta; a whitelist é finita e auditável. O cliente deve enviar a chave já canônica;
+    o banco repete o mesmo CHECK como defesa em profundidade.
     """
     if not isinstance(value, str):
         raise InvalidIdempotencyKey("idempotency key must be a string")
@@ -155,14 +164,10 @@ def canonical_idempotency_key(value: object) -> str:
         raise InvalidIdempotencyKey("idempotency key is required")
     if len(value) > MAX_IDEMPOTENCY_KEY_LENGTH:
         raise InvalidIdempotencyKey("idempotency key is too long")
-    if value != value.strip():
-        raise InvalidIdempotencyKey("idempotency key must not have leading or trailing whitespace")
-    if any(character.isspace() for character in value):
-        raise InvalidIdempotencyKey("idempotency key must not contain whitespace")
-    if any(unicodedata.category(character) in INVISIBLE_IDENTITY_CATEGORIES for character in value):
-        raise InvalidIdempotencyKey("idempotency key must not contain control or invisible characters")
-    if value != value.casefold():
-        raise InvalidIdempotencyKey("idempotency key must be lowercase canonical; case variants are refused")
+    if CANONICAL_IDEMPOTENCY_KEY.fullmatch(value) is None:
+        raise InvalidIdempotencyKey(
+            "idempotency key must be canonical lowercase ASCII in [a-z0-9._:-] "
+            "(no uppercase, Unicode, whitespace or invisible variants)")
     return value
 
 

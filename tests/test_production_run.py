@@ -176,6 +176,7 @@ def test_production_run_validates_ids_and_key():
 def test_progress_event_names_are_versioned_strings():
     assert ProgressEventType.RUN_STATE_CHANGED.value == "production.run.state_changed"
     assert ProgressEventType.STAGE_COMPLETED.value == "production.stage.completed"
+    assert ProgressEventType.STAGE_REVOKED.value == "production.stage.revoked"
 
 
 def test_idempotency_key_is_canonical_and_is_not_normalized():
@@ -191,6 +192,21 @@ def test_idempotency_key_is_canonical_and_is_not_normalized():
             canonical_idempotency_key(bad)
     with pytest.raises(InvalidIdempotencyKey):
         ProductionRun("a" * 32, "b" * 32, "ORDER-42")
+
+
+def test_idempotency_key_is_lowercase_ascii_only():
+    """Whitelist ASCII fecha NFC/NFD, marcas (Mn/Mc/Me), fullwidth e homóglifos de uma vez."""
+    for key in ("order-42", "a.b_c:d", "0" * 32, "x" * 200):
+        assert canonical_idempotency_key(key) == key
+    for spelling in ("café-42", "cafe\u0301-42", "order-\uFE0F-42", "order-\u034F-42",
+                     "ｏｒｄｅｒ-42", "order\u201342", "оrder-42", "straße-42", "ﬁle-42", "ς-42"):
+        with pytest.raises(InvalidIdempotencyKey):
+            canonical_idempotency_key(spelling)
+    # A mensagem é sobre a forma canônica ASCII, não sobre "variante de caixa" do casefold.
+    for spelling in ("ORDER-42", "straße", "café-42"):
+        with pytest.raises(InvalidIdempotencyKey) as exc:
+            canonical_idempotency_key(spelling)
+        assert "ASCII" in str(exc.value)
 
 
 def test_database_contention_and_missing_references_have_domain_errors():

@@ -399,10 +399,12 @@ class PostgresProductionRunRepository:
     def resume_run(self, run_id: str, expected_state: RunState) -> RunTransition:
         """Retoma somente se o estado persistido for exatamente `expected_state` (precondição).
 
-        Leases de etapas ainda em execução são revogados e o `fencing_token` é incrementado, então a
-        geração anterior de workers não consegue mais escrever (ela recebe `LOST`). A prova de
-        aprovação humana versionada (gate de QA por hash/versão) entra em D2, no checkpoint da
-        etapa `approval`; aqui a pré-condição é apenas o estado declarado pelo chamador.
+        Leases das etapas `WAITING_HUMAN`/`RUNNING` são revogados e o `fencing_token` é incrementado;
+        essas etapas voltam a `PENDING` e emitem `stage.revoked` na mesma transação, então a geração
+        anterior recebe `LOST`. Etapa que saiu de `RUNNING` sem revogação (por exemplo `FAILED`
+        intocada) devolve `NOT_RUNNING` ao dono antigo. A prova de aprovação humana versionada (gate
+        de QA por hash/versão) entra em D2, no checkpoint da etapa `approval`; aqui a pré-condição é
+        apenas o estado declarado pelo chamador.
         """
         run_id = check_id(run_id)
         if not isinstance(expected_state, RunState):
@@ -422,10 +424,24 @@ class PostgresProductionRunRepository:
                 (run_id,),
             )
             # Revoga a geração anterior: sem lease e com token novo, o dono antigo só recebe LOST.
-            conn.execute("UPDATE studio.stage_executions SET state = 'PENDING', "
-                         "fencing_token = fencing_token + 1, lease_owner = NULL, lease_expires_at = NULL, "
-                         "updated_at = statement_timestamp() "
-                         "WHERE run_id = %s AND state IN ('WAITING_HUMAN', 'RUNNING')", (run_id,))
+            # Cada etapa revogada gera seu próprio evento, na mesma transação; consumidores sabem
+            # exatamente quais voltaram a PENDING (ordem determinística por stage_id).
+            revoked = _all(
+                conn,
+                "SELECT stage_id, state, attempt, fencing_token FROM studio.stage_executions "
+                "WHERE run_id = %s AND state IN ('WAITING_HUMAN', 'RUNNING') ORDER BY stage_id FOR UPDATE",
+                (run_id,),
+            )
+            for row in revoked:
+                next_token = row["fencing_token"] + 1
+                conn.execute(
+                    "UPDATE studio.stage_executions SET state = 'PENDING', fencing_token = %s, "
+                    "lease_owner = NULL, lease_expires_at = NULL, updated_at = statement_timestamp() "
+                    "WHERE run_id = %s AND stage_id = %s", (next_token, run_id, row["stage_id"]))
+                self._emit(conn, run_id, ProgressEventType.STAGE_REVOKED, {
+                    "run_id": run_id, "stage_id": row["stage_id"], "from": row["state"], "to": "PENDING",
+                    "attempt": row["attempt"], "fencing_token": next_token,
+                }, stage_id=ProductionStage(row["stage_id"]))
             self._emit(conn, run_id, ProgressEventType.RUN_STATE_CHANGED,
                        {"from": state.value, "to": RunState.RUNNING.value, "reason": None})
             return RunTransition(RunTransitionResult.APPLIED, _run(updated))
