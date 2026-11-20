@@ -1,9 +1,16 @@
 """Contrato puro de insight de aprendizado: observação não é hipótese.
 
 Este módulo não coleta, não persiste, não calcula confiança e não aplica nada.
-Ele apenas representa, de forma versionada e imutável, o que foi medido e o que
+Ele apenas representa, de forma versionada e validada, o que foi medido e o que
 foi interpretado, para que consumidores (dashboard, revisão humana, futuras
 fatias de F9) não confundam os dois.
+
+Imutabilidade e integridade valem no caminho de construção/validação do
+contrato. ``frozen=True`` do pydantic v2 bloqueia atribuição normal, mas não é
+uma fronteira de segurança em runtime: ``__dict__[...] = ...``,
+``object.__setattr__``, ``model_copy(update=...)`` e ``model_construct`` podem
+produzir instâncias diferentes sem revalidar. Esses escapes não devem ser
+usados por consumidores.
 
 Fronteiras deliberadas:
 
@@ -19,9 +26,14 @@ Fronteiras deliberadas:
   serve de suporte.
 - **Confiança** é declarada pelo produtor do insight (nível, base e autor da
   declaração). O contrato nunca a calcula nem a infere de métricas.
-- **Recomendação** é sugestão para revisão humana: ``requires_human_review`` é
-  sempre verdadeiro e ``auto_applied`` é sempre falso; não há caminho para
-  representar reconfiguração automática do canal.
+- **Recomendação** é sugestão para revisão humana: no caminho validado,
+  ``requires_human_review`` é sempre verdadeiro e ``auto_applied`` é sempre
+  falso; não há construtor nem validação que aceite aplicação automática. A
+  garantia não cobre os escapes de runtime citados acima.
+- **Agregado** é a única porta validada do contrato: ``InsightHypothesis`` e
+  ``InsightRecommendation`` isoladas aceitam ids arbitrários; somente
+  :class:`LearningInsight` resolve e valida as referências. O escape por
+  ``model_construct``/``model_copy`` também ignora essa garantia.
 
 Nada aqui verifica a exatidão da fonte, a legitimidade do acesso aos dados nem
 a qualidade da conclusão. O contrato apenas recusa estados incoerentes e
@@ -186,7 +198,14 @@ class InsightRecommendation(_Model):
 
 
 class LearningInsight(_Model):
-    """Conjunto coerente de observações, hipóteses e recomendações."""
+    """Conjunto coerente de observações, hipóteses e recomendações.
+
+    É a única porta validada do contrato: tipos isolados aceitam referências
+    arbitrárias; aqui os ids são resolvidos e observação indisponível não
+    sustenta hipótese. A garantia vale para instâncias construídas/validadas
+    por este caminho; ``model_construct`` e ``model_copy(update=...)`` não
+    revalidam.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
