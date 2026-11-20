@@ -1,0 +1,534 @@
+{
+  "$defs": {
+    "AssetReference": {
+      "additionalProperties": false,
+      "description": "Referência a conteúdo previamente gerado ou obtido (imagem, vídeo, gráfico, texto).",
+      "properties": {
+        "asset_id": {
+          "minLength": 1,
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "asset_version": {
+          "minimum": 1,
+          "title": "Asset Version",
+          "type": "integer"
+        },
+        "attribution": {
+          "default": "",
+          "title": "Attribution",
+          "type": "string"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "media_type": {
+          "enum": [
+            "image",
+            "video",
+            "graphic",
+            "text"
+          ],
+          "title": "Media Type",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "source_url": {
+          "default": "",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "uri": {
+          "minLength": 1,
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "asset_version",
+        "uri",
+        "content_sha256",
+        "media_type"
+      ],
+      "title": "AssetReference",
+      "type": "object"
+    },
+    "Composition": {
+      "additionalProperties": false,
+      "description": "Como o conteúdo do shot preenche o quadro.",
+      "properties": {
+        "fit": {
+          "default": "cover",
+          "enum": [
+            "cover",
+            "contain"
+          ],
+          "title": "Fit",
+          "type": "string"
+        }
+      },
+      "title": "Composition",
+      "type": "object"
+    },
+    "Effects": {
+      "additionalProperties": false,
+      "description": "Movimento explícito por shot (substitui o ``index % 4`` do renderer legado).",
+      "properties": {
+        "motion": {
+          "default": "none",
+          "enum": [
+            "none",
+            "zoom_in",
+            "zoom_out",
+            "pan_left",
+            "pan_right"
+          ],
+          "title": "Motion",
+          "type": "string"
+        }
+      },
+      "title": "Effects",
+      "type": "object"
+    },
+    "GeneratedAudioSource": {
+      "additionalProperties": false,
+      "description": "Fonte de áudio **gerada** pelo render (voz sintetizada ou trilha musical).\n\nDistinta de ``AssetReference`` (C2): não é ``Asset`` persistido nem tem\n``content_sha256``. A trilha musical é determinística pelos ``params`` (bpm,\nseed). ``silent=True`` representa o modo ``music=False`` do renderer, que grava\numa trilha silenciosa de mesmo comprimento para manter o grafo de mixagem.",
+      "properties": {
+        "duration_ticks": {
+          "minimum": 1,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "voice",
+            "music"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "silent": {
+          "default": false,
+          "title": "Silent",
+          "type": "boolean"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "duration_ticks"
+      ],
+      "title": "GeneratedAudioSource",
+      "type": "object"
+    },
+    "Output": {
+      "additionalProperties": false,
+      "description": "Formato de saída e texto de disclosure (R3).",
+      "properties": {
+        "disclosure": {
+          "default": "Ilustração gerada por IA",
+          "minLength": 1,
+          "title": "Disclosure",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/VideoFormat"
+        },
+        "fps": {
+          "default": 25,
+          "minimum": 1,
+          "title": "Fps",
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format",
+        "width",
+        "height"
+      ],
+      "title": "Output",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Proveniência do documento (quem construiu o plano).",
+      "properties": {
+        "builder_version": {
+          "minLength": 1,
+          "title": "Builder Version",
+          "type": "string"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        }
+      },
+      "required": [
+        "builder_version"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Scene": {
+      "additionalProperties": false,
+      "description": "Unidade narrativa: agrupa shots e referencia narração/legenda.",
+      "properties": {
+        "duration_ticks": {
+          "minimum": 1,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "narration_refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Narration Refs",
+          "type": "array"
+        },
+        "paid_operation_key": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paid Operation Key"
+        },
+        "scene_id": {
+          "minLength": 1,
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "shots": {
+          "items": {
+            "$ref": "#/$defs/Shot"
+          },
+          "minItems": 1,
+          "title": "Shots",
+          "type": "array"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "subtitle_refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Subtitle Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scene_id",
+        "start_tick",
+        "duration_ticks",
+        "shots"
+      ],
+      "title": "Scene",
+      "type": "object"
+    },
+    "Shot": {
+      "additionalProperties": false,
+      "description": "Elemento visual em uma faixa temporal, dentro de uma cena.",
+      "properties": {
+        "asset_ref": {
+          "minLength": 1,
+          "title": "Asset Ref",
+          "type": "string"
+        },
+        "composition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Composition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_ticks": {
+          "minimum": 1,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "effects": {
+          "$ref": "#/$defs/Effects"
+        },
+        "paid_operation_key": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paid Operation Key"
+        },
+        "shot_id": {
+          "minLength": 1,
+          "title": "Shot Id",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "track_id": {
+          "minLength": 1,
+          "title": "Track Id",
+          "type": "string"
+        },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "shot_id",
+        "track_id",
+        "start_tick",
+        "duration_ticks",
+        "asset_ref"
+      ],
+      "title": "Shot",
+      "type": "object"
+    },
+    "StyleSnapshot": {
+      "additionalProperties": false,
+      "description": "Referência por chave + versão ao perfil de canal (R4); não carrega o objeto.",
+      "properties": {
+        "source": {
+          "const": "channel",
+          "default": "channel",
+          "title": "Source",
+          "type": "string"
+        },
+        "style_id": {
+          "minLength": 1,
+          "title": "Style Id",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "style_id",
+        "version"
+      ],
+      "title": "StyleSnapshot",
+      "type": "object"
+    },
+    "Timeline": {
+      "additionalProperties": false,
+      "description": "Timebase inteira do plano e as cenas.",
+      "properties": {
+        "scenes": {
+          "items": {
+            "$ref": "#/$defs/Scene"
+          },
+          "minItems": 1,
+          "title": "Scenes",
+          "type": "array"
+        },
+        "ticks_per_second": {
+          "minimum": 1,
+          "title": "Ticks Per Second",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ticks_per_second",
+        "scenes"
+      ],
+      "title": "Timeline",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "description": "Transição para o próximo shot; só o fade existe no renderer atual.",
+      "properties": {
+        "duration_ticks": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duration Ticks",
+          "type": "integer"
+        },
+        "kind": {
+          "default": "none",
+          "enum": [
+            "none",
+            "fade"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "Transition",
+      "type": "object"
+    },
+    "VideoFormat": {
+      "enum": [
+        "short",
+        "long"
+      ],
+      "title": "VideoFormat",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Raiz do documento audiovisual canônico, versionado por ``schema_version``.",
+  "properties": {
+    "asset_manifest": {
+      "items": {
+        "$ref": "#/$defs/AssetReference"
+      },
+      "title": "Asset Manifest",
+      "type": "array"
+    },
+    "generated_audio": {
+      "items": {
+        "$ref": "#/$defs/GeneratedAudioSource"
+      },
+      "title": "Generated Audio",
+      "type": "array"
+    },
+    "output": {
+      "$ref": "#/$defs/Output"
+    },
+    "plan_id": {
+      "minLength": 1,
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "project_id": {
+      "minLength": 1,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "style_snapshot": {
+      "$ref": "#/$defs/StyleSnapshot"
+    },
+    "timeline": {
+      "$ref": "#/$defs/Timeline"
+    },
+    "video_id": {
+      "minLength": 1,
+      "title": "Video Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_id",
+    "revision",
+    "project_id",
+    "video_id",
+    "output",
+    "timeline",
+    "style_snapshot",
+    "provenance"
+  ],
+  "title": "RenderPlan",
+  "type": "object"
+}

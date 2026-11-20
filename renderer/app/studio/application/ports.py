@@ -230,7 +230,8 @@ class VideoRow:
     step_running: bool
     publication_status: PublicationStatus | None
     error: str | None
-    cost_rows: list[tuple[str, str, float]]
+    # (provider, model, cost_usd, cost_confirmation_kind); kind ∈ ACTUAL/ESTIMATE/FREE/None.
+    cost_rows: list[tuple[str, str, float, str | None]]
 
 
 @dataclass(frozen=True)
@@ -251,6 +252,7 @@ class UsageInfo:
     model: str
     cost_usd: float
     created_at: datetime
+    cost_confirmation_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -273,7 +275,8 @@ class PanelRepository(Protocol):
     def projects(self) -> list[tuple[str, str]]: ...
     def videos(self, since: datetime | None, project_id: str | None, limit: int) -> list[VideoRow]: ...
     def video_detail(self, video_id: str) -> VideoDetail | None: ...
-    def month_usage(self) -> tuple[float, int, int]: ...
+    def month_usage(self) -> list[tuple[str, str, float, str | None]]:
+        """Lançamentos do mês corrente: (provider, model, cost_usd, cost_confirmation_kind)."""
     def unattributed_usage(self) -> list[tuple[str, str, float]]: ...
 
 

@@ -128,7 +128,8 @@ def test_video_detail_page_displays_unknown_cost_honestly(client_env):
     assert r.status_code == 200
     assert "0.0000" not in r.text
     assert "0,0000" not in r.text
-    assert "Não informado" in r.text or "sem custo informado" in r.text
+    assert "Desconhecido" in r.text
+    assert "US$ 0,00" not in r.text
 
 
 def test_video_detail_page_displays_render_error(client_env):
@@ -168,7 +169,8 @@ def test_panel_page_renders_topic_group_summary_and_cost(client_env):
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "Tema Agrupado" in r.text
-    assert "US$ 0,00 (gratuito)" in r.text
+    assert "Sem custo" in r.text
+    assert "US$ 0,00" not in r.text
     assert "<details" in r.text
 
 
@@ -830,32 +832,116 @@ def test_panel_costs_are_labeled_and_absence_is_not_zero(client_env):
     conn = client_env["conn"]
     p_id = client_env["project_id"]
 
+    def ledger(video_id, provider, model, cost_usd, kind):
+        if kind is None:
+            conn.execute(
+                "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+                "VALUES (%s, 'text', %s, %s, %s)",
+                (video_id, provider, model, cost_usd),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd, "
+                "cost_confirmation_kind, cost_confirmed_amount, cost_confirmation_reference, "
+                "cost_confirmed_by, cost_confirmed_at) "
+                "VALUES (%s, 'text', %s, %s, %s, %s, %s, 'ref', 'tester', now())",
+                (video_id, provider, model, cost_usd, kind, cost_usd),
+            )
+
     paid = videos.create_video(p_id, "Custo Pago", VideoFormat.short)
-    conn.execute(
-        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
-        "VALUES (%s, 'text', 'opencode', 'gpt-paid', 0.5)",
-        (paid.id,),
-    )
+    ledger(paid.id, "opencode", "gpt-paid", 0.5, "ACTUAL")
+    estimated = videos.create_video(p_id, "Custo Estimado", VideoFormat.short)
+    ledger(estimated.id, "opencode", "gpt-est", 0.25, "ESTIMATE")
     free = videos.create_video(p_id, "Custo Gratuito", VideoFormat.short)
-    conn.execute(
-        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
-        "VALUES (%s, 'text', 'opencode', 'gpt:free', 0.0)",
-        (free.id,),
-    )
+    ledger(free.id, "opencode", "gpt:free", 0.0, "FREE")
     unknown = videos.create_video(p_id, "Custo Desconhecido", VideoFormat.short)
+    ledger(unknown.id, "opencode", "gpt-4o-paid", 0.0, None)
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Real US$ 0,50" in r.text
+    assert "Estimado US$ 0,25" in r.text
+    assert "Sem custo" in r.text
+    assert "Desconhecido" in r.text
+    # Real e estimado nunca são fundidos, e gratuidade/desconhecido nunca viram zero.
+    assert "US$ 0,75" not in r.text
+    assert "US$ 0,00" not in r.text
+
+
+def test_video_detail_page_labels_each_call_kind(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Uso por Chamada", VideoFormat.short)
+    rows = [
+        ("text", "opencode", "gpt-paid", 0.07, "ACTUAL"),
+        ("image", "opencode", "gpt-est", 0.05, "ESTIMATE"),
+        ("voice", "piper", "piper", 0.0, "FREE"),
+    ]
+    for step, provider, model, cost, kind in rows:
+        conn.execute(
+            "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd, "
+            "cost_confirmation_kind, cost_confirmed_amount, cost_confirmation_reference, "
+            "cost_confirmed_by, cost_confirmed_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'ref', 'tester', now())",
+            (v.id, step, provider, model, cost, kind, cost),
+        )
     conn.execute(
         "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
-        "VALUES (%s, 'text', 'opencode', 'gpt-4o-paid', 0.0)",
-        (unknown.id,),
+        "VALUES (%s, 'render', 'opencode', 'gpt-4o-paid', 0.0)",
+        (v.id,),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    advanced_area = r.text.split('id="advanced-diagnostics"', 1)[1]
+    assert "Real: US$ 0,07" in advanced_area
+    assert "Estimado: US$ 0,05" in advanced_area
+    assert "Sem custo" in advanced_area
+    assert "Desconhecido" in advanced_area
+    assert "US$ 0,00" not in advanced_area
+
+
+def test_panel_month_rail_labels_four_cost_categories(client_env):
+    client = client_env["client"]
+    videos = client_env["videos"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+
+    v = videos.create_video(p_id, "Rail de Custo", VideoFormat.short)
+    rows = [
+        ("text", "opencode", "gpt-paid", 0.07, "ACTUAL"),
+        ("image", "opencode", "gpt-est", 0.05, "ESTIMATE"),
+        ("voice", "piper", "piper", 0.0, "FREE"),
+    ]
+    for step, provider, model, cost, kind in rows:
+        conn.execute(
+            "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd, "
+            "cost_confirmation_kind, cost_confirmed_amount, cost_confirmation_reference, "
+            "cost_confirmed_by, cost_confirmed_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'ref', 'tester', now())",
+            (v.id, step, provider, model, cost, kind, cost),
+        )
+    conn.execute(
+        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
+        "VALUES (%s, 'render', 'opencode', 'gpt-4o-paid', 0.0)",
+        (v.id,),
     )
     conn.commit()
 
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Custo registrado: US$ 0,50" in r.text
-    assert "US$ 0,00 (gratuito)" in r.text
-    assert "Custo desconhecido" in r.text
-    assert "US$ 0,00 +" not in r.text
+    rail = r.text.split('aria-labelledby="h-custo"', 1)[1].split('aria-labelledby="h-falha"', 1)[0]
+    assert "Real</span><span>US$ 0,07" in rail
+    assert "Estimado</span><span>US$ 0,05" in rail
+    assert "Sem custo</span><span>1 chamada(s)" in rail
+    assert "Desconhecido</span><span>1 chamada(s)" in rail
+    assert "US$ 0,12" not in rail  # sem número único que funda real e estimado
+    assert "US$ 0,00" not in rail
 
 
 def test_panel_absence_of_cost_is_not_rendered_as_zero(client_env):
@@ -918,7 +1004,7 @@ def test_video_detail_hides_invalid_approval_and_keeps_diagnostics_collapsed(cli
     assert match is not None and "open" not in match.group(1)
     advanced_area = r.text.split('id="advanced-diagnostics"', 1)[1]
     assert "Registro de Uso de Modelos" in advanced_area
-    assert "Não informado" in advanced_area
+    assert "Desconhecido" in advanced_area
     assert "Traceback" in advanced_area
 
 

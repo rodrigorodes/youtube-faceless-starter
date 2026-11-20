@@ -21,11 +21,11 @@ from app.studio.domain.panel import Stage
 
 
 class FakePanelRepo:
-    def __init__(self, projects_list=None, videos_list=None, detail_map=None, month=(0.0, 0, 0), unattributed=None):
+    def __init__(self, projects_list=None, videos_list=None, detail_map=None, month_rows=None, unattributed=None):
         self._projects = projects_list or [("p1", "Canal Principal")]
         self._videos = videos_list or []
         self._details = detail_map or {}
-        self._month = month
+        self._month_rows = month_rows or []
         self._unattributed = unattributed or []
 
     def projects(self):
@@ -43,10 +43,18 @@ class FakePanelRepo:
         return self._details.get(video_id)
 
     def month_usage(self):
-        return self._month
+        return self._month_rows
 
     def unattributed_usage(self):
         return self._unattributed
+
+
+def _norm_costs(costs):
+    out = []
+    for row in costs or []:
+        provider, model, cost_usd, *rest = row
+        out.append((provider, model, float(cost_usd), rest[0] if rest else None))
+    return out
 
 
 def _row(id, topic, status=VideoStatus.IDEA, job=None, step_running=False, pub=None, error=None, costs=None, updated_at=None):
@@ -62,7 +70,7 @@ def _row(id, topic, status=VideoStatus.IDEA, job=None, step_running=False, pub=N
         step_running=step_running,
         publication_status=pub,
         error=error,
-        cost_rows=costs or [],
+        cost_rows=_norm_costs(costs),
     )
 
 
@@ -113,16 +121,42 @@ def test_totals_counts_by_stage():
 
 def test_month_cost_percentage_and_unknowns():
     now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
-    # known 3.0, 5 calls, 1 unknown
-    repo = FakePanelRepo(month=(3.0, 5, 1))
+    # 3.0 estimado (legado positivo sem confirmação) + 1 chamada desconhecida
+    rows = [("opencode", "gpt-est", 3.0, None), ("opencode", "gpt-4o-paid", 0.0, None)]
+    repo = FakePanelRepo(month_rows=rows)
     panel = BuildPanel(repo, 15.0, lambda: now)
     view = panel.execute(days=7)
 
     assert view.month.known_usd == 3.0
     assert view.month.cap_usd == 15.0
     assert view.month.percent == pytest.approx(20.0)
-    assert "1 chamada sem custo informado" in view.month.text
-    assert "US$ 0,00 (gratuito)" not in view.month.text
+    assert view.month.unknown_calls == 1
+    assert "Estimado US$ 3,00" in view.month.text
+    assert "Desconhecido" in view.month.text
+    assert "US$ 0,00" not in view.month.text
+
+
+def test_month_cost_labels_real_estimate_free_and_unknown_without_single_number():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    rows = [
+        ("opencode", "gpt-paid", 0.07, "ACTUAL"),
+        ("opencode", "gpt-est", 0.05, "ESTIMATE"),
+        ("piper", "piper", 0.0, "FREE"),
+        ("opencode", "gpt:free", 0.0, None),
+        ("opencode", "gpt-4o-paid", 0.0, None),
+    ]
+    view = BuildPanel(FakePanelRepo(month_rows=rows), 15.0, lambda: now).execute(days=7)
+
+    assert "Real US$ 0,07" in view.month.text
+    assert "Estimado US$ 0,05" in view.month.text
+    assert "Sem custo" in view.month.text
+    assert "Desconhecido" in view.month.text
+    assert "US$ 0,12" not in view.month.text  # nunca funde real e estimado num único número
+    assert "US$ 0,00" not in view.month.text  # gratuidade/desconhecido nunca viram zero
+    assert view.month.breakdown.real_usd == pytest.approx(0.07)
+    assert view.month.breakdown.estimate_usd == pytest.approx(0.05)
+    assert view.month.breakdown.free_calls == 2
+    assert view.month.breakdown.unknown_calls == 1
 
 
 def test_actions_per_stage():
@@ -166,7 +200,7 @@ def test_detail_returns_view_when_found():
     view = panel.detail("v1")
     assert view.video.id == "v1"
     assert view.stage == Stage.AWAITING_APPROVAL
-    assert view.cost_text == "US$ 0,00 (gratuito)"
+    assert view.cost_text == "Sem custo"
     assert len(view.steps) == 1
 
 
@@ -663,24 +697,60 @@ def test_render_panel_labels_cost_origin_and_never_zero_for_unknown_or_absent():
     now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
 
     paid = _render_panel_html(FakePanelRepo(videos_list=[
-        _row("paid", "Pago", VideoStatus.IDEA, costs=[("opencode", "gpt-paid", 0.5)]),
+        _row("paid", "Pago", VideoStatus.IDEA, costs=[("opencode", "gpt-paid", 0.5, "ACTUAL")]),
     ]), clock=now)
-    assert "Custo registrado: US$ 0,50" in paid
+    assert "Real US$ 0,50" in paid
+
+    estimated = _render_panel_html(FakePanelRepo(videos_list=[
+        _row("est", "Estimado", VideoStatus.IDEA, costs=[("opencode", "gpt-est", 0.2, "ESTIMATE")]),
+    ]), clock=now)
+    assert "Estimado US$ 0,20" in estimated
 
     free = _render_panel_html(FakePanelRepo(videos_list=[
-        _row("free", "Gratuito", VideoStatus.IDEA, costs=[("opencode", "gpt:free", 0.0)]),
+        _row("free", "Gratuito", VideoStatus.IDEA, costs=[("opencode", "gpt:free", 0.0, "FREE")]),
     ]), clock=now)
-    assert "US$ 0,00 (gratuito)" in free
+    assert "Sem custo" in free
+    assert "US$ 0,00" not in free
 
     unknown = _render_panel_html(FakePanelRepo(videos_list=[
-        _row("unknown", "Desconhecido", VideoStatus.IDEA, costs=[("opencode", "gpt-4o-paid", 0.0)]),
+        _row("unknown", "Desconhecido", VideoStatus.IDEA, costs=[("opencode", "gpt-4o-paid", 0.0, None)]),
     ]), clock=now)
-    assert "Custo desconhecido" in unknown
-    assert "US$ 0,00 +" not in unknown
+    assert "Desconhecido" in unknown
+    assert "US$ 0,00" not in unknown
 
     absent = _render_panel_html(FakePanelRepo(videos_list=[_row("absent", "Sem uso", VideoStatus.IDEA)]), clock=now)
     assert "sem registro de uso" in absent
     assert "US$ 0,00" not in absent
+
+
+def test_render_panel_legacy_positive_cost_is_estimated_not_zero():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    # Sem cost_confirmation_kind: um valor positivo não confirmado é uma estimativa, nunca real nem zero.
+    html = _render_panel_html(FakePanelRepo(videos_list=[
+        _row("legacy", "Legado", VideoStatus.IDEA, costs=[("opencode", "gpt-paid", 0.5, None)]),
+    ]), clock=now)
+    assert "Estimado US$ 0,50" in html
+    assert "Real US$" not in html
+    assert "US$ 0,00" not in html
+
+
+def test_video_detail_usage_list_labels_each_call_kind():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", "Uso misto", VideoStatus.AWAITING_APPROVAL)
+    usage = [
+        UsageInfo("render", "opencode", "gpt-paid", 0.07, now, "ACTUAL"),
+        UsageInfo("image", "opencode", "gpt-est", 0.05, now, "ESTIMATE"),
+        UsageInfo("voice", "piper", "piper", 0.0, now, "FREE"),
+        UsageInfo("text", "opencode", "gpt-4o-paid", 0.0, now, None),
+    ]
+    html = _detail_view(row, stage=Stage.AWAITING_APPROVAL, usage=usage)
+    advanced_area = html.split('id="advanced-diagnostics"', 1)[1]
+
+    assert "Real: US$ 0,07" in advanced_area
+    assert "Estimado: US$ 0,05" in advanced_area
+    assert "Sem custo" in advanced_area
+    assert "Desconhecido" in advanced_area
+    assert "US$ 0,00" not in advanced_area
 
 
 def test_render_panel_has_closed_advanced_diagnostics():
@@ -785,7 +855,7 @@ def test_video_detail_advanced_diagnostics_is_closed_and_holds_usage_ledger():
     assert "Avançado — diagnóstico" in html
     advanced_area = html.split('id="advanced-diagnostics"', 1)[1]
     assert "Registro de Uso de Modelos" in advanced_area
-    assert "Não informado" in advanced_area
+    assert "Desconhecido" in advanced_area
 
 
 def test_video_detail_offers_retry_only_when_resume_is_valid():
