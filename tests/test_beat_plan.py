@@ -39,53 +39,99 @@ def beat(duration=2.0, scene_id="scene-1", **changes):
     return VisualBeat(**values)
 
 
+def assert_valid_windows(windows):
+    """Contíguas, a partir de 0, finitas e com cada beat estritamente positivo."""
+    assert windows, "plano não pode ser vazio"
+    assert windows[0][0] == 0.0
+    for start, end in windows:
+        assert math.isfinite(start) and math.isfinite(end)
+        assert start < end, f"span inválido: {start} -> {end}"
+    for (_, prev_end), (start, end) in zip(windows, windows[1:]):
+        assert prev_end == start
+
+
 # ---------- núcleo numérico: plan_beat_windows ----------
 
 
-def test_empty_beat_list_is_rejected():
+def test_windows_reject_empty_beat_list():
     with pytest.raises(ValueError):
         plan_beat_windows(5.0, [])
 
 
 @pytest.mark.parametrize("duration", [0, -1.0, math.inf, -math.inf, math.nan, None, True, "5"])
-def test_invalid_scene_duration_is_rejected(duration):
+def test_windows_reject_invalid_scene_duration(duration):
     with pytest.raises(ValueError):
         plan_beat_windows(duration, [1.0])
 
 
 @pytest.mark.parametrize("span", [0, -1.0, math.inf, -math.inf, math.nan, None, True, "1"])
-def test_invalid_beat_duration_is_rejected(span):
+def test_windows_reject_invalid_beat_duration(span):
     with pytest.raises(ValueError):
         plan_beat_windows(5.0, [span])
 
 
-def test_beats_exceeding_scene_are_rejected():
+def test_windows_reject_beats_exceeding_scene():
     with pytest.raises(ValueError):
         plan_beat_windows(5.0, [3.0, 3.0])
 
 
-def test_beats_not_covering_scene_are_rejected():
+def test_windows_reject_beats_not_covering_scene():
     with pytest.raises(ValueError):
         plan_beat_windows(5.0, [1.0, 1.0])
 
 
-def test_single_beat_covers_whole_scene():
+@pytest.mark.parametrize(
+    "spans",
+    [
+        [5.0, 1e-7],        # overflow dentro de tolerance_s: NÃO pode zerar o último beat
+        [5.0000005, 1e-7],  # overflow dentro de tolerance_s: NÃO pode inverter o último beat
+    ],
+)
+def test_windows_reject_overflow_within_caller_tolerance(spans):
+    # Política: excesso real é REJEITADO. `tolerance_s` só admite sobra (gap),
+    # nunca overflow; a única folga de overflow é resíduo de ponto flutuante.
+    with pytest.raises(ValueError):
+        plan_beat_windows(5.0, spans)
+
+
+def test_windows_never_emit_non_positive_span_on_float_residue():
+    # Overflow que é apenas resíduo de ponto flutuante (<~1e-9) é aceito, mas
+    # nenhum beat pode sair com span <= 0 nem start >= end.
+    windows = plan_beat_windows(5.0, [5.0, 5e-10])
+    assert_valid_windows(windows)
+    assert windows[-1][1] >= 5.0
+
+
+def test_windows_single_beat_covers_whole_scene():
     assert plan_beat_windows(5.0, [5.0]) == ((0.0, 5.0),)
 
 
 def test_windows_are_contiguous_in_input_order():
-    assert plan_beat_windows(9.0, [2.0, 3.0, 4.0]) == ((0.0, 2.0), (2.0, 5.0), (5.0, 9.0))
+    windows = plan_beat_windows(9.0, [2.0, 3.0, 4.0])
+    assert windows == ((0.0, 2.0), (2.0, 5.0), (5.0, 9.0))
+    assert_valid_windows(windows)
 
 
-def test_tolerance_absorbs_floating_residue_and_closes_scene():
+def test_windows_close_scene_on_floating_residue():
     windows = plan_beat_windows(1.0, [1 / 3, 1 / 3, 1 / 3])
-    assert windows[-1][1] == pytest.approx(1.0)
-    assert windows[-1][1] == 1.0
+    assert_valid_windows(windows)
+    assert windows[-1][1] == 1.0  # fecha exatamente quando a soma não excede a cena
     assert windows[1] == (pytest.approx(1 / 3), pytest.approx(2 / 3))
 
 
 def test_default_tolerance_is_small_and_positive():
     assert 0 < DEFAULT_TOLERANCE_S < 1e-3
+
+
+@pytest.mark.parametrize("tolerance", [-1, math.inf, -math.inf, math.nan, None, True, "1"])
+def test_windows_reject_invalid_tolerance(tolerance):
+    with pytest.raises(ValueError):
+        plan_beat_windows(3.0, [3.0], tolerance_s=tolerance)
+
+
+def test_windows_reject_non_iterable_beat_durations():
+    with pytest.raises(ValueError):
+        plan_beat_windows(3.0, 3.0)
 
 
 # ---------- regra por cena: plan_scene_beats ----------
@@ -94,6 +140,11 @@ def test_default_tolerance_is_small_and_positive():
 def test_plan_requires_at_least_one_beat():
     with pytest.raises(ValueError):
         plan_scene_beats(scene(9.0), [])
+
+
+def test_plan_rejects_non_iterable_beats():
+    with pytest.raises(ValueError):
+        plan_scene_beats(scene(9.0), 5)
 
 
 def test_scene_without_duration_is_rejected():
@@ -124,6 +175,11 @@ def test_beats_not_covering_scene_are_rejected():
         plan_scene_beats(scene(5.0), [beat(1.0), beat(1.0)])
 
 
+def test_plan_rejects_overflow_within_caller_tolerance():
+    with pytest.raises(ValueError):
+        plan_scene_beats(scene(5.0), [beat(5.0), beat(1e-7)])
+
+
 def test_single_beat_covers_scene():
     source = beat(4.0, reference="only")
     plan = plan_scene_beats(scene(4.0), [source])
@@ -133,7 +189,7 @@ def test_single_beat_covers_scene():
     assert [(b.start_s, b.end_s) for b in plan.beats] == [(0.0, 4.0)]
     assert plan.beats[0].reference == "only"
     assert plan.coverage_s == 4.0
-    assert plan.beats[0] is not source  # reposicionado, não mutado
+    assert plan.beats[0] is not source  # reconstruído, não mutado
 
 
 def test_multiple_distinct_beats_are_distributed_in_order():
@@ -141,8 +197,19 @@ def test_multiple_distinct_beats_are_distributed_in_order():
     plan = plan_scene_beats(scene(9.0), beats)
     assert [b.reference for b in plan.beats] == ["a", "b", "c"]
     assert [(b.start_s, b.end_s) for b in plan.beats] == [(0.0, 2.0), (2.0, 5.0), (5.0, 9.0)]
+    assert plan.duration_s == 9.0
     assert plan.coverage_s == 9.0
-    assert plan.beats[-1].end_s == 9.0
+    # Cobertura derivada das janelas contíguas, coerente com os próprios beats.
+    assert plan.coverage_s == plan.beats[-1].end_s - plan.beats[0].start_s
+
+
+def test_plan_beats_are_all_valid_visual_beats():
+    plan = plan_scene_beats(scene(9.0), [beat(2.0), beat(3.0), beat(4.0)])
+    for placed in plan.beats:
+        assert placed.start_s < placed.end_s
+        assert placed.duration_s > 0
+        # revalidação sobrevive ao round-trip do contrato (invariante garantida)
+        assert VisualBeat.model_validate(placed.model_dump()) == placed
 
 
 def test_plan_preserves_media_fields_and_scene_id():
@@ -160,6 +227,11 @@ def test_beat_from_another_scene_is_rejected():
         plan_scene_beats(scene(3.0), [beat(3.0, scene_id="scene-2")])
 
 
+def test_non_visual_beat_is_rejected():
+    with pytest.raises(ValueError):
+        plan_scene_beats(scene(3.0), [{"scene_id": "scene-1"}])
+
+
 @pytest.mark.parametrize(
     "malformed",
     [
@@ -174,6 +246,7 @@ def test_malformed_beat_span_is_rejected(malformed):
         plan_scene_beats(scene(9.0), [bad, beat(4.0)])
 
 
-def test_invalid_tolerance_is_rejected():
+@pytest.mark.parametrize("tolerance", [-1, math.inf, -math.inf, math.nan, None, True, "1"])
+def test_plan_rejects_invalid_tolerance(tolerance):
     with pytest.raises(ValueError):
-        plan_scene_beats(scene(3.0), [beat(3.0)], tolerance_s=-1)
+        plan_scene_beats(scene(3.0), [beat(3.0)], tolerance_s=tolerance)
