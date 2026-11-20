@@ -177,6 +177,17 @@ Design aprovado para seguir: `docs/superpowers/specs/2026-11-20-render-plan-foun
 
 ---
 
+## Aprovações do usuário (fonte de verdade de design)
+
+| Data | Artefato | Escopo da aprovação |
+|---|---|---|
+| 2026-11-20 | `produto/mockup-proposta.html` | linguagem visual do painel (slice G1) |
+| 2026-11-20 | `produto/` (todos os mockups) | **toda a pasta**: 8 telas da jornada em `mockup-telas.html` + PNGs (`tela-*.png`, desktop e mobile) + `JORNADA-E-TELAS.md`. Passa a ser a referência visual de **todas** as fatias de UI (G, H e as telas seguintes) |
+
+**Consequência prática:** qualquer fatia de UI daqui para frente implementa o que está aprovado
+em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **dado real** ou
+**estado vazio explícito** — nunca o texto de exemplo.
+
 ## Resumo por fase
 
 | Fase | Feito | Parcial | Pendente/Adiado |
