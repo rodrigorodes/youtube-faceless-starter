@@ -23,6 +23,7 @@ ALLOWED_FILES = {".env.example", ".gitignore", ".gitattributes", "README.md",
                  "requirements-dev.txt", "docker-compose.yml",
                  "docker-compose.test.yml", "docker-compose.vertex.yml",
                  "renderer/Dockerfile", "renderer/requirements.txt",
+                 "scripts/backup.py", "scripts/export_contracts.py", "tests/test_backup.py",
                  "examples/ade-2026-publish.json", "examples/ade-2026-rich-publish.json",
                  "examples/rich-smoke.json", "workflows/03-publish-approved.json",
                  "workflows/04-analytics-daily.json", "workflows/05-trends-daily.json"}

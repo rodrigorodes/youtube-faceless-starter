@@ -23,6 +23,9 @@ lista explícita de exemplos e workflows JSON. Nomes contendo `backup`,
 `archive`, `export` ou `dump` e formatos fora da allowlist, incluindo CSV,
 ZIP e SQL fora das migrações, não entram no pacote. Para distribuir um novo
 formato ou exemplo, revise e atualize explicitamente a política e seus testes.
+As únicas exceções ao filtro de nome são os caminhos de código
+`scripts/backup.py`, `scripts/export_contracts.py` e `tests/test_backup.py`;
+elas não autorizam backups ou exportações de dados.
 
 O scanner procura formatos conhecidos de chaves, cabeçalhos Bearer, valores
 atribuídos a `client_secret` e `refresh_token`, e cabeçalhos de chave privada.

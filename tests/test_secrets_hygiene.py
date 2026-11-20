@@ -2,12 +2,52 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import zipfile
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def archive_has_token(archive):
+    """Independent ZIP-content check; return only a boolean, never the value."""
+    bearer = re.compile(rb"(?i)\bbearer\s+([a-z0-9._~+/-]{12,})")
+    assignment = re.compile(
+        rb"""(?i)\b(?:client_secret|refresh_token)["']?\s*[:=]\s*["']?([a-z0-9._~+/-]{12,})"""
+    )
+    placeholders = {
+        b"test-worker-token", b"test-browser-password", b"your_client_secret",
+        b"your_refresh_token", b"your_access_token", b"change_me_client_secret",
+        b"change_me", b"placeholder",
+    }
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            data = zf.read(name)
+            for pattern in (bearer, assignment):
+                if any(match.group(1).lower() not in placeholders for match in pattern.finditer(data)):
+                    return True
+    return False
+
+
+@pytest.mark.parametrize("value", [
+    b"Bearer " + b"z" * 19,
+    b'client_secret = "' + b"z" * 15 + b'"',
+    b'"refresh_token": "' + b"z" * 15 + b'"',
+])
+def test_independent_zip_inspection_detects_synthetic_token(tmp_path, value):
+    archive = tmp_path / "synthetic.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("file.txt", value)
+    assert archive_has_token(archive), "Synthetic credential was not detected"
+
+
+def test_independent_zip_inspection_accepts_placeholders(tmp_path):
+    archive = tmp_path / "synthetic.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("file.txt", 'client_secret = "YOUR_CLIENT_SECRET"\nBearer <token>')
+    assert not archive_has_token(archive)
 
 
 @pytest.fixture
@@ -155,6 +195,18 @@ def test_package_keeps_only_explicit_schema_workflow_and_migration_formats(repos
         }
 
 
+def test_package_allows_only_named_backup_and_export_code_exceptions(repository, tmp_path):
+    for name in ("scripts/backup.py", "scripts/export_contracts.py", "tests/test_backup.py",
+                 "scripts/customer_backup.py", "scripts/export_customers.py", "tests/test_backup_data.py"):
+        track(repository, name, "# synthetic code\n")
+    archive = tmp_path / "starter.zip"
+    assert run_script(repository, "package-starter.sh", archive).returncode == 0
+    with zipfile.ZipFile(archive) as zf:
+        assert set(zf.namelist()) == {
+            "scripts/backup.py", "scripts/export_contracts.py", "tests/test_backup.py",
+        }
+
+
 def test_package_contains_expected_file_bytes_not_local_untracked_content(repository, tmp_path):
     track(repository, "renderer/app/main.py", "EXPECTED_SOURCE\n")
     (repository / "renderer/app/local.py").write_text("LOCAL_PRIVATE_SENTINEL")
@@ -169,6 +221,7 @@ def test_real_starter_archive_is_safe_and_keeps_scripts_executable(tmp_path):
     archive = tmp_path / "starter.zip"
     result = run_script(ROOT, "package-starter.sh", archive)
     assert result.returncode == 0, result.stderr
+    assert not archive_has_token(archive), "A packaged file contains a token-like value"
     with zipfile.ZipFile(archive) as zf:
         names = set(zf.namelist())
         assert ".env.example" in names
@@ -194,3 +247,29 @@ def test_real_starter_archive_is_safe_and_keeps_scripts_executable(tmp_path):
         env = zf.read(".env.example").decode("utf-8")
         assert re.search(r"(?m)^GEMINI_API_KEY=$", env)
         assert re.search(r"(?m)^PEXELS_API_KEY=$", env)
+
+
+def test_extracted_starter_runs_contract_snapshot_and_backup_import(tmp_path):
+    archive = tmp_path / "starter.zip"
+    result = run_script(ROOT, "package-starter.sh", archive)
+    assert result.returncode == 0, result.stderr
+    extracted = tmp_path / "extracted"
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(extracted)
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", "pytest", "-p", "no:cacheprovider",
+         "tests/test_contracts_snapshot.py", "tests/test_backup.py", "-q"],
+        cwd=extracted, text=True, capture_output=True,
+    )
+    assert result.returncode == 0, "Extracted contract snapshot tests failed"
+    result = subprocess.run(
+        [sys.executable, "-I", "-c",
+         "import sys, tempfile; from pathlib import Path; from datetime import datetime; "
+         "sys.path.insert(0, 'scripts'); import backup, export_contracts; "
+         "assert export_contracts.render_all(); "
+         "d = tempfile.TemporaryDirectory(); "
+         "p = backup.write_backup(b'SELECT 1;', Path(d.name), datetime(2026, 1, 1)); "
+         "assert backup.verify_backup(p); d.cleanup()"],
+        cwd=extracted, text=True, capture_output=True,
+    )
+    assert result.returncode == 0, "Extracted backup or contract import failed"
