@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup Proposto — Painel do Faceless Studio</title>
+<style>
+  :root {
+    --bg: #0f141c;
+    --surface: #18202c;
+    --surface-hover: #1e2838;
+    --border: #283548;
+    --text: #e6edf3;
+    --text-muted: #8b9baa;
+    --primary: #2f81f7;
+    --primary-hover: #388bfd;
+    --ok: #3fb950;
+    --ok-bg: rgba(63, 185, 80, 0.15);
+    --warn: #d29922;
+    --warn-bg: rgba(210, 153, 34, 0.15);
+    --bad: #f85149;
+    --bad-bg: rgba(248, 81, 73, 0.15);
+    --info: #58a6ff;
+    --info-bg: rgba(88, 166, 255, 0.15);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  .container { max-width: 1180px; margin: 0 auto; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .badge-env {
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+  }
+  .actions-top { display: flex; gap: 12px; align-items: center; }
+  select, button, input {
+    font: inherit;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover { background: var(--primary-hover); }
+  button.sm { padding: 4px 10px; font-size: 13px; }
+
+  /* Cards Resumo */
+  .grid-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 6px; }
+  .card-value { font-size: 24px; font-weight: 700; }
+  .card-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+  /* Seções */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .section-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .section-meta { font-size: 12px; color: var(--text-muted); }
+
+  /* Bloco de Tendências (Fase B) */
+  .trends-block {
+    background: linear-gradient(180deg, rgba(47, 129, 247, 0.05) 0%, var(--surface) 100%);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 28px;
+  }
+  .trend-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .trend-item:last-child { border-bottom: none; }
+  .trend-info h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .trend-meta { font-size: 13px; color: var(--text-muted); display: flex; gap: 14px; }
+  .trend-meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* Tabela de Vídeos */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 40px;
+  }
+  th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  th { background: #141b24; color: var(--text-muted); font-size: 12px; text-transform: uppercase; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-hover); }
+
+  /* Badges */
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pill-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+  .pill-info { background: var(--info-bg); color: var(--info); border: 1px solid var(--info); }
+  .pill-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+  .pill-bad { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); }
+  .pill-muted { background: var(--border); color: var(--text-muted); }
+
+  /* Mockup Separator */
+  .mockup-divider {
+    text-align: center;
+    margin: 50px 0 30px;
+    position: relative;
+  }
+  .mockup-divider::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+    z-index: 1;
+  }
+  .mockup-divider span {
+    position: relative;
+    z-index: 2;
+    background: var(--bg);
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Tela de Detalhe */
+  .timeline {
+    list-style: none;
+    position: relative;
+    padding-left: 28px;
+    margin: 20px 0;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: var(--border);
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .timeline-dot {
+    position: absolute;
+    left: -28px;
+    top: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+  }
+  .dot-ok { border-color: var(--ok); color: var(--ok); }
+  .dot-warn { border-color: var(--warn); color: var(--warn); }
+  .dot-muted { border-color: var(--border); color: var(--text-muted); }
+  .timeline-title { font-size: 14px; font-weight: 600; }
+  .timeline-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .layout-detail {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ================= TELA 1: DASHBOARD PRINCIPAL ================= -->
+  <header>
+    <div class="brand">
+      <h1>FACELESS STUDIO</h1>
+      <span class="badge-env">Localhost:8000</span>
+    </div>
+    <div class="actions-top">
+      <label for="period" style="font-size: 13px; color: var(--text-muted);">Período:</label>
+      <select id="period">
+        <option selected>Últimos 7 dias</option>
+        <option>Últimos 14 dias</option>
+        <option>Últimos 30 dias</option>
+      </select>
+      <button class="primary">+ Novo Vídeo</button>
+    </div>
+  </header>
+
+  <!-- Métricas Resumo -->
+  <div class="grid-summary">
+    <div class="card">
+      <div class="card-label">Em Produção</div>
+      <div class="card-value" style="color: var(--info);">2</div>
+      <div class="card-sub">Jobs de render/mídia ativos</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Aguardando Aprovação</div>
+      <div class="card-value" style="color: var(--warn);">1</div>
+      <div class="card-sub">Exigem revisão humana</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Concluídos no Período</div>
+      <div class="card-value" style="color: var(--ok);">5</div>
+      <div class="card-sub">Aprovados ou publicados</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Custo no Mês vs Teto</div>
+      <div class="card-value">US$ 0,00</div>
+      <div class="card-sub">Gratuito · Teto: US$ 15,00</div>
+    </div>
+  </div>
+
+  <!-- Bloco de Tendências (Fase B) -->
+  <div class="trends-block">
+    <div class="section-header">
+      <div class="section-title">
+        <span>🔥 Temas em Alta nos Últimos 7 Dias</span>
+        <span class="pill pill-info">Fase B</span>
+      </div>
+      <div class="section-meta">Fonte verificada: YouTube Data API · Consulta: Hoje às 09:15</div>
+    </div>
+
+    <div class="trend-item">
+      <div class="trend-info">
+        <h3>ADE Lineup 2026 Revelado</h3>
+        <div class="trend-meta">
+          <span>📊 1,2 mi views na janela</span>
+          <span>🎬 2 vídeos concluídos · 1 em produção</span>
+          <span>💰 Custo: US$ 0,00 (gratuito)</span>
+        </div>
+      </div>
+      <button class="primary sm">Criar Vídeo deste Tema</button>
+    </div>
+
+    <div class="trend-item">
+      <div class="trend-info">
+        <h3>História dos Sintetizadores Analógicos</h3>
+        <div class="trend-meta">
+          <span>📊 480 mil views na janela</span>
+          <span>🎬 Nenhum vídeo produzido ainda</span>
+          <span>💰 Sem registros de custo</span>
+        </div>
+      </div>
+      <button class="sm">Criar Vídeo deste Tema</button>
+    </div>
+  </div>
+
+  <!-- Tabela de Vídeos (Fase A) -->
+  <div class="section-header">
+    <div class="section-title">Vídeos em Andamento e Histórico</div>
+    <div class="section-meta">Total: 4 vídeos no filtro</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Tema</th>
+        <th>Etapa Atual</th>
+        <th>Custo da Produção</th>
+        <th>Última Atualização</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>ADE Lineup 2026</strong><br><span style="font-size: 11px; color: var(--text-muted);">Short · 1080x1920</span></td>
+        <td><span class="pill pill-warn">Aguardando Aprovação</span></td>
+        <td>US$ 0,00 <span style="font-size: 11px; color: var(--ok);">(gratuito)</span></td>
+        <td>há 5 minutos</td>
+        <td>
+          <button class="primary sm">Ver Prévia</button>
+          <button class="sm">Progresso</button>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Evolução da ADE (1996 - 2026)</strong><br><span style="font-size: 11px; color: var(--text-muted);">Short · 1080x1920</span></td>
+        <td><span class="pill pill-info">Em Produção (Render)</span></td>
+        <td><span style="color: var(--text-muted); font-size: 12px;">sem registro de uso</span></td>
+        <td>há 1 minuto</td>
+        <td>
+          <button class="sm">Ver Progresso</button>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Pioneiros da House Music</strong><br><span style="font-size: 11px; color: var(--text-muted);">Short · 1080x1920</span></td>
+        <td><span class="pill pill-ok">Concluído (Publicado)</span></td>
+        <td>US$ 0,00 <span style="font-size: 11px; color: var(--ok);">(gratuito)</span></td>
+        <td>ontem às 18:30</td>
+        <td>
+          <button class="sm">Ver Prévia</button>
+          <button class="sm">No YouTube</button>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Produção Musical com IA</strong><br><span style="font-size: 11px; color: var(--text-muted);">Long · 1920x1080</span></td>
+        <td><span class="pill pill-bad">Falhou (Áudio sem voz)</span></td>
+        <td>US$ 0,00 <span style="font-size: 11px; color: var(--warn);">+ 1 não informado</span></td>
+        <td>ontem às 14:10</td>
+        <td>
+          <button class="sm">Ver Motivo</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ================= TELA 2: DETALHE / PROGRESSO DO VÍDEO ================= -->
+  <div class="mockup-divider">
+    <span>Tela de Detalhe e Progresso (`/studio/panel/videos/{id}`)</span>
+  </div>
+
+  <header>
+    <div class="brand">
+      <span style="color: var(--text-muted); font-size: 14px;">Painel &gt;</span>
+      <h2>ADE Lineup 2026</h2>
+      <span class="pill pill-warn">Aguardando Aprovação</span>
+    </div>
+    <div class="actions-top">
+      <button class="sm">Voltar ao Painel</button>
+      <button class="primary">Abrir Prévia e Aprovar &rarr;</button>
+    </div>
+  </header>
+
+  <div class="layout-detail">
+    <!-- Coluna Esquerda: Linha do Tempo dos Passos -->
+    <div class="card">
+      <div class="card-label">Linha do Tempo da Produção</div>
+      <ul class="timeline">
+        <li class="timeline-item">
+          <div class="timeline-dot dot-ok">✓</div>
+          <div class="timeline-title">1. Roteiro (SCRIPTED)</div>
+          <div class="timeline-desc">Concluído em 0.4s · 3 cenas · Provedor: opencode (gpt-4o-mini:free)</div>
+        </li>
+        <li class="timeline-item">
+          <div class="timeline-dot dot-ok">✓</div>
+          <div class="timeline-title">2. Checagem de Fatos (FACT_CHECKED)</div>
+          <div class="timeline-desc">Aprovado sem divergências · Fonte oficial: amsterdam-dance-event.nl</div>
+        </li>
+        <li class="timeline-item">
+          <div class="timeline-dot dot-ok">✓</div>
+          <div class="timeline-title">3. Storyboard &amp; Ativos de Mídia (ASSETS_READY)</div>
+          <div class="timeline-desc">5 imagens geradas (Pexels / Placeholders) · Voz: Piper TTS (local)</div>
+        </li>
+        <li class="timeline-item">
+          <div class="timeline-dot dot-ok">✓</div>
+          <div class="timeline-title">4. Renderização &amp; QA Automático (RENDERED)</div>
+          <div class="timeline-desc">FFmpeg OK (1080x1920 MP4) · QA aprovado (Loudness -16.0 LUFS, sem silêncios longos)</div>
+        </li>
+        <li class="timeline-item">
+          <div class="timeline-dot dot-warn">●</div>
+          <div class="timeline-title">5. Revisão Humana Obrigatória (AWAITING_APPROVAL)</div>
+          <div class="timeline-desc">Aguardando operador inspecionar o vídeo e decidir se aprova para publicação</div>
+        </li>
+        <li class="timeline-item">
+          <div class="timeline-dot dot-muted">○</div>
+          <div class="timeline-title">6. Publicação no YouTube (PENDING)</div>
+          <div class="timeline-desc">Aguardando aprovação formal · Upload será privado com credenciais OAuth2</div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Coluna Direita: Custos e Saídas -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="card">
+        <div class="card-label">Auditoria de Custo deste Vídeo</div>
+        <table style="margin: 8px 0 0; background: transparent; border: none;">
+          <tbody>
+            <tr>
+              <td style="padding: 6px 0; border: none; font-size: 13px;">Roteiro (texto)</td>
+              <td style="padding: 6px 0; border: none; font-size: 13px; text-align: right;">US$ 0,00 <span style="font-size: 10px; color: var(--ok);">(free)</span></td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; border: none; font-size: 13px;">Imagens (stock)</td>
+              <td style="padding: 6px 0; border: none; font-size: 13px; text-align: right;">US$ 0,00 <span style="font-size: 10px; color: var(--ok);">(free)</span></td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; border: none; font-size: 13px;">Voz (Piper local)</td>
+              <td style="padding: 6px 0; border: none; font-size: 13px; text-align: right;">US$ 0,00 <span style="font-size: 10px; color: var(--ok);">(local)</span></td>
+            </tr>
+            <tr style="border-top: 1px solid var(--border); font-weight: 700;">
+              <td style="padding: 8px 0 0; border: none; font-size: 13px;">Total Vídeo</td>
+              <td style="padding: 8px 0 0; border: none; font-size: 13px; text-align: right; color: var(--ok);">US$ 0,00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Arquivos Disponíveis</div>
+        <div style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+          <div>📹 <strong>Vídeo MP4</strong> (24.8 MB) — <a href="#" style="color: var(--primary);">Baixar</a></div>
+          <div>💬 <strong>Legendas VTT</strong> — <a href="#" style="color: var(--primary);">Ver</a></div>
+          <div>🖼️ <strong>Miniatura</strong> — <a href="#" style="color: var(--primary);">Ver</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
