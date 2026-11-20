@@ -1187,7 +1187,9 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         last_dt_str = view.last_collected_at.strftime("%d/%m %H:%M") if view.last_collected_at else ""
         stale_badge = ' <span class="pill pill-FAILED" style="margin-left: 0.5rem;">Desatualizado</span>' if view.trends_status == "stale" else ""
         items_html = []
-        for t in view.trends:
+        for idx, t in enumerate(view.trends):
+            extra_class = " trend-item-extra" if idx >= 6 else ""
+            extra_style = ' style="display: none;"' if idx >= 6 else ""
             ev_list = []
             for ev in t.evidence:
                 ev_title = e(ev.get("title", ""))
@@ -1281,7 +1283,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             actions_html = f'<div class="trend-actions-row">{"".join(action_buttons)}</div>' if action_buttons else ""
 
             items_html.append(f"""
-              <div class="trend-item" data-category-id="{e(t.category_id or '')}" data-region="{e(t.region or '')}">
+              <div class="trend-item{extra_class}"{extra_style} data-category-id="{e(t.category_id or '')}" data-region="{e(t.region or '')}">
                 {thumb_html}
                 <div class="trend-content">
                   {badges_html}
@@ -1292,6 +1294,17 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                 </div>
               </div>
             """)
+
+        expansion_bar_html = ""
+        if len(view.trends) > 6:
+            extra_count = len(view.trends) - 6
+            expansion_bar_html = f"""
+              <div class="trends-expansion-bar" style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                <button type="button" class="btn btn-compact" id="btn-toggle-more-trends" data-expanded="false" data-total="{len(view.trends)}">
+                  Ver Mais Tendências (+{extra_count}) ▼
+                </button>
+              </div>
+            """
 
         trends_html = f"""
           <div class="card trends-card" id="trending-section">
@@ -1309,6 +1322,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             {cat_pills_html}
             <div id="trends-refresh-feedback" class="form-feedback" style="margin-bottom: 0.5rem;"></div>
             {''.join(items_html)}
+            {expansion_bar_html}
           </div>
         """
 
@@ -1662,35 +1676,69 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       }});
     }}
 
-    // Pill Filtering (Region, Category & All)
+    // Pill Filtering (Region, Category & All) & Compact Trends Expansion
     const filterPills = document.querySelectorAll('.cat-pill[data-filter-type]');
     const trendItems = document.querySelectorAll('.trend-item');
+    const btnToggleTrends = document.getElementById('btn-toggle-more-trends');
+
+    function applyTrendsFilter() {{
+      const activePill = document.querySelector('.cat-pill.active[data-filter-type]');
+      const filterType = activePill ? activePill.getAttribute('data-filter-type') : 'all';
+      const isExpanded = btnToggleTrends ? btnToggleTrends.getAttribute('data-expanded') === 'true' : true;
+
+      trendItems.forEach((item) => {{
+        let matches = false;
+        if (filterType === 'all') {{
+          matches = true;
+        }} else if (filterType === 'region') {{
+          const regCode = activePill ? activePill.getAttribute('data-region-code') : null;
+          matches = (item.getAttribute('data-region') === regCode);
+        }} else if (filterType === 'category') {{
+          const catId = activePill ? (activePill.getAttribute('data-cat-id') || activePill.getAttribute('data-category-id')) : null;
+          matches = (item.getAttribute('data-category-id') === catId);
+        }}
+
+        if (!matches) {{
+          item.style.display = 'none';
+        }} else {{
+          if (!isExpanded && item.classList.contains('trend-item-extra')) {{
+            item.style.display = 'none';
+          }} else {{
+            item.style.display = '';
+          }}
+        }}
+      }});
+    }}
+
     filterPills.forEach((pill) => {{
       pill.addEventListener('click', () => {{
         filterPills.forEach((p) => p.classList.remove('active'));
         pill.classList.add('active');
-        const filterType = pill.getAttribute('data-filter-type');
-        trendItems.forEach((item) => {{
-          if (filterType === 'all') {{
-            item.style.display = '';
-          }} else if (filterType === 'region') {{
-            const regCode = pill.getAttribute('data-region-code');
-            if (item.getAttribute('data-region') === regCode) {{
-              item.style.display = '';
-            }} else {{
-              item.style.display = 'none';
-            }}
-          }} else if (filterType === 'category') {{
-            const catId = pill.getAttribute('data-cat-id') || pill.getAttribute('data-category-id');
-            if (item.getAttribute('data-category-id') === catId) {{
-              item.style.display = '';
-            }} else {{
-              item.style.display = 'none';
-            }}
-          }}
-        }});
+        applyTrendsFilter();
       }});
     }});
+
+    if (btnToggleTrends) {{
+      btnToggleTrends.addEventListener('click', () => {{
+        const isCurrentlyExpanded = btnToggleTrends.getAttribute('data-expanded') === 'true';
+        const total = parseInt(btnToggleTrends.getAttribute('data-total') || '0', 10);
+        const extraCount = Math.max(0, total - 6);
+
+        if (!isCurrentlyExpanded) {{
+          btnToggleTrends.setAttribute('data-expanded', 'true');
+          btnToggleTrends.textContent = 'Recolher Tendências ▲';
+          applyTrendsFilter();
+        }} else {{
+          btnToggleTrends.setAttribute('data-expanded', 'false');
+          btnToggleTrends.textContent = 'Ver Mais Tendências (+' + extraCount + ') ▼';
+          applyTrendsFilter();
+          const trendSection = document.getElementById('trending-section');
+          if (trendSection) {{
+            trendSection.scrollIntoView({{ behavior: 'smooth' }});
+          }}
+        }}
+      }});
+    }}
 
     // Modal Open & Close
     const modal = document.getElementById('categories-modal');

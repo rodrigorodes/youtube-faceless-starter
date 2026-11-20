@@ -612,6 +612,77 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
     assert "Voltar ao Painel" in r.text
 
 
+def test_panel_trends_has_compact_expansion_toggle(client_env):
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+
+    # Insert 8 trends (more than 6)
+    for i in range(8):
+        conn.execute(
+            """
+            INSERT INTO studio.trend_topics (
+                id, project_id, topic, topic_key, source_name, source_url,
+                observed_at, window_start, window_end, metric_name, metric_value, evidence
+            ) VALUES (
+                %s, %s, %s, %s,
+                'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
+                %s, %s, %s, 'views', %s, '[]'::jsonb
+            )
+            """,
+            (uuid.uuid4().hex, p_id, f"Trend Topic {i}", f"trend topic {i}", now, past, now, 100000 - i * 1000),
+        )
+    conn.commit()
+
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
+
+    # Toggle button and expansion bar presence
+    assert 'id="btn-toggle-more-trends"' in r.text
+    assert 'data-expanded="false"' in r.text
+    assert 'data-total="8"' in r.text
+    assert "Ver Mais Tendências (+2)" in r.text
+    assert "trends-expansion-bar" in r.text
+
+    # Compact initial display: first 6 visible, last 2 with extra class and display: none
+    assert "trend-item-extra" in r.text
+    assert r.text.count('class="trend-item trend-item-extra"') == 2
+    assert 'class="trend-item trend-item-extra" style="display: none;"' in r.text
+
+    # Client-side script includes toggle logic
+    assert "btn-toggle-more-trends" in r.text
+    assert "Recolher Tendências" in r.text
+    assert "scrollIntoView" in r.text
+    assert "innerHTML" not in r.text
+
+    # Verify that when <= 6 trends exist, toggle button is not rendered and all items are visible
+    conn.execute("DELETE FROM studio.trend_topics WHERE project_id = %s", (p_id,))
+    for i in range(4):
+        conn.execute(
+            """
+            INSERT INTO studio.trend_topics (
+                id, project_id, topic, topic_key, source_name, source_url,
+                observed_at, window_start, window_end, metric_name, metric_value, evidence
+            ) VALUES (
+                %s, %s, %s, %s,
+                'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
+                %s, %s, %s, 'views', %s, '[]'::jsonb
+            )
+            """,
+            (uuid.uuid4().hex, p_id, f"Few Trend {i}", f"few trend {i}", now, past, now, 50000),
+        )
+    conn.commit()
+
+    r_few = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r_few.status_code == 200
+    assert 'id="btn-toggle-more-trends"' not in r_few.text
+    assert 'class="trend-item trend-item-extra"' not in r_few.text
+
+
+
+
 
 
 
