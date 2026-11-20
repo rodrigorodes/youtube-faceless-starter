@@ -25,6 +25,13 @@ class RankedIdea:
     scores: IdeaScores
 
 
+@dataclass(frozen=True)
+class AnalyticsIdea:
+    idea: RankedIdea
+    note: str
+    evidence: list[dict]
+
+
 def _prompt(topics: list[str]) -> str:
     listing = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(topics))
     return ("Avalie cada ideia de vídeo curto abaixo de 1 a 5 em: relevance (interesse do público), verifiability "
@@ -70,3 +77,11 @@ class ScoreIdeas:
         parsed = _parse(result.text, topics)
         ranked = [RankedIdea(t, score(parsed[t]), parsed[t]) for t in topics]
         return sorted(ranked, key=lambda r: -r.score)  # sorted é estável: empate mantém a ordem enviada
+
+    def execute_analytics(self, rows: list[dict], video_id: str, project_id: str) -> list[AnalyticsIdea]:
+        row = next((r for r in rows if r["video_id"] == video_id), None)
+        if not row or not row["views_complete"] or row["sample_small"] or not row["suggestion"]:
+            return []
+        suggestion = row["suggestion"]
+        ranked = self.execute([suggestion["topic"]], project_id)
+        return [AnalyticsIdea(ranked[0], suggestion["note"], suggestion["evidence"])]

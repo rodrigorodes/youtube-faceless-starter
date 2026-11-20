@@ -128,3 +128,71 @@ def test_deeply_nested_model_output_is_rejected_not_a_crash():
     use, *_ = make("{" + '{"a":' * 100000 + "1" + "}" * 100000)
     with pytest.raises(IdeasRejected):
         use.execute(["A"])
+
+
+def test_analytics_suggestion_is_scored_with_provenance_and_project_provider():
+    from datetime import date
+
+    use, text, usage = make({"ideas": [item("Tema", 4, 4, 4, 4)]})
+    selected = []
+    use.model_for = lambda project: selected.append(project) or text
+    day = date(2026, 11, 10)
+    rows = [{"video_id": "a" * 32, "views_complete": True, "sample_small": False,
+             "suggestion": {"topic": "Tema", "note": "Explorar", "evidence": [{"video_id": "a" * 32, "date": day}]}}]
+    result = use.execute_analytics(rows, "a" * 32, "b" * 32)
+    assert result[0].idea.topic == "Tema"
+    assert result[0].evidence == [{"video_id": "a" * 32, "date": day}]
+    assert result[0].note == "Explorar"
+    assert selected == ["b" * 32] and len(usage.entries) == 1
+
+
+@pytest.mark.parametrize("row", [
+    None,
+    {"views_complete": False, "sample_small": False, "suggestion": None},
+    {"views_complete": True, "sample_small": True, "suggestion": None},
+])
+def test_analytics_without_eligible_suggestion_never_calls_model(row):
+    use, text, usage = make({"ideas": []})
+    rows = [] if row is None else [{"video_id": "a" * 32, **row}]
+    assert use.execute_analytics(rows, "a" * 32, "b" * 32) == []
+    assert text.calls == 0 and usage.entries == []
+
+
+def test_analytics_editorial_endpoint_requires_auth_and_uses_video_project():
+    from datetime import date
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.studio.api.routes import make_router
+
+    video_id, project_id = "a" * 32, "b" * 32
+    day = date(2026, 11, 10)
+    row = {"video_id": video_id, "views_complete": True, "sample_small": False,
+           "suggestion": {"topic": "Tema", "note": "Explorar", "evidence": [{"video_id": video_id, "date": day}]}}
+    use, text, _ = make({"ideas": [item("Tema", 4, 4, 4, 4)]})
+    projects = []
+    use.model_for = lambda project: projects.append(project) or text
+    uc = SimpleNamespace(editorial=SimpleNamespace(score_ideas=use),
+                         get_video=SimpleNamespace(execute=lambda vid: SimpleNamespace(project_id=project_id) if vid == video_id else None),
+                         analytics=SimpleNamespace(weekly=lambda start, end: [row]))
+    app = FastAPI()
+    app.include_router(make_router(lambda: uc, lambda: True))
+    client = TestClient(app)
+    body = {"video_id": video_id, "start": str(day), "end": str(day)}
+    assert client.post("/studio/ideas/from-analytics", json=body).status_code == 401
+    response = client.post("/studio/ideas/from-analytics", json=body, headers={"Authorization": "Bearer test-worker-token"})
+    assert response.status_code == 200
+    result = response.json()["ranked"]
+    assert result[0]["topic"] == "Tema" and result[0]["evidence"] == [{"video_id": video_id, "date": str(day)}]
+    assert projects == [project_id]
+    assert client.post("/studio/ideas/from-analytics", json={**body, "start": "2026-11-01"}, headers={"Authorization": "Bearer test-worker-token"}).status_code == 422
+    assert text.calls == 1
+
+
+def test_analytics_scoring_respects_cost_cap():
+    use, text, usage = make({"ideas": [item("Tema", 4, 4, 4, 4)]}, cost=0.5)
+    rows = [{"video_id": "a" * 32, "views_complete": True, "sample_small": False,
+             "suggestion": {"topic": "Tema", "note": "Explorar", "evidence": []}}]
+    with pytest.raises(CostRefused):
+        use.execute_analytics(rows, "a" * 32, "b" * 32)
+    assert text.calls == 0 and usage.entries == []

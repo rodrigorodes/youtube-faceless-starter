@@ -34,6 +34,14 @@
   superior; 100 é um limiar operacional arbitrário, não significância
   estatística. Quando falta algum dia no intervalo ou alguma contagem de
   visualizações, o agregado é marcado incompleto e não gera sugestão.
+- `POST /studio/ideas/from-analytics` recebe `video_id`, `start` e `end`
+  (intervalo de até sete dias). Para o vídeo escolhido, pontua o tema
+  exploratório elegível pela rubrica P02 com o provedor do projeto e os tetos
+  existentes; devolve nota e datas/ID das métricas usadas. Sem sugestão
+  elegível devolve `{"ranked":[]}` sem chamar o modelo. O endpoint usa a
+  mesma autenticação e proteção de origem das demais rotas. A pontuação não
+  cria vídeo, não valida fatos e não prova desempenho superior. Temas acima
+  do limite de 150 caracteres da P02 são recusados; não são truncados.
 - `workflows/04-analytics-daily.json` é inativo e começa com mapa vazio. Antes
   de usá-lo, o humano configura em `Prepare queries` pares `{video_id,
   youtube_id}` conferidos contra a publicação local, e associa ao nó de leitura
@@ -46,8 +54,8 @@
 - A resposta e os dados de OAuth não foram validados contra n8n/Google reais:
   verificar credencial, compatibilidade dos nós, disponibilidade das métricas,
   fuso e atraso antes de ativar. Retenção maior que 14 dias exige backfill
-  separado. A associação automática de vídeos, sugestões à P02 e relatório
-  com dados reais continuam pendentes. Não foi feita chamada remota.
+  separado. A associação automática de vídeos, integração na interface e
+  relatório com dados reais continuam pendentes. Não foi feita chamada remota.
 
 O banco de testes desta frente é o contêiner local isolado
 `yfs-p06-p07-isolated`, porta 55439 (DSN sem senha:

@@ -94,3 +94,34 @@ def test_composition_exposes_analytics_and_resume(conn, dsn, tmp_path):
         assert callable(use_cases.resume.execute)
     finally:
         studio.shutdown()
+
+
+def test_analytics_to_editorial_uses_real_metrics_and_blocks_incomplete_sample(analytics):
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.studio.api.routes import make_router
+    from app.studio.application.analytics import Analytics, DailyMetric
+    from app.studio.application.editorial import CostGuard
+    from app.studio.application.ideas import ScoreIdeas
+    from test_ideas import Text, Usage, item
+
+    repo, video = analytics
+    first, second = date(2026, 11, 10), date(2026, 11, 11)
+    repo.upsert(DailyMetric(video_id=video, date=first, views=120))
+    text, usage = Text({"ideas": [item("tema", 4, 4, 4, 4)]}), Usage()
+    scorer = ScoreIdeas(text, CostGuard(usage, 0.0, 15.0), usage)
+    uc = SimpleNamespace(analytics=Analytics(repo), editorial=SimpleNamespace(score_ideas=scorer),
+                         get_video=SimpleNamespace(execute=lambda _: SimpleNamespace(project_id="b" * 32)))
+    app = FastAPI()
+    app.include_router(make_router(lambda: uc, lambda: True))
+    client = TestClient(app)
+    body = {"video_id": video, "start": str(first), "end": str(second)}
+    headers = {"Authorization": "Bearer test-worker-token"}
+    assert client.post("/studio/ideas/from-analytics", json=body, headers=headers).json() == {"ranked": []}
+    assert text.calls == 0
+    repo.upsert(DailyMetric(video_id=video, date=second, views=1))
+    result = client.post("/studio/ideas/from-analytics", json=body, headers=headers).json()["ranked"]
+    assert result[0]["topic"] == "tema"
+    assert result[0]["evidence"] == [{"video_id": video, "date": str(first)}, {"video_id": video, "date": str(second)}]
+    assert text.calls == 1

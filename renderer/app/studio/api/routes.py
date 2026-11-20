@@ -144,6 +144,26 @@ class IdeasOut(BaseModel):
     ranked: list[RankedOut]
 
 
+class AnalyticsIdeasIn(BaseModel):
+    video_id: str
+    start: date
+    end: date
+
+
+class MetricEvidence(BaseModel):
+    video_id: str
+    date: date
+
+
+class AnalyticsRankedOut(RankedOut):
+    note: str
+    evidence: list[MetricEvidence]
+
+
+class AnalyticsIdeasOut(BaseModel):
+    ranked: list[AnalyticsRankedOut]
+
+
 class ProduceOut(BaseModel):
     generated: int
     reused: int
@@ -324,6 +344,29 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             project = check_id(body.project_id) if body.project_id else None
             return IdeasOut(ranked=[RankedOut(topic=r.topic, score=r.score, scores=r.scores)
                                     for r in ed.score_ideas.execute(body.topics, project)])
+        return run(go)
+
+    @router.post("/ideas/from-analytics", response_model=AnalyticsIdeasOut)
+    def score_analytics_idea(body: AnalyticsIdeasIn):
+        if body.end < body.start or (body.end - body.start).days > 6:
+            raise HTTPException(422, "report interval must be at most seven days")
+
+        def go(uc):
+            video_id = check_id(body.video_id)
+            video = uc.get_video.execute(video_id)
+            if video is None:
+                raise VideoNotFound(video_id)
+            if uc.analytics is None:
+                raise HTTPException(503, "analytics services unavailable")
+            scorer = editorial(uc).score_ideas
+            if scorer is None:
+                raise HTTPException(503, "idea scoring unavailable")
+            rows = uc.analytics.weekly(body.start, body.end)
+            ranked = scorer.execute_analytics(rows, video_id, video.project_id)
+            return AnalyticsIdeasOut(ranked=[
+                AnalyticsRankedOut(topic=r.idea.topic, score=r.idea.score, scores=r.idea.scores,
+                                   note=r.note, evidence=r.evidence) for r in ranked
+            ])
         return run(go)
 
     def media(uc: UseCases):
