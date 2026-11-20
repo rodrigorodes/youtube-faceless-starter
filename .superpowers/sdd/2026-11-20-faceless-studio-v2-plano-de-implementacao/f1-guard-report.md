@@ -1,195 +1,210 @@
 # F1 — guard de orçamento nos caminhos pagos (fatia A)
 
-Commits: `822334a` (fatia original) e o commit de correção desta rodada (revisão independente:
-1 crítico + 4 importantes). O hash do commit de correção fica no histórico do worktree; este relatório
-foi commitado em seguida.
+Commits desta linha de correção: `822334a` (fatia original), `18700e2` (crítico + 4 importantes) e
+`e8f6b52` (correções operacionais I1–I6 + índices). Este relatório foi commitado em seguida.
 
 Esta fatia liga as chamadas pagas (roteiro/editorial, imagem, voz e pontuação de ideias) ao protocolo
 de reserva de orçamento já existente e fecha o ciclo de vida da operação paga. **Não** substitui o
 ledger legado, não integra reconciliação automática e **não** garante hard limit; os limites continuam
 dependendo dos argumentos fornecidos pelo chamador.
 
-## Política de custo adotada (correção do crítico)
+## Política de custo (crítico já resolvido)
 
-Foi escolhida a opção **(a)**: um terceiro tipo explícito `ESTIMATE`, contabilizado como **gasto
-aproximado** (não "desconhecido", não `ACTUAL`).
+Um terceiro tipo explícito `ESTIMATE` é contabilizado como **gasto aproximado** (não "desconhecido",
+não `ACTUAL`).
 
 - `CostConfirmation` aceita `ACTUAL` (positivo), `ESTIMATE` (positivo) e `FREE` (zero), sempre com
   referência e responsável não vazios.
 - `provider_settlement(entry, *, settled_by, charge=None)`:
-  - `settled_by` é obrigatório e nomeia o processo/ator que encerra a operação (sem constante sintética).
-  - `charge` (`ChargeEvidence`: valor cobrado + referência + quem declara) ⇒ `ACTUAL` **no valor
-    cobrado**; o `UsageEntry` do ledger é atualizado para esse valor.
   - Sem `charge`: zero ⇒ `FREE`; positivo ⇒ `ESTIMATE` (nunca `ACTUAL`).
-- `OpenCodeImage` grava `STUDIO_PAID_IMAGE_USD` como estimativa configurável ⇒ agora `ESTIMATE`; o
-  dinheiro gasto continua contando no teto, mas o mês **não** é marcado como desconhecido e a
-  reconciliação (`reconcile_actual`) troca `ESTIMATE` por `ACTUAL` com evidência, atualizando o ledger
-  e a operação na mesma transação (sem duplicar linha).
-- Migração `0019_ledger_estimate_and_attribution.sql` (quatro dígitos; `0018` já era da fatia D):
-  permite `ESTIMATE` nos CHECKs de `usage_ledger` e `paid_operations`, e permite `video_id NULL` em
-  `paid_operations`/`budget_reservations` para operações de projeto.
+  - Com `charge` (`ChargeEvidence`: valor cobrado + referência + quem declara) ⇒ `ACTUAL` **no valor
+    cobrado**, e o `UsageEntry` do ledger é atualizado para esse valor.
+- `OpenCodeImage` grava `STUDIO_PAID_IMAGE_USD` como estimativa configurável ⇒ `ESTIMATE`; o gasto
+  continua contando no teto, mas o mês não vira desconhecido.
+- `reconcile_actual` troca `ESTIMATE` por `ACTUAL`, ou converte para `FREE` quando a cobrança
+  comprovada é zero, numa transação, sem duplicar linha.
 
-## Correções desta rodada, item a item
+### `settled_by` é rótulo de call site (limitação explícita)
 
-1. **Crítico — estimativa virava `ACTUAL`**: resolvido com `ESTIMATE` + `ChargeEvidence`, conforme
-   acima. Testes: `test_provider_settlement_never_promotes_an_estimate_to_actual`,
-   `test_provider_settlement_accepts_actual_only_with_charge_evidence`,
-   `test_confirm_estimate_counts_as_approximate_spend_and_is_not_unknown`,
-   `test_reconcile_actual_replaces_the_estimate_with_evidence`.
-2. **Reservas antigas bloqueavam o mês para sempre**: `_reserve_within` soma, no teto mensal, apenas
-   ledger e reservas do mês corrente (UTC). Reservas de meses anteriores não consomem o mês atual, mas
-   aparecem em `pending_reconciliation()` como `stale_reservation`. O teto por vídeo continua
-   conservador (soma tudo do vídeo). Teste:
-   `test_previous_month_reservation_does_not_block_the_current_month_and_is_reported`.
-3. **`ScoreIdeas` contaminava o mês**: quando o guard está ligado, `ScoreIdeas` passa pelo mesmo ciclo
-   de operação paga (com `video_id=None`, limitado só pelo teto mensal) e grava `ESTIMATE`/`ACTUAL`/
-   `FREE` em vez de linha sem confirmação. Política do legado: só `cost_usd = NaN` é "desconhecido" e
-   bloqueia; linha legada finita conta pelo valor gravado (zero inclusive) e é **reportada** como
-   `legacy_unconfirmed_ledger`/`unknown_ledger_cost` em `pending_reconciliation()`. Não foi afrouxado
-   fail-closed para NaN. Testes:
-   `test_score_ideas_routes_through_the_paid_guard_without_a_video`,
-   `test_finite_legacy_cost_counts_but_nan_is_still_unknown`,
-   `test_finite_legacy_zero_is_not_unknown_but_nan_still_blocks`,
-   `test_positive_legacy_cost_counts_as_provisional_spend`.
-4. **HTTP 500**: `BudgetDenied` → 403; `OperationInProgress`/`OperationSettled`/`OperationUncertain`/
-   `InvalidOperationTransition` → 409 (conflito com o estado persistido; 429 foi descartado porque não
-   é limite de taxa); `UnknownPaidOperation` → 404. Mensagens públicas, sem vazar chave/estado interno.
-   Teste de contrato: `tests/test_budget_http.py`.
-5. **Voz paga impossível e retentativa cobrava de novo**: a chave passou a ser por conteúdo (`vídeo`,
-   cena, voz, modelo, texto narrado), não por `job.id`. A liquidação segue a política acima:
-   `FREE` comprovado, `ACTUAL` só com `charge_evidence` do adapter, senão `ESTIMATE` (sem `None`
-   incondicional). `FREE` confirmado pode ser reexecutado sem nova reserva (`allow_free_replay`);
-   `ESTIMATE`/`ACTUAL` reexecutado levanta `OperationSettled` e não cobra de novo. Testes:
-   `test_two_jobs_with_the_same_narration_do_not_charge_twice`,
-   `test_free_voice_retry_reexecutes_without_a_second_charge`,
-   `test_confirmed_estimate_operation_cannot_replay_for_free`.
-6. **Confirmação antes da validação**: `paid.run` ganhou `validate(result)`, executado depois da
-   chamada paga e antes de encerrar o custo. Saída inválida (roteiro fora do contrato; imagem sem
-   licença/mime inválido) ⇒ `UNCERTAIN` com motivo, sem `CONFIRMED` e sem liberar. Testes:
-   `test_invalid_script_after_a_successful_paid_call_stays_uncertain`,
-   `test_invalid_image_after_a_successful_paid_call_stays_uncertain`,
-   `test_invalid_paid_output_stays_uncertain_not_confirmed`.
-7. **`settle` deixava `RESERVED` eterno**: falha `PreEffectFailure` no `settle` (e também na
-   validação) libera a reserva com motivo; qualquer outra exceção de liquidação marca `UNCERTAIN`.
-   Teste: `test_pre_effect_failure_during_settlement_releases`,
-   `test_unconfirmable_settlement_marks_uncertain`.
-8. **`BaseException` largo demais**: `run` captura `Exception` para marcar `UNCERTAIN`/liberar e deixa
-   `KeyboardInterrupt`/`SystemExit` subirem sem engolir; a reserva permanece `RESERVED` para
-   reconciliação explícita (documentado). Teste:
-   `test_keyboard_interrupt_is_not_swallowed_and_keeps_the_reservation`.
-9. **`STUDIO_BUDGET_GUARD` documentado** em `.env.example`: `0`/`off` (padrão) não cria reserva
-   alguma e vale só a pré-checagem antiga; `1`/`on` exige reserva e marca custo sem evidência como
-   `ESTIMATE`.
+`settled_by` é obrigatório e nomeia o processo que encerra a operação (ex.: `studio:image:opencode`),
+mas **é descartado no caminho `ACTUAL`**: quem assina a confirmação é `charge.declared_by` (o adapter
+que declara a cobrança). Ou seja, em `ACTUAL`, `confirmed_by` no ledger é `charge.declared_by`, não o
+`settled_by` passado pelo call site. Isso é intencional (a evidência manda), mas está documentado
+porque o nome pode sugerir o contrário.
 
-## O que já existia na fatia original
+## Correções operacionais desta rodada (I1–I6)
 
-- `PaidOperationState` (`RESERVED`, `CONFIRMED`, `RELEASED`, `UNCERTAIN`), `BeginResult` não booleano,
-  porta `PaidOperationRepository`, `PreEffectFailure` e `PaidOperationGuard.run`.
-- `0017_paid_operations.sql` (quatro dígitos; `0016` já era da fatia C — canais).
-- Wiring opt-in (`paid` opcional) em `GenerateScript`, `ProduceAssets`, `RunRender` e, agora,
-  `ScoreIdeas`; `composition.py` cria o guard quando `Settings.budget_guard` (env
-  `STUDIO_BUDGET_GUARD`) está ligado, desligado por padrão.
-- `text_opencode.py`/`image_opencode.py`: 4xx imediato, conexão não estabelecida e divergência de
-  modelo levantam `PreEffectFailure` (subtipo de `ModelUnavailable`).
+1. **I1 — liberar devolve a chave.** `RELEASED` agora significa "nenhum efeito externo, seguro
+   repetir": `begin` reabre a mesma chave como **nova tentativa** (`attempt + 1`), cria **nova
+   reserva** e devolve `CREATED`. `CONFIRMED` continua **terminal** (retry recusado com
+   `OperationSettled`) e `UNCERTAIN` continua bloqueado até reconciliação. Migração `0020` adiciona
+   `paid_operations.attempt` (default 1; reabertura incrementa).
+   - Consequência documentada: `CONFIRMED` com resultado perdido (crash após confirmar) **não** é
+     reexecutado; reutilização de resultado/asset fica para o coordenador (D2). Não há replay pago.
+   - Testes: `test_released_operation_can_retry_and_charges_only_once`,
+     `test_released_operation_reopens_with_a_new_attempt_and_reservation`,
+     `test_confirmed_operation_is_terminal_and_does_not_reopen`.
+2. **I2 — órfão do mês corrente visível.** `pending_reconciliation(stale_after=...)` lista operações
+   `RESERVED` paradas há mais de `STALLED_AFTER` (padrão **15 min**) como `stalled_operation`, com
+   `stalled_for` (tempo desde `updated_at`) no item retornado. O limiar é injetável para teste/serviço.
+   Não há heartbeat: uma chamada legítima mais longa que o limiar também aparece; a lista **não**
+   encerra nem altera a operação. `KeyboardInterrupt`, crash e falha de `confirm` deixam de sumir.
+   - Teste: `test_stalled_reserved_operation_is_reported_with_the_time_it_has_been_stuck` (força
+     `updated_at` para 20 min atrás e também injeta `stale_after=2h`).
+3. **I3 — `confirm` dentro de handler.** Falha ao confirmar (ex.: `CostConfirmationError`) marca a
+   operação `UNCERTAIN` com motivo e relança. Se o próprio `mark_uncertain` falhar (banco fora), a
+   exceção do mark é relançada **com a original como causa** (`raise mark_exc from exc`).
+   - Testes: `test_confirm_failure_marks_the_operation_uncertain_and_reraises`,
+     `test_confirm_failure_keeps_the_original_error_when_marking_uncertain_also_fails`.
+4. **I4 — 500 residual e mensagens.** `IdempotencyConflict` → **409**, `CostConfirmationError` →
+   **422** (é erro de conteúdo da confirmação, não conflito de estado), `UnknownPaidOperation` → 404.
+   O 409 agora tem **mensagem por estado**: `CONFIRMED` → "already confirmed; reuse the existing
+   result"; `RELEASED` → "was released and cannot be retried"; `in progress` e `uncertain/incompatible`
+   têm mensagens próprias. Nenhuma inclui chave ou valor. Teste de contrato inclui 404 explícito
+   (`tests/test_budget_http.py`).
+5. **I5 — reconciliação mais ampla.** `reconcile_actual` aceita:
+   - `CONFIRMED` + `ESTIMATE` (troca o lançamento existente);
+   - `UNCERTAIN` (o caso natural: insere o lançamento que faltava, confirma e remove a reserva);
+   - `charged_usd = 0` converte para `FREE`, eliminando o gasto fantasma da estimativa no teto.
+   `CONFIRMED` + `ACTUAL` continua não reconciliável (evita reescrever histórico).
+   - Testes: `test_reconcile_uncertain_operation_closes_it_with_actual_charge`,
+     `test_reconcile_estimate_to_zero_converts_to_free_and_releases_the_ghost_spend`,
+     `test_reconcile_actual_only_applies_to_an_estimate_or_uncertain_operation`.
+6. **I6 — `ScoreIdeas` valida antes de confirmar.** A rubrica é parseada dentro de `validate=` do
+   `paid.run`; saída inválida fica `UNCERTAIN` (dinheiro pago, resultado inutilizável), como roteiro e
+   imagem. Teste: `test_invalid_ideas_after_a_successful_paid_call_stays_uncertain`.
 
-## Regras não negociáveis — como ficaram
+## Performance e migração
 
-1. Só a chamada que recebeu `CREATED` executa o provedor. Replay (`IN_PROGRESS`/`CONFIRMED`/`RELEASED`/
-   `UNCERTAIN`) levanta erro explícito e não chama o provedor de novo — exceto replay de operação
-   confirmada como `FREE` no caminho de voz, que reexecuta sem nova reserva.
-2. Custo só é aceito com confirmação estruturada (`ACTUAL`/`ESTIMATE`/`FREE`); `confirm` grava o
-   lançamento e apaga a reserva na mesma transação.
-3. Resultado ambíguo ou saída paga inválida → `UNCERTAIN`, reserva permanece e novas execuções da
-   chave são recusadas até reconciliação.
-4. Falha comprovadamente pré-efeito → `release` com motivo registrado.
-5. Nenhuma chave de API, chamada de rede real ou publicação: testes usam provedores/repositórios
-   falsos; a integração PostgreSQL usa banco descartável com prova privada.
+Migração `0020_paid_operation_attempt_and_budget_indexes.sql` (quatro dígitos; `0019` é desta fatia,
+`0018` é de D; não houve colisão):
+
+- `paid_operations.attempt` (default 1, CHECK `attempt >= 1`).
+- Índices: `usage_ledger(created_at)`, `usage_ledger(video_id)`,
+  `budget_reservations(created_at)`, `paid_operations(state, updated_at)`.
+- **Janelas de lock documentadas no arquivo**:
+  - `ADD COLUMN ... DEFAULT constante` é metadata-only no PG >= 11, mas toma ACCESS EXCLUSIVE breve.
+  - `CREATE INDEX` sem `CONCURRENTLY` toma SHARE lock e **bloqueia escritas** durante a construção;
+    `CONCURRENTLY` não roda dentro da transação de migração. Com tabela grande, criar o índice
+    concurrentemente fora da migração antes de aplicar a versão.
+  - A `0019` já aplicada fez `DROP/ADD CONSTRAINT ... CHECK` em `usage_ledger` com ACCESS EXCLUSIVE e
+    varredura completa. Para tabela grande, o padrão seguro é `ADD CONSTRAINT ... NOT VALID`
+    (ACCESS EXCLUSIVE breve, sem varredura) + `VALIDATE CONSTRAINT` em migração separada
+    (SHARE UPDATE EXCLUSIVE, permite leituras/escritas). Aqui a tabela ainda é pequena; não foi
+    necessário.
+
+## Regras reais do ciclo de vida
+
+1. Só a chamada que recebeu `CREATED` executa o provedor.
+2. `RELEASED` = seguro repetir: o próximo `begin` com as mesmas entradas reabre (`CREATED`, nova
+   reserva, `attempt + 1`). Entradas diferentes continuam `IdempotencyConflict`.
+3. `CONFIRMED` é terminal: replay levanta `OperationSettled` e **não** executa de novo. Reutilizar o
+   resultado/asset perdido é responsabilidade do coordenador (D2).
+4. `UNCERTAIN` mantém a reserva e bloqueia até `confirm`, `release` ou `reconcile_actual` explícitos.
+5. `IN_PROGRESS` (RESERVED) não reexecuta concorrentemente.
+6. Resultado ambíguo ou saída paga inválida → `UNCERTAIN`; falha comprovadamente pré-efeito →
+   `RELEASED` com motivo.
+7. `FREE` confirmado (voz Piper) pode ser reexecutado sem nova reserva no caminho de voz
+   (`allow_free_replay`); `ESTIMATE`/`ACTUAL` não.
+8. Nenhuma chave de API, chamada de rede real ou publicação nos testes; PostgreSQL só descartável com
+   prova privada.
 
 ## TDD — RED e GREEN medidos
 
-RED demonstrado contra o commit anterior (`git archive HEAD` em cópia isolada, sobreposta apenas com os
-testes novos e a migração `0019`; implementação antiga intacta):
+RED desta rodada contra o código anterior (com a migração `0020` já presente para o teste enxergar o
+schema; comportamento ainda antigo):
 
-- 21 falhas, incluindo `provider_settlement() got an unexpected keyword argument 'settled_by'`,
-  `assert ('confirm', ..., 'ESTIMATE', ...) in [...] ('confirm', ..., 'ACTUAL', ...)` (código antigo
-  emitia `ACTUAL` para estimativa), ausência de `validate`/`allow_free_replay`,
-  `PreEffectFailure` no `settle` deixando `RESERVED`, `KeyboardInterrupt` marcado `UNCERTAIN`, e
-  `test_budget_http` falhando porque `BudgetDenied`/`OperationInProgress`/`OperationSettled`/
-  `OperationUncertain`/`InvalidOperationTransition` não eram mapeados (saíam como erro não tratado).
-- GREEN após a implementação: **117 passed** nos arquivos focados
-  (`test_budget_guard.py`, `test_paid_operations.py`, `test_budget_reservations.py`, `test_db.py`,
-  `test_budget_http.py`).
-- Suíte completa: **1522 passed, 35 skipped, 1 warning** (depreciação do Starlette).
+- `test_budget_http.py` falhou na coleta: `TypeError: OperationSettled() takes no keyword arguments`
+  (não havia mensagem por estado).
+- 7 falhas de comportamento: reopen de `RELEASED` retornava `RELEASED`/não criava reserva;
+  `reconcile_actual` um `UNCERTAIN` levantava `InvalidOperationTransition` e zero levantava
+  `CostConfirmationError`; `pending_reconciliation` não listava `RESERVED` parada; `confirm` fora do
+  handler deixava `RESERVED` órfão; `ScoreIdeas` confirmava antes de validar.
+
+GREEN após a implementação: **115 passed** nos quatro focados
+(`test_budget_guard.py`, `test_budget_http.py`, `test_paid_operations.py`,
+`test_budget_reservations.py`).
 
 ## Testes — comandos e resultados reais
 
 Imagem local `faceless-v2-hygiene-test-local:latest` (Python 3.12 + pytest), rede Docker isolada
-(`f1b-net`), PostgreSQL 16 descartável (`f1b-pg`, tmpfs) e prova de 32 bytes montada em
-`/budget-test-proof` (somente leitura) no banco e no runner:
+(`f1c-net`), PostgreSQL 16 descartável (`f1c-pg`, tmpfs) e prova de 32 bytes montada em
+`/budget-test-proof` (somente leitura) no banco e no runner. **Sem mount do `.git`** nesta rodada.
 
 ```
-docker run --rm --network f1b-net \
+docker run --rm --network f1c-net \
   -v "$PWD":/workspace:ro \
-  -v /Users/rodrigomendes/youtube-faceless-starter/.git:/Users/rodrigomendes/youtube-faceless-starter/.git:ro \
   -v <proof_dir>:/budget-test-proof:ro -e PYTHONPATH=/workspace/renderer \
   -e STUDIO_BUDGET_TEST_PROOF_FILE=/budget-test-proof/proof \
-  -e STUDIO_BUDGET_DISPOSABLE_DSN=postgresql://postgres:test@f1b-pg:5432/postgres \
-  -e STUDIO_TEST_DSN=postgresql://postgres:test@f1b-pg:5432/postgres \
+  -e STUDIO_BUDGET_DISPOSABLE_DSN=postgresql://postgres:test@f1c-pg:5432/postgres \
+  -e STUDIO_TEST_DSN=postgresql://postgres:test@f1c-pg:5432/postgres \
   -w /workspace faceless-v2-hygiene-test-local:latest python -m pytest -p no:cacheprovider ...
 ```
 
-- Focados (`test_budget_guard.py`, `test_paid_operations.py`, `test_budget_reservations.py`,
-  `test_budget_http.py`): **102 passed**.
-- `tests/test_db.py`: **15 passed** (inclui `0018_production_runs` e `0019_...` nas duas listas e as
-  tabelas `production_runs`/`stage_executions`/`production_outbox`).
-- Suíte completa: **1522 passed, 35 skipped, 1 warning**. Nenhuma falha.
+- Focados (`test_budget_guard.py`, `test_budget_http.py`, `test_paid_operations.py`,
+  `test_budget_reservations.py`): **115 passed**.
+- `tests/test_db.py`: **13 passed, 2 failed** — falha esperada e **não corrigida de propósito**:
+  a instrução desta rodada proíbe tocar em `tests/test_db.py`, e as duas listas de migração
+  (`test_migrate_applies_once` e `test_failed_migration_rolls_back_and_is_not_recorded`, linhas 25 e
+  37) ainda terminam em `"0019_ledger_estimate_and_attribution"`. Falta acrescentar
+  `"0020_paid_operation_attempt_and_budget_indexes"` ao fim das duas listas. O controlador precisa
+  aplicar essa linha; não alterei o arquivo proibido.
+- Suíte completa: **1537 passed, 35 skipped, 4 failed, 1 warning**. As 4 falhas são:
+  - 2 de `tests/test_db.py` (lista acima, arquivo fora do escopo autorizado);
+  - 2 de `tests/test_secrets_hygiene.py` (`test_real_starter_archive_is_safe_and_keeps_scripts_executable`
+    e `test_extracted_starter_runs_contract_snapshot_and_backup_import`), ambientais por **não haver
+    mount do `.git`** no container: o empacotador não consegue listar os arquivos rastreados e aborta
+    sem vazar conteúdo. Passam quando o `.git` é montado somente leitura; não é regressão desta fatia.
 
 Os testes cobrem: estimativa não vira `ACTUAL`; `ACTUAL` exige evidência e usa o valor cobrado;
-reconciliação `ESTIMATE`→`ACTUAL`; teto mensal por mês corrente e teto por vídeo conservador; reserva
-antiga não bloqueia e é reportada; legado finito conta e NaN bloqueia; operação de projeto sem vídeo;
-HTTP 403/409/404; saída paga inválida fica `UNCERTAIN`; falha pré-efeito no `settle` libera;
-`KeyboardInterrupt` não é engolido; voz por conteúdo sem cobrança dupla, com replay grátis só quando
-`FREE`; e o wiring dos caminhos pagos e de `ScoreIdeas`.
+reconciliação `ESTIMATE`→`ACTUAL`, `UNCERTAIN`→`ACTUAL` e `ESTIMATE`→`FREE`; teto mensal por mês
+corrente e teto por vídeo conservador; reserva antiga não bloqueia e é reportada; operação `RESERVED`
+parada é reportada com `stalled_for`; legado finito conta e NaN bloqueia; operação de projeto sem
+vídeo; HTTP 403/409/422/404 com mensagem por estado; `RELEASED` reabre e `CONFIRMED` não; erro de
+`confirm` marca `UNCERTAIN` (preservando a causa quando o mark também falha); saída paga inválida
+(roteiro, imagem e ideias) fica `UNCERTAIN`; falha pré-efeito libera; `KeyboardInterrupt` não é
+engolido; voz por conteúdo sem cobrança dupla, com replay grátis só quando `FREE`.
 
-## Limitações e riscos (explícitos)
+## Limitações, riscos e pendências operacionais
 
-- **Precisão do ledger legado**: `usage_ledger.cost_usd` é `numeric(12,6)` e o domínio legado usa
-  `float`; valores podem já ter sido arredondados ou subestimados, inclusive custos muito pequenos
-  representados como zero. Zero não prova gratuidade e positivo sem evidência não prova custo real.
-- **Estimativa pode divergir**: `ESTIMATE` é aproximação; até a reconciliação, o teto usa o valor
-  estimado. Uma subestimação sistemática ainda pode furar o orçamento real.
-- **Sem reconciliação automática**: `UNCERTAIN`, reservas antigas e linhas legadas não confirmadas
-  aparecem em `pending_reconciliation()`, mas não há API, fila, trilha imutável nem runbook nesta
-  fatia; a decisão é manual, chamando `confirm`/`release`/`reconcile_actual` no repositório.
-- **O teto não é hard limit**: os limites são argumentos por chamada; o ledger legado ainda pode
-  receber despesas sem reservar e não verifica limites (o trigger só serializa a escrita). Com o
-  guard desligado (padrão), nada muda no comportamento atual. Um chamador que informe limites maiores
-  pode furar a política.
-- **Voz real**: o Piper é local/gratuito ⇒ `FREE` e replay sem nova reserva. Uma voz paga que só
-  informe estimativa fica `ESTIMATE` (reconciliação posterior); uma voz que exponha
-  `charge_evidence` pode declarar `ACTUAL`.
-- **Replay de voz `FREE`**: reexecuta a chamada (não reusa o áudio do job anterior); o que se evita é
-  nova reserva/cobrança, não o custo local de sintetizar.
-- **Atomicidade**: reserva + intenção são gravadas numa transação sob o lock; confirmação (ledger +
-  estado + remoção da reserva) também. Se o banco cair no meio, a operação pode permanecer
-  `RESERVED`/`UNCERTAIN` e exigir reconciliação — não é resolvida automaticamente.
-- **Testes de PostgreSQL** exigem banco exclusivamente descartável e prova privada; sem isso os testes
-  são ignorados, não aprovados.
-- **Arquivos compartilhados**: nesta rodada `composition.py` (linha `paid=paid_guard` em `ScoreIdeas`)
-  e `tests/test_db.py` (listas de migração + três tabelas da fatia D) foram tocados deliberadamente,
-  com apenas essas mudanças; o restante das mudanças de outros agentes no worktree
-  (`production_repo.py`, `ports.py`, `domain/production_run.py`, `test_production_repo.py`,
-  `test_production_run.py`, e o diff posterior de `0018_production_runs.sql`) **não** entrou no commit.
-- **Flake ambiental**: numa execução anterior da suíte completa, 2 testes de `test_secrets_hygiene`
-  falharam porque o `.git` compartilhado do worktree estava sendo escrito por outro agente durante o
-  empacotamento (o script aborta sem vazar conteúdo). Os mesmos testes passam isolados, em repetição,
-  e na execução completa final sem falhas.
+- **`pending_reconciliation` não é acionável por si só**: lista reservas antigas, `UNCERTAIN`,
+  `RESERVED` paradas (limiar 15 min, sem heartbeat) e legado não confirmado, mas não há API, fila,
+  runbook nem expiração automática; a decisão é manual (`confirm`/`release`/`reconcile_actual`).
+- **`legacy_unconfirmed_ledger` cresce para sempre**: toda linha histórica sem
+  `cost_confirmation_kind` continua aparecendo na lista, sem forma de marcá-la como revisada. É uma
+  pendência operacional explícita (política de arquivamento/aceite do legado ainda não existe); até
+  então a lista cresce monotonicamente.
+- **Parada é visibilidade, não heartbeat**: `stalled_operation` usa `updated_at`; uma chamada
+  legítima mais longa que 15 min aparece como parada até terminar. Nada é encerrado automaticamente.
+- **`CONFIRMED` sem resultado**: crash após confirmar deixa a operação terminal; o retry é recusado e
+  a reutilização de resultado/asset não existe nesta fatia (D2).
+- **`settled_by` descartado em `ACTUAL`**: ver seção própria acima; quem assina é
+  `charge.declared_by`.
+- **Precisão do ledger legado**: `numeric(12,6)` e domínio legado em `float`; zero não prova
+  gratuidade e positivo sem evidência não prova custo real.
+- **`ESTIMATE` pode divergir**: até a reconciliação, o teto usa o valor estimado; subestimação
+  sistemática ainda pode furar o orçamento real.
+- **O teto não é hard limit**: limites são argumentos por chamada; o ledger legado ainda pode receber
+  despesas sem reservar e não verifica limites. Com o guard desligado (padrão), nada muda.
+- **Voz `FREE`**: replay reexecuta a síntese (evita reserva/cobrança, não o custo local).
+- **Atomicidade**: reserva + intenção e confirmação (ledger + estado + remoção da reserva) são
+  transacionais; queda no meio deixa `RESERVED`/`UNCERTAIN` para reconciliação.
+- **Índices**: a `0020` usa `CREATE INDEX` transacional (bloqueia escritas na construção); em tabela
+  grande, criar concurrentemente fora da migração.
+- **Testes de PostgreSQL** exigem banco exclusivamente descartável e prova privada; sem isso são
+  ignorados, não aprovados.
+- **Arquivos compartilhados**: `composition.py` não foi tocado nesta rodada; `tests/test_db.py` foi
+  deliberadamente preservado (ver falha esperada). Mudanças de outros agentes no worktree
+  (`api/panel.py`, `test_panel*.py`, `0018_*`, `production_repo.py`, `ports.py`,
+  `domain/production_run.py`, `test_production_repo.py`, `test_production_run.py`,
+  `0021_channel_pillars_constraints.sql`, `test_channel_migrations.py`) **não** entraram no commit.
 
 ## Fora de escopo desta fatia
 
 - Preços de provedor verificados, chamadas reais, publicação YouTube/n8n.
-- Reconciliação automática, expiração de reservas, política central de limites e UI/API de
-  reconciliação.
+- Reconciliação automática, expiração de reservas, heartbeat de operação, política central de
+  limites e UI/API de reconciliação.
 - Ledger legado: nenhuma promoção automática de registros a confirmados.
+- Reutilização de resultado/asset de operação `CONFIRMED` (D2).
 
 Não afirmo "F1 concluído" nem "hard limit garantido".
