@@ -13,6 +13,23 @@
   },
   "additionalProperties": false,
   "properties": {
+    "attempt": {
+      "default": 0,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
     "id": {
       "title": "Id",
       "type": "string"

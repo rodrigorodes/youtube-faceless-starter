@@ -151,6 +151,17 @@ class Publication(_Model):
     publish_at: datetime | None = None
     privacy: Privacy = "private"
     thumbnail_set: bool = False
+    attempt: int = 0                 # quantas vezes foi reivindicada (teto 5)
+    error: str | None = None
+
+
+class Approval(_Model):
+    video_id: str
+    decision: Literal["approved", "rejected"]
+    reason: str = ""
+    qa_override: bool = False        # aprovado mesmo com o QA reprovado (exige motivo)
+    publish_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 class UsageEntry(_Model):

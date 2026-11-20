@@ -2,11 +2,12 @@
 import contextlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 from ..domain.render import Cue
-from ..domain.contracts import Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 
 
 @dataclass(frozen=True)
@@ -171,3 +172,35 @@ class RenderStorage(Protocol):
     def prune(self, project_id: str, video_id: str, keep: str) -> None:
         """Apaga os finais de renders anteriores, mantendo só `keep`."""
     def cleanup(self, work_dir: Path) -> None: ...
+
+
+class ApprovalRepository(Protocol):
+    def decide(self, video_id: str, expected: VideoStatus, decision: str, *, title: str, description: str, tags: list[str],
+               publish_at: "datetime | None", reason: str, qa_override: bool) -> bool:
+        """Numa transação: estado expected → APPROVED/REJECTED (se expected é RENDERED, passa por AWAITING_APPROVAL), grava os
+        metadados do vídeo e a linha de `approvals`. False se o estado já não é `expected`."""
+    def get(self, video_id: str) -> Approval | None: ...
+
+
+class PublicationRepository(Protocol):
+    def claim(self, lease_seconds: int, max_attempts: int) -> Publication | None:
+        """Reivindica atomicamente um vídeo APPROVED sem publicação, ou com lease vencido (UPLOADING/PENDING), e abre o lease."""
+    def get(self, video_id: str) -> Publication | None: ...
+    def get_by_id(self, publication_id: str) -> Publication | None: ...
+    def set_upload_uri(self, publication_id: str, attempt: int, uri: str, replace: bool) -> Publication | None:
+        """Só na tentativa atual, UPLOADING e sem URI (ou com replace). None caso contrário."""
+    def mark_uploaded(self, publication_id: str, youtube_video_id: str) -> Publication | None:
+        """Numa transação: publicação UPLOADED com o ID e vídeo APPROVED → PUBLISHED. Mesmo ID de novo é no-op;
+        ID diferente levanta PublicationConflict. None se a publicação não existe."""
+    def mark_thumbnail(self, publication_id: str) -> bool: ...
+    def release(self, publication_id: str, attempt: int, error: str) -> bool:
+        """Falha transitória: solta o lease para a próxima reivindicação repetir."""
+    def fail(self, publication_id: str, error: str) -> bool:
+        """Falha definitiva (4xx): FAILED até `retry` manual."""
+    def retry(self, video_id: str) -> Publication | None:
+        """FAILED → PENDING (zera tentativas e URI). None se não há publicação FAILED."""
+
+
+class ThumbnailMaker(Protocol):
+    def make(self, image: Path) -> bytes:
+        """JPEG 1280x720 de até 2 MB a partir da imagem da cena."""

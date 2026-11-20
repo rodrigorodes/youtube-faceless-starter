@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "renderer"))
 from app.studio.domain import contracts as c  # noqa: E402
 from app.studio.domain.states import to_mermaid  # noqa: E402
 
-MODELS = [c.Project, c.Video, c.Script, c.Scene, c.Asset, c.RenderJob, c.Publication, c.UsageEntry, c.QaReport, c.SourceSnapshot, c.Claim, c.FactCheckReport]
+MODELS = [c.Project, c.Video, c.Script, c.Scene, c.Asset, c.RenderJob, c.Publication, c.UsageEntry, c.QaReport, c.SourceSnapshot, c.Claim, c.FactCheckReport, c.Approval]
 
 
 def render_all() -> dict[str, str]:
