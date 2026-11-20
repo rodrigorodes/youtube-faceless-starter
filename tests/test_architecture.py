@@ -3,6 +3,12 @@ from pathlib import Path
 
 STUDIO = Path(__file__).resolve().parents[1] / "renderer" / "app" / "studio"
 IO = {"fastapi", "psycopg", "httpx", "subprocess", "requests", "os", "socket", "urllib.request", "http.client", "sqlalchemy"}  # urllib.parse é puro (sem I/O) e permitido
+# O núcleo de render (domain + application) não pode tocar mídia nem SDK de provedor:
+# é o princípio "Core não importa FFmpeg ou SDKs de IA" e o que torna o compilador do
+# Render Plan puro (RP-023). Sem esta lista, a regra valeria por disciplina, não por CI.
+MEDIA = {"PIL", "numpy", "cv2", "ffmpeg", "moviepy", "av"}
+PROVIDER_SDKS = {"openai", "anthropic", "elevenlabs", "fal_client", "boto3", "google"}
+CORE_FORBIDDEN = (*IO, *MEDIA, *PROVIDER_SDKS)
 
 
 def imports_of(layer: str, studio: Path = STUDIO) -> set[str]:
@@ -36,6 +42,27 @@ def test_application_only_imports_domain():
 
 def test_api_does_not_touch_adapters_or_database():
     assert violates(imports_of("api"), ("app.studio.adapters", "psycopg")) == set()
+
+
+def test_render_core_has_no_media_or_provider_sdks():
+    """O núcleo de render é puro: nada de mídia (FFmpeg/PIL/numpy) nem SDK de provedor.
+
+    É a fronteira que sustenta o compilador puro do Render Plan (RP-023) e o princípio
+    "Core não importa FFmpeg ou SDKs de IA" — precisa falhar por execução, não por disciplina.
+    """
+    for layer in ("domain", "application"):
+        found = violates(imports_of(layer), (*IO, *MEDIA, *PROVIDER_SDKS))
+        assert found == set(), f"{layer} importa mídia/SDK de provedor: {sorted(found)}"
+
+
+def test_media_and_provider_guard_catches_violations(tmp_path):
+    """Prova que a guarda é load-bearing: a violação tem de ser detectada, não ignorada."""
+    (tmp_path / "domain").mkdir()
+    (tmp_path / "domain" / "x.py").write_text("import numpy\nfrom PIL import Image\nfrom openai import OpenAI\n")
+    found = imports_of("domain", tmp_path)
+    media = violates(found, MEDIA)
+    assert {"numpy", "PIL"} <= media, media  # "from PIL import Image" registra PIL e PIL.Image
+    assert "openai" in violates(found, PROVIDER_SDKS)
 
 
 def test_imports_of_resolves_relative_and_named_imports(tmp_path):
