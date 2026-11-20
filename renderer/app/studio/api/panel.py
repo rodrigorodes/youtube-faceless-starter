@@ -1303,12 +1303,21 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             extra_count = len(view.trends) - 6
             expansion_bar_html = f"""
               <div class="trends-expansion-bar" style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
-                <button type="button" class="btn btn-compact" id="btn-toggle-more-trends" data-expanded="false" data-total="{len(view.trends)}">
+                <button type="button" class="btn btn-compact" id="btn-toggle-more-trends" data-expanded="false" data-total="{len(view.trends)}" aria-expanded="false">
                   Ver Mais Tendências (+{extra_count}) ▼
                 </button>
               </div>
             """
 
+        sources = dict.fromkeys(
+            ("YouTube (origem desconhecida)" if t.source_name == "YouTube Global (Em Alta)" else t.source_name,
+             t.source_url)
+            for t in view.trends
+        )
+        sources_html = " · ".join(
+            f'<a href="{e(url)}" target="_blank" rel="noopener noreferrer">{e(name)}</a>'
+            for name, url in sources
+        )
         trends_html = f"""
           <div class="card trends-card" id="trending-section">
             <div class="trends-header">
@@ -1317,7 +1326,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
               </div>
               <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
                 <div class="trends-source">
-                  Fonte: <a href="{e(view.trends[0].source_url)}" target="_blank" rel="noopener noreferrer">{e("YouTube (origem desconhecida)" if view.trends[0].source_name == "YouTube Global (Em Alta)" else view.trends[0].source_name)}</a> · Consulta: {last_dt_str}
+                  Fontes (todas as tendências): {sources_html} · Consulta: {last_dt_str}
                 </div>
                 {action_buttons_html}
               </div>
@@ -1713,6 +1722,15 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
           shown++;
         }}
       }});
+      if (btnToggleTrends) {{
+        const hidden = shown <= 6;
+        btnToggleTrends.hidden = hidden;
+        btnToggleTrends.parentElement.hidden = hidden;
+        btnToggleTrends.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        btnToggleTrends.textContent = isExpanded
+          ? 'Recolher Tendências ▲'
+          : 'Ver Mais Tendências (+' + Math.max(0, shown - 6) + ') ▼';
+      }}
     }}
 
     filterPills.forEach((pill) => {{
@@ -1723,6 +1741,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         }});
         pill.classList.add('active');
         pill.setAttribute('aria-pressed', 'true');
+        if (btnToggleTrends) btnToggleTrends.setAttribute('data-expanded', 'false');
         applyTrendsFilter();
       }});
     }});
@@ -1730,16 +1749,11 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     if (btnToggleTrends) {{
       btnToggleTrends.addEventListener('click', () => {{
         const isCurrentlyExpanded = btnToggleTrends.getAttribute('data-expanded') === 'true';
-        const total = parseInt(btnToggleTrends.getAttribute('data-total') || '0', 10);
-        const extraCount = Math.max(0, total - 6);
-
         if (!isCurrentlyExpanded) {{
           btnToggleTrends.setAttribute('data-expanded', 'true');
-          btnToggleTrends.textContent = 'Recolher Tendências ▲';
           applyTrendsFilter();
         }} else {{
           btnToggleTrends.setAttribute('data-expanded', 'false');
-          btnToggleTrends.textContent = 'Ver Mais Tendências (+' + extraCount + ') ▼';
           applyTrendsFilter();
           const trendSection = document.getElementById('trending-section');
           if (trendSection) {{

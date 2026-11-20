@@ -23,4 +23,12 @@
 - As duas falhas anteriores de empacotamento passaram isoladamente quando o arquivo `.git` do worktree e o diretório Git comum foram montados no contêiner (2 passaram). A causa era a ausência desses metadados na montagem anterior; não houve alteração no empacotador. A suíte completa com metadados também passou nesses testes.
 - Não foi feito teste manual de navegador ou leitor de tela. As fontes históricas são apresentadas como desconhecidas sem alterar registros persistidos.
 
+## Revisão de expansão e fontes
+
+- O cabeçalho lista os pares distintos de nome e URL de todas as tendências, identificando explicitamente esse escopo; a fonte histórica ambígua continua apresentada como origem desconhecida. O cabeçalho não afirma que uma única fonte representa a lista mista nem acompanha o filtro.
+- A troca de filtro recolhe a lista. O botão de expansão fica oculto quando há até seis correspondências e, acima disso, exibe a quantidade adicional do filtro ativo; expansão, recolhimento e `aria-expanded` permanecem sincronizados.
+- TDD: antes da correção, o teste da lista mista falhou porque apenas a primeira fonte era exibida, e o teste Node falhou porque o botão permanecia visível com dois resultados. Após a correção, `tests/test_panel.py tests/test_youtube_popular_trends.py` passou no host: **25 passaram**, incluindo o teste Node com zero, dois, seis, sete e nove resultados, troca de filtros e expansão/recolhimento. Aviso preexistente de configuração do pytest-asyncio.
+- Suíte completa em Docker Python 3.12, com workspace e metadados Git somente leitura e PostgreSQL descartável protegido por prova, em rede interna sem porta publicada: **909 passaram, 70 ignorados e um aviso** de depreciação Starlette/AnyIO. O teste Node foi ignorado nessa imagem, que não contém Node; passou separadamente no host. Recursos temporários foram removidos.
+- Não houve validação manual em navegador ou leitor de tela.
+
 Esta entrega corresponde somente à F3-07; não indica conclusão da F3.

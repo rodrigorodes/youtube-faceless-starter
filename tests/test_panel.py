@@ -429,6 +429,37 @@ def test_legacy_global_label_is_displayed_as_unknown_not_global():
     assert "Em Alta Mundo" not in html
 
 
+def test_panel_header_lists_distinct_sources_for_mixed_trends():
+    from app.studio.api.panel import render_panel
+    from app.studio.application.ports import TrendRecord
+
+    now = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    sources = [
+        ("YouTube Brasil (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube EUA (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube Global (Em Alta)", "https://www.youtube.com/feed/trending"),
+        ("YouTube Data API", "https://www.googleapis.com/youtube/v3/search"),
+        ("YouTube Brasil (Em Alta)", "https://www.youtube.com/feed/trending"),
+    ]
+    records = [
+        TrendRecord(id=str(i), project_id="p1", topic=f"Video {i}", topic_key=f"video {i}",
+                    source_name=name, source_url=url, observed_at=now, window_start=now,
+                    window_end=now, metric_name="views", metric_value=1, evidence=[])
+        for i, (name, url) in enumerate(sources)
+    ]
+    view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
+                      trends=FakeTrendRepo(records, now)).execute(days=7)
+    html, _ = render_panel(view)
+    header = html.split('<div class="trends-source">', 1)[1].split("</div>", 1)[0]
+    assert "Fontes (todas as tendências):" in header
+    assert header.count("YouTube Brasil (Em Alta)") == 1
+    assert "YouTube EUA (Em Alta)" in header
+    assert "YouTube (origem desconhecida)" in header
+    assert "YouTube Data API" in header
+    assert "https://www.googleapis.com/youtube/v3/search" in header
+    assert "YouTube Global (Em Alta)" not in header
+
+
 def test_region_filter_shows_matching_items_beyond_initial_six():
     node = shutil.which("node")
     if not node:
@@ -454,10 +485,15 @@ function element(attrs, classes = []) {
 }
 const all = element({'data-filter-type': 'all'}, ['cat-pill', 'active']);
 const jp = element({'data-filter-type': 'region', 'data-region-code': 'JP'}, ['cat-pill']);
-const pills = [all, jp];
-const items = Array.from({length: 7}, (_, i) =>
-  element({'data-region': i === 6 ? 'JP' : 'BR'}, i === 6 ? ['trend-item-extra'] : []));
-const toggle = element({'data-expanded': 'false', 'data-total': '7'});
+const br = element({'data-filter-type': 'region', 'data-region-code': 'BR'}, ['cat-pill']);
+const us = element({'data-filter-type': 'region', 'data-region-code': 'US'}, ['cat-pill']);
+const category = element({'data-filter-type': 'category', 'data-cat-id': 'six'}, ['cat-pill']);
+const pills = [all, jp, br, us, category];
+const items = Array.from({length: 9}, (_, i) =>
+  element({'data-region': i < 7 ? 'BR' : 'JP', 'data-category-id': i < 6 ? 'six' : 'other'},
+          i >= 6 ? ['trend-item-extra'] : []));
+const toggle = element({'data-expanded': 'false', 'aria-expanded': 'false', 'data-total': '9'});
+toggle.parentElement = {hidden: false};
 const document = {
   querySelectorAll: (selector) => selector.startsWith('.cat-pill') ? pills : items,
   querySelector: () => pills.find((p) => p.classList.contains('active')),
@@ -466,12 +502,36 @@ const document = {
 """
     checks = """
 jp.click();
-assert.equal(items[6].style.display, '');
-assert.ok(items.slice(0, 6).every((item) => item.style.display === 'none'));
+assert.equal(items[7].style.display, '');
+assert.equal(items[8].style.display, '');
+assert.ok(items.slice(0, 7).every((item) => item.style.display === 'none'));
+assert.equal(toggle.hidden, true);
 assert.equal(jp.attrs['aria-pressed'], 'true');
 assert.equal(all.attrs['aria-pressed'], 'false');
+br.click();
+assert.equal(toggle.hidden, false);
+assert.match(toggle.textContent, /\\(\\+1\\)/);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+toggle.click();
+assert.equal(toggle.attrs['aria-expanded'], 'true');
+assert.match(toggle.textContent, /Recolher/);
+assert.equal(items[6].style.display, '');
+category.click();
+assert.equal(toggle.hidden, true);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.equal(items.filter((item) => item.style.display === '').length, 6);
+us.click();
+assert.equal(toggle.hidden, true);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.ok(items.every((item) => item.style.display === 'none'));
 all.click();
+assert.equal(toggle.hidden, false);
+assert.equal(toggle.attrs['aria-expanded'], 'false');
+assert.match(toggle.textContent, /\\(\\+3\\)/);
 assert.equal(items[6].style.display, 'none');
+toggle.click();
+toggle.click();
+assert.match(toggle.textContent, /\\(\\+3\\)/);
 """
     result = subprocess.run([node, "-e", setup + script + checks], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
