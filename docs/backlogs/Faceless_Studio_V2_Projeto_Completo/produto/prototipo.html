@@ -29,6 +29,7 @@
         <li><a href="#tendencias" data-screen="tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
         <li><a href="#novo" data-screen="novo"><span class="ico" aria-hidden="true">＋</span> Novo vídeo</a></li>
         <li><a href="#producao" data-screen="producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+        <li><a href="#videos" data-screen="videos"><span class="ico" aria-hidden="true">▷</span> Vídeos</a></li>
         <li><a href="#pesquisa" data-screen="pesquisa"><span class="ico" aria-hidden="true">◔</span> Pesquisa</a></li>
         <li><a href="#roteiro" data-screen="roteiro"><span class="ico" aria-hidden="true">≡</span> Roteiro</a></li>
         <li><a href="#editor" data-screen="editor"><span class="ico" aria-hidden="true">✂</span> Editor</a></li>
@@ -186,8 +187,8 @@
             <div><button class="btn btn-ghost" type="button" aria-expanded="false">Ver mais tendências (+2)</button></div>
           </section>
 
-          <section class="block" aria-labelledby="h-videos">
-            <h2 id="h-videos">Vídeos</h2>
+          <section class="block" id="videos" aria-labelledby="h-videos">
+            <h2 id="h-videos" tabindex="-1">Vídeos</h2>
             <div class="card" style="padding:8px 18px">
               <div class="list">
                 <div class="item item-4">
@@ -1301,41 +1302,52 @@
     var triggers = Array.prototype.slice.call(document.querySelectorAll('[data-screen]'));
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    function idFromHash() {
+    // "Vídeos" não tem tela própria: a lista vive no Início, na âncora #videos.
+    // A rota #videos abre o Início e leva o foco para a lista — destino real, sem link morto.
+    var ALIASES = { videos: { view: 'inicio', anchor: 'h-videos' } };
+
+    function routeFromHash() {
       var h = location.hash.replace(/^#/, '');
-      return views.some(function (v) { return v.id === h; }) ? h : 'inicio';
+      if (views.some(function (v) { return v.id === h; })) return { key: h, view: h, anchor: null };
+      if (ALIASES[h]) return { key: h, view: ALIASES[h].view, anchor: ALIASES[h].anchor };
+      return { key: 'inicio', view: 'inicio', anchor: null };
     }
 
-    function render(id) {
+    function render(route) {
       var active = null;
       views.forEach(function (v) {
-        var on = v.id === id;
+        var on = v.id === route.view;
         v.toggleAttribute('hidden', !on);
         if (on) active = v;
       });
       triggers.forEach(function (t) {
-        if (t.tagName === 'A' && t.dataset.screen === id) t.setAttribute('aria-current', 'page');
+        if (t.tagName === 'A' && t.dataset.screen === route.key) t.setAttribute('aria-current', 'page');
         else if (t.tagName === 'A') t.removeAttribute('aria-current');
       });
       var heading = active && active.querySelector('h2.title');
       if (heading) document.title = heading.textContent.trim() + ' — Faceless Studio V2';
     }
 
-    function routeFocus(id) {
-      var active = document.getElementById(id);
-      var heading = active && active.querySelector('h2.title');
-      if (heading) heading.focus({ preventScroll: true });
+    function routeFocus(route) {
+      var target = route.anchor && document.getElementById(route.anchor);
+      if (!target) {
+        var active = document.getElementById(route.view);
+        target = active && active.querySelector('h2.title');
+      }
+      if (!target) return;
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
       window.scrollTo(0, 0);
     }
 
-    function show(id, moveFocus) {
+    function show(route, moveFocus) {
       var supportsVT = typeof document.startViewTransition === 'function' && !reduceMotion.matches;
       if (supportsVT) {
-        var t = document.startViewTransition(function () { render(id); });
-        if (moveFocus) t.finished.finally(function () { routeFocus(id); });
+        var t = document.startViewTransition(function () { render(route); });
+        if (moveFocus) t.finished.finally(function () { routeFocus(route); });
       } else {
-        render(id);
-        if (moveFocus) routeFocus(id);
+        render(route);
+        if (moveFocus) routeFocus(route);
       }
     }
 
@@ -1345,16 +1357,16 @@
         if (t.hasAttribute('command')) return;
         e.preventDefault();
         var id = t.dataset.screen;
-        if (location.hash === '#' + id) { show(id, true); return; }
+        if (location.hash === '#' + id) { show(routeFromHash(), true); return; }
         location.hash = id; // cria entrada de histórico; o hashchange conclui
       });
     });
 
-    window.addEventListener('hashchange', function () { show(idFromHash(), true); });
+    window.addEventListener('hashchange', function () { show(routeFromHash(), true); });
 
     // Estado inicial: a 1ª view já vem visível no HTML (fallback sem JS).
     // Aqui sincronizamos aria-current/título, e respeitamos um hash de deep link.
-    render(idFromHash());
+    render(routeFromHash());
   })();
 </script>
 
