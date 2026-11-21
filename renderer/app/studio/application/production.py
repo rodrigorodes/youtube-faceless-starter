@@ -23,6 +23,7 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Protocol
@@ -472,6 +473,20 @@ class ProductionProjection:
     unavailable_stages: tuple[tuple[ProductionStage, str], ...]
 
 
+def has_live_lease(stages: Sequence[StageExecution], now: datetime) -> bool:
+    """Alguma etapa tem lease vivo em `now`?
+
+    Lease ausente ou expirado não conta: o dono anterior já não pode escrever, então o run está
+    órfão e pode ser re-lançado. Sem esse predicado, um run `RUNNING` cuja thread morreu ficaria
+    preso para sempre — a UI só oferecia `Pausar`, que não devolve worker.
+    """
+    for execution in stages:
+        expires = execution.lease_expires_at
+        if execution.lease_owner and expires is not None and expires > now:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Coordenador e worker
 # ---------------------------------------------------------------------------
@@ -708,9 +723,51 @@ class Production:
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None) -> RunCreation:
         creation = self.coordinator.start(video_id, idempotency_key, channel_id=channel_id, stages=stages)
-        if self.submit is not None:
-            try:
-                self.submit(creation.run.run_id)
-            except Exception:  # fila indisponível: o run existe em CREATED e pode ser retomado
-                logger.warning("could not enqueue production run %s", creation.run.run_id)
+        self._enqueue(creation.run.run_id)
         return creation
+
+    def resume(self, run_id: str, *, expected_state: RunState | None = None) -> RunTransition:
+        """Transpõe um gate humano: retoma o run e **relança o worker**.
+
+        Sem o `submit` o `Continuar` só trocava o estado para `RUNNING` e o run morria parado —
+        o laço do worker encerra na pausa e nada o reativava. Além da retomada normal, um run
+        `RUNNING` **órfão** (nenhuma etapa com lease vivo) é re-lançado sem escrever estado.
+        """
+        transition = self.coordinator.resume(run_id, expected_state=expected_state)
+        if transition.result is RunTransitionResult.APPLIED:
+            self._enqueue(run_id)
+            return transition
+        redrive = self._orphan_running(run_id)
+        if redrive is not None:
+            self._enqueue(run_id)
+            return redrive
+        return transition
+
+    def retry(self, run_id: str) -> RunTransition:
+        """Reinicia um run `FAILED` e **relança o worker** (mesmo defeito do resume)."""
+        transition = self.coordinator.retry(run_id, expected_state=RunState.FAILED)
+        if transition.result is RunTransitionResult.APPLIED:
+            self._enqueue(run_id)
+        return transition
+
+    def _orphan_running(self, run_id: str) -> RunTransition | None:
+        """Re-drive de um `RUNNING` sem lease vivo: devolve APPLIED sem escrever estado.
+
+        Com lease vivo não re-lança (seria worker duplicado); devolve `None` para o chamador
+        preservar o `NOT_ALLOWED`.
+        """
+        projection = self.coordinator.get(run_id)
+        if projection is None or projection.run.state is not RunState.RUNNING:
+            return None
+        if has_live_lease(projection.stages, datetime.now(timezone.utc)):
+            return None
+        return RunTransition(RunTransitionResult.APPLIED, projection.run)
+
+    def _enqueue(self, run_id: str) -> None:
+        """Gatilho do worker: fila indisponível não pode perder o run nem derrubar a requisição."""
+        if self.submit is None:
+            return
+        try:
+            self.submit(run_id)
+        except Exception:
+            logger.warning("could not enqueue production run %s", run_id)

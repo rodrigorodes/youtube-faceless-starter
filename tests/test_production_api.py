@@ -108,6 +108,12 @@ class _Production:
     def start(self, video_id, key, *, channel_id=None, stages=None):
         return self.coordinator.start(video_id, key, channel_id=channel_id, stages=stages)
 
+    def resume(self, run_id, *, expected_state=None):
+        return self.coordinator.resume(run_id, expected_state=expected_state)
+
+    def retry(self, run_id):
+        return self.coordinator.retry(run_id)
+
 
 class _UseCases:
     def __init__(self, production):

@@ -12,6 +12,7 @@ from app.studio.adapters.postgres.production_repo import PostgresProductionRunRe
 from app.studio.application.production import (
     COORDINATOR_DAG,
     BudgetProjection,
+    Production,
     ProductionCoordinator,
     ProductionMode,
     ProductionWorker,
@@ -164,6 +165,57 @@ def test_interactive_worker_pauses_after_script_and_resumes(db):
     assert steps[-1].result is WorkerStepResult.TERMINAL
     assert _run_state(conn, run_id) == RunState.SUCCEEDED.value
     assert set(_stages(conn, run_id).values()) == {"SUCCEEDED"}
+
+
+def test_gate_after_script_is_crossed_when_the_service_resumes(db):
+    """O teste que teria pegado o bug: retomar pelo serviço tem de relançar o worker.
+
+    O `POST .../resume` chamava o coordenador direto: o estado virava RUNNING e o run morria
+    parado (a etapa seguinte nunca saía de PENDING). Aqui o `submit` roda o worker de verdade.
+    """
+    repo, conn = db
+    coordinator = _coordinator(db)
+    worker = ProductionWorker(coordinator, owner="w")
+    service = Production(coordinator=coordinator, worker=worker, submit=lambda run_id: worker.work(run_id))
+
+    run_id = service.start(VIDEO, "run-key-gate").run.run_id
+    assert _run_state(conn, run_id) == RunState.WAITING_HUMAN.value
+    assert _stages(conn, run_id)["factcheck"] == StageState.PENDING.value
+
+    transition = service.resume(run_id)
+    assert transition.result is RunTransitionResult.APPLIED
+    assert _stages(conn, run_id)["factcheck"] == StageState.SUCCEEDED.value
+    assert _run_state(conn, run_id) == RunState.SUCCEEDED.value
+
+
+def test_orphan_running_with_an_expired_lease_is_recovered_by_the_service(db):
+    """RUNNING órfão (thread morta, lease expirado) é re-lançado sem escrever estado."""
+    repo, conn = db
+    coordinator = _coordinator(db)
+    worker = ProductionWorker(coordinator, owner="w")
+    submitted = []
+
+    def submit(run_id):
+        submitted.append(run_id)
+        worker.work(run_id)
+
+    service = Production(coordinator=coordinator, worker=worker, submit=submit)
+    run_id = service.start(VIDEO, "run-key-orphan").run.run_id  # pausa após o roteiro
+    assert _run_state(conn, run_id) == RunState.WAITING_HUMAN.value
+    submitted.clear()  # o start já relançou; aqui interessa só o re-drive do resume
+
+    # Simula a thread morta: run RUNNING com lease de etapa já expirado (nenhum dono vivo).
+    conn.execute("UPDATE studio.production_runs SET state = 'RUNNING' WHERE run_id = %s", (run_id,))
+    conn.execute("UPDATE studio.stage_executions SET state = 'RUNNING', lease_owner = 'dead-worker', "
+                 "lease_expires_at = statement_timestamp() - interval '1 minute' "
+                 "WHERE run_id = %s AND stage_id = 'factcheck'", (run_id,))
+    conn.commit()
+    assert coordinator.get(run_id).run.state is RunState.RUNNING
+
+    transition = service.resume(run_id, expected_state=RunState.RUNNING)
+    assert transition.result is RunTransitionResult.APPLIED
+    assert submitted == [run_id]
+    assert _run_state(conn, run_id) == RunState.SUCCEEDED.value
 
 
 def test_budget_guarded_auto_continues_only_within_the_ceiling(db):

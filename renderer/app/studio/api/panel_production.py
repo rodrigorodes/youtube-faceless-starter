@@ -17,6 +17,7 @@ from typing import Sequence
 
 from ..application.panel import CostBreakdown, CostKind, MonthCost, cost_kind, cost_label
 from ..application.ports import UsageInfo
+from ..application.production import has_live_lease
 from ..domain.production_run import (
     OutboxEvent,
     ProductionRun,
@@ -234,10 +235,17 @@ class RunAction:
     primary: bool = False
 
 
-def available_actions(state: RunState, next_action: str | None) -> tuple[RunAction, ...]:
-    """Ações válidas para o estado atual do run, na ordem do mockup. Nunca habilitar inválida."""
+def available_actions(state: RunState, next_action: str | None, *, live_lease: bool = True) -> tuple[RunAction, ...]:
+    """Ações válidas para o estado atual do run, na ordem do mockup. Nunca habilitar inválida.
+
+    `live_lease` só importa em `RUNNING`: sem lease vivo o run está órfão (o worker morreu) e
+    "Continuar" re-lança o worker sem escrever estado. Com lease vivo permanece só "Pausar" —
+    re-lançar criaria um worker duplicado sobre a mesma etapa.
+    """
     actions: list[RunAction] = []
     if state is RunState.RUNNING:
+        if not live_lease:
+            actions.append(RunAction("resume", "Continuar", primary=True))
         actions.append(RunAction("pause", "Pausar"))
     if state in _RESUMABLE_STATES:
         actions.append(RunAction("resume", "Continuar"))
@@ -605,7 +613,8 @@ def _advanced_html(view: ExecutionView) -> str:
 
 
 def _rail_actions_html(view: ExecutionView) -> str:
-    actions = available_actions(view.run.state, view.next_action)
+    live_lease = has_live_lease(view.stages, view.now)
+    actions = available_actions(view.run.state, view.next_action, live_lease=live_lease)
     buttons = [_action_button(view, a.key, a.label, primary=a.primary) for a in actions]
     if artifact_available(view.next_action):
         buttons.append(f'<a class="btn" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>')
