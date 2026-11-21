@@ -1,10 +1,9 @@
-"""Casos de uso de equipe, papéis e BYOK (F11-01/02/04/05).
+"""Casos de uso de equipe, papéis e BYOK (F11-01/02/04/05 / L2).
 
-A tela é de leitura porque o produto ainda não tem sessão/OIDC (F11-02): sem ator autenticado não
-há como aplicar a autorização em runtime. Os casos de uso abaixo **recebem o papel do ator** e são
-testados; quando a sessão existir, a rota passa o papel verdadeiro em vez do bootstrap atual.
-O valor da chave nunca entra nestes objetos: só a máscara, a impressão digital e a coordenada
-do `SecretStore`.
+As mutações recebem o papel do ator e o `actor_user_id`; a rota resolve o ator a partir do
+operador autenticado do painel (o vínculo ativo dele na organização) e passa o papel verdadeiro.
+A autorização é o RBAC do domínio (`require`); o audit registra quem executou. O valor da chave
+nunca entra nestes objetos: só a máscara, a impressão digital e a coordenada do `SecretStore`.
 """
 from __future__ import annotations
 
@@ -16,6 +15,7 @@ from datetime import datetime
 from ..domain.saas import (
     ByokKey,
     ByokStatus,
+    AuthorizationDenied,
     DuplicateMembership,
     DuplicateProviderKey,
     KeyAuditAction,
@@ -28,6 +28,7 @@ from ..domain.saas import (
     Permission,
     Role,
     ROLE_DESCRIPTIONS,
+    MembershipAuditAction,
     ensure_owner_remains,
     mask_secret,
     fingerprint,
@@ -44,11 +45,13 @@ from .panel import CostBreakdown, cost_breakdown
 from .ports import MemberRecord, SaasRepository, SecretStore
 
 RUNTIME_NOTE = (
-    "Organização, papéis e chaves estão modelados no banco, mas a aplicação em runtime depende de "
-    "login por sessão/OIDC (F11-02), ainda não implantado. O Studio segue mono-usuário."
+    "Organização, papéis e chaves estão modelados no banco e as mutações são executadas pela rota, "
+    "autorizadas pelo papel do operador autenticado no domínio. O login por SSO/OIDC (F11-02) ainda "
+    "não é a fonte de identidade e o isolamento em runtime segue mono-usuário."
 )
 ACTIONS_UNAVAILABLE_NOTE = (
-    "Indisponível: gerir acesso exige um ator autenticado (F11-02). Nada aqui finge executar a ação."
+    "Indisponível: login por SSO/OIDC (F11-02), envio de e-mail de convite, cobrança/créditos e "
+    "isolamento de runtime por tenant. O que existe é executado pela rota; nada aqui finge além disso."
 )
 
 
@@ -112,7 +115,6 @@ class TeamView:
 
 class BuildTeamView:
     """Monta a visão da Equipe com dado real. Sem organização, devolve o estado vazio explícito."""
-
     def __init__(self, repo: SaasRepository, clock: Callable[[], datetime]):
         self.repo = repo
         self.clock = clock
@@ -167,6 +169,45 @@ class BuildTeamView:
         )
 
 
+@dataclass(frozen=True)
+class Actor:
+    """Quem executa a mutação: o operador autenticado do painel, resolvido no domínio.
+
+    O identificador e o papel vêm do vínculo ativo do operador na organização — não de um campo
+    livre da requisição. É o que permite aplicar o RBAC de verdade sem OIDC.
+    """
+
+    user_id: str
+    email: str
+    role: Role
+
+
+class ResolveActor:
+    """Resolve o principal autenticado no vínculo ativo dele dentro da organização.
+
+    Sem vínculo ativo (ou de outra organização), a autorização é negada: a fronteira é o vínculo,
+    não o que o cliente afirma. Nunca cria usuário nem vínculo: identificar não é cadastrar.
+    """
+
+    def __init__(self, repo: SaasRepository):
+        self.repo = repo
+
+    def execute(self, *, organization_id: str, principal: str) -> Actor:
+        principal = (principal or "").strip()
+        if not principal:
+            raise AuthorizationDenied("actor not identified")
+        user_id = None
+        if len(principal) == 32 and all(ch in "0123456789abcdef" for ch in principal.lower()):
+            user_id = principal.lower()
+        else:
+            found = self.repo.find_user(principal.lower())
+            user_id = found[0] if found else None
+        member = self.repo.member_by_user(organization_id, user_id) if user_id else None
+        if member is None or member.status is not MembershipStatus.ACTIVE:
+            raise AuthorizationDenied("actor has no active membership in this organization")
+        return Actor(user_id=member.user_id, email=member.email, role=member.role)
+
+
 class InviteMember:
     """Convida por e-mail; o usuário é criado uma vez e o vínculo nasce `invited`."""
 
@@ -175,7 +216,7 @@ class InviteMember:
         self.clock = clock
 
     def execute(self, *, actor_role: Role, organization_id: str, email: str, role: Role,
-                display_name: str | None = None) -> MemberRecord:
+                display_name: str | None = None, actor_user_id: str | None = None) -> MemberRecord:
         require(role_from(actor_role), Permission.MANAGE_MEMBERS)
         email = normalize_email(email)
         role = role_from(role)
@@ -190,6 +231,8 @@ class InviteMember:
             raise DuplicateMembership("user already belongs to the organization")
         membership_id = uuid.uuid4().hex
         self.repo.insert_membership(membership_id, organization_id, user_id, role, MembershipStatus.INVITED)
+        self.repo.audit_membership(organization_id, membership_id, actor_user_id,
+                                  MembershipAuditAction.INVITED, role)
         return MemberRecord(membership_id=membership_id, organization_id=organization_id, user_id=user_id,
                             display_name=name, email=email, role=role,
                             status=MembershipStatus.INVITED, created_at=self.clock())
@@ -199,7 +242,8 @@ class ChangeMemberRole:
     def __init__(self, repo: SaasRepository):
         self.repo = repo
 
-    def execute(self, *, actor_role: Role, organization_id: str, membership_id: str, role: Role) -> MemberRecord:
+    def execute(self, *, actor_role: Role, organization_id: str, membership_id: str, role: Role,
+                actor_user_id: str | None = None) -> MemberRecord:
         require(role_from(actor_role), Permission.MANAGE_MEMBERS)
         target = self.repo.member(organization_id, membership_id)
         if target is None:
@@ -208,6 +252,8 @@ class ChangeMemberRole:
         ensure_owner_remains(target.role, new_role, self.repo.owner_count(organization_id))
         if not self.repo.update_membership_role(organization_id, membership_id, new_role):
             raise MembershipNotFound("membership not found")
+        self.repo.audit_membership(organization_id, membership_id, actor_user_id,
+                                  MembershipAuditAction.ROLE_CHANGED, new_role)
         return replace(target, role=new_role)
 
 
@@ -215,7 +261,8 @@ class RemoveMember:
     def __init__(self, repo: SaasRepository):
         self.repo = repo
 
-    def execute(self, *, actor_role: Role, organization_id: str, membership_id: str) -> MemberRecord:
+    def execute(self, *, actor_role: Role, organization_id: str, membership_id: str,
+                actor_user_id: str | None = None) -> MemberRecord:
         require(role_from(actor_role), Permission.MANAGE_MEMBERS)
         target = self.repo.member(organization_id, membership_id)
         if target is None:
@@ -223,6 +270,8 @@ class RemoveMember:
         ensure_owner_remains(target.role, None, self.repo.owner_count(organization_id))
         if not self.repo.delete_membership(organization_id, membership_id):
             raise MembershipNotFound("membership not found")
+        self.repo.audit_membership(organization_id, membership_id, actor_user_id,
+                                  MembershipAuditAction.REMOVED, target.role)
         return target
 
 
@@ -337,6 +386,7 @@ class RecordKeyUse:
 # Reexports explícitos usados pelos adaptadores/testes de contrato.
 __all__ = [
     "ACTIONS_UNAVAILABLE_NOTE",
+    "Actor",
     "BuildTeamView",
     "ChangeMemberRole",
     "InviteMember",
@@ -347,6 +397,7 @@ __all__ = [
     "RecordKeyUse",
     "RegisterByokKey",
     "RemoveMember",
+    "ResolveActor",
     "RevokeByokKey",
     "RotateByokKey",
     "TeamView",

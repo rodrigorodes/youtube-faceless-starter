@@ -18,6 +18,8 @@ from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig
 from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
+from .saas import (ChangeMemberRole, InviteMember, RegisterByokKey, RemoveMember, ResolveActor,
+                   RevokeByokKey, RotateByokKey)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
@@ -100,9 +102,16 @@ class UseCases:
     get_project_config: GetPublicProjectConfig | None = None
     # F10 (UI): projeção da tela de Canais consumindo os casos de uso acima
     channels_page: "BuildChannelsPage | None" = None
-    # F11: leitura da tela de Equipe (tenancy/BYOK). As mutações existem no serviço, mas a rota
-    # só as expõe quando houver ator autenticado (F11-02).
+    # F11: leitura da tela de Equipe (tenancy/BYOK).
     team_view: "BuildTeamView | None" = None
+    # L2: mutações de Equipe. O ator é o operador autenticado do painel, resolvido no vínculo dele.
+    resolve_actor: ResolveActor | None = None
+    invite_member: InviteMember | None = None
+    change_member_role: ChangeMemberRole | None = None
+    remove_member: RemoveMember | None = None
+    register_byok_key: RegisterByokKey | None = None
+    rotate_byok_key: RotateByokKey | None = None
+    revoke_byok_key: RevokeByokKey | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -130,7 +139,14 @@ class UseCases:
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
                   get_project_config: GetPublicProjectConfig | None = None,
                   channels_page: "BuildChannelsPage | None" = None,
-                  team_view: "BuildTeamView | None" = None) -> "UseCases":
+                  team_view: "BuildTeamView | None" = None,
+                  resolve_actor: ResolveActor | None = None,
+                  invite_member: InviteMember | None = None,
+                  change_member_role: ChangeMemberRole | None = None,
+                  remove_member: RemoveMember | None = None,
+                  register_byok_key: RegisterByokKey | None = None,
+                  rotate_byok_key: RotateByokKey | None = None,
+                  revoke_byok_key: RevokeByokKey | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -138,4 +154,6 @@ class UseCases:
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
                    get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
                    channels_page,
-                   team_view)
+                   team_view,
+                   resolve_actor, invite_member, change_member_role, remove_member,
+                   register_byok_key, rotate_byok_key, revoke_byok_key)
