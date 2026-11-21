@@ -2,8 +2,11 @@
 
 Fonte de verdade visual: `produto/tela-canais.html` (aprovado em 2026-11-20). A casca aprovada vem
 de `api/panel.py` (G1). Onde o mockup mostra dado ilustrativo, esta tela escreve o dado real do
-Studio ou um estado vazio explícito; onde o backend não tem a capacidade (OAuth real, reordenação
-manual de fallback), o controle aparece indisponível e **não focável**, com o motivo em texto.
+Studio ou um estado vazio explícito; onde o backend não tem a capacidade (reordenação manual de
+fallback), o controle aparece indisponível e **não focável**, com o motivo em texto. O
+consentimento OAuth do YouTube existe desde a F8: quando o servidor tem o app do Google, o botão
+"Conectar"/"Reautorizar" chama `POST .../youtube-oauth/authorize` e redireciona para o Google; sem
+o app configurado, o controle fica desabilitado com o motivo real (nunca "não está implementado").
 """
 from __future__ import annotations
 
@@ -464,6 +467,50 @@ def _budget_card(view: ChannelsPageView) -> str:
     """
 
 
+def _oauth_controls(view: ChannelsPageView, status: str) -> str:
+    """Controles do consentimento OAuth conforme o estado real do canal.
+
+    O fluxo existe (F8). Sem app OAuth no servidor, o controle fica desabilitado **com o motivo
+    real**; nunca se repete que "não está implementado".
+    """
+    label = "Conectar" if status == "DISCONNECTED" else "Reautorizar"
+    if status == "CONNECTED":
+        label = "Reconectar"
+    if not view.oauth_available:
+        reason = view.oauth_unavailable_reason or "OAuth do YouTube não configurado no servidor"
+        return (
+            '<span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">'
+            f"{e(label)}</span>"
+            f'<p class="fine">{e(reason)}. Enquanto isso, a associação do canal pode ser feita '
+            "pela API do Studio e as credenciais ficam no secret store.</p>"
+        )
+    if not view.oauth_authorize_path:
+        # Projeção sem caminho não deve prometer ação: mantém desabilitado com motivo explícito.
+        return (
+            '<span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">'
+            f"{e(label)}</span>"
+            '<p class="fine">O servidor não expôs o endpoint de autorização; a conexão está '
+            "indisponível nesta leitura.</p>"
+        )
+    revoke = ""
+    if status == "CONNECTED" and view.oauth_revoke_path:
+        revoke = (
+            f'<button type="button" class="btn btn-sm btn-ghost" id="youtube-revoke" '
+            f'data-revoke-path="{e(view.oauth_revoke_path)}">Revogar acesso</button>'
+        )
+    return (
+        f'<div class="pill-row">'
+        f'<button type="button" class="btn btn-sm btn-primary" id="youtube-reauth" '
+        f'data-authorize-path="{e(view.oauth_authorize_path)}">{e(label)}</button>'
+        f"{revoke}"
+        f"</div>"
+        '<div class="provider-result" id="youtube-feedback" role="status" aria-live="polite"></div>'
+        '<p class="fine">Ao acionar, o Google abre a tela de consentimento; o servidor troca o código '
+        "pelo canal associado e guarda os tokens no secret store. Nenhum valor de credencial volta "
+        "para o browser.</p>"
+    )
+
+
 def _youtube_card(view: ChannelsPageView) -> str:
     yt = view.youtube or {}
     status = str(yt.get("oauth_status") or "DISCONNECTED")
@@ -518,10 +565,7 @@ def _youtube_card(view: ChannelsPageView) -> str:
           <div class="item" style="padding:0.6rem 0">{channel_info}</div>
           <div class="item" style="padding:0.6rem 0">
             {credential_line}
-            <p class="fine">O fluxo de consentimento OAuth (troca de código e refresh automático) não está implementado
-            nesta versão; por isso não há botão ativo aqui. A associação do canal é feita pela API do Studio e as
-            credenciais ficam no secret store.</p>
-            <span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">Reautorizar</span>
+            {_oauth_controls(view, status)}
           </div>
         </div>
       </div>
@@ -563,6 +607,7 @@ def _rail_html(view: ChannelsPageView) -> str:
     profile_version = f"<code>channel_v{view.profile.version}</code>" if view.profile else "não registrado"
     budget_state = "persistido no canal" if (view.budget and view.budget.configured) else "padrão do servidor"
     oauth_state = str((view.youtube or {}).get("oauth_status") or "DISCONNECTED")
+    oauth_flow = "disponível" if view.oauth_available else "indisponível no servidor"
     return f"""
       <aside class="rail" aria-label="Resumo">
         <section class="card" aria-labelledby="h-versionamento">
@@ -581,6 +626,7 @@ def _rail_html(view: ChannelsPageView) -> str:
           <div class="kv"><span>Perfil do canal</span><span>{profile_version}</span></div>
           <div class="kv"><span>Orçamento</span><span>{e(budget_state)}</span></div>
           <div class="kv"><span>OAuth</span><span>{e(oauth_state)}</span></div>
+          <div class="kv"><span>Fluxo de consentimento</span><span>{e(oauth_flow)}</span></div>
           <p class="fine">Estado lido do Studio no momento da abertura desta página.</p>
         </section>
       </aside>
@@ -822,6 +868,62 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar os limites. Tente novamente.';
           if (button) button.disabled = false;
+        }}
+      }});
+    }}
+
+    const reauth = document.getElementById('youtube-reauth');
+    if (reauth) {{
+      reauth.addEventListener('click', async () => {{
+        const feedback = document.getElementById('youtube-feedback');
+        const path = reauth.getAttribute('data-authorize-path');
+        reauth.disabled = true;
+        if (feedback) feedback.textContent = 'Abrindo a tela de consentimento do Google...';
+        try {{
+          const response = await fetch(path, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }}
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok && data.authorization_url) {{
+            window.location.href = data.authorization_url;
+          }} else {{
+            if (feedback) feedback.textContent = 'Não foi possível iniciar o consentimento: '
+              + (typeof data.detail === 'string' ? data.detail : 'o servidor não devolveu a URL de autorização.');
+            reauth.disabled = false;
+          }}
+        }} catch (error) {{
+          if (feedback) feedback.textContent = 'Falha de rede ao iniciar o consentimento. Tente novamente.';
+          reauth.disabled = false;
+        }}
+      }});
+    }}
+
+    const revoke = document.getElementById('youtube-revoke');
+    if (revoke) {{
+      revoke.addEventListener('click', async () => {{
+        const feedback = document.getElementById('youtube-feedback');
+        const path = revoke.getAttribute('data-revoke-path');
+        if (!window.confirm('Revogar o acesso do Studio ao canal do YouTube?')) return;
+        revoke.disabled = true;
+        if (feedback) feedback.textContent = 'Revogando o acesso no Google...';
+        try {{
+          const response = await fetch(path, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }}
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            if (feedback) feedback.textContent = 'Acesso revogado. Atualizando...';
+            setTimeout(() => window.location.reload(), 500);
+          }} else {{
+            if (feedback) feedback.textContent = 'Não foi possível revogar: '
+              + (typeof data.detail === 'string' ? data.detail : 'tente novamente.');
+            revoke.disabled = false;
+          }}
+        }} catch (error) {{
+          if (feedback) feedback.textContent = 'Falha de rede ao revogar. Tente novamente.';
+          revoke.disabled = false;
         }}
       }});
     }}

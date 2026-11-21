@@ -35,7 +35,7 @@ from ..application.media import AssetRefused
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
-from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid
+from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid, consent_project_id
 from ..application.render import RenderRefused
 from ..domain.production_run import (InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
                                      ProductionIdempotencyConflict, ProductionRunLockTimeout,
@@ -51,6 +51,7 @@ from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
+from .panel_oauth import render_oauth_callback
 from .panel_team import render_team
 from .panel_analytics import render_analytics
 from .panel_production import (
@@ -1050,6 +1051,18 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "channel services unavailable")
             return render_channels(uc.channels_page.execute(check_id(project_id) if project_id else None))
         page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/oauth/callback", response_class=HTMLResponse)
+    def oauth_callback_page(state: str = "", error: str = ""):
+        """Retorno do Google: o `state` carrega o projeto; a página conclui o consentimento.
+
+        O `code` chega na query string e é lido pelo browser na própria página; o servidor não o
+        precisa para renderizar e não o grava em lugar nenhum. Sem `state` reconhecido, a página
+        explica que a conexão precisa ser refeita — não é um beco sem saída.
+        """
+        project_id = consent_project_id(state) if state else None
+        page, headers = render_oauth_callback(project_id, provider_error=error or None)
         return HTMLResponse(page, headers=headers)
 
     # -- analytics e loop de aprendizado (F9-01/02/03/05/06) ----------------------------

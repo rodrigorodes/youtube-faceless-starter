@@ -474,7 +474,8 @@ class Studio:
         youtube_channel = GetYouTubeChannel(youtube_repo, secret_store)
         project_config = GetPublicProjectConfig(repo)
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
-                                          providers_service, channel_budget, youtube_channel, project_config)
+                                          providers_service, channel_budget, youtube_channel, project_config,
+                                          oauth_available=oauth_client is not None)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,

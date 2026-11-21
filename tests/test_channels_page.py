@@ -5,6 +5,7 @@ de UX vivem em `test_ux_contract.assert_ux_contract` e são aplicadas à tela in
 mostra dado ilustrativo, a tela renderiza dado real do Studio ou estado vazio explícito.
 """
 import base64
+import json
 import re
 import sys
 from pathlib import Path
@@ -29,18 +30,29 @@ AUTH_HEADER = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-bro
 POST_HEADER = {**AUTH_HEADER, "Origin": "http://testserver"}
 
 
-def _app(conn, dsn, tmp_path, *, with_project: bool = True):
+def _app(conn, dsn, tmp_path, *, with_project: bool = True, with_oauth: bool = False):
     migrate(conn)
     conn.commit()
     connect = lambda: psycopg.connect(dsn)
     videos = PostgresVideoRepository(connect)
     project = videos.create_project("Canal H", niche="História", language="pt-BR") if with_project else None
-    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path, paid_image_usd=0.31),
+    oauth: dict = {}
+    if with_oauth:
+        # Client secret sintético: só o suficiente para a composição montar o app OAuth. Nunca
+        # aparece em HTML; o teste de vazamento usa valores inequivocamente sintéticos.
+        secret = tmp_path / "client-secret-synthetic.json"
+        secret.write_text(json.dumps({"web": {
+            "client_id": "client-id.apps.googleusercontent.com",
+            "client_secret": "your_client_secret",
+            "redirect_uris": ["http://localhost:8000/studio/oauth/callback"]}}), encoding="utf-8")
+        oauth = {"google_client_secret_file": secret,
+                 "google_oauth_redirect_uri": "http://localhost:8000/studio/oauth/callback"}
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path, paid_image_usd=0.31, **oauth),
                     environ={"STUDIO_TEXT": "demo"})
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
     return {"client": TestClient(app), "videos": videos, "project": project, "conn": conn,
-            "dsn": dsn, "connect": connect}
+            "dsn": dsn, "connect": connect, "with_oauth": with_oauth}
 
 
 @pytest.fixture()
@@ -51,6 +63,11 @@ def env(conn, dsn, tmp_path):
 @pytest.fixture()
 def env_empty(conn, dsn, tmp_path):
     return _app(conn, dsn, tmp_path, with_project=False)
+
+
+@pytest.fixture()
+def env_oauth(conn, dsn, tmp_path):
+    return _app(conn, dsn, tmp_path, with_oauth=True)
 
 
 def page(env, project_id=None):
@@ -295,15 +312,140 @@ def test_budget_summary_keeps_real_estimate_free_and_unknown_apart(env):
 # --------------------------------------------------------------------- youtube
 
 
-def test_youtube_disconnected_state_and_unimplemented_oauth_are_explicit(env):
+def youtube_segment(html: str) -> str:
+    """Trecho do card 'Canal do YouTube', do cabeçalho até a seção avançada."""
+    match = re.search(r'Canal do YouTube.*?(?=<details class="advanced")', html, re.S)
+    assert match is not None, "card do YouTube ausente"
+    return match.group(0)
+
+
+def test_youtube_disconnected_without_server_oauth_is_disabled_with_a_real_reason(env):
     html = page(env).text
-    visible = page_text(html)
+    segment = youtube_segment(html)
+    visible = page_text(segment)
     assert "Sem associação" in visible
     assert "DISCONNECTED" in html
     assert "OAuth" in visible
-    assert "não está implementado" in visible
-    # sem botão de reautorizar fingindo um fluxo que não existe
-    assert "Ir para o consentimento" not in visible
+    # O fluxo existe desde a F8: a copy do card não pode mais negar o consentimento.
+    assert "não está implementado" not in visible
+    assert "não configurado no servidor" in visible
+    # Desabilitado de verdade: sem botão focável e sem caminho de endpoint.
+    assert 'id="youtube-reauth"' not in segment
+    assert "data-authorize-path" not in segment
+    assert 'aria-disabled="true"' in segment
+
+
+def test_youtube_reauthorize_calls_the_real_oauth_endpoint_when_configured(env_oauth):
+    pid = env_oauth["project"].id
+    html = page(env_oauth).text
+    segment = youtube_segment(html)
+    visible = page_text(segment)
+    assert "não está implementado" not in visible
+    assert "não configurado no servidor" not in visible
+    assert f'data-authorize-path="/studio/projects/{pid}/youtube-oauth/authorize"' in segment
+    button = re.search(r'<button[^>]*id="youtube-reauth"[^>]*>(.*?)</button>', segment, re.S)
+    assert button is not None, "botão de consentimento ausente com OAuth configurado"
+    assert "Conectar" in button.group(1)
+    assert "is-disabled" not in button.group(0)
+    # O endpoint real devolve a URL de autorização do Google; montar a URL não toca a rede.
+    r = env_oauth["client"].post(f"/studio/projects/{pid}/youtube-oauth/authorize", headers=POST_HEADER)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["authorization_url"].startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    assert "access_type=offline" in body["authorization_url"]
+    assert "code_challenge_method=S256" in body["authorization_url"]
+    # O state carrega o projeto para a página de callback saber para onde postar.
+    assert body["state"].startswith(pid + ".")
+    assert "your_client_secret" not in r.text
+
+
+def test_youtube_connected_offers_reconnect_and_revoke(env_oauth):
+    pid = env_oauth["project"].id
+    env_oauth["client"].put(
+        f"/studio/projects/{pid}/youtube-channel",
+        json={"channel_id": "UC123", "title": "Canal H", "refresh_token": "1//refresh-secret"},
+        headers=POST_HEADER)
+    html = page(env_oauth).text
+    visible = page_text(html)
+    assert "Conectado" in visible
+    assert 'id="youtube-reauth"' in html
+    assert f'data-authorize-path="/studio/projects/{pid}/youtube-oauth/authorize"' in html
+    assert "Reconectar" in visible
+    assert 'id="youtube-revoke"' in html
+    assert f'data-revoke-path="/studio/projects/{pid}/youtube-oauth/revoke"' in html
+
+
+def test_youtube_expired_token_offers_reauthorize_when_configured(env_oauth):
+    pid = env_oauth["project"].id
+    env_oauth["client"].put(
+        f"/studio/projects/{pid}/youtube-channel",
+        json={"channel_id": "UC123", "title": "Canal H", "refresh_token": "1//refresh-secret",
+              "token_expires_at": "2020-01-01T00:00:00+00:00"},
+        headers=POST_HEADER)
+    html = page(env_oauth).text
+    visible = page_text(html)
+    assert "Expirado" in visible
+    button = re.search(r'<button[^>]*id="youtube-reauth"[^>]*>(.*?)</button>', html, re.S)
+    assert button is not None and "Reautorizar" in button.group(1)
+    assert "is-disabled" not in button.group(0)
+
+
+def test_oauth_callback_page_carries_the_project_and_closes_the_loop(env_oauth):
+    pid = env_oauth["project"].id
+    state = env_oauth["client"].post(
+        f"/studio/projects/{pid}/youtube-oauth/authorize", headers=POST_HEADER).json()["state"]
+    r = env_oauth["client"].get(f"/studio/oauth/callback?code=SYNTHETIC-stub-code&state={state}",
+                                headers=AUTH_HEADER)
+    assert r.status_code == 200, r.text
+    html = r.text
+    assert "Consentimento do YouTube" in page_text(html)
+    assert f'data-complete-path="/studio/projects/{pid}/youtube-oauth/callback"' in html
+    assert f'href="/studio/canais?project_id={pid}"' in html
+    # O código de autorização fica na URL para o browser; o servidor não o renderiza no HTML.
+    assert "SYNTHETIC-stub-code" not in html
+
+
+def test_oauth_callback_page_refuses_an_unknown_state_without_dead_end(env):
+    r = env["client"].get("/studio/oauth/callback?code=SYNTHETIC-code&state=not-a-real-state",
+                          headers=AUTH_HEADER)
+    assert r.status_code == 200, r.text
+    visible = page_text(r.text)
+    assert "Não foi possível identificar o canal" in visible
+    assert "youtube-oauth/callback" not in r.text
+    assert 'href="/studio/canais"' in r.text
+
+
+def test_oauth_callback_page_renders_denied_consent_without_javascript(env):
+    pid = env["project"].id
+    r = env["client"].get(
+        f"/studio/oauth/callback?error=access_denied&state={pid}.{'a' * 43}", headers=AUTH_HEADER)
+    assert r.status_code == 200, r.text
+    visible = page_text(r.text)
+    assert "não autorizou" in visible
+    assert "access_denied" in visible
+    assert f'href="/studio/canais?project_id={pid}"' in r.text
+
+
+def test_oauth_flow_never_renders_secrets_in_html(env_oauth):
+    pid = env_oauth["project"].id
+    env_oauth["client"].put(
+        f"/studio/projects/{pid}/youtube-channel",
+        json={"channel_id": "UC123", "title": "Canal H",
+              "scopes": ["https://www.googleapis.com/auth/youtube.upload"],
+              "access_token": "ya29.synthetic-access-value",
+              "refresh_token": "1//refresh-secret"},
+        headers=POST_HEADER)
+    state = env_oauth["client"].post(
+        f"/studio/projects/{pid}/youtube-oauth/authorize", headers=POST_HEADER).json()["state"]
+    pages = (
+        page(env_oauth).text,
+        env_oauth["client"].get(f"/studio/oauth/callback?code=SYNTHETIC-code&state={state}",
+                                headers=AUTH_HEADER).text,
+    )
+    for html in pages:
+        for secret in ("your_client_secret", "ya29.synthetic-access-value",
+                       "1//refresh-secret", "SYNTHETIC-code", "••••"):
+            assert secret not in html, f"segredo renderizado no HTML: {secret}"
 
 
 def test_youtube_status_never_exposes_the_secret(env):
