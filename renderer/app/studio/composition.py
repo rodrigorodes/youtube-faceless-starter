@@ -43,6 +43,8 @@ from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
+from .adapters.quality_ffmpeg import FfmpegQualityEvaluator
+from .adapters.render_disabled import DisabledRenderer
 from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from .adapters.storage import FileAssetStore, FileRenderStorage
 from .adapters.voice_piper import PiperVoice
@@ -244,6 +246,9 @@ class Settings:
     secrets_root: Path | None = None  # cofre de segredos (F10-07); None = <storage_root>/secrets
     google_client_secret_file: Path | None = None  # app OAuth web do Google (F8-05); lido no lugar, nunca copiado
     google_oauth_redirect_uri: str = "http://localhost:8000/studio/oauth/callback"
+    # RP-032: disponibilidade do caminho baseado em plano. Não é um dispatch dual (o legado
+    # foi removido): desligar recusa o render e a volta é o redeploy da imagem anterior.
+    render_plan_enabled: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -260,7 +265,8 @@ class Settings:
                    _production_mode(env.get("STUDIO_PRODUCTION_MODE")),
                    Path(secrets_root) if secrets_root else None,
                    Path(env["STUDIO_GOOGLE_CLIENT_SECRET_FILE"]) if env.get("STUDIO_GOOGLE_CLIENT_SECRET_FILE") else None,
-                   env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback")
+                   env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback",
+                   _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")))
 
 
 RETRY_SECONDS = 5.0
@@ -271,7 +277,7 @@ CONNECT_OPTIONS = "-c lock_timeout=5000 -c statement_timeout=15000"  # nenhuma c
 class Studio:
     """Inicializa o banco sob demanda. Sem banco, o app segue de pé em modo degradado."""
 
-    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None, youtube_popular_fetcher=None):
+    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None, youtube_popular_fetcher=None, quality_evaluator=None):
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
@@ -285,9 +291,12 @@ class Studio:
         register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
         register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
         register("voice", "piper", PiperVoice)
-        register("renderer", "ffmpeg", PlanFfmpegRenderer)
+        # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
+        # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
+        register("renderer", "ffmpeg", PlanFfmpegRenderer if settings.render_plan_enabled else DisabledRenderer)
         self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
         self._analyzer = analyzer or FfmpegQa()
+        self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(self._analyzer)
         self._use_cases: UseCases | None = None
         self._lock = threading.Lock()
         self._retry_at = 0.0  # backoff após falha de inicialização
@@ -330,6 +339,17 @@ class Studio:
     def shutdown(self) -> None:
         """Não espera render em andamento (o SIGTERM não pode travar por minutos); o job fica para o reaper/próxima subida."""
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    @property
+    def quality_evaluator(self):
+        """Porta de QA do render (RP-030) montada na raiz de composição.
+
+        Junta a medição real (``FfmpegQualityProbe``: ffprobe/ebur128) à política pura
+        (``PlanQualityEvaluator``/``domain.quality``). É a instância que o caminho de render
+        usa para o QualityReport; a adoção dentro do ``RunRender`` persistido é follow-up
+        (muda o contrato do banco, hoje o ``contracts.QaReport`` legado).
+        """
+        return self._quality_evaluator
 
     def _build_provider(self, kind: str, spec: str):
         name, sep, model = spec.partition(":")
