@@ -280,6 +280,17 @@ class ResolvedStyle:
     voice: dict[str, Any] = field(default_factory=dict)
 
 
+def effective_style_id(channel_style_id: str | None, video_style_id: str | None) -> str | None:
+    """Qual estilo vence: **o canal herda, o vídeo pode sobrepor** (VS-02b/VS-05b).
+
+    Puro e sem I/O: o override do vídeo tem precedência sobre o do canal; sem override, vale o
+    do canal e, sem nenhum dos dois, ``None`` (o render cai no padrão do estúdio). É a mesma
+    precedência do ``resolve_style``, aqui sobre as **chaves** — o suficiente para a tela dizer
+    de quem um vídeo herda sem carregar os parâmetros.
+    """
+    return video_style_id if video_style_id is not None else channel_style_id
+
+
 def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
                   override: VisualStyle | None = None) -> ResolvedStyle | None:
     """Decide o estilo efetivo de um render a partir do estilo do canal (``style``) e do

@@ -75,6 +75,7 @@ from .application.channels_page import BuildChannelsPage
 from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                                  UpdateVisualStyle, VisualStyleUsage)
 from .application.styles_page import BuildStylesPage
+from .application.video_style import BuildVideoStyleView, SetVideoStyle
 from .application.channel_budget import GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
 from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -572,7 +573,9 @@ class Studio:
         set_project_config = SetPublicProjectConfig(repo, implementations)
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
                                           providers_service, channel_budget, youtube_channel, project_config,
-                                          oauth_available=oauth_client is not None)
+                                          oauth_available=oauth_client is not None,
+                                          list_styles=ListVisualStyles(style_repo),
+                                          get_style=GetVisualStyle(style_repo))
         # VS-05a: a biblioteca de estilos é a projeção da tela de Estilos (lista + uso medido).
         styles_page = BuildStylesPage(style_repo)
         # YT-04a: Conexões (serviço + API). A página "Conexões" é a YT-04b, outra fatia.
@@ -580,6 +583,8 @@ class Studio:
                                            channel_authorizations, channel_repo, secret_store)
         link_studio_channel = LinkStudioChannel(channel_repo, youtube_identities)
         unlink_studio_channel = Unlink(channel_repo)
+        # VS-05b: a tela do vídeo lê o override real (o canal herda, o vídeo pode sobrepor).
+        video_style_view = BuildVideoStyleView(repo, channel_repo, style_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
@@ -627,7 +632,9 @@ production=production, script_view=script_view,
                                   update_visual_style=UpdateVisualStyle(style_repo),
                                   archive_visual_style=ArchiveVisualStyle(style_repo),
                                   visual_style_usage=VisualStyleUsage(style_repo),
-                                  styles_page=styles_page)
+                                  styles_page=styles_page,
+                                  set_video_style=SetVideoStyle(repo),
+                                  video_style_view=video_style_view)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

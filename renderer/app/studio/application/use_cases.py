@@ -21,6 +21,7 @@ from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCateg
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                      UpdateVisualStyle, VisualStyleUsage)
+from .video_style import BuildVideoStyleView, SetVideoStyle
 from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -152,6 +153,9 @@ class UseCases:
     archive_visual_style: ArchiveVisualStyle | None = None
     visual_style_usage: VisualStyleUsage | None = None
     styles_page: "BuildStylesPage | None" = None
+    # VS-05b (UI/API): o override de estilo por vídeo (o canal herda, o vídeo pode sobrepor).
+    set_video_style: SetVideoStyle | None = None
+    video_style_view: BuildVideoStyleView | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -210,7 +214,9 @@ class UseCases:
                   update_visual_style: UpdateVisualStyle | None = None,
                   archive_visual_style: ArchiveVisualStyle | None = None,
                   visual_style_usage: VisualStyleUsage | None = None,
-                  styles_page: "BuildStylesPage | None" = None) -> "UseCases":
+                  styles_page: "BuildStylesPage | None" = None,
+                  set_video_style: SetVideoStyle | None = None,
+                  video_style_view: BuildVideoStyleView | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -228,4 +234,4 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    resolve_actor, invite_member, change_member_role, remove_member,
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
-                   archive_visual_style, visual_style_usage, styles_page)
+                   archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view)

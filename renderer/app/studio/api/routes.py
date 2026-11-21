@@ -464,6 +464,12 @@ class VisualStyleUpdateIn(BaseModel):
     changes: dict[str, object]
 
 
+class VideoStyleIn(BaseModel):
+    """Override de estilo de um vídeo (VS-05b): a chave do estilo ou ``null`` para voltar a herdar."""
+
+    style_id: str | None = None
+
+
 class VisualStyleOut(BaseModel):
     id: str
     name: str
@@ -1310,7 +1316,9 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             detail = uc.panel.detail(check_id(video_id))
-            return render_video(detail)
+            style_view = (uc.video_style_view.execute(check_id(video_id))
+                          if uc.video_style_view is not None else None)
+            return render_video(detail, style_view=style_view)
         page, headers = run(get_detail_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1807,6 +1815,24 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return render_styles(uc.styles_page.execute())
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
+
+    @router.patch("/videos/{video_id}/style", response_model=Video)
+    def set_video_style(video_id: str, body: VideoStyleIn):
+        """VS-05b: o canal herda, o vídeo pode sobrepor. `style_id` nulo volta a herdar.
+
+        Vídeo inexistente → 404; estilo inexistente → 422 com a mensagem do domínio (o guard
+        global mapeia `VisualStyleNotFound` para 404 na biblioteca, mas aqui o alvo é o vídeo).
+        """
+        def go(uc):
+            service = _need(uc, "set_video_style", "style services unavailable")
+            try:
+                video = service.execute(check_id(video_id), body.style_id)
+            except VisualStyleNotFound as exc:
+                raise HTTPException(422, str(exc)) from exc
+            if video is None:
+                raise HTTPException(404, "video not found")
+            return video
+        return run(go)
 
     # -- providers (F10-03/F10-04) -------------------------------------------
 

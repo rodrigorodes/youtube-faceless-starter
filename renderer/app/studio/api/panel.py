@@ -2961,7 +2961,55 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     return html_content, _headers(nonce)
 
 
-def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
+def _video_style_card(style_view) -> str:
+    """Aparência do vídeo (VS-05b): herda do canal ou sobrepõe com um estilo da biblioteca.
+
+    Deixa explícito **de quem** o vídeo herda hoje — o estilo do canal, ou nenhum. Sem a
+    projeção (leitura indisponível) a seção não aparece: "o que não tem medição não aparece".
+    """
+    if style_view is None:
+        return ""
+    if style_view.inherits_from_channel:
+        if style_view.inherited_style_name:
+            situation = f"Este vídeo herda o estilo do canal: {style_view.inherited_style_name}."
+        else:
+            situation = "Este vídeo herda do canal, que não usa estilo — vale o padrão do estúdio."
+    else:
+        own = next((s.name for s in style_view.styles if s.id == style_view.override_style_id), None)
+        inherited = style_view.inherited_style_name or "nenhum estilo no canal"
+        situation = (f"Este vídeo sobrepõe o canal com {own or 'um estilo escolhido'} "
+                     f"(o canal herda {inherited}).")
+    inherit_label = (f"Herdar do canal ({style_view.inherited_style_name})"
+                     if style_view.inherited_style_name else "Herdar do canal (nenhum estilo)")
+    options = [
+        f'<option value=""{" selected" if style_view.inherits_from_channel else ""}>'
+        f"{e(inherit_label)}</option>"
+    ]
+    for style in style_view.styles:
+        chosen = " selected" if style.id == style_view.override_style_id else ""
+        options.append(f'<option value="{e(style.id)}"{chosen}>{e(style.name)}</option>')
+    return f"""
+      <div class="card" id="video-aparencia">
+        <h2>Estilo deste vídeo</h2>
+        <p class="dim" style="font-size:12.5px;margin:4px 0 0">{e(situation)}</p>
+        <form id="video-style-form" data-video-id="{e(style_view.video_id)}" style="margin-top:12px">
+          <div class="field">
+            <label for="video-estilo">Estilo</label>
+            <select class="input" id="video-estilo" name="style_id" aria-describedby="video-estilo-hint">
+              {''.join(options)}
+            </select>
+            <span class="hint" id="video-estilo-hint">Herdar mantém o estilo do canal; escolher um estilo aqui sobrepõe só este vídeo.</span>
+          </div>
+          <div class="spread" style="margin-top:1rem">
+            <button class="btn btn-primary" type="submit" id="btn-salvar-estilo-video">Salvar estilo</button>
+            <div id="video-style-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+          </div>
+        </form>
+      </div>
+    """
+
+
+def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     v = view.video
 
@@ -3130,6 +3178,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
         '<p>ID, erros brutos e uso de modelos ficam em Avançado — diagnóstico.</p>'
         '</div>'
     )
+    style_card_html = _video_style_card(style_view)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -3168,6 +3217,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
             {failure_html}
             {publication_summary_html}
           </div>
+          {style_card_html}
         </div>
 
         <details class="card advanced" id="advanced-diagnostics">
@@ -3245,6 +3295,42 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
     }}
     wireRetry('btn-retry-render', '/studio/videos/{e(v.id)}/resume');
     wireRetry('btn-retry-publication', '/studio/videos/{e(v.id)}/publication/retry');
+
+    const styleForm = document.getElementById('video-style-form');
+    if (styleForm) {{
+      styleForm.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const feedback = document.getElementById('video-style-feedback');
+        const button = document.getElementById('btn-salvar-estilo-video');
+        const select = document.getElementById('video-estilo');
+        const videoId = styleForm.getAttribute('data-video-id') || '';
+        const value = select ? select.value : '';
+        if (button) button.disabled = true;
+        if (feedback) feedback.textContent = 'Salvando estilo...';
+        try {{
+          const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/style', {{
+            method: 'PATCH',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ style_id: value || null }})
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            if (feedback) feedback.textContent = 'Estilo salvo. Atualizando...';
+            setTimeout(() => location.reload(), 500);
+          }} else if (response.status === 404) {{
+            if (feedback) feedback.textContent = 'Não foi possível salvar: o vídeo não foi encontrado.';
+            if (button) button.disabled = false;
+          }} else {{
+            if (feedback) feedback.textContent = 'Não foi possível salvar o estilo: '
+              + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
+            if (button) button.disabled = false;
+          }}
+        }} catch (error) {{
+          if (feedback) feedback.textContent = 'Falha de rede ao salvar o estilo. Tente novamente.';
+          if (button) button.disabled = false;
+        }}
+      }});
+    }}
   </script>
 </body>
 </html>"""
