@@ -81,6 +81,31 @@ def assert_ux_contract(html, *, page):
         assert leaked not in text, f"{page}: texto ilustrativo do mockup vazou ({leaked!r})"
 
 
+def test_shell_uses_the_prototype_typeface():
+    """A fonte da casca é a do protótipo aprovado: Inter primeiro, mesmo fallback do original.
+
+    Sem isso, trocar a ordem do `font-family` muda a renderização de todas as telas sem quebrar
+    nenhum outro teste.
+    """
+    html = _render_panel_html()
+    css = re.search(r"<style[^>]*>(.*?)</style>", html, re.S).group(1)
+
+    assert "--font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont" in css
+    assert "font-family: var(--font-ui)" in css
+    assert re.search(r"--font-scale-h1:\s*35px", css)
+
+
+def test_nav_icon_set_covers_the_approved_ia():
+    """Todo item da IA aprovada tem ícone decorativo próprio (nunca anunciado como texto)."""
+    from app.studio.api.panel import _NAV_ICONS
+
+    for key in ("inicio", "novo-video", "videos", "tendencias", "desempenho",
+                "canais", "estilos", "conexoes", "equipe"):
+        assert key in _NAV_ICONS, key
+        assert 'aria-hidden="true"' in _NAV_ICONS[key], key
+        assert 'focusable="false"' in _NAV_ICONS[key], key
+
+
 def test_panel_home_satisfies_the_ux_contract():
     assert_ux_contract(_render_panel_html(), page="painel/início")
 

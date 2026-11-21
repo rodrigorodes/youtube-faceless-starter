@@ -217,6 +217,13 @@ CSS = """
 :root {
   /* Dark-only, tokens medidos do mockup aprovado (mockup-proposta.html). */
   color-scheme: dark;
+  /* UX-01: tipografia do protótipo aprovado (docs/backlogs/ux/faceless-studio-v3-proposta-ptbr.html).
+     Inter primeiro — se não estiver instalada, o fallback é o MESMO do protótipo. */
+  --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-scale-h1: 35px;
+  --font-tracking-h1: -1.3px;
+  --font-scale-eyebrow: 10px;
+  --font-tracking-eyebrow: 2px;
   --bg-app: #0a0f19;
   --bg-canvas: #101827;
   --surface: #131b2d;
@@ -265,7 +272,7 @@ CSS = """
   --info-bg: rgba(10, 188, 255, 0.14);
   accent-color: var(--accent);
   scrollbar-color: var(--border) var(--bg-app);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
   line-height: 1.5;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1749,6 +1756,23 @@ video {
   border: 1px solid var(--border);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
+
+/* ---------- UX-01: escala tipográfica do protótipo aprovado ----------
+   Fica no fim de propósito: vence as definições espalhadas acima, sem reescrevê-las. */
+h1 {
+  font-size: var(--font-scale-h1);
+  letter-spacing: var(--font-tracking-h1);
+  font-weight: 730;
+  line-height: 1.2;
+}
+.eyebrow {
+  font-size: var(--font-scale-eyebrow);
+  letter-spacing: var(--font-tracking-eyebrow);
+}
+.nav-item { font-weight: 560; }
+.nav-item.active,
+.nav-item[aria-current] { font-weight: 750; }
+.brand-title { font-weight: 780; letter-spacing: -0.6px; }
 """
 
 
