@@ -73,7 +73,7 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 |---|---|---|
 | F4-01 expandir briefing | ✅ | ContentBrief + fatia F4-01 |
 | F4-02 prompt short vs long (estrutura por blocos) | ✅ | fatia **E** `cc24b23`/`159a212` (`build_prompt_for_format`) |
-| F4-03 estimativa palavras/minuto e duração por cena | ◐ | fatia E `estimate_text_durations`; **calibração TTS real continua pendente** |
+| F4-03 estimativa palavras/minuto e duração por cena | ✅ | fatia E + **calibração real** `c2f26a9`: **172,0 wpm medidos** no Piper do produto (`pt_BR-faber-medium`, hash conferido), pausa 0,40 s/marca, overhead 0,65 s/síntese. Erro no roteiro de 480 s caiu de **+15,6% para +0,1%**; API intacta |
 | F4-04 roteiro em duas passagens | ✅ | fatia E `159a212` — plano de capítulos → cenas com citações |
 | F4-05 validar continuidade/redundância/claims | ✅ | fatia E — reusa `facts.check_narration`; estrutura, continuidade, redundância e invenção |
 | F4-06 versionar scripts + aprovação por hash | ✅ | fatia E `c7de848` — aprovação presa a `(versão, hash)`; editar cria versão nova e invalida |
@@ -233,7 +233,7 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 | F1 | 6 | 3 | 0 |
 | F2 | 6 | 2 | 0 |
 | F3 | 2 | 1 | 5 |
-| F4 | 8 | 1 | 0 |
+| F4 | 9 | 0 | 0 |
 | F5 | 1 (+RP-00/01/02/04) | 2 | 6 |
 | F6 | 2 | 1 | 5 |
 | F7 | 2 | 2 | 3 |
@@ -258,7 +258,12 @@ positivos do scanner em código de canal/segredos.
 `test_render_adapters` falha porque o `ffmpeg` do container morre com **SIGKILL (rc 137)** e
 produz `mp4` de 48 bytes; `test_render_api`/`test_publish_api` caem no mesmo ponto
 (`PIL.UnidentifiedImageError`). Reproduzido **na base limpa** (`git stash`) com o mesmo resultado
-— portanto é pressão de memória do ambiente, não regressão. Rodar a suíte **serializada** é a
+— portanto é pressão de memória do ambiente, não regressão.
+
+**Calibração TTS — limites declarados:** prosódia/entonação não modeladas; as constantes valem só para a voz
+`pt_BR-faber-medium` em `length_scale` padrão (o teste **recusa** com outra voz por hash/versão); o `LEAD/TAIL`
+do renderer (0,8 s por cena) fica **fora** da estimativa de fala; DarkPlanner não tem voz para medir. O erro
+por cena do roteiro longo varia de −6,1% a +11,0%; run-to-run do Piper chega a 3,8% em texto de 8 palavras. Rodar a suíte **serializada** é a
 condição para veredito confiável.
 
 ## Pendências de ligação entre fatias (nascem dos merges)
