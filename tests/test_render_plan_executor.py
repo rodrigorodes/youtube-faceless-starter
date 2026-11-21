@@ -116,6 +116,92 @@ def test_materialized_overlays_are_transparent_and_keep_the_shorts_ui_area_free(
     assert alpha.crop((0, 1700, width, height)).getextrema() == (0, 0)  # área inferior da UI dos Shorts fica livre
 
 
+# ------------------------- VS-04: legenda/cores vêm do estilo (puro + executor) -------------------------
+
+
+def _resolved(**params):
+    import dataclasses
+
+    from app.studio.domain.render_plan import StyleSnapshot
+    from app.studio.domain.visual_style import ResolvedStyle
+
+    return ResolvedStyle(snapshot=StyleSnapshot(style_id="canal-7", version=3), **params)
+
+
+def test_caption_layout_without_a_style_is_the_current_default_and_the_style_overrides_it():
+    from app.studio.adapters.render_plan_ffmpeg import _LAYOUT, caption_layout
+
+    assert caption_layout(VideoFormat.short) == _LAYOUT[VideoFormat.short]
+    assert caption_layout(VideoFormat.long, None) == _LAYOUT[VideoFormat.long]
+    lay = caption_layout(VideoFormat.short, _resolved(caption={"font_size": 40, "bottom": 1400}))
+    assert lay["caption_font"] == 40 and lay["caption_bottom"] == 1400
+    # o estilo sobrepõe só o que declara: o resto do layout continua o default
+    assert lay["caption_side"] == _LAYOUT[VideoFormat.short]["caption_side"]
+    assert lay["box_side"] == _LAYOUT[VideoFormat.short]["box_side"] and lay["line_h"] == _LAYOUT[VideoFormat.short]["line_h"]
+
+
+def test_overlay_colors_without_a_style_are_the_current_defaults_and_the_palette_overrides_them():
+    from app.studio.adapters.render_plan_ffmpeg import overlay_colors
+
+    current = {"caption_text": (255, 255, 255, 255), "caption_box": (0, 0, 0, 165), "accent": (255, 0, 140, 235)}
+    assert overlay_colors() == current
+    assert overlay_colors(_resolved()) == current  # estilo sem palette: default idêntico
+    colors = overlay_colors(_resolved(palette={"caption_text": "#112233", "caption_box": "#00FF00", "accent": "#ABCDEF80"}))
+    assert colors == {"caption_text": (0x11, 0x22, 0x33, 255), "caption_box": (0, 255, 0, 255), "accent": (0xAB, 0xCD, 0xEF, 0x80)}
+
+
+def test_the_style_actually_changes_the_burned_caption_overlay(tmp_path):
+    from app.studio.adapters.render_plan_ffmpeg import caption_layout, caption_overlay
+
+    text = "Legenda do estilo visual aplicado pelo produtor."
+    plain, styled = tmp_path / "plain.png", tmp_path / "styled.png"
+    style = _resolved(caption={"font_size": 44, "bottom": 1300}, palette={"caption_box": "#00FF00"})
+    caption_overlay(VideoFormat.short, text, plain)
+    caption_overlay(VideoFormat.short, text, styled, style=style)
+
+    assert plain.read_bytes() != styled.read_bytes()  # o estilo mudou o overlay de verdade
+    # caixa default: preta translúcida na posição default (x < caption_side: só a caixa, sem texto;
+    # y longe do canto arredondado de radius=36)
+    assert Image.open(plain).getpixel((75, 1500)) == (0, 0, 0, 165)
+    # caixa do estilo: verde opaca, subida para o bottom do estilo
+    bottom = caption_layout(VideoFormat.short, style)["caption_bottom"]
+    assert Image.open(styled).getpixel((75, bottom - 50)) == (0, 255, 0, 255)
+
+
+def test_a_style_without_caption_or_palette_keeps_the_overlay_byte_for_byte(tmp_path):
+    from app.studio.adapters.render_plan_ffmpeg import static_overlay, caption_overlay
+
+    text = "Legenda que não muda sem parâmetros de estilo."
+    plain, empty = tmp_path / "plain.png", tmp_path / "empty.png"
+    caption_overlay(VideoFormat.short, text, plain)
+    caption_overlay(VideoFormat.short, text, empty, style=_resolved())  # caption/palette vazios
+    assert plain.read_bytes() == empty.read_bytes()
+
+    badge_plain, badge_empty = tmp_path / "b_plain.png", tmp_path / "b_empty.png"
+    static_overlay(VideoFormat.short, "QUA • 21/10", "Ilustração gerada por IA", badge_plain)
+    static_overlay(VideoFormat.short, "QUA • 21/10", "Ilustração gerada por IA", badge_empty, style=_resolved())
+    assert badge_plain.read_bytes() == badge_empty.read_bytes()
+
+
+def test_executor_burns_the_caption_box_with_the_resolved_style(tmp_path):
+    # Prova pelo caminho de produção: o ``render`` leva ``spec.style`` até a materialização
+    # e a legenda queimada sai com a cor/posição do estilo (não com o default hardcoded).
+    import dataclasses
+
+    spec = spec_for(tmp_path, texts=("Narração da cena com estilo aplicado no overlay.",))
+    styled = dataclasses.replace(spec, style=_resolved(caption={"bottom": 1300}, palette={"caption_box": "#00FF00"}))
+    PlanFfmpegRenderer(runner=StubRunner()).render(styled, tmp_path / "work" / "final.mp4")
+    cue = next((tmp_path / "work").glob("cue_000_*.png"))
+    assert Image.open(cue).getpixel((75, 1250)) == (0, 255, 0, 255)  # caixa verde do estilo, no bottom do estilo
+
+
+def test_executor_without_a_style_burns_the_default_caption_box(tmp_path):
+    spec = spec_for(tmp_path, texts=("Narração da cena sem estilo no overlay.",))
+    PlanFfmpegRenderer(runner=StubRunner()).render(spec, tmp_path / "work" / "final.mp4")
+    cue = next((tmp_path / "work").glob("cue_000_*.png"))
+    assert Image.open(cue).getpixel((75, 1500)) == (0, 0, 0, 165)  # caixa preta translúcida de sempre
+
+
 def test_executor_publishes_atomically_and_leaves_no_partial_file(tmp_path):
     spec = spec_for(tmp_path)
     runner = StubRunner()

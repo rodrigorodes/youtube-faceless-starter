@@ -45,6 +45,7 @@ from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
 from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardScene, build_render_plan
+from ..domain.visual_style import ResolvedStyle
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 # Bundle neutro usado **apenas quando o vídeo não tem canal/estilo a referenciar** (RP-016):
@@ -65,14 +66,61 @@ _LAYOUT = {  # margens que respeitam a interface dos Shorts (vertical) e a área
     VideoFormat.long: {"caption_bottom": 960, "caption_font": 50, "caption_side": 300, "box_side": 250, "line_h": 68},
 }
 
+# Cores atuais do overlay (o default histórico). O estilo sobrepõe só estas três chaves; a
+# sombra do texto e o disclosure continuam fixos — não há knob de estilo para eles (VS-04).
+_DEFAULT_COLORS = {"caption_text": (255, 255, 255, 255), "caption_box": (0, 0, 0, 165), "accent": (255, 0, 140, 235)}
+_HEX_COLOR = re.compile(r"^#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$")
+
+
+def _rgba(color: str) -> tuple[int, int, int, int]:
+    """``#RRGGBB``/``#RRGGBBAA`` → RGBA; sem alfa, 255 (opaco). Puro (sem Pillow)."""
+    match = _HEX_COLOR.match(color)
+    if match is None:  # o domínio já valida a forma; aqui é defesa em profundidade
+        raise ValueError(f"invalid hex color: {color!r}")
+    body, alpha = match.group(1), match.group(2)
+    return tuple(int(body[i:i + 2], 16) for i in (0, 2, 4)) + (int(alpha, 16) if alpha else 255,)
+
+
+def caption_layout(fmt: VideoFormat, style: ResolvedStyle | None = None) -> dict:
+    """Geometria da legenda: o ``_LAYOUT`` atual como **default**, sobreposto pelo estilo.
+
+    Só ``caption.font_size`` (→ ``caption_font``) e ``caption.bottom`` (→ ``caption_bottom``)
+    são aplicáveis hoje; as demais margens ficam no default. Sem estilo (ou sem ``caption``),
+    devolve o layout de sempre — a paridade byte-a-byte do overlay depende disto. Puro: só
+    aritmética de dicionário, testável sem FFmpeg/Pillow.
+    """
+    layout = dict(_LAYOUT[fmt])
+    caption = style.caption if style is not None else {}
+    if "font_size" in caption:
+        layout["caption_font"] = caption["font_size"]
+    if "bottom" in caption:
+        layout["caption_bottom"] = caption["bottom"]
+    return layout
+
+
+def overlay_colors(style: ResolvedStyle | None = None) -> dict:
+    """Cores do overlay: as atuais como **default**, sobrepostas pela ``palette`` do estilo.
+
+    ``caption_text``/``caption_box``/``accent`` viram RGBA (ver ``_rgba``). Sem estilo (ou sem
+    ``palette``), devolve as cores de sempre. Puro: sem Pillow, testável por unidade.
+    """
+    colors = dict(_DEFAULT_COLORS)
+    palette = style.palette if style is not None else {}
+    for key in colors:
+        if key in palette:
+            colors[key] = _rgba(palette[key])
+    return colors
+
 
 def _wrap(draw, text, font, max_width):
     return rich._wrap(draw, text, font, max_width)
 
 
-def static_overlay(fmt: VideoFormat, label: str, disclosure: str, dst: Path) -> None:
+def static_overlay(fmt: VideoFormat, label: str, disclosure: str, dst: Path,
+                   style: ResolvedStyle | None = None) -> None:
     """PNG transparente com o aviso de imagem sintética e o selo do dia."""
     w, h = SIZE[fmt]
+    colors = overlay_colors(style)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     draw.text((60, 96), disclosure, font=ImageFont.truetype(FONT, 30), fill=(255, 255, 255, 190))
@@ -80,15 +128,16 @@ def static_overlay(fmt: VideoFormat, label: str, disclosure: str, dst: Path) -> 
         badge = ImageFont.truetype(FONT_BOLD, 46)
         box = draw.textbbox((0, 0), label, font=badge)
         bw, bh = box[2] - box[0], box[3] - box[1]
-        draw.rounded_rectangle((60, 160, 60 + bw + 56, 160 + bh + 40), radius=26, fill=(255, 0, 140, 235))
+        draw.rounded_rectangle((60, 160, 60 + bw + 56, 160 + bh + 40), radius=26, fill=colors["accent"])
         draw.text((60 + 28, 160 + 14), label, font=badge, fill="white")
     img.save(dst)
 
 
-def caption_overlay(fmt: VideoFormat, text: str, dst: Path) -> None:
-    """PNG transparente com um trecho de legenda queimada."""
+def caption_overlay(fmt: VideoFormat, text: str, dst: Path, style: ResolvedStyle | None = None) -> None:
+    """PNG transparente com um trecho de legenda queimada (geometria/cores do estilo)."""
     w, h = SIZE[fmt]
-    lay = _LAYOUT[fmt]
+    lay = caption_layout(fmt, style)
+    colors = overlay_colors(style)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_BOLD, lay["caption_font"])
@@ -96,11 +145,11 @@ def caption_overlay(fmt: VideoFormat, text: str, dst: Path) -> None:
     height = len(lines) * lay["line_h"] + 64
     bottom = lay["caption_bottom"]
     top = bottom - height
-    draw.rounded_rectangle((lay["box_side"], top, w - lay["box_side"], bottom), radius=36, fill=(0, 0, 0, 165))
+    draw.rounded_rectangle((lay["box_side"], top, w - lay["box_side"], bottom), radius=36, fill=colors["caption_box"])
     y = top + 32
     for line in lines:
         draw.text((lay["caption_side"] + 2, y + 2), line, font=font, fill=(0, 0, 0, 200))
-        draw.text((lay["caption_side"], y), line, font=font, fill="white")
+        draw.text((lay["caption_side"], y), line, font=font, fill=colors["caption_text"])
         y += lay["line_h"]
     img.save(dst)
 
@@ -213,7 +262,7 @@ class PlanFfmpegRenderer:
         plan = self._plan_for_render(spec)
         compiled, labels = self._compile(plan, spec)
         reuse = self._reuse_hits(plan, labels)
-        out = self.execute(compiled, spec.speech_wavs, Path(out_path), reuse=reuse)
+        out = self.execute(compiled, spec.speech_wavs, Path(out_path), reuse=reuse, style=spec.style)
         self._record(plan, compiled, labels, reuse)
         return out
 
@@ -441,13 +490,17 @@ class PlanFfmpegRenderer:
     # ------------------------------------------------------------------ execução
 
     def execute(self, compiled: CompiledRender, speech_wavs, out_path: Path, *,
-                reuse: Mapping[NodeId, Path] | None = None) -> Path:
+                reuse: Mapping[NodeId, Path] | None = None,
+                style: ResolvedStyle | None = None) -> Path:
         """Materializa overlays, monta áudio, roda FFmpeg e publica de forma atômica.
 
         ``reuse`` mapeia nó lógico → artefato físico já existente (RP-06b). Um shot/narração/
         montagem em ``reuse`` **não** roda FFmpeg: o artefato é copiado para o caminho que o
         plano espera. ``concat``/``final`` continuam sendo recomputados quando qualquer cena
         mudou (a dependência os invalida); só quando **nada** mudou o MP4 final vem do cache.
+
+        ``style`` (VS-04) entra só na materialização dos overlays: legenda (geometria) e selo
+        (cor). ``None`` = sem estilo resolvido ⇒ layout/cores default de sempre.
         """
         reuse = reuse or {}
         final_node = NodeId("final", "video")
@@ -455,7 +508,7 @@ class PlanFfmpegRenderer:
             return self._publish(Path(reuse[final_node]), Path(out_path))
         Path(compiled.final_output).parent.mkdir(parents=True, exist_ok=True)
         fmt = VideoFormat(compiled.format)
-        self._materialize(compiled, fmt)
+        self._materialize(compiled, fmt, style)
         narration_inputs = self._narration_inputs(compiled, speech_wavs, reuse)
         rich.build_narration_track(narration_inputs, Path(compiled.audio.narration.output))
         music_node = NodeId("music", compiled.audio.music.source_id)
@@ -481,11 +534,13 @@ class PlanFfmpegRenderer:
         self._run(list(compiled.audio.args), timeout)
         return self._publish(Path(compiled.final_output), Path(out_path))
 
-    def _materialize(self, compiled: CompiledRender, fmt: VideoFormat) -> None:
+    def _materialize(self, compiled: CompiledRender, fmt: VideoFormat,
+                     style: ResolvedStyle | None = None) -> None:
         for shot in compiled.shots:
-            static_overlay(fmt, shot.static_overlay.label, shot.static_overlay.disclosure, Path(shot.static_overlay.path))
+            static_overlay(fmt, shot.static_overlay.label, shot.static_overlay.disclosure,
+                           Path(shot.static_overlay.path), style)
             for caption in shot.captions:
-                caption_overlay(fmt, caption.text, Path(caption.path))
+                caption_overlay(fmt, caption.text, Path(caption.path), style)
             if shot.text_card is not None:
                 text_card(fmt, shot.text_card.text, Path(shot.text_card.path))
 

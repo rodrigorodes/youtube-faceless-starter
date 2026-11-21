@@ -146,6 +146,18 @@ def test_resolve_style_defaults_are_empty_when_params_are_absent():
     resolved = resolve_style(None, style())
     assert isinstance(resolved, ResolvedStyle)
     assert resolved.motion == () and resolved.music == {} and resolved.transition == {}
+    assert resolved.caption == {} and resolved.palette == {} and resolved.voice == {}
+
+
+def test_resolve_style_carries_caption_palette_and_voice():
+    # VS-04: caption/palette são aplicados pelo render; voice é carregado (precedência intacta).
+    s = style(params={"caption": {"font_size": 40, "bottom": 1400},
+                      "palette": {"caption_box": "#00FF00", "accent": "#FF008C"},
+                      "voice": {"model": "pt_BR-jeff-medium"}})
+    resolved = resolve_style(None, s)
+    assert resolved.caption == {"font_size": 40, "bottom": 1400}
+    assert resolved.palette == {"caption_box": "#00FF00", "accent": "#FF008C"}
+    assert resolved.voice == {"model": "pt_BR-jeff-medium"}
 
 
 def test_resolve_style_override_wins_over_the_channel_style():
