@@ -3,7 +3,7 @@ import math
 import re
 from dataclasses import dataclass
 
-from .contracts import QaReport, VideoFormat
+from .contracts import VideoFormat
 
 FPS = 25
 FADE_S = 0.25
@@ -113,7 +113,22 @@ _REQUIRED = ("duration_s", "expected_s", "width", "height", "has_audio", "integr
              "narration_lufs", "narration_silence_ratio")
 
 
-def evaluate_qa(metrics: dict, fmt: VideoFormat) -> QaReport:
+@dataclass(frozen=True)
+class MediaQaResult:
+    """Veredito puro da régua de mídia sobre as métricas medidas (não persistido).
+
+    Distinto do relatório de QA versionado da F6 (``domain.qa_report.QaReport``): aquele é
+    o contrato **persistido**, vinculado a um render por ``render_id``/``checksum``; este é
+    o resultado da comparação pura ("aprovou sem falhas? quais falhas? quais métricas?") que
+    a política do QA (``domain.quality``) reusa — uma régua só, sem duplicação.
+    """
+
+    passed: bool
+    failures: list[str]
+    metrics: dict[str, float | int | bool | None]
+
+
+def evaluate_qa(metrics: dict, fmt: VideoFormat) -> MediaQaResult:
     """Reprova vídeo mudo, estourado em duração, com resolução errada, quase todo em silêncio/preto ou sem áudio.
     Métrica ausente reprova (falha fechada)."""
     failures = [f"missing metric {key}" for key in _REQUIRED if key not in metrics]
@@ -144,4 +159,4 @@ def evaluate_qa(metrics: dict, fmt: VideoFormat) -> QaReport:
         if (metrics["width"], metrics["height"]) != SIZE[fmt]:
             failures.append(f"resolution {metrics['width']}x{metrics['height']} is not {SIZE[fmt][0]}x{SIZE[fmt][1]} for {fmt.value}")
     clean = {k: v for k, v in metrics.items() if isinstance(v, (int, float, bool)) or v is None}
-    return QaReport(passed=not failures, failures=failures, metrics=clean)
+    return MediaQaResult(passed=not failures, failures=failures, metrics=clean)

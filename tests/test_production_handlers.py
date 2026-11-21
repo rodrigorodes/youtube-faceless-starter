@@ -26,12 +26,12 @@ from app.studio.domain.contracts import (  # noqa: E402
     Asset,
     AssetKind,
     JobStatus,
-    QaReport,
     RenderJob,
     Video,
     VideoFormat,
     VideoStatus,
 )
+from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 from app.studio.domain.production_run import ProductionRun, ProductionStage, StageExecution, StageState  # noqa: E402
 
 RUN, VIDEO, JOB, ASSET_ID = "a" * 32, "b" * 32, "c" * 32, "d" * 32
@@ -137,8 +137,16 @@ class _Videos:
 
 
 def _video(status=VideoStatus.APPROVED, passed=True, failures=()):
-    return Video(id=VIDEO, project_id="e" * 32, topic="tema", format=VideoFormat.short, status=status,
-                 qa_report=QaReport(passed=passed, failures=list(failures)))
+    findings = tuple(QaFinding(finding_id=f"f{index}", check_id="render.media_metrics", category="technical",
+                               severity="blocking", evidence=failure, suggested_action="Revisar o render.")
+                     for index, failure in enumerate(failures))
+    if not passed and not findings:  # reprovado sem falha textual explícita: um bloqueio genérico
+        findings = (QaFinding(finding_id="f0", check_id="render.media_metrics", category="technical",
+                              severity="blocking", evidence="o QA reprovou o render",
+                              suggested_action="Revisar o render."),)
+    report = QaReport(render_id=JOB, checksum=CACHE, generated_at=datetime.now(timezone.utc),
+                      coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",), findings=findings)
+    return Video(id=VIDEO, project_id="e" * 32, topic="tema", format=VideoFormat.short, status=status, qa_report=report)
 
 
 def test_qa_handler_requires_a_passing_report():
@@ -174,7 +182,7 @@ def _approved_handler(*, video=None, job=None, latest_asset=None, approved_asset
     jobs = _Jobs(job)
     jobs.approved_output = lambda video_id: latest_asset
     jobs.latest_output = lambda video_id: latest_asset
-    gate = RenderQaGate(_Videos(video), jobs, _Assets(approved_asset), clock=lambda: datetime.now(timezone.utc))
+    gate = RenderQaGate(_Videos(video), jobs, _Assets(approved_asset))
     approval = approval if approval is not None else Approval(video_id=VIDEO, decision="approved", output_asset_id=approved_asset.id)
     return ApprovalHandler(_Videos(video), _Approvals(approval), gate)
 

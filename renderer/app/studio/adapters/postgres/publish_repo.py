@@ -10,6 +10,7 @@ from ...application.editorial import StateConflict
 from ...domain.contracts import Approval, Publication, VideoStatus
 from ...domain.ids import check_id
 from ...domain.publication_policy import PublicationIntentEvidence, idempotency_key
+from ...domain.qa_report import publishable_payload
 from ...domain.states import assert_transition
 from .editorial_repo import _Base
 from .repo import _translated
@@ -46,7 +47,7 @@ class PostgresApprovalRepository(_Base):
                     qa = row[1] if isinstance(row[1], dict) else {}
                     intent = PublicationIntentEvidence(
                         video_id=video_id, render_id=latest[0], checksum=latest[3],
-                        output_asset_id=latest[1], qa_passed=qa.get("passed") is True, qa_override=qa_override,
+                        output_asset_id=latest[1], qa_passed=publishable_payload(qa), qa_override=qa_override,
                         visibility=visibility, public_confirmed=public_confirmed,
                         idempotency_key=idempotency_key(video_id, latest[0], latest[3]))
                 conn.execute("UPDATE studio.videos SET status = %s, title = %s, description = %s, tags = %s, updated_at = now() WHERE id = %s",

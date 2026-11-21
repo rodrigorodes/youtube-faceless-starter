@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..domain.contracts import Approval, Publication, QaReport, Scene, Video, VideoStatus
+from ..domain.contracts import Approval, Publication, Scene, Video, VideoStatus
+from ..domain.qa_report import QaReport, blocking_evidence
 from ..domain.publish import (InvalidPublishData, build_description, default_description, default_title, valid_upload_uri, valid_youtube_id,
                               validate_metadata, validate_publish_at, youtube_insert_body)
 from ..domain.publication_policy import resolve_visibility
@@ -48,7 +49,7 @@ class Approve:
         if video.status == VideoStatus.AWAITING_APPROVAL:
             override = False
         elif video.status == VideoStatus.RENDERED:
-            failures = "; ".join(video.qa_report.failures) if video.qa_report else "no QA report"
+            failures = "; ".join(blocking_evidence(video.qa_report)) if video.qa_report else "no QA report"
             if not reason:
                 raise StateConflict(f"the QA failed ({failures}): approving needs override_reason")
             override = True

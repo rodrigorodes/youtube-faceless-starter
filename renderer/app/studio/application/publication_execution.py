@@ -153,7 +153,7 @@ class RunPublication:
             return self._blocked(pub, "there is no successful render to publish")
         try:
             verify_publication_gate(intent, render_id=job.id, checksum=output.cache_key, output_asset_id=output.id,
-                                    qa_report_passed=bool(video.qa_report and video.qa_report.passed),
+                                    qa_report_passed=bool(video.qa_report and video.qa_report.is_publishable),
                                     approval_output_asset_id=approval.output_asset_id if approval else None)
         except PublicationGateError as exc:
             return self._blocked(pub, str(exc))

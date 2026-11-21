@@ -65,7 +65,8 @@ from .panel_production import (
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.qa_report import QaReport
 from ..domain.analytics_learning import AnalyticsPeriod, DashboardQuery, ExperimentVariant
 from ..domain.insight import MetricWindow
 from ..domain.policy import CostRefused

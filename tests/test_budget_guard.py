@@ -5,6 +5,7 @@ A semântica transacional do adaptador PostgreSQL é coberta em `test_paid_opera
 """
 import json
 import sys
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -17,11 +18,12 @@ from app.studio.application.budget import (  # noqa: E402
     OperationUncertain, PaidOperationGuard, PaidOperationState, PreEffectFailure,
 )
 from app.studio.application.editorial import CostGuard, GenerateScript, IngestSource  # noqa: E402
-from app.studio.application.ports import ImageResult, TextResult  # noqa: E402
+from app.studio.application.ports import ImageResult, RenderQaInputs, TextResult  # noqa: E402
 from app.studio.domain.claims import extract_claims  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
-    Asset, AssetKind, JobStatus, QaReport, RenderJob, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus,
+    Asset, AssetKind, JobStatus, RenderJob, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus,
 )
+from app.studio.domain.qa_report import QaCoverage, QaReport  # noqa: E402
 from app.studio.domain.media import build_image_prompt  # noqa: E402
 
 V, P = "v" * 32, "p" * 32
@@ -558,11 +560,16 @@ class _Renderer:
         Path(out_path).write_bytes(b"mp4")
         return Path(out_path)
 
+    def qa_inputs(self, spec):
+        return RenderQaInputs(plan=object(), descriptors=())  # o QA destes testes é o double _Quality
 
-class _Analyzer:
-    def analyze(self, path, narration=None):
-        return dict(duration_s=3.0, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.1,
-                    black_ratio=0.0, narration_lufs=-16.0, narration_silence_ratio=0.1)
+
+class _Quality:
+    """Porta de QA falsa (o alvo aqui é o guard de custo, não a medição de mídia)."""
+
+    def evaluate(self, plan, *, media_path, narration_path=None, descriptors=(), render_id, checksum):
+        return QaReport(render_id=render_id, checksum=checksum, generated_at=datetime.now(timezone.utc),
+                        coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",))
 
 
 def test_run_render_routes_voice_through_the_paid_guard(tmp_path):
@@ -570,7 +577,7 @@ def test_run_render_routes_voice_through_the_paid_guard(tmp_path):
 
     usage, voice, ledger = _Usage(), _Voice(), FakeLedger()
     run = RunRender(_RenderVideos(), _RenderScripts(), _RenderAssets(), _Jobs(), _Files(tmp_path),
-                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), analyzer=_Analyzer(),
+                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), quality=_Quality(),
                     paid=guard(ledger, monthly="15", video="15"))
     run.execute("1" * 32)
     assert len(voice.calls) == len(_RenderScripts.TEXTS)
@@ -820,7 +827,7 @@ def test_two_jobs_with_the_same_narration_do_not_charge_twice(tmp_path):
 
     usage, voice, ledger, jobs = _Usage(), _PaidVoice(), FakeLedger(), _TwoJobs()
     run = RunRender(_RenderVideos(), _RenderScripts(), _RenderAssets(), jobs, _Files(tmp_path),
-                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), analyzer=_Analyzer(),
+                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), quality=_Quality(),
                     paid=guard(ledger, monthly="15", video="15"))
     run.execute(f"{1}" * 32)
     assert len(voice.calls) == len(_RenderScripts.TEXTS)
@@ -835,7 +842,7 @@ def test_free_voice_retry_reexecutes_without_a_second_charge(tmp_path):
 
     usage, voice, ledger, jobs = _Usage(), _Voice(), FakeLedger(), _TwoJobs()
     run = RunRender(_RenderVideos(), _RenderScripts(), _RenderAssets(), jobs, _Files(tmp_path),
-                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), analyzer=_Analyzer(),
+                    voice_for=lambda project_id: voice, renderer_for=lambda project_id: _Renderer(), quality=_Quality(),
                     paid=guard(ledger, monthly="15", video="15"))
     run.execute(f"{1}" * 32)
     run.execute(f"{2}" * 32)

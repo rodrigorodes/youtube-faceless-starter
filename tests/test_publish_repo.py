@@ -14,10 +14,20 @@ from app.studio.adapters.postgres.publish_repo import PostgresApprovalRepository
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.adapters.postgres.render_repo import PostgresRenderJobRepository  # noqa: E402
 from app.studio.application.publishing import PublicationConflict  # noqa: E402
-from app.studio.domain.contracts import Asset, AssetKind, QaReport, PublicationStatus, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.contracts import Asset, AssetKind, PublicationStatus, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 
 S = VideoStatus
 URI = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=AbC123"
+AT = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+
+
+def qa_report(passed=True, failures=()):
+    findings = tuple(QaFinding(finding_id=f"f{i}", check_id="render.media_metrics", category="technical",
+                               severity="blocking", evidence=failure, suggested_action="Revisar o render.")
+                     for i, failure in enumerate(failures))
+    return QaReport(render_id="9" * 32, checksum="8" * 64, generated_at=AT,
+                    coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",), findings=findings)
 
 
 @pytest.fixture()
@@ -101,7 +111,7 @@ def test_approval_races_render_completion_without_approving_unreviewed_output(en
             errors.append(exc)
     threads = [
         threading.Thread(target=run, args=("approval", lambda: approve(env, vid, S.RENDERED, output_asset_id=first, reason="reviewed", qa_override=True))),
-        threading.Thread(target=run, args=("render", lambda: jobs.complete(job_id, asset, QaReport(passed=False, failures=["test"])))),
+        threading.Thread(target=run, args=("render", lambda: jobs.complete(job_id, asset, qa_report(False, ["test"])))),
     ]
     for thread in threads:
         thread.start()

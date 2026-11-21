@@ -12,8 +12,9 @@ from app.studio.application.publishing import (  # noqa: E402
     PublicationNotFound, Reject, RetryPublication, SetUploadUri,
 )
 from app.studio.domain.contracts import (  # noqa: E402
-    Approval, Asset, AssetKind, Publication, PublicationStatus, QaReport, Scene, Script, SourceSnapshot, Video, VideoFormat, VideoStatus,
+    Approval, Asset, AssetKind, Publication, PublicationStatus, Scene, Script, SourceSnapshot, Video, VideoFormat, VideoStatus,
 )
+from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 from app.studio.domain.publish import InvalidPublishData  # noqa: E402
 
 S = VideoStatus
@@ -21,6 +22,15 @@ V, P, PUB = "a" * 32, "b" * 32, "c" * 32
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
 URI = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=AbC123"
 YT = "oNQ2KN37sfQ"
+
+
+def qa_report(passed=True, failures=()):
+    """Relatório de QA versionado (F6) para os vídeos dos fakes deste teste."""
+    findings = tuple(QaFinding(finding_id=f"f{index}", check_id="render.media_metrics", category="technical",
+                               severity="blocking", evidence=failure, suggested_action="Revisar o render.")
+                     for index, failure in enumerate(failures))
+    return QaReport(render_id="9" * 32, checksum="8" * 64, generated_at=NOW,
+                    coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",), findings=findings)
 
 
 class Videos:
@@ -195,7 +205,7 @@ def test_approve_refuses_bad_metadata_without_deciding(kw):
 
 
 def test_failed_qa_needs_an_override_reason():
-    qa = QaReport(passed=False, failures=["audio is silent"])
+    qa = qa_report(False, ["audio is silent"])
     v = Videos(S.RENDERED, qa)
     use, a = approver(v)
     for reason in (None, "", "   "):
@@ -236,7 +246,7 @@ def test_reject_is_idempotent_keeps_reason_and_refuses_approved():
     v2 = Videos(S.APPROVED)
     with pytest.raises(StateConflict):
         Reject(v2, Approvals(v2)).execute(V)
-    v3 = Videos(S.RENDERED, QaReport(passed=False, failures=["x"]))
+    v3 = Videos(S.RENDERED, qa_report(False, ["x"]))
     assert Reject(v3, Approvals(v3)).execute(V)[0].status == S.REJECTED
 
 
@@ -384,22 +394,22 @@ def test_thumbnail_comes_from_the_first_scene_and_only_for_reviewable_videos(tmp
 
 
 def test_preview_collects_what_the_reviewer_needs(tmp_path):
-    v = Videos(S.AWAITING_APPROVAL, QaReport(passed=True))
+    v = Videos(S.AWAITING_APPROVAL, qa_report(True))
     preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path)).execute(V)
     assert preview.has_file and preview.default_title == "ADE 2026" and preview.default_description.startswith("O Amsterdam")
     assert preview.credits == ["Foto de Ana no Pexels (https://pexels.com/@ana)"] and preview.sources == ["https://www.amsterdam-dance-event.nl/en/about"]
-    assert len(preview.scenes) == 2 and preview.qa.passed and preview.approval is None
+    assert len(preview.scenes) == 2 and preview.qa.is_publishable and preview.approval is None
 
 
 def test_preview_does_not_offer_revision_when_render_file_is_missing(tmp_path):
-    v = Videos(S.RENDERED, QaReport(passed=False, failures=["audio"]))
+    v = Videos(S.RENDERED, qa_report(False, ["audio"]))
     preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path, exists=False)).execute(V)
     assert not preview.has_file and preview.output_asset_id is None
 
 
 def test_preview_page_renders_sidebar_navigation(tmp_path):
     from app.studio.api.preview import render_preview
-    v = Videos(S.AWAITING_APPROVAL, QaReport(passed=True))
+    v = Videos(S.AWAITING_APPROVAL, qa_report(True))
     preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path)).execute(V)
     html_doc, _ = render_preview(preview)
     assert '<aside class="sidebar">' in html_doc

@@ -9,14 +9,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
-from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, UsageEntry, VideoStatus
-from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, evaluate_qa, make_cues, scene_length, split_chunks, to_srt
+from ..domain.contracts import Asset, AssetKind, RenderJob, UsageEntry, VideoStatus
+from ..domain.qa_report import QaReport
+from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, make_cues, scene_length, split_chunks, to_srt
 from ..domain.render_cache import NodeId, narration_fingerprint
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
-from .ports import (AssetRepository, QaAnalyzer, RenderJobRepository, RenderPlanRepository, Renderer, RenderSpec,
+from .ports import (AssetRepository, QualityEvaluator, RenderJobRepository, RenderPlanRepository, Renderer, RenderSpec,
                     RenderStorage, ScriptRepository, VideoRepository, Voice)
 
 
@@ -96,11 +97,11 @@ class StartRender:
 
 class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
-                 files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], analyzer: QaAnalyzer,
+                 files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
                  steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
                  narration_reuse: bool = True):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
-        self.voice_for, self.renderer_for, self.analyzer = voice_for, renderer_for, analyzer
+        self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
         self.steps, self.paid = steps, paid
         # RP-06c: o índice de cache do plano (fingerprint da entrada da narração) permite pular o
         # TTS de uma cena inalterada. Sem repositório (unidade), o comportamento é o de antes.
@@ -215,12 +216,15 @@ class RunRender:
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
                           disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id)
         mp4 = renderer.render(spec, work / "final.mp4")
-        metrics = self.analyzer.analyze(mp4, narration=work / NARRATION_FILE)
-        qa = evaluate_qa({**metrics, "expected_s": round(total, 3)}, video.format)
+        # A identidade do render nasce antes do QA: é o mesmo checksum que a publicação reutiliza
+        # (o asset de saída), então o relatório já sai vinculado à versão que será aprovada.
+        key = hashlib.sha256(f"video|{renderer.name}|{job.input_hash}|{job.id}".encode()).hexdigest()
+        qa_inputs = renderer.qa_inputs(spec)
+        qa = self.quality.evaluate(qa_inputs.plan, media_path=mp4, narration_path=work / NARRATION_FILE,
+                                   descriptors=qa_inputs.descriptors, render_id=job.id, checksum=key)
         if not self.jobs.alive(job.id):  # perdeu a posse (encerrado por outro processo / vídeo mudou): não publica nada
             raise RenderRefused("render was cancelled or the video state changed")
         relative = self.files.publish(video.project_id, video.id, job.id, mp4, to_srt(cues))
-        key = hashlib.sha256(f"video|{renderer.name}|{job.input_hash}|{job.id}".encode()).hexdigest()
         asset = self.assets.add(Asset(id=uuid.uuid4().hex, kind=AssetKind.video, cache_key=key, path=relative, provider=renderer.name,
                                       model="ffmpeg", license="gerado pelo estúdio a partir de assets licenciados"))
         if not self.jobs.complete(job.id, asset, qa):

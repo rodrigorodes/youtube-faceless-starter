@@ -44,7 +44,7 @@ from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
-from .adapters.quality_ffmpeg import FfmpegQualityEvaluator
+from .adapters.quality_ffmpeg import FfmpegQualityEvaluator, FfmpegQualityProbe
 from .adapters.render_disabled import DisabledRenderer
 from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from .adapters.storage import FileAssetStore, FileRenderStorage
@@ -306,7 +306,9 @@ class Studio:
         register("renderer", "ffmpeg", _renderer)
         self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
         self._analyzer = analyzer or FfmpegQa()
-        self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(self._analyzer)
+        # O probe mede (ffprobe/ebur128) com o MESMO analisador do render; o avaliador junta a
+        # medição à política pura. Passar o analisador como probe quebraria o ``measure``.
+        self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(FfmpegQualityProbe(self._analyzer))
         self._use_cases: UseCases | None = None
         self._lock = threading.Lock()
         self._retry_at = 0.0  # backoff após falha de inicialização
@@ -354,10 +356,11 @@ class Studio:
     def quality_evaluator(self):
         """Porta de QA do render (RP-030) montada na raiz de composição.
 
-        Junta a medição real (``FfmpegQualityProbe``: ffprobe/ebur128) à política pura
-        (``PlanQualityEvaluator``/``domain.quality``). É a instância que o caminho de render
-        usa para o QualityReport; a adoção dentro do ``RunRender`` persistido é follow-up
-        (muda o contrato do banco, hoje o ``contracts.QaReport`` legado).
+        Junta a medição real (``FfmpegQualityProbe``: ffprobe/ebur128, com o mesmo
+        ``FfmpegQa`` do render) à política pura (``PlanQualityEvaluator``/``domain.quality``).
+        É a instância que o ``RunRender`` usa para produzir o relatório versionado da F6 e
+        persistir em ``videos.qa_report`` (RP-07b: adoção concluída; o tipo legado foi
+        aposentado).
         """
         return self._quality_evaluator
 
@@ -431,7 +434,7 @@ class Studio:
         except OSError:
             pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
-                         renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer, steps=steps,
+                         renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
                          paid=paid_guard, plans=PostgresRenderPlanRepository(connect))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))

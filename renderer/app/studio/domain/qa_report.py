@@ -85,10 +85,10 @@ Limites do gate, para não superestimar a garantia:
   ``ffprobe`` em Linux não emite CRLF. Uma fatia futura pode permitir ``\\r\\n``
   e tab **apenas** em evidência, com teste próprio, se o fluxo real exigir.
 
-Nota de integração: já existe um ``QaReport`` legado em ``domain/contracts.py``
-(``passed``/``failures``/``metrics``) usado pelo render atual. Este módulo é o
-contrato novo e vinculado à versão da F6 e **não** substitui nem altera aquele;
-a adoção pelo runtime é trabalho de outra fatia.
+Nota de integração: o ``QaReport`` legado (``passed``/``failures``/``metrics``) que vivia
+em ``domain/contracts.py`` foi **aposentado** nesta fatia. Este módulo é o contrato único
+do QA do render: o loop persiste o relatório daqui (``videos.qa_report``) e o gate de
+publicação e a aprovação (F6/F8) consomem exatamente o mesmo relatório — uma só verdade.
 """
 
 import math
@@ -107,7 +107,7 @@ from pydantic import (
     model_validator,
 )
 
-from .contracts import _Model
+from .schema import _Model
 
 Severity = Literal["blocking", "warning", "info"]
 FindingCategory = Literal["technical", "editorial"]
@@ -534,3 +534,34 @@ def assert_publishable(
 ) -> None:
     """Igual a ``approve``, mas apenas valida: levanta o erro do motivo, sem retorno."""
     approve(report=report, latest=latest, requested=requested)
+
+
+def blocking_evidence(report: QaReport) -> tuple[str, ...]:
+    """Evidência textual dos achados ``blocking`` — para exibição e mensagem de recusa.
+
+    É a tradução honesta do "porquê reprovou": a evidência redigida pelo produtor de QA,
+    nunca uma métrica fabricada. Falha fechada: estado contornado (``findings`` não-tupla)
+    é reportado como um bloqueio único, sem consumir iterador.
+    """
+    findings = tuple(report.blocking_findings)
+    evidence: list[str] = []
+    for item in findings:
+        text = getattr(item, "evidence", None)
+        evidence.append(text if isinstance(text, str) and text else "QA finding without evidence")
+    return tuple(evidence)
+
+
+def publishable_payload(payload: object) -> bool:
+    """Interpreta o ``qa_report`` **persistido** (jsonb) para a decisão de publicação.
+
+    Aceita o shape versionado da F6 (``render_id``/``coverage``/``findings``) e, por
+    compatibilidade, o shape legado (``passed``/``failures``) de linhas gravadas **antes**
+    desta adoção — sem inventar identidade para as antigas. Fail-closed: payload ausente,
+    inválido ou ilegível nunca é publicável.
+    """
+    if not isinstance(payload, dict):
+        return False
+    try:
+        return QaReport.model_validate(payload).is_publishable
+    except (ValidationError, TypeError, ValueError):
+        return payload.get("passed") is True  # compatibilidade com o shape anterior à adoção

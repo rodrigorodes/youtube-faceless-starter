@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Protocol
 
 from ..domain.asset_resolver import AssetDescriptor
-from ..domain.quality import QualityEvidence
 from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
@@ -24,7 +23,7 @@ from ..domain.youtube_channel import YouTubeChannel
 from ..domain.saas import ByokKey, KeyAuditAction, MembershipStatus, Role
 from ..domain.youtube_oauth import OAuthIdentity, OAuthTokenResponse
 from ..domain.publication_policy import PublicationIntentEvidence
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
 from ..domain.longform import ScriptApproval, ScriptPlan
@@ -60,6 +59,19 @@ class RenderSpec:
     voice_id: str = ""            # identidade da voz (nome+modelo): entra no fingerprint da narração (RP-06c)
 
 
+@dataclass(frozen=True)
+class RenderQaInputs:
+    """Plano lógico + descriptors resolvidos que o renderer usou (entrada do QA versionado).
+
+    O QA da F6 avalia o plano e a resolução dos assets; transportar isto do renderer para
+    a porta de QA mantém o núcleo de render puro (sem I/O de mídia em ``domain``/
+    ``application``) e garante que o relatório persistido descreve o render de verdade.
+    """
+
+    plan: RenderPlan
+    descriptors: tuple[AssetDescriptor, ...] = ()
+
+
 class ModelUnavailable(RuntimeError):
     """Provedor de modelo indisponível ou com resposta inutilizável (a API responde 502)."""
 
@@ -93,6 +105,13 @@ class Voice(Protocol):
 class Renderer(Protocol):
     name: str
     def render(self, job: RenderSpec, out_path: Path) -> Path: ...
+    def qa_inputs(self, job: RenderSpec) -> "RenderQaInputs":
+        """Plano + descriptors que este render usa (mesma entrada do ``render``).
+
+        O renderer é o único ponto com I/O de leitura dos assets: é ele quem constrói o
+        Render Plan e resolve os descriptors. A porta de QA (``QualityEvaluator``) recebe
+        exatamente esse plano e esses descriptors — sem reconstruir mídia no núcleo puro.
+        """
 
 
 @dataclass(frozen=True)
@@ -230,11 +249,14 @@ class QualityEvaluator(Protocol):
     determinística — **não** avalia semântica multimodal (sem provedor) nem inventa score
     visual; a falta de evidência vira cobertura ``not_verified``.
 
-    A implementação concreta mora em ``adapters/`` (ffprobe/ebur128) e é montada **só**
-    em ``composition.py``; a política de severidade é pura (``domain.quality``).
+    A implementação concreta mora em ``adapters/`` (ffprobe/ebur128 + resolução dos
+    assets) e é montada **só** em ``composition.py``; a política de severidade é pura
+    (``domain.quality``). O plano e os descriptors vêm do ``Renderer`` (``qa_inputs``) —
+    o QA mede o **mesmo** render, com a identidade real (``render_id``/``checksum``).
     """
 
-    def evaluate(self, plan: RenderPlan, evidence: QualityEvidence) -> QualityReport: ...
+    def evaluate(self, plan: RenderPlan, *, media_path: Path, narration_path: Path | None = None,
+                 descriptors: Sequence[AssetDescriptor] = (), render_id: str, checksum: str) -> QualityReport: ...
 
 
 class RenderJobRepository(Protocol):
@@ -252,9 +274,9 @@ class RenderJobRepository(Protocol):
     def alive(self, job_id: str) -> bool:
         """O job ainda está RUNNING e o vídeo ainda pode receber render (conferir antes de publicar arquivos)."""
     def fail(self, job_id: str, error: str) -> None: ...
-    def complete(self, job_id: str, asset: Asset, qa: QaReport) -> bool:
-        """Numa transação: job SUCCEEDED, qa_report no vídeo e estado → RENDERED (→ AWAITING_APPROVAL se qa.passed).
-        False se o estado do vídeo mudou."""
+    def complete(self, job_id: str, asset: Asset, qa: QualityReport) -> bool:
+        """Numa transação: job SUCCEEDED, qa_report no vídeo e estado → RENDERED (→ AWAITING_APPROVAL se o relatório
+        for publicável). False se o estado do vídeo mudou."""
 
 
 class RenderStorage(Protocol):

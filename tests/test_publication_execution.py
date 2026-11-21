@@ -10,9 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 from app.studio.application.publication_execution import PublicationResult, RunPublication  # noqa: E402
 from app.studio.application.ports import UploadOutcome, UploadResult  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
-    Approval, Asset, AssetKind, Publication, PublicationStatus, QaReport, Scene, Script, SourceSnapshot, Video,
+    Approval, Asset, AssetKind, Publication, PublicationStatus, Scene, Script, SourceSnapshot, Video,
     VideoFormat, VideoStatus,
 )
+from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 from app.studio.domain.publication_policy import PublicationIntentEvidence, idempotency_key  # noqa: E402
 from app.studio.domain.youtube_oauth import OAuthReconnectRequired, OAuthTransientError  # noqa: E402
 
@@ -21,6 +22,15 @@ OUT, PUB = "d" * 32, "e" * 32
 CK = "f" * 64
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 YT = "oNQ2KN37sfQ"
+
+
+def qa_report(passed=True):
+    """Relatório de QA versionado (F6) para os vídeos dos fakes deste teste."""
+    findings = () if passed else (QaFinding(finding_id="f0", check_id="render.audio_stream", category="technical",
+                                             severity="blocking", evidence="sem áudio", suggested_action="Revisar o render."),)
+    return QaReport(render_id="9" * 32, checksum="8" * 64, generated_at=NOW,
+                    coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics", "render.audio_stream"),
+                    findings=findings)
 
 
 def intent(**changes):
@@ -35,7 +45,7 @@ class Videos:
     def __init__(self, qa=True, status=VideoStatus.APPROVED):
         self.video = Video(id=V, project_id=P, topic="ADE 2026", format=VideoFormat.short, status=status,
                            title="Título", description="Resumo", tags=["ade"],
-                           qa_report=QaReport(passed=qa, failures=[] if qa else ["sem áudio"]))
+                           qa_report=qa_report(qa))
 
     def get_video(self, video_id):
         return self.video

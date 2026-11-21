@@ -53,8 +53,11 @@ def test_project_config_defaults_empty():
 
 
 def test_schema_version_must_match_everywhere():
-    from app.studio.domain.contracts import QaReport
+    from datetime import datetime, timezone
+
+    from app.studio.domain.qa_report import QaCoverage, QaReport
     with pytest.raises(ValidationError):
         Project(id="a" * 32, name="x", schema_version=2)
     with pytest.raises(ValidationError):
-        QaReport(passed=True, schema_version=99)
+        QaReport(render_id="a" * 32, checksum="b" * 64, generated_at=datetime.now(timezone.utc),
+                 coverage=QaCoverage(status="verified"), checks_run=("check",), schema_version=99)
