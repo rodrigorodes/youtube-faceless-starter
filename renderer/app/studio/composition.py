@@ -69,7 +69,7 @@ from .application.channels import CreateChannelProfile, GetChannelProfile, ListC
 from .application.channels_page import BuildChannelsPage
 from .application.channel_budget import GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
-from .application.secrets import GetPublicProjectConfig
+from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
                                            GetYouTubeChannel)
 from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
@@ -511,6 +511,7 @@ class Studio:
             default_hard_video=Decimal(str(s.max_cost_video)))
         youtube_channel = GetYouTubeChannel(youtube_repo, secret_store)
         project_config = GetPublicProjectConfig(repo)
+        set_project_config = SetPublicProjectConfig(repo)
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
                                           providers_service, channel_budget, youtube_channel, project_config,
                                           oauth_available=oauth_client is not None)
@@ -533,6 +534,7 @@ production=production, script_view=script_view,
                                   associate_youtube_channel=AssociateYouTubeChannel(youtube_repo, secret_store),
                                   disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
                                   get_project_config=project_config,
+                                  set_project_config=set_project_config,
                                   channels_page=channels_page,
                                   team_view=team_view,
                                   analytics_repo=analytics_learning_repo,
