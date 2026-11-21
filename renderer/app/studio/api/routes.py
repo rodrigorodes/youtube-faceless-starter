@@ -1048,6 +1048,17 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return SourceOut(id=snap.id, url=snap.url, content_sha256=snap.content_sha256, chars=len(snap.text))
         return run(go)
 
+    @router.get("/videos/{video_id}/sources", response_model=list[SourceOut])
+    def list_sources(video_id: str):
+        def go(uc):
+            ed = editorial(uc)
+            if ed.list_sources is None:
+                raise HTTPException(503, "editorial services unavailable")
+            # O texto da fonte nunca sai no corpo: a lista é URL, hash e tamanho.
+            return [SourceOut(id=s.id, url=s.url, content_sha256=s.content_sha256, chars=len(s.text))
+                    for s in ed.list_sources.execute(check_id(video_id))]
+        return run(go)
+
     @router.post("/videos/{video_id}/script", status_code=201, response_model=ScriptOut)
     def generate_script(video_id: str, body: ScriptIn):
         def go(uc):

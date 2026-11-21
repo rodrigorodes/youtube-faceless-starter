@@ -96,7 +96,7 @@ from .domain.youtube_oauth import OAuthConfigurationError
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.render_cache import PlanRegeneration
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
-from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
+from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
 from .application.longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
 from .application.script_view import BuildScriptView
 from .application.budget import PaidOperationGuard
@@ -499,7 +499,8 @@ class Studio:
                                              allow_names=frozenset(s.allow_names)),
             edit_script=EditScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
             approve_script=ApproveScriptVersion(repo, snaps, scripts, scripts, checks=checks,
-                                                allow_names=frozenset(s.allow_names)))
+                                                allow_names=frozenset(s.allow_names)),
+            list_sources=ListSources(snaps, repo))
         assets = PostgresAssetRepository(connect)
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),

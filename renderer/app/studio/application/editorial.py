@@ -130,6 +130,17 @@ class IngestSource:
         return self.snaps.add(video_id, url, text)
 
 
+class ListSources:
+    """Lista as fontes já registradas de um vídeo (URL e tamanho); vídeo inexistente é 404."""
+
+    def __init__(self, snaps: SnapshotRepository, videos: VideoRepository):
+        self.snaps, self.videos = snaps, videos
+
+    def execute(self, video_id: str) -> list[SourceSnapshot]:
+        _require_video(self.videos, video_id)
+        return self.snaps.list(video_id)
+
+
 _SCHEMA = {"type": "object", "required": ["scenes"], "properties": {"scenes": {"type": "array", "items": {
     "type": "object", "required": ["narration", "image_prompt"],
     "properties": {"narration": {"type": "string"}, "caption": {"type": "string"}, "label": {"type": "string"},
@@ -292,3 +303,4 @@ class Editorial:
     long_generate: "GenerateLongScript | None" = None  # F4: roteiro longo em duas passagens
     edit_script: "EditScriptScene | None" = None
     approve_script: "ApproveScriptVersion | None" = None
+    list_sources: "ListSources | None" = None

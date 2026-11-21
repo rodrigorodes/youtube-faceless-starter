@@ -423,12 +423,37 @@ class PubInfo:
 
 
 @dataclass(frozen=True)
+class SourceInfo:
+    """Fonte já registrada, sem o texto (só a URL e o tamanho): a página lista o que existe."""
+
+    id: str
+    url: str
+    chars: int
+
+
+@dataclass(frozen=True)
+class LatestRun:
+    """Execução de produção mais recente do vídeo, para a página decidir iniciar ou retomar.
+
+    `failure_reason` é a mensagem real do estágio que falhou (ex.: "add sources first"),
+    nunca um texto inventado pela view; `failed_stage` diz em qual etapa parou.
+    """
+
+    run_id: str
+    state: str
+    failed_stage: str | None = None
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class VideoDetail:
     video: VideoRow
     steps: list[StepInfo]
     usage: list[UsageInfo]
     render_error: str | None
     publication: PubInfo | None
+    sources: list[SourceInfo] = field(default_factory=list)
+    latest_run: LatestRun | None = None
 
 
 class PanelRepository(Protocol):

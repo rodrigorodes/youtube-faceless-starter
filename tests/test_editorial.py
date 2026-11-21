@@ -220,6 +220,15 @@ def test_generate_requires_sources_and_right_state(world):
         generator(world, good_payload()).execute(V, 4)
 
 
+def test_usable_source_clears_the_source_refused_at_the_script_stage(world):
+    """A saída do beco sem saída do run preso: com fonte aproveitável, o stage de roteiro segue."""
+    with pytest.raises(SourceRefused, match="add sources first"):
+        generator(world, good_payload()).execute(V, 4)
+    seed(world)
+    assert generator(world, good_payload()).execute(V, 4).version == 1
+    assert world["videos"].status == VideoStatus.SCRIPTED
+
+
 def test_regenerate_while_scripted_bumps_version(world):
     seed(world)
     g = generator(world, good_payload())

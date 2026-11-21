@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 from app.studio.application.editorial import VideoNotFound
 from app.studio.application.errors import InvalidInput
 from app.studio.application.panel import BuildPanel, MonthCost, PanelView, TopicGroup, VideoDetailView, VideoItem
-from app.studio.application.ports import PubInfo, StepInfo, UsageInfo, VideoDetail, VideoRow
+from app.studio.application.ports import LatestRun, PubInfo, SourceInfo, StepInfo, UsageInfo, VideoDetail, VideoRow
 from app.studio.domain.contracts import JobStatus, PublicationStatus, VideoFormat, VideoStatus
 from app.studio.domain.panel import Stage
 
@@ -840,7 +840,8 @@ def test_panel_uses_dark_mockup_palette_tokens_and_visible_focus():
     assert "var(--success-contrast)" in CSS
 
 
-def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_error=None, publication=None):
+def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_error=None, publication=None,
+                 sources=None, latest_run=None):
     detail = VideoDetailView(
         video=row,
         stage=stage,
@@ -849,6 +850,8 @@ def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_err
         usage=usage or [],
         render_error=render_error,
         publication=publication,
+        sources=sources or [],
+        latest_run=latest_run,
     )
     from app.studio.api.panel import render_video
     return render_video(detail)[0]
@@ -942,3 +945,68 @@ def test_render_panel_series_tab_is_disabled_and_not_focusable():
 
     ideia = re.search(r'<button[^>]*id="tab-ideia"[^>]*>', html)
     assert ideia is not None and 'aria-selected="true"' in ideia.group(0)
+
+
+# ---------- PROD-01: criar→iniciar, fontes e retomar (página do vídeo) ----------
+
+
+def test_home_create_form_also_starts_the_production_run():
+    """O form da Início não pode só criar: precisa iniciar a produção (mesmo caminho do assistente)."""
+    html = _render_panel_html()
+    assert "/production-runs" in html
+    assert "Idempotency-Key" in html
+    # O texto da própria tela promete que a produção começa; o script tem de cumprir.
+    assert "A produção começa no modo assistido" in _visible_text(html)
+
+
+def test_video_detail_lists_registered_sources_with_url_and_size():
+    html = _detail_view(_row("v1", "Com fontes"), sources=[
+        SourceInfo(id="s1", url="https://exemplo.com/a", chars=120),
+        SourceInfo(id="s2", url="https://exemplo.com/b", chars=1),
+    ])
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert "Fontes" in main_area
+    assert "https://exemplo.com/a" in main_area and "120 caracteres" in main_area
+    assert "https://exemplo.com/b" in main_area and "1 caractere" in main_area
+    assert "2 fonte(s) registrada(s)" in main_area
+
+
+def test_video_detail_has_the_sources_form_with_url_and_textarea():
+    html = _detail_view(_row("v1", "Sem fontes"))
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'id="video-sources-form"' in main_area
+    assert 'id="source-url"' in main_area and 'required' in main_area
+    assert 'id="source-text"' in main_area and "<textarea" in main_area
+    # A regra real explicada em linguagem de usuário, sem prometer o que não faz.
+    assert "o texto colado é a fonte" in main_area
+    assert "STUDIO_SOURCE_ALLOWLIST" in main_area
+
+
+def test_video_detail_without_run_offers_start_production():
+    html = _detail_view(_row("v1", "Sem run"), latest_run=None)
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'id="btn-start-production"' in main_area and "Iniciar produção" in main_area
+    assert 'id="btn-retry-production"' not in main_area
+
+
+def test_video_detail_failed_run_shows_real_reason_and_retry():
+    html = _detail_view(_row("v1", "Run falho"), latest_run=LatestRun(
+        run_id="a" * 32, state="FAILED", failed_stage="script",
+        failure_reason="no sources with checkable claims: add sources first"))
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'id="btn-retry-production"' in main_area
+    assert "Tentar novamente" in main_area
+    # O motivo real do servidor, não um erro genérico.
+    assert "no sources with checkable claims: add sources first" in main_area
+    assert "Parou na etapa" in main_area and "Roteiro" in main_area
+    assert 'id="btn-start-production"' not in main_area
+
+
+def test_video_detail_running_run_explains_no_retry_without_inert_button():
+    html = _detail_view(_row("v1", "Run em execução"), latest_run=LatestRun(
+        run_id="a" * 32, state="RUNNING"))
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'id="btn-retry-production"' not in main_area
+    assert 'id="btn-start-production"' not in main_area
+    assert "Nova tentativa só é válida quando a execução está em falha" in main_area
+    assert "Abrir execução" in main_area
