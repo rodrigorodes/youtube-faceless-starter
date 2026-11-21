@@ -14,6 +14,7 @@ from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 if TYPE_CHECKING:
     from .ideas import ScoreIdeas
+    from .longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
 from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotRepository, SourceFetcher, TextModel,
                     UsageRepository, VideoRepository)
 
@@ -148,14 +149,18 @@ def build_prompt(topic: str, claims: list[Claim], scene_count: int) -> str:
 
 
 def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
+    return parse_scene_drafts(raw, valid_ids, min_scenes=MIN_SCENES, max_scenes=MAX_SCENES)
+
+
+def parse_scene_drafts(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes: int) -> list[SceneDraft]:
     try:
         start, end = raw.find("{"), raw.rfind("}")  # tolera texto ou cerca ```json ao redor
         data = json.loads(raw[start:end + 1])
         scenes = data["scenes"]
     except (ValueError, KeyError, TypeError, RecursionError) as exc:
         raise ScriptRejected("model output is not the expected JSON") from exc
-    if not isinstance(scenes, list) or not MIN_SCENES <= len(scenes) <= MAX_SCENES:
-        raise ScriptRejected(f"expected {MIN_SCENES}-{MAX_SCENES} scenes")
+    if not isinstance(scenes, list) or not min_scenes <= len(scenes) <= max_scenes:
+        raise ScriptRejected(f"expected {min_scenes}-{max_scenes} scenes")
     drafts: list[SceneDraft] = []
     for i, scene in enumerate(scenes):
         if not isinstance(scene, dict):
@@ -284,3 +289,6 @@ class Editorial:
     get_script: GetScript
     fact_check: RunFactCheck
     score_ideas: "ScoreIdeas | None" = None
+    long_generate: "GenerateLongScript | None" = None  # F4: roteiro longo em duas passagens
+    edit_script: "EditScriptScene | None" = None
+    approve_script: "ApproveScriptVersion | None" = None
