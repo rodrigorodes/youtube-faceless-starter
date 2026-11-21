@@ -27,7 +27,6 @@ ALLOWED_FILES = {".env.example", ".gitignore", ".gitattributes", "README.md",
                  "docker-compose.test.yml",
                  "renderer/Dockerfile", "renderer/requirements.txt",
                  "scripts/backup.py", "scripts/export_contracts.py", "tests/test_backup.py",
-                 "examples/ade-2026-publish.json",
                  "workflows/03-publish-approved.json",
                  "workflows/04-analytics-daily.json", "workflows/05-trends-daily.json"}
 BLOCKED_DIRS = {".git", "credentials", "backups", "storage", "__pycache__", ".pytest_cache"}
