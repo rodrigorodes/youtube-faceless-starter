@@ -11,7 +11,7 @@ Sem push e sem merge. Só caminhos exatos; nenhum `git add -A`.
 - `597536f` `test(ui): contrato de UX, honestidade de estado e casca da tela de Canais (F10)`
 - `d4f9fbc` `fix(ui): texto do estado antes do ícone na tela de Canais (contrato R1)`
 - `5fe6df2` `docs(h-ui): relatório da tela de Canais e divergências do mockup`
-- `50a831a` `refactor(ui): Canais deixa de ser item indisponível e vira link na casca (revista do relatório)`
+- `refactor(ui): Canais deixa de ser item indisponível e vira link na casca` (topo; revisa este relatório)
 
 ## O que foi entregue
 
