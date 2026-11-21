@@ -338,7 +338,13 @@ select option:checked {
   color:#ffffff !important;
 }
 @supports (appearance: base-select) {
-  select, .campo select, select.campo { appearance: base-select; }
+  select, .campo select, select.campo, select.input, select.canal-select {
+    appearance: base-select;
+    background-image: none !important;
+  }
+  select::picker-icon {
+    color: var(--muted, #a19cad);
+  }
   select::picker(select) {
     background-color: var(--panel2, #1a1a22); border: 1px solid var(--line, #2a2833);
     border-radius: 10px; padding: 6px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); color: #ffffff;
