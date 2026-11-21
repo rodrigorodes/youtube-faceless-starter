@@ -39,25 +39,20 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-06 | Voz com **precedência única** (estilo > projeto > default; `PIPER_VOICE` como fallback de deployment/teste), o **mesmo** valor para síntese e ledger | 182 focados + 386 integração | merge `e7a5182` |
 | PROD-01 | **Fecha o ciclo de produção pela UI**: Início cria **e inicia**; página do vídeo ganha **Fontes** (URL+texto) e **Iniciar produção** / **Tentar novamente** com o motivo real | 258 focados + 105 UX/nav (re-verificados por mim) | merge `efd697b` |
 | PROD-02 | **Retomar/retentar religa o worker** (o gate humano era intransponível) + run `RUNNING` órfão recuperável pela tela de execução | 104 (re-verificados) + falsificação do teste (sabotei o `_enqueue`: 2 falham) | merge `59c32da` |
+| IA-01 | **Início, Produção e Tendências como telas separadas**: rotas de servidor (`/panel`, `/panel/producao`, `/panel/tendencias`), `/panel/videos` → 302, nav sem âncoras; o HTML de uma tela nunca entra na outra | 301 (re-verificados) + verificação viva (3×200, 302, zero vazamento, 1 `aria-current`/página) | merge `1b98ddd` |
 
 ## Em execução (paralelo)
 
-**IA-01 (em execução):** Início, Produção e Tendências como **telas separadas** (hoje são âncoras de uma
-página só, que renderiza cinco seções de uma vez). Desenho pronto em
-`gestao/IA-01-arquitetura-de-informacao.md`: rotas de servidor reais (`/panel`, `/panel/producao`,
-`/panel/tendencias`), "Vídeos" segue o protótipo como bloco do Início com alias, e o mapa exato dos
-testes que fixam as âncoras atuais.
+**PROD-04 (em execução):** a criação não pode perder a fonte nem iniciar produção fadada ao
+`SourceRefused`; e um vídeo sempre pode iniciar produção nova. Fundiu o antigo PROD-05 (achado 5).
 
-**PROD-02 (em execução):** **o gate humano é intransponível** — o `resume` devolve 200, muda o estado
-para `RUNNING` e **ninguém religa o motor**. Ver abaixo o achado completo.
+**PROD-03 (em execução):** recuperação de runs em voo no boot (o `lifespan` não varre nada hoje).
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **PROD-03** | **Recuperação de runs em voo no boot** (hoje o `lifespan` do app não varre nada): um run `RUNNING` após queda/reinício fica órfão e só se recupera pela ação manual do PROD-02. Sem varredor, nenhuma produção sobrevive a um deploy. **Desbloqueada** (PROD-02 entregou o re-drive; falta o gatilho automático). | — (pronta para iniciar) |
-| **PROD-04** | **Criação a partir da tendência não leva a fonte**: (a) pré-preencher a URL da fonte com o vídeo base resolvido pelo `topic_key` (sem migração — o vínculo já existe); (b) **não iniciar** uma produção fadada ao `SourceRefused` (ver achado 4). Achados 3 e 4 abaixo. | IA-01 (mesma tela e arquivo: `panel.py`) |
-| **PROD-05** | **Sem UI para iniciar uma produção nova** num vídeo que já tem run: a página do vídeo só oferece "Iniciar produção" quando `latest_run` é `None`; a API aceita (`create_run` não tem guarda de run ativo), a tela não expõe. Necessário para refazer um vídeo cujo roteiro nasceu de fonte ruim. | IA-01 (mesma tela) |
+| — | (vazio) | — |
 
 ## Achado do dono (2) — 2026-11-21: o gate humano travava toda produção
 
@@ -127,6 +122,14 @@ imediatamente com essa mensagem exata (os 2 runs de teste foram removidos depois
 recomeça o roteiro), mas é um defeito de fluxo: o ato de criar mostra "Falhou" na cara do usuário. O
 caminho aprovado em `JORNADA-E-TELAS.md` é **Produzir vídeo → Pesquisar fontes → Roteiro** — a produção
 não deveria começar antes de existir fonte. Escopo a resolver junto no **PROD-04**.
+
+## Achado do dono (5) — 2026-11-21: não há como **iniciar uma produção nova** num vídeo que já tem run
+
+A página do vídeo só oferece "Iniciar produção" quando `latest_run` é `None` (`panel.py:3134`). Com
+qualquer run existente (mesmo `FAILED`/`CANCELLED`), a tela não expõe a ação — embora a API aceite:
+`coordinator.start` → `runs.create_run(...)` **não tem guarda** de run ativo. Sem isso, não há como
+refazer um vídeo cujo roteiro nasceu de fonte ruim (retry re-executa a etapa falha, não reescreve o
+roteiro). Absorvido pelo **PROD-04**, que decide onde a produção começa.
 
 ## Bloqueadas
 
