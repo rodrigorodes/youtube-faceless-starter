@@ -3,9 +3,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
-SCHEMA_VERSION = 1
+# A base versionada mora em ``schema`` para não criar ciclo com ``qa_report`` (o
+# ``Video`` referencia o QA versionado da F6). Reexportada aqui para os demais contratos.
+from .schema import SCHEMA_VERSION, _Model  # noqa: F401  (reexportado)
+from .qa_report import QaReport
 
 Cost = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Tokens = Annotated[int | None, Field(ge=0)]
@@ -53,24 +56,6 @@ class PublicationStatus(str, Enum):
     UPLOADING = "UPLOADING"
     UPLOADED = "UPLOADED"
     FAILED = "FAILED"
-
-
-class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    schema_version: int = SCHEMA_VERSION
-
-    @field_validator("schema_version")
-    @classmethod
-    def _known_version(cls, value: int) -> int:
-        if value != SCHEMA_VERSION:
-            raise ValueError(f"unsupported schema_version {value!r}; expected {SCHEMA_VERSION}")
-        return value
-
-
-class QaReport(_Model):
-    passed: bool
-    failures: list[str] = Field(default_factory=list)
-    metrics: dict[str, float | int | bool | None] = Field(default_factory=dict)
 
 
 class Project(_Model):

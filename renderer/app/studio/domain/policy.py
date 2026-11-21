@@ -2,7 +2,8 @@
 import math
 from dataclasses import dataclass
 
-from .contracts import QaReport, VideoFormat
+from .contracts import VideoFormat
+from .render import MediaQaResult
 
 DEFAULT_MONTHLY_CAP_USD = 15.0
 LOUDNESS_TARGET, LOUDNESS_TOLERANCE = -16.0, 1.5
@@ -45,7 +46,7 @@ class QaMetrics:
     paid_assets_without_cap: int
 
 
-def evaluate_qa(m: QaMetrics, fmt: VideoFormat) -> QaReport:
+def evaluate_qa(m: QaMetrics, fmt: VideoFormat) -> MediaQaResult:
     max_duration, width, height = LIMITS[fmt]
     failures: list[str] = []
     def bad(value: float | None) -> bool:  # NaN/inf/negativo é medição quebrada: reprova, nunca passa
@@ -69,6 +70,6 @@ def evaluate_qa(m: QaMetrics, fmt: VideoFormat) -> QaReport:
         failures.append("unsourced_claim")
     if m.paid_assets_without_cap > 0:
         failures.append("paid_asset")
-    return QaReport(passed=not failures, failures=failures,
-                    metrics={"duration_s": m.duration_s, "loudness_lufs": m.loudness_lufs,
-                             "max_silence_s": m.max_silence_s, "max_black_s": m.max_black_s})
+    return MediaQaResult(passed=not failures, failures=failures,
+                         metrics={"duration_s": m.duration_s, "loudness_lufs": m.loudness_lufs,
+                                  "max_silence_s": m.max_silence_s, "max_black_s": m.max_black_s})
