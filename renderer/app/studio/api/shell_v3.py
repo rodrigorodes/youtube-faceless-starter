@@ -270,7 +270,7 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
       <p class="crumb">Estúdio &nbsp;/&nbsp; <b>{e(crumb)}</b></p>
       <div class="tools">
         {select}
-        <button class="link-btn" type="button" id="btn-novo-canal">+ Novo canal</button>
+        <button class="icon-btn" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="icon-btn" type="button" id="btn-tema" aria-pressed="false" hidden
                 title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button>
         <a class="icon-btn" href="{CONFIG_HREF}" title="Configurações" aria-label="Configurações">⚙</a>
