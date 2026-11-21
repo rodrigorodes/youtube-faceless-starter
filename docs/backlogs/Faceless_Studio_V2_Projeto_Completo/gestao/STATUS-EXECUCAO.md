@@ -125,8 +125,11 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 
 ## F8 — Publicação YouTube resiliente, OAuth e agenda (P0)
 
-Todos **❌ pendente** (fatia **F**, não iniciada). F8-07 (`reabilitar workflow automático`) está
-🔒 **bloqueado** até haver testes de falha/concorrência e autorização específica.
+**🔓 autorizado pelo usuário em 2026-11-20** — fatia **F8** em andamento, incluindo **F8-07**
+(reabilitar o workflow automático) e a **publicação real**, com a confirmação extra da regra de UX.
+O n8n só volta **depois** dos testes de falha/concorrência. **Nada foi publicado até agora.**
+
+O gate de QA **passa a ser ligado à publicação** nesta fatia (era a limitação registrada em F6).
 
 ## F9 — Analytics e loop de aprendizado (P2)
 
@@ -206,6 +209,10 @@ prova que a checagem morde.
 | 2026-11-20 | `produto/tela-analytics.html` (+PNG) | **tela de Analytics aprovada** — libera a fatia **I** (F9-02/03/05) |
 | 2026-11-20 | `produto/tela-equipe.html` (+PNG) | **tela de Equipe aprovada** — libera a fatia **F11** |
 | 2026-11-20 | decisão de escopo | **F11 (SaaS/multiusuário/BYOK) desadiada** — o usuário reverteu o adiamento; os 9 cards estão autorizados |
+| 2026-11-20 | decisão de escopo | **F8 (publicação YouTube) autorizada** — inclui **F8-07 (n8n)** e a **publicação real**; o n8n só volta após os testes de falha/concorrência |
+| 2026-11-20 | decisão de UI | **corrigir a casca do detalhe do vídeo** (única tela sem a sidebar aprovada) e **restaurar "Vídeos" na sidebar** |
+| 2026-11-20 | decisão técnica | **calibração TTS real** autorizada ("se conseguir") |
+| 2026-11-20 | decisão de política | **licença**: mídia externa sem licença **não valida** — mantido; a validação de licença fica para quando houver fonte |
 
 **Consequência prática:** qualquer fatia de UI daqui para frente implementa o que está aprovado
 em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **dado real** ou
