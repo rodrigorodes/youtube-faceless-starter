@@ -274,6 +274,33 @@ do renderer (0,8 s por cena) fica **fora** da estimativa de fala; DarkPlanner n�
 por cena do roteiro longo varia de −6,1% a +11,0%; run-to-run do Piper chega a 3,8% em texto de 8 palavras. Rodar a suíte **serializada** é a
 condição para veredito confiável.
 
+## Análise com o app REAL rodando (2026-11-21) — o que só o produto mostra
+
+Subi o stack completo (rebuild do renderer com o `main`) e exercitei o fluxo ponta a ponta.
+O que estava rodando antes **não era** o trabalho feito: imagem de 17 h e banco na migração **0012**.
+
+**Upgrade validado:** 15 migrações pendentes (0013→0032) aplicadas no boot, sem erro, dados preservados.
+
+**E2E aprovado:** projeto → vídeo → fonte → roteiro (LLM real, 12,2 s) → fact-check → storyboard →
+assets (9,8 s) → **render 17,4 s** (MP4 de 30,2 s / 5,67 MB) → QA `verified` → `APPROVED`.
+Render Plan persistiu em produção: `render_plans=1`, `plan_artifacts=15`, `render_cache_entries=11`
+(narration 4 · visual 4 · music 1 · concat 1 · final 1 — exatamente o grafo da RP-06).
+
+**Bugs reais achados rodando (nenhum pego pelos 2403 testes):**
+
+| Bug | Gravidade | Correção |
+|---|---|---|
+| `qa_report` legado → `ValidationError` → **HTTP 500** no painel | alta (vídeo pronto ficou inacessível) | `qa-legacy-read`: upcast na borda, preserva `metrics`, `coverage=not_verified` |
+| `publishable_payload` era **fail-open** para o legado (`passed:true` ⇒ publicável) | **alta (publicaria alegando QA verificado)** | mesma fatia: agora devolve `False`; só override humano |
+| Prévia e Roteiro com **casca duplicada** (nav antiga + 329 linhas de CSS) | média (UI inconsistente) | `preview-shell`: casca compartilhada; `preview.py` 453→136 linhas |
+| `PUT /config` aceitava provedor inexistente (projeto quebrava no render) | média | `config-validate`: recusa cedo, mensagem verdadeira, sem ecoar o valor |
+| `synth_music` ignorava o `seed` do plano e o adapter recopiava o `bpm` | baixa (divergência latente) | `rich-boundary` |
+| `STUDIO_VOICE` decorativo (`PiperVoice` ignorava `self.model`) | média | `provider-config` |
+
+**Observações de ergonomia (não corrigidas):** bridge do OpenCode não é supervisionado (`/health` fica 200
+com ele morto); `fact-check` exige corpo e devolve 200 sem avançar; não há `DELETE /videos`;
+o QA novo **não persiste métricas numéricas** (lufs/ratios/dimensões) que o antigo guardava.
+
 ## Padrão novo é o único — legado removido (decisão do usuário, 2026-11-21)
 
 Diretriz: o produto está em desenvolvimento; **tudo que for obsoleto pode ser removido** e a versão nova
