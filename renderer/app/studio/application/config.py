@@ -17,7 +17,7 @@ class ProviderNotFound(ValueError):
 
 
 class ProjectConfig(BaseModel):
-    """Cada campo é "<provedor>:<modelo>". O ambiente dá o padrão; o projeto sobrescreve."""
+    """Cada campo é "<provedor>[:<modelo>]" (o modelo é opcional). O ambiente dá o padrão; o projeto sobrescreve."""
     model_config = ConfigDict(extra="forbid")
     text: str
     image: str

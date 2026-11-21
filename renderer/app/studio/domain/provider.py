@@ -48,7 +48,7 @@ class ProviderError(Exception):
 
 
 class ProviderSpecInvalid(ProviderError, ValueError):
-    """Especificação "<provedor>:<modelo>" vazia ou mal formada."""
+    """Especificação "<provedor>[:<modelo>]" vazia ou mal formada (o modelo é opcional)."""
 
 
 class NoProviderAvailable(ProviderError, LookupError):
@@ -169,12 +169,29 @@ class ProviderCard:
 
 
 def parse_spec(spec: object) -> tuple[str, str]:
+    """Separa o spec em (provedor, modelo). O modelo é opcional: `demo:` é legítimo.
+
+    Recusa só spec não-string, vazia, ou sem nome de provedor — nunca ecoa o valor cru de volta.
+    """
     if not isinstance(spec, str) or not spec.strip():
         raise ProviderSpecInvalid("provider spec is required")
     name, _, model = spec.strip().partition(":")
     if not name:
-        raise ProviderSpecInvalid(f"invalid provider spec {spec!r}")
+        raise ProviderSpecInvalid("invalid provider spec: provider name is required")
     return name, model
+
+
+def registered_names(implementations: object, kind: ProviderKind) -> tuple[str, ...]:
+    """Nomes de implementações registradas para uma porta, na ordem do catálogo.
+
+    É a fonte de verdade para aceitar/recusar um spec na escrita: um nome ausente aqui nunca
+    vai construir — `provider_for` levantaria `ProviderNotFound` só em tempo de render.
+    """
+    names: list[str] = []
+    for impl in implementations:
+        if impl.kind is kind and impl.name not in names:
+            names.append(impl.name)
+    return tuple(names)
 
 
 def card_for(kind: ProviderKind, spec: str, implementations: object) -> ProviderCard:
