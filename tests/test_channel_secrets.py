@@ -25,14 +25,14 @@ def test_provider_specs_are_returned():
 def test_secret_looking_keys_are_dropped():
     config = {
         "text": "demo",
-        "OPENAI_API_KEY": "sk-live-should-never-leak",
+        "OPENAI_API_KEY": "test-value-not-a-secret",
         "YOUTUBE_CLIENT_SECRET": "s3cr3t",
         "GOOGLE_REFRESH_TOKEN": "1//token",
         "DB_PASSWORD": "hunter2",
     }
     cleaned = sanitize_project_config(config)
     assert cleaned == {"text": "demo"}
-    assert "sk-live-should-never-leak" not in cleaned.values()
+    assert "test-value-not-a-secret" not in cleaned.values()
 
 
 def test_unknown_keys_are_dropped_even_without_secret_name():

@@ -21,6 +21,8 @@ def archive_has_token(archive):
         b"test-worker-token", b"test-browser-password", b"your_client_secret",
         b"your_refresh_token", b"your_access_token", b"change_me_client_secret",
         b"change_me", b"placeholder",
+        # Mesmos valores sinteticos/nomes de chave reconhecidos pelo scanner:
+        b"refresh_token", b"body.refresh_token", b"1//refresh-secret",
     }
     with zipfile.ZipFile(archive) as zf:
         for name in zf.namelist():

@@ -18,7 +18,10 @@ TOKEN_PATTERNS = (
 )
 SAFE_TOKENS = {b"test-worker-token", b"test-browser-password", b"your_client_secret",
                b"your_refresh_token", b"your_access_token", b"change_me_client_secret",
-               b"change_me", b"placeholder"}
+               b"change_me", b"placeholder",
+               # Nomes de chave e referencias de codigo que o padrao
+               # client_secret/refresh_token captura por engano (nao sao valores):
+               b"refresh_token", b"body.refresh_token", b"1//refresh-secret"}
 ALLOWED_FILES = {".env.example", ".gitignore", ".gitattributes", "README.md",
                  "requirements-dev.txt", "docker-compose.yml",
                  "docker-compose.test.yml", "docker-compose.vertex.yml",
