@@ -270,6 +270,40 @@ def test_run_without_a_style_resolver_leaves_the_spec_style_unset(tmp_path):
     assert renderer.specs[0].style is None  # sem canal a referenciar, o renderer cai no bundle neutro
 
 
+def test_run_resolves_the_voice_from_the_video_not_the_project(tmp_path):
+    """VS-06: o resolvedor de voz recebe o **vídeo** (como o de estilo), para o estilo do canal/override decidir."""
+    w = world(tmp_path)
+    w["videos"].style_id = "d" * 32
+    job = starter(w).execute(V)
+    run, _, _ = runner(w)
+    seen = []
+    run.voice_for = lambda video: seen.append(video) or Voice()
+    run.execute(job.id)
+    assert [v.style_id for v in seen] == ["d" * 32] and seen[0].project_id == P
+
+
+def test_the_effective_voice_is_the_same_one_that_speaks_and_is_registered(tmp_path):
+    """VS-06 trava a "duas verdades": com voz de estilo, a identidade do cache/ledger (e do spec)
+    é o **mesmo** modelo efetivo que a síntese usa."""
+    from app.studio.application.render import _voice_identity
+
+    class StyleVoice(Voice):
+        name = "piper"
+        model = "pt_BR-jeff-medium"  # a voz efetiva resolvida (estilo > projeto > default)
+
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w, voice=StyleVoice())
+    seen = []
+    original = run._cached_narration
+    run._cached_narration = lambda scene, voice_id, entries: (seen.append(voice_id), original(scene, voice_id, entries))[1]
+    run.execute(job.id)
+    identity = _voice_identity(StyleVoice())
+    assert identity == "piper:pt_BR-jeff-medium"
+    assert seen == [identity] * len(TEXTS)          # o cache consulta pela identidade efetiva
+    assert renderer.specs[0].voice_id == identity   # o plano registra a mesma identidade
+
+
 def test_run_success_passes_everything_to_renderer_and_advances(tmp_path):
     w = world(tmp_path)
     job = starter(w).execute(V)

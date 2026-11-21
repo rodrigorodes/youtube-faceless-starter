@@ -238,3 +238,73 @@ def test_style_for_video_treats_an_archived_style_as_absent():
     # override arquivado cai no estilo do canal, não dirige o render
     resolved = _style_for_video(_Video(P, style_id=VIDEO_STYLE), _Channels(_Profile(P, CHANNEL_STYLE)), styles)
     assert resolved is not None and resolved.snapshot.style_id == CHANNEL_STYLE
+
+
+# -- VS-06: a voz é resolvida UMA vez (estilo > projeto > default) --
+
+
+def test_voice_for_video_prefers_the_style_voice_over_the_project():
+    from app.studio.composition import _voice_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    style = VisualStyle(id=CHANNEL_STYLE, name="Com voz", params={"voice": {"model": "pt_BR-jeff-medium"}})
+    built = []
+    voice = _voice_for_video(_Video(P), _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(style),
+                             fallback=lambda project_id: built.append(("fallback", project_id)) or "VOZ DO PROJETO",
+                             build_provider=lambda kind, spec: built.append((kind, spec)) or "VOZ DO ESTILO")
+    assert voice == "VOZ DO ESTILO"
+    assert built == [("voice", "piper:pt_BR-jeff-medium")]  # construído pelo registro, com o prefixo
+
+
+def test_voice_for_video_accepts_the_piper_prefix_and_the_video_override():
+    from app.studio.composition import _voice_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    channel_style = VisualStyle(id=CHANNEL_STYLE, name="Canal", params={"voice": {"model": "pt_BR-faber-medium"}})
+    video_style = VisualStyle(id=VIDEO_STYLE, name="Do vídeo", params={"voice": {"model": "piper:pt_BR-jeff-medium"}})
+    specs = []
+    _voice_for_video(_Video(P, style_id=VIDEO_STYLE), _Channels(_Profile(P, CHANNEL_STYLE)),
+                     _Styles(channel_style, video_style),
+                     fallback=lambda project_id: "VOZ DO PROJETO",
+                     build_provider=lambda kind, spec: specs.append(spec) or "VOZ")
+    # o override do vídeo vence o canal; o prefixo piper: é aceito sem duplicar
+    assert specs == ["piper:pt_BR-jeff-medium"]
+
+
+def test_voice_for_video_falls_back_to_the_project_without_a_style_voice():
+    from app.studio.composition import _voice_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    def never(kind, spec):
+        raise AssertionError("não deveria construir voz de estilo")
+
+    # sem canal/estilo nenhum → voz do projeto
+    assert _voice_for_video(_Video(P), _Channels(None), _Styles(), lambda pid: f"projeto:{pid}", never) == f"projeto:{P}"
+    # canal com estilo, mas sem params.voice → voz do projeto
+    no_voice = VisualStyle(id=CHANNEL_STYLE, name="Sem voz", params={"motion": ["zoom_in"]})
+    assert _voice_for_video(_Video(P), _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(no_voice),
+                            lambda pid: f"projeto:{pid}", never) == f"projeto:{P}"
+
+
+def test_the_resolved_voice_synthesizes_and_registers_the_same_model():
+    """VS-06 fecha a "duas verdades": com voz de estilo, o que sintetiza (arquivo do Piper) e o
+    que o cache/ledger registram (``_voice_identity``) derivam do **mesmo** modelo efetivo."""
+    from app.studio.adapters.voice_piper import PiperVoice
+    from app.studio.application.config import build, register
+    from app.studio.application.render import _voice_identity
+    from app.studio.composition import _voice_for_video
+    from app.studio.domain.render_cache import narration_fingerprint
+    from app.studio.domain.visual_style import VisualStyle
+
+    register("voice", "piper", PiperVoice)
+    style = VisualStyle(id=CHANNEL_STYLE, name="Voz do canal", params={"voice": {"model": "pt_BR-jeff-medium"}})
+    voice = _voice_for_video(_Video(P), _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(style),
+                             fallback=lambda project_id: build("voice", "piper:pt_BR-faber-medium"),
+                             build_provider=build)
+    assert isinstance(voice, PiperVoice) and voice.model == "pt_BR-jeff-medium"
+    assert voice.voice_path == "/opt/voices/pt_BR-jeff-medium.onnx"  # o que sintetiza
+    identity = _voice_identity(voice)
+    assert identity == "piper:pt_BR-jeff-medium"                    # o que registra
+    project_identity = _voice_identity(build("voice", "piper:pt_BR-faber-medium"))
+    assert narration_fingerprint("texto da cena", "voice:cena", {"voice": identity}) != \
+        narration_fingerprint("texto da cena", "voice:cena", {"voice": project_identity})

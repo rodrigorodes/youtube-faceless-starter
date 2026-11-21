@@ -27,7 +27,7 @@ MUSIC_SR = 44100
 DEFAULT_VOICE = "/opt/voices/pt_BR-faber-medium.onnx"  # a voz baixada e conferida no Dockerfile
 _voice = None
 _voice_loaded = None  # caminho do modelo carregado em `_voice`
-_requested_voice = None  # voz pedida pelo chamador (o spec do projeto via porta Voice)
+_requested_voice = None  # voz pedida pelo chamador (a voz efetiva do render, via porta Voice)
 
 
 # ---------- áudio ----------
@@ -36,9 +36,10 @@ _requested_voice = None  # voz pedida pelo chamador (o spec do projeto via porta
 def use_voice(voice_path):
     """Aponta a voz pedida para o próximo ``synthesize_speech`` e restaura o valor ao sair.
 
-    A porta Voice (``PiperVoice``) usa isto para passar o arquivo derivado do spec do projeto
-    (``STUDIO_VOICE``/``Project.config.voice``). Precedência final: ``PIPER_VOICE`` (caminho
-    explícito) > voz pedida aqui > ``DEFAULT_VOICE``.
+    A porta Voice (``PiperVoice``) usa isto para passar o arquivo derivado do modelo **efetivo**
+    (estilo do canal/vídeo > ``STUDIO_VOICE``/``Project.config.voice``). Precedência final:
+    voz pedida aqui > ``PIPER_VOICE`` > ``DEFAULT_VOICE``. ``PIPER_VOICE`` é só o **fallback de
+    deployment/teste**: quem manda é quem pede (a mesma voz que o ledger/cache registra).
     """
     global _requested_voice
     previous = _requested_voice
@@ -50,13 +51,19 @@ def use_voice(voice_path):
 
 
 def synthesize_speech(text, path):
-    """Narração pt-BR com Piper. Voz: PIPER_VOICE > voz do spec > default. Devolve a duração (s)."""
+    """Narração pt-BR com Piper. Voz: voz pedida > PIPER_VOICE > default. Devolve a duração (s).
+
+    A voz pedida (via ``use_voice``) vence porque é a mesma que o estilo/projeto resolveram e que
+    o ledger/cache registram — síntese e registro não podem divergir. ``PIPER_VOICE`` é apenas o
+    fallback de deployment/teste, usado quando ninguém pediu uma voz; ``DEFAULT_VOICE`` é o último
+    recurso.
+    """
     global _voice, _voice_loaded
-    wanted = os.getenv("PIPER_VOICE") or _requested_voice or DEFAULT_VOICE
+    wanted = _requested_voice or os.getenv("PIPER_VOICE") or DEFAULT_VOICE
     if _voice is None or _voice_loaded != wanted:
         if not os.path.isfile(wanted):
-            # Nunca cair para outra voz em silêncio: falha dizendo o caminho esperado.
-            raise FileNotFoundError(f"voz do Piper não encontrada: {wanted}")
+            # Nunca cair para outra voz em silêncio: falha dizendo qual modelo foi pedido.
+            raise FileNotFoundError(f"voz do Piper não encontrada para o modelo pedido: {wanted}")
         from piper import PiperVoice
         _voice = PiperVoice.load(wanted)
         _voice_loaded = wanted

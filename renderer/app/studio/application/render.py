@@ -27,7 +27,12 @@ class RenderRefused(ValueError):
 
 
 def _voice_identity(voice: Voice) -> str:
-    """Identidade da voz que muda o áudio: nome + modelo (entra no fingerprint da narração, RP-06c)."""
+    """Identidade da voz que muda o áudio: nome + modelo (fingerprint da narração, RP-06c/VS-06).
+
+    Como o ``Voice`` carrega o **modelo efetivo** (estilo > projeto > default, resolvido na
+    composição), esta identidade é a mesma da voz que sintetiza: o cache e o ledger não registram
+    uma voz diferente da que falou.
+    """
     model = getattr(voice, "model", "") or ""
     return f"{voice.name}:{model}" if model else str(voice.name)
 
@@ -98,11 +103,14 @@ class StartRender:
 
 class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
-                 files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
+                 files: RenderStorage, voice_for: Callable[[Video], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
                  steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
                  narration_reuse: bool = True, style_for: Callable[[Video], ResolvedStyle | None] | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
+        # VS-06: a voz efetiva é resolvida por **vídeo** (o estilo do canal/override decide),
+        # não pelo project_id: a mesma voz que sintetiza entra no cache/ledger. Injetada pela
+        # composição (o core não conhece banco).
         self.steps, self.paid = steps, paid
         # RP-016/VS-05c: de quem é a identidade visual versionada do plano. Injetada pela composição
         # (o core não conhece banco): recebe o **vídeo** e resolve canal → override do vídeo. Sem
@@ -180,7 +188,7 @@ class RunRender:
         return path
 
     def _render(self, job: RenderJob, video, pairs, work) -> None:
-        voice, renderer = self.voice_for(video.project_id), self.renderer_for(video.project_id)
+        voice, renderer = self.voice_for(video), self.renderer_for(video.project_id)
         voice_id = _voice_identity(voice)
         # Uma consulta ao índice por render (não uma por cena): o reúso da narração inteira.
         entries = self.plans.entries(f"plan:{video.id}") if (self.plans is not None and self.narration_reuse) else {}
