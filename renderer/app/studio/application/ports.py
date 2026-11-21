@@ -17,6 +17,7 @@ from ..domain.channel import ChannelProfile
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
+from ..domain.longform import ScriptApproval, ScriptPlan
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,50 @@ class FactCheckRepository(Protocol):
     def save(self, video_id: str, report: FactCheckReport, advance: bool, script_version: int) -> bool:
         """Grava o relatório da versão do roteiro checada. Com advance, move SCRIPTED→FACT_CHECKED na mesma transação;
         False se o estado mudou ou se existe roteiro mais novo que o checado."""
+
+
+@dataclass(frozen=True)
+class FactCheckRecord:
+    """Relatório de fact-check com a versão do roteiro que ele cobre."""
+
+    report: FactCheckReport
+    script_version: int
+
+
+class FactCheckReader(Protocol):
+    """Leitura do último fact-check do vídeo (porta separada da escrita da F4)."""
+
+    def latest(self, video_id: str) -> FactCheckRecord | None: ...
+
+
+@dataclass(frozen=True)
+class ScriptRecord:
+    """Uma versão de roteiro com seu plano long-form, hash e aprovação humanos (se houver)."""
+
+    script: Script
+    plan: ScriptPlan | None
+    content_hash: str | None
+    approval: ScriptApproval | None
+
+
+class LongFormScriptRepository(Protocol):
+    """Persistência versionada do roteiro longo: plano, hash e aprovação presa à versão.
+
+    O mesmo objeto que satisfaz `ScriptRepository` pode satisfazer esta porta. `save_planned_version`
+    grava roteiro, cenas, plano e hash **na mesma transação**: nunca existe versão sem hash ou hash sem
+    versão. `approve` vincula a decisão à versão lida; False se essa versão já não é a mais recente.
+    """
+
+    def save_planned_version(self, video_id: str, text: str, drafts: list[SceneDraft], claim_ids: list[str],
+                             plan: ScriptPlan, content_hash: str, expected: VideoStatus, new: VideoStatus) -> Script | None:
+        """Grava roteiro (versão +1), cenas e plano/hash atomicamente; None se o estado não for o esperado."""
+
+    def list_script_records(self, video_id: str) -> list[ScriptRecord]:
+        """Versões do roteiro em ordem crescente, com plano, hash e aprovação de cada uma."""
+
+    def approve(self, video_id: str, version: int, content_hash: str, decision: str, reason: str,
+                approved_by: str, approved_at: datetime | None = None) -> bool:
+        """Grava a decisão presa à (versão, hash). False se a versão não existe ou já não é a mais recente."""
 
 
 class UsageRepository(Protocol):

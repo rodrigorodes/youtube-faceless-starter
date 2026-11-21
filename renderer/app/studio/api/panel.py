@@ -5,6 +5,7 @@ import html
 import secrets
 
 from ..application.panel import CostBreakdown, CostKind, MonthCost, PanelView, VideoDetailView, cost_kind
+from ..application.script_view import ScriptPageView
 from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage
 
@@ -3091,6 +3092,12 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
               <span>Detalhe do Vídeo</span>
             </span>
           </li>
+          <li>
+            <a class="nav-item" href="/studio/videos/{e(v.id)}/roteiro">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="13" x2="14" y2="13"></line></svg>
+              <span>Roteiro</span>
+            </a>
+          </li>
           {preview_nav_html}
           <li>
             <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
@@ -3193,3 +3200,216 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
 </body>
 </html>"""
     return html_content, _headers(nonce)
+
+
+def _duration_text(seconds: float | None) -> str:
+    """Duração legível a partir de segundos reais; vazio quando não há estimativa."""
+    if seconds is None:
+        return ""
+    total = int(round(seconds))
+    minutes, rest = divmod(total, 60)
+    return f"{minutes} min {rest} s" if minutes else f"{rest} s"
+
+
+def _fact_check_text(fact_check) -> str:
+    if fact_check is None:
+        return "sem fact-check"
+    if not fact_check.current:
+        return f"desatualizado (cobre a versão {fact_check.script_version})"
+    if fact_check.passed:
+        return "aprovado" + (" (override)" if fact_check.overridden else "")
+    return "reprovado"
+
+
+def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
+    """Página do Roteiro (mockup #roteiro) com dado real ou estado vazio explícito."""
+    nonce = secrets.token_urlsafe(16)
+
+    if not view.has_script:
+        body_html = (
+            '<article class="card empty" id="roteiro-vazio">'
+            '<h2>Nenhum roteiro registrado para este vídeo</h2>'
+            '<p class="section-sub">Gere um roteiro longo para ver capítulos, duração estimada e aprovação por versão.</p>'
+            '</article>'
+        )
+        rail_html = (
+            '<section class="card" aria-labelledby="h-duracao"><h2 id="h-duracao">Duração</h2>'
+            '<p class="fine">Sem roteiro não há estimativa de duração. A duração real só existe depois do TTS.</p></section>'
+        )
+        approve_button = ""
+    else:
+        duration = _duration_text(view.estimated_seconds)
+        chapter_items = "".join(
+            f'<div class="kv"><span>{chapter.index + 1}. {e(chapter.title)} — {e(chapter.block_label)} · '
+            f'{chapter.scene_count} cena(s)</span><span>{e(_duration_text(chapter.estimated_seconds))}</span></div>'
+            for chapter in view.chapters
+        )
+        if not chapter_items:
+            chapter_items = '<p class="empty">Capítulos não registrados para esta versão.</p>'
+
+        badge = (
+            '<span class="state s-done"><span class="state-icon" aria-hidden="true">✓</span> Versão aprovada</span>'
+            if view.approved else
+            '<span class="state s-act"><span class="state-icon" aria-hidden="true">!</span> Aguardando sua aprovação</span>'
+        )
+        fact_text = _fact_check_text(view.fact_check)
+        hash_of_latest = next((v.content_hash for v in view.versions if v.current and v.content_hash), None)
+        version_no = view.version or 0
+        if view.approved:
+            approve_button = (
+                f'<button type="button" class="btn btn-primary" id="btn-approve-script" disabled '
+                f'aria-disabled="true">Versão {version_no} aprovada</button>'
+            )
+        else:
+            approve_button = (
+                f'<button type="button" class="btn btn-primary" id="btn-approve-script" '
+                f'data-video-id="{e(view.video_id)}" data-version="{version_no}" '
+                f'data-hash="{e(hash_of_latest or "")}">Aprovar versão {version_no}</button>'
+            )
+
+        body_html = f"""
+          <section class="card" aria-labelledby="roteiro-versao">
+            <div class="spread">
+              <div>
+                <h2 id="roteiro-versao">Versão {version_no} · {e(duration)} estimados</h2>
+                <p class="section-sub" style="margin:0">{view.chapter_count} capítulos · {view.scene_count} cenas · fact-check {e(fact_text)}</p>
+              </div>
+              {badge}
+            </div>
+            <div class="list" style="margin-top:12px">{chapter_items}</div>
+            <div class="spread" style="margin-top:16px">
+              <p class="fine" style="margin:0">Aprovar congela esta versão (<code>script_v{version_no}</code>). Editar cria a v{version_no + 1} e invalida só o que depende dela.</p>
+              <div class="row">
+                <a class="btn" href="/studio/panel/videos/{e(view.video_id)}">Editar cenas</a>
+                {approve_button}
+              </div>
+            </div>
+          </section>
+          <details class="advanced" id="roteiro-versoes">
+            <summary class="advanced-summary">Avançado — versões e fact-check</summary>
+            <div class="advanced-body">
+              {"".join(_version_row(v) for v in view.versions)}
+              <p class="fine">Cada claim aponta para o snapshot da fonte que o sustenta.</p>
+            </div>
+          </details>
+          <div id="approve-feedback" class="form-feedback" role="status"></div>
+        """
+
+        review_html = ""
+        if view.review is not None:
+            review_html = f"""
+              <section class="card" aria-labelledby="h-revisao">
+                <h2 id="h-revisao">Revisão do roteiro</h2>
+                <div class="kv"><span>Estrutura (gancho→fechamento)</span><span>{_mark(view.review.structure_ok)}</span></div>
+                <div class="kv"><span>Continuidade dos capítulos</span><span>{_mark(view.review.continuity_ok)}</span></div>
+                <div class="kv"><span>Duração dentro do alvo</span><span>{_mark(view.review.duration_ok)}</span></div>
+                <div class="kv"><span>Cenas redundantes</span><span>{view.review.redundant_count}</span></div>
+                <div class="kv"><span>Cenas sem citação</span><span>{view.review.uncited_count}</span></div>
+                <div class="kv"><span>Itens sem lastro nas fontes</span><span>{view.review.invented_count}</span></div>
+              </section>
+            """
+        rail_html = f"""
+          <section class="card" aria-labelledby="h-duracao">
+            <h2 id="h-duracao">Duração</h2>
+            <div class="kv"><span>Alvo</span><span>{e(f"{int(round(view.target_seconds))} s") if view.target_seconds else "não definido"}</span></div>
+            <div class="kv"><span>Estimado</span><span>{e(duration) or "sem estimativa"}</span></div>
+            <p class="fine">Estimativa por palavras/minuto. A duração real só existe depois do TTS — por isso a página não promete “exato”.</p>
+          </section>
+          {review_html}
+        """
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Faceless Studio — Roteiro</title>
+  <style nonce="{nonce}">{CSS}</style>
+</head>
+<body>
+  <a class="skip-link" href="#roteiro-heading">Ir para o conteúdo</a>
+  <div class="app-layout">
+    <aside class="sidebar" aria-label="Barra lateral">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">FS</div>
+        <div>
+          <div class="brand-title">Faceless Studio V2</div>
+          <div class="brand-sub">YouTube Automation</div>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="/studio/panel">Início</a></li>
+          <li><a class="nav-item" href="/studio/panel/videos/{e(view.video_id)}">Detalhe do vídeo</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel/videos/{e(view.video_id)}">&larr; Voltar ao vídeo</a></div>
+          <h1 id="roteiro-heading">Roteiro — {e(view.topic)}</h1>
+          <p class="section-sub" style="margin:0">Aprovação fica presa a uma versão; editar cria outra.</p>
+        </div>
+      </header>
+      <div class="content-body">
+        {body_html}
+      </div>
+    </main>
+
+    <aside class="rail" aria-label="Resumo">
+      {rail_html}
+    </aside>
+  </div>
+  <script nonce="{nonce}">
+    const approveBtn = document.getElementById('btn-approve-script');
+    if (approveBtn && !approveBtn.disabled) {{
+      approveBtn.addEventListener('click', async () => {{
+        const feedback = document.getElementById('approve-feedback');
+        approveBtn.disabled = true;
+        feedback.textContent = 'Registrando aprovação...';
+        try {{
+          const res = await fetch('/studio/videos/' + approveBtn.dataset.videoId + '/script/approve', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ version: Number(approveBtn.dataset.version), content_hash: approveBtn.dataset.hash }})
+          }});
+          const data = await res.json().catch(() => ({{}}));
+          if (res.ok) {{
+            feedback.textContent = 'Versão aprovada. Atualizando...';
+            setTimeout(() => location.reload(), 800);
+          }} else {{
+            approveBtn.disabled = false;
+            feedback.textContent = typeof data.detail === 'string' ? data.detail : 'Não foi possível aprovar a versão.';
+          }}
+        }} catch (err) {{
+          approveBtn.disabled = false;
+          feedback.textContent = 'Falha de rede: ' + err.message;
+        }}
+      }});
+    }}
+  </script>
+</body>
+</html>"""
+    return html_content, _headers(nonce)
+
+
+def _mark(ok: bool) -> str:
+    return "✓ sem problema" if ok else "× atenção"
+
+
+def _version_row(version) -> str:
+    if version.current:
+        label = f'atual · hash <code>{e(version.hash_short or "")}</code>'
+    elif version.approved:
+        label = "aprovada (superada)"
+    elif version.rejected:
+        label = "rejeitada"
+    elif version.superseded:
+        label = "substituída"
+    else:
+        label = "sem decisão"
+    return f'<div class="kv"><span>script_v{version.version}</span><span>{label}</span></div>'
