@@ -166,7 +166,7 @@ Escopo: membros, papéis (`owner`/`editor`/`reviewer`/`viewer`), tenants, chaves
 
 | Card | Status | Evidência / o que falta |
 |---|---|---|
-| F11-01…09 | ◐ | fatia **F11** `508d024` (tenancy, papéis, BYOK, tela de Equipe). **Fora** (sem contrato confirmado): F11-06..09 — billing, deploy/backups, termos, escala. As mutações de Equipe são expostas na fatia `ligacoes` (**L2**) |
+| F11-01…09 | ◐ | fatia **F11** `508d024` (tenancy, papéis, BYOK, tela de Equipe) + fatia `ligacoes` (**L2**: mutações expostas com ator do painel e RBAC). **Fora** (sem contrato confirmado): F11-06..09 — billing, deploy/backups, termos, escala; e SSO/OIDC como fonte de identidade |
 
 ---
 
@@ -279,8 +279,8 @@ Nem toda pendência é card novo: algumas são costura entre fatias que fecharam
 | # | Pendência | Origem | O que falta |
 |---|---|---|---|
 | L1 | **"Reautorizar" na tela de Canais** | tela de Canais (F10 UI) nasceu sem OAuth real | ✅ fatia `feat/l1-reauth` `76fe92b` — o botão chama `POST /youtube-oauth/authorize` e a página de callback vive em `GET /studio/oauth/callback`; sem app Google, fica desabilitado com **motivo real** |
-| L2 | **Mutações de Equipe não expostas na rota** | F11 — a rota exibe só a leitura | **em andamento** (fatia `feat/ligacoes`): o ator **já existe** via Basic auth (`STUDIO_BROWSER_USER`, `routes.py:93`), então **não** depende de OIDC; RBAC do domínio aplicado de verdade |
-| L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | resolvido em `80d7f4f`; a fatia `feat/ligacoes` só confirma |
+| L2 | **Mutações de Equipe expostas na rota** | F11 — a rota exibia só a leitura | ✅ fatia `feat/ligacoes` `cadb251`/`b3f6812` — ator = operador do Basic auth (`STUDIO_BROWSER_USER`), resolvido no vínculo da organização; RBAC real (viewer → **403**), auditoria em `studio.membership_audit` (migração **0031**) e BYOK sem vazamento |
+| L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | ✅ confirmado na fatia `feat/ligacoes` — a nav aponta a `#videos-section` e o teste passa |
 
 ---
 
