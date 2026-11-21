@@ -1645,7 +1645,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def go(uc):
             projection = _owned(uc, video_id, run_id)
             expected = (body.expected_state if body else None) or projection.run.state
-            transition = production_service(uc).coordinator.resume(check_id(run_id), expected_state=expected)
+            transition = production_service(uc).resume(check_id(run_id), expected_state=expected)
             if transition.result is not RunTransitionResult.APPLIED:
                 raise HTTPException(409, "the production run cannot be resumed from this state")
             return {"run_id": run_id, "state": transition.run.state.value}
@@ -1666,7 +1666,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def retry_production_run(video_id: str, run_id: str):
         def go(uc):
             _owned(uc, video_id, run_id)
-            transition = production_service(uc).coordinator.retry(check_id(run_id), expected_state=RunState.FAILED)
+            transition = production_service(uc).retry(check_id(run_id))
             if transition.result is not RunTransitionResult.APPLIED:
                 raise HTTPException(409, "retry is available only for a FAILED production run")
             return {"run_id": run_id, "state": transition.run.state.value}

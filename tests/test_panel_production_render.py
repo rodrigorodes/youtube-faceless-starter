@@ -74,6 +74,7 @@ def _execution_view(**overrides) -> ExecutionView:
         next_stage=ProductionStage.STORYBOARD,
         mode="INTERACTIVE",
         month=_month(),
+        now=NOW,
     )
     defaults.update(overrides)
     return ExecutionView(**defaults)
@@ -248,6 +249,20 @@ def test_execution_never_renders_invalid_actions():
         stages=(_stage("script", "SUCCEEDED"),)))
     assert "Pausar" not in done and "Cancelar" not in done and "Tentar novamente" not in done
     assert "Nenhuma ação disponível neste estado" in done
+
+
+def test_orphan_running_offers_continue_to_relaunch_the_worker():
+    """RUNNING sem lease vivo: o worker morreu; "Continuar" é a única ação que destrava."""
+    expired = StageExecution(run_id=RUN, stage_id=ProductionStage.FACTCHECK, state=StageState.RUNNING,
+                             attempt=1, fencing_token=1, lease_owner="worker-1",
+                             lease_expires_at=NOW - timedelta(minutes=1))
+    assert [a.key for a in available_actions(RunState.RUNNING, "run", live_lease=False)] == \
+        ["resume", "pause", "cancel"]
+
+    page, _ = render_execution(_execution_view(run=_run(RunState.RUNNING),
+                                               stages=(_stage("script", "SUCCEEDED"), expired)))
+    actions = page.split('id="h-acoes"', 1)[1]
+    assert "Continuar" in actions and "Pausar" in actions
 
 
 def test_review_action_only_appears_with_an_artifact():
