@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.qa_report import QaReport as QualityReport
@@ -84,12 +84,14 @@ class VideoRepository(Protocol):
     def transition_video(self, video_id: str, expected: VideoStatus, new: VideoStatus) -> bool: ...
 
 
+@runtime_checkable
 class TextModel(Protocol):
     name: str
     def cost_estimate(self, prompt: str) -> float: ...
     def complete(self, prompt: str, *, json_schema: dict | None = None) -> TextResult: ...
 
 
+@runtime_checkable
 class ImageModel(Protocol):
     name: str
     model: str
@@ -97,11 +99,13 @@ class ImageModel(Protocol):
     def generate(self, prompt: str, *, aspect: str = "9:16") -> ImageResult: ...
 
 
+@runtime_checkable
 class Voice(Protocol):
     name: str
     def speak(self, text: str, out_path: Path) -> float: ...  # devolve a duração em segundos
 
 
+@runtime_checkable
 class Renderer(Protocol):
     name: str
     def render(self, job: RenderSpec, out_path: Path) -> Path: ...
