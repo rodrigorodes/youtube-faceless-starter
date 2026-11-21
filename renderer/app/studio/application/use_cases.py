@@ -17,6 +17,7 @@ from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfil
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
+    from .script_view import BuildScriptView
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -83,6 +84,7 @@ class UseCases:
     update_channel_profile: UpdateChannelProfile | None = None
     list_channel_profiles: ListChannelProfiles | None = None
     production: "Production | None" = None
+    script_view: "BuildScriptView | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -100,9 +102,10 @@ class UseCases:
                   get_channel_profile: GetChannelProfile | None = None,
                   update_channel_profile: UpdateChannelProfile | None = None,
                   list_channel_profiles: ListChannelProfiles | None = None,
-                  production: "Production | None" = None) -> "UseCases":
+                  production: "Production | None" = None,
+                  script_view: "BuildScriptView | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
-                   list_channel_profiles, production)
+                   list_channel_profiles, production, script_view)

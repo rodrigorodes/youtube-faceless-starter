@@ -17,6 +17,7 @@ from ..application.budget import (BudgetDenied, CostConfirmationError, Idempoten
                                   OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation)
 from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
+from ..application.longform import ScriptApprovalRefused, ScriptVersionStale
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
 from ..application.production import RunNotFound, StageCapabilityUnavailable
@@ -31,7 +32,7 @@ from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
-from .panel import render_panel, render_video
+from .panel import render_panel, render_script, render_video
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
@@ -138,6 +139,12 @@ class FactCheckIn(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("override_reason must not be blank")
         return value
+
+
+class ScriptApproveIn(BaseModel):
+    version: int = Field(ge=1)
+    content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(default="", max_length=500)
 
 
 class IdeasIn(BaseModel):
@@ -349,6 +356,10 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "video not found") from exc
         except StateConflict as exc:
             raise HTTPException(409, str(exc)) from exc
+        except ScriptVersionStale as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ScriptApprovalRefused as exc:
+            raise HTTPException(422, str(exc)) from exc
         except (SourceRefused, ProviderNotFound, IdeaInputRefused, TrendRefused) as exc:
             raise HTTPException(422, str(exc)) from exc
         except CostRefused as exc:
@@ -508,6 +519,29 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if found is None:
             raise HTTPException(404, "script not found")
         return ScriptOut(script=found[0], scenes=found[1])
+
+    @router.get("/videos/{video_id}/roteiro", response_class=HTMLResponse)
+    def script_page(video_id: str):
+        def get_page(uc):
+            if uc.script_view is None:
+                raise HTTPException(503, "script view unavailable")
+            return render_script(uc.script_view.execute(check_id(video_id)))
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.post("/videos/{video_id}/script/approve")
+    def approve_script(video_id: str, body: ScriptApproveIn):
+        def go(uc):
+            ed = editorial(uc)
+            if ed.approve_script is None:
+                raise HTTPException(503, "script approval unavailable")
+            approved_by = os.getenv("STUDIO_BROWSER_USER") or "painel"
+            approval = ed.approve_script.execute(check_id(video_id), version=body.version,
+                                                 content_hash=body.content_hash, approved_by=approved_by,
+                                                 decision="approved", reason=body.reason)
+            return {"version": approval.script_version, "content_hash": approval.content_hash,
+                    "decision": approval.decision}
+        return run(go)
 
     @router.post("/videos/{video_id}/fact-check", response_model=FactCheckReport)
     def fact_check(video_id: str, body: FactCheckIn):

@@ -28,7 +28,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Protocol
 
-from ..domain.contracts import JobStatus, RenderJob, Video, VideoStatus
+from ..domain.contracts import JobStatus, RenderJob, Video, VideoFormat, VideoStatus
 from ..domain.ids import check_id
 from ..domain.production_run import (
     Checkpoint,
@@ -220,11 +220,15 @@ class UnavailableStageHandler:
 class ScriptHandler(_AvailableHandler):
     stage = ProductionStage.SCRIPT
 
-    def __init__(self, editorial: Editorial):
-        self.editorial = editorial
+    def __init__(self, editorial: Editorial, videos: VideoRepository | None = None):
+        self.editorial, self.videos = editorial, videos
 
     def execute(self, context: StageContext) -> StageOutcome:
-        script = self.editorial.generate.execute(context.run.video_id)
+        video = self.videos.get_video(context.run.video_id) if self.videos is not None else None
+        if video is not None and video.format is VideoFormat.long and self.editorial.long_generate is not None:
+            script = self.editorial.long_generate.execute(context.run.video_id)  # F4: duas passagens
+        else:
+            script = self.editorial.generate.execute(context.run.video_id)
         return StageOutcome(checkpoint=Checkpoint(
             {"stage": self.stage.value, "script_version": script.version}, context.checkpoint_version))
 
@@ -412,7 +416,7 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     handlers: dict[ProductionStage, StageHandler] = {
-        ProductionStage.SCRIPT: ScriptHandler(editorial),
+        ProductionStage.SCRIPT: ScriptHandler(editorial, videos),
         ProductionStage.FACTCHECK: FactCheckHandler(editorial),
         ProductionStage.STORYBOARD: StoryboardHandler(media),
         ProductionStage.ASSETS: AssetsHandler(media),

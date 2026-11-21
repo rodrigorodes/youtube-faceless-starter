@@ -52,6 +52,8 @@ from .application.publishing import (Approve, ClaimPublication, GetPreview, GetP
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
+from .application.longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
+from .application.script_view import BuildScriptView
 from .application.budget import PaidOperationGuard
 from .application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers)
@@ -237,7 +239,13 @@ class Studio:
             generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for, paid=paid_guard),
             get_script=GetScript(repo, scripts),
             fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
-            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard))
+            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard),
+            long_generate=GenerateLongScript(repo, snaps, scripts, None, guard, usage, scripts,
+                                             model_for=text_for, paid=paid_guard,
+                                             allow_names=frozenset(s.allow_names)),
+            edit_script=EditScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
+            approve_script=ApproveScriptVersion(repo, snaps, scripts, scripts, checks=checks,
+                                                allow_names=frozenset(s.allow_names)))
         assets = PostgresAssetRepository(connect)
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),
@@ -297,6 +305,7 @@ class Studio:
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id))
         panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
+        script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
@@ -308,7 +317,7 @@ class Studio:
                                   get_channel_profile=GetChannelProfile(channel_repo, repo),
                                   update_channel_profile=UpdateChannelProfile(channel_repo),
                                   list_channel_profiles=ListChannelProfiles(channel_repo),
-                                  production=production)
+                                  production=production, script_view=script_view)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
