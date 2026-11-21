@@ -28,10 +28,11 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-04 | `caption`/`palette` do estilo **aplicados** no overlay (`caption_layout`/`overlay_colors`); `voice` carregada, precedência só reportada | 107 testes | merge `28cb4e5` |
 | YT-02 | O canal referencia o **destino** no YouTube (`channel_profiles.youtube_channel_id`, migração `0037`) + resolvedor puro | 134 testes | merge `f848a57` |
 | DOC-01 | **Modelo de dados + DDL** gerados (`docs/22-modelo-de-dados.md`, `docs/schema/studio.sql`) com teste de snapshot | 28 testes | `scripts/export_schema.py` |
+| YT-03 | A publicação **bloqueia** quando o token não resolve para o canal esperado (a regra do desenho) | 153 testes | merge `145c786` |
 
 ## Em execução (paralelo)
 
-**Onda 3 (em execução):** VS-05a (biblioteca de Estilos: API + página + menu) e YT-03 (a publicação **bloqueia** quando o token não resolve para o canal esperado). Cada uma com Postgres dedicado (`integ-pg-a`/`integ-pg-b`).
+**Onda 3 (em execução):** VS-05a (biblioteca de Estilos: API + página + menu). Postgres dedicado `integ-pg-a`. YT-03 já mesclada.
 
 ## Na fila
 
@@ -46,6 +47,17 @@ Sem push/merge remoto (bloqueado pelo harness).
 | ID | Atividade | Bloqueio |
 | --- | --- | --- |
 | **YT-05** | Teste ao vivo A/B (dois canais na mesma conta) — valida o **adapter**, não o domínio | Precisa da sua conta Google real e do seu "ok" para rodar |
+
+## Itens abertos conhecidos (registrados, não escondidos)
+
+- **Voz — "duas verdades"**: o estilo carrega `voice`, mas a precedência ainda não foi resolvida
+  (`estilo.voice.model` vs `STUDIO_VOICE`/config do projeto vs `PIPER_VOICE`). Recomendação no
+  relatório da VS-04; decisão pendente do dono.
+- **Cache do render × estilo**: o fingerprint do nó visual **não** inclui `style_snapshot` nem a
+  geometria/cor do overlay — mudar só `caption.font_size`/`palette` **não invalida** o cache
+  (gap pré-existente, documentado na VS-04).
+- **Preferência de grant**: com várias autorizações `CONECTADAS` para o mesmo canal, o resolvedor
+  devolve a primeira na ordem de entrada; a política fica para a YT-04.
 
 ## Princípios que valem para toda fatia
 
