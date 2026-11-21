@@ -511,7 +511,7 @@ class Studio:
             default_hard_video=Decimal(str(s.max_cost_video)))
         youtube_channel = GetYouTubeChannel(youtube_repo, secret_store)
         project_config = GetPublicProjectConfig(repo)
-        set_project_config = SetPublicProjectConfig(repo)
+        set_project_config = SetPublicProjectConfig(repo, implementations)
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
                                           providers_service, channel_budget, youtube_channel, project_config,
                                           oauth_available=oauth_client is not None)

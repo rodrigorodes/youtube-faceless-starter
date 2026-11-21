@@ -20,9 +20,12 @@ from app.studio.domain.provider import (  # noqa: E402
     ProviderCard,
     ProviderKind,
     ProviderImplementation,
+    ProviderSpecInvalid,
     RouteRequest,
     RoutingDecision,
     card_for,
+    parse_spec,
+    registered_names,
     route_provider,
 )
 
@@ -113,6 +116,25 @@ def test_model_keeps_the_full_suffix_after_first_colon():
 def test_empty_spec_is_refused():
     with pytest.raises(ValueError):
         card_for(TEXT, "", [])
+
+
+def test_parse_spec_keeps_optional_model_and_never_echoes_the_raw_value():
+    assert parse_spec("demo") == ("demo", "")       # modelo opcional é legítimo
+    assert parse_spec("demo:") == ("demo", "")
+    assert parse_spec("piper:pt_BR-faber-medium") == ("piper", "pt_BR-faber-medium")
+    assert parse_spec("opencode:a/b:free") == ("opencode", "a/b:free")  # só o 1º ":" separa
+    for bad in (":x-do-not-echo", "   ", ""):
+        with pytest.raises(ProviderSpecInvalid) as excinfo:
+            parse_spec(bad)
+        assert "do-not-echo" not in str(excinfo.value)  # mensagem sem o valor ofensor
+
+
+def test_registered_names_lists_only_the_port_and_dedupes():
+    impls = [impl(TEXT, "demo", validated=True), impl(TEXT, "opencode", validated=False, reason="sem token"),
+             impl(IMAGE, "placeholder", validated=True)]
+    assert registered_names(impls, TEXT) == ("demo", "opencode")   # mesma ordem do catálogo
+    assert registered_names(impls, IMAGE) == ("placeholder",)
+    assert registered_names(impls, VOICE) == ()
 
 
 def test_implementation_validates_metadata():

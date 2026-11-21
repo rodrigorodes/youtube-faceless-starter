@@ -245,14 +245,48 @@ def test_put_project_config_validates_persists_and_never_echoes_rejected_values(
     assert extra.status_code == 422
     assert "OPENAI_API_KEY" in extra.text and "LEAK" not in extra.text
 
+    # provedor inexistente -> 422 (antes: 200 e só quebrava no render, em `provider_for`)
+    ghost = client.put(f"/studio/projects/{p_id}/config",
+                       json={**valid, "text": "nope-do-not-echo"}, headers=WORKER_HEADER)
+    assert ghost.status_code == 422, ghost.text
+    assert "nope-do-not-echo" not in ghost.text  # o valor ofensor não vaza
+    assert "demo" in ghost.text and "opencode" in ghost.text  # mas a mensagem diz o que existe
+
     # spec em branco -> 422
     assert client.put(f"/studio/projects/{p_id}/config",
                       json={**valid, "text": "   "}, headers=WORKER_HEADER).status_code == 422
-    # porta faltando -> 422
-    assert client.put(f"/studio/projects/{p_id}/config",
-                      json={"text": "demo"}, headers=WORKER_HEADER).status_code == 422
+    # nome de provedor vazio (":x") -> 422 sem ecoar o valor ofensor
+    empty_name = client.put(f"/studio/projects/{p_id}/config",
+                            json={**valid, "text": ":x-do-not-echo"}, headers=WORKER_HEADER)
+    assert empty_name.status_code == 422
+    assert "x-do-not-echo" not in empty_name.text
+    # valor não-string -> 422 apenas com a mensagem (sem o valor)
+    non_string = client.put(f"/studio/projects/{p_id}/config",
+                            json={**valid, "text": 123}, headers=WORKER_HEADER)
+    assert non_string.status_code == 422
+    assert "123" not in non_string.text
+    # porta faltando -> 422 listando as portas ausentes
+    missing = client.put(f"/studio/projects/{p_id}/config",
+                         json={"text": "demo"}, headers=WORKER_HEADER)
+    assert missing.status_code == 422 and "image" in missing.text and "renderer" in missing.text
     # o config persistido não mudou depois das recusas
     assert client.get(f"/studio/projects/{p_id}/config", headers=WORKER_HEADER).json()["config"] == valid
+
+
+def test_put_project_config_accepts_registered_but_unvalidated_provider_and_catalog_tells_the_reason(api):
+    client = api["client"]
+    p_id = api["project_id"]
+    valid = {"text": "demo", "image": "placeholder", "voice": "piper", "renderer": "ffmpeg"}
+    # `veo` está registrado mas não validado: aceitar não trava o usuário; o catálogo conta o motivo.
+    r = client.put(f"/studio/projects/{p_id}/config",
+                   json={**valid, "image": "veo:veo-3.1"}, headers=WORKER_HEADER)
+    assert r.status_code == 200, r.text
+    assert r.json()["config"]["image"] == "veo:veo-3.1"
+    assert client.get(f"/studio/projects/{p_id}/config", headers=WORKER_HEADER).json()["config"]["image"] == "veo:veo-3.1"
+    cards = client.get(f"/studio/projects/{p_id}/providers", headers=WORKER_HEADER).json()
+    image = next(c for c in cards if c["kind"] == "image")
+    assert image["name"] == "veo" and image["availability"] == "UNAVAILABLE"
+    assert image["reason"]  # motivo real exposto, não silêncio
 
 
 def test_create_project_response_does_not_carry_config(api):
