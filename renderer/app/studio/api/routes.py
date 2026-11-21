@@ -24,6 +24,8 @@ from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailabl
                                ProviderSpecInvalid)
 from ..domain.youtube_channel import YouTubeChannelInvalid
 from ..domain.youtube_identity import YouTubeChannelIdentityInvalid
+from ..domain.visual_style import (DuplicateVisualStyle, VisualStyleFieldInvalid, VisualStyleNameInvalid,
+                                   VisualStyleParamsInvalid, VisualStyleVersionConflict, VisualStyleVersionInvalid)
 from ..application.analytics import DailyMetric
 from ..application.analytics_collection import (AnalyticsPillarNotFound, AnalyticsVideoNotFound,
                                                  CollectionRequest)
@@ -52,6 +54,7 @@ from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
+from .panel_styles import render_styles
 from .panel_oauth import render_oauth_callback
 from .panel_team import render_team
 from .panel_analytics import render_analytics
@@ -63,6 +66,7 @@ from .panel_production import (
     render_execution,
     render_new_video,
 )
+from ..application.errors import VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
@@ -448,6 +452,27 @@ class ChannelProfileOut(BaseModel):
     updated_at: datetime | None = None
 
 
+class VisualStyleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    params: dict[str, object] = Field(default_factory=dict)
+
+
+class VisualStyleUpdateIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    changes: dict[str, object]
+
+
+class VisualStyleOut(BaseModel):
+    id: str
+    name: str
+    params: dict[str, object]
+    version: int
+    archived: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    channels_using: int = 0
+
+
 class ProviderCostOut(BaseModel):
     kind: str
     amount_usd: str | None
@@ -577,6 +602,13 @@ def _channel_out(profile) -> dict:
             "youtube_channel_id": profile.youtube_channel_id,
             "version": profile.version, "archived": profile.archived,
             "created_at": profile.created_at, "updated_at": profile.updated_at}
+
+
+def _style_out(style, channels_using: int = 0) -> dict:
+    return {"id": style.id, "name": style.name, "params": dict(style.params),
+            "version": style.version, "archived": style.archived,
+            "created_at": style.created_at, "updated_at": style.updated_at,
+            "channels_using": channels_using}
 
 
 def _card_out(card) -> dict:
@@ -821,6 +853,14 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, str(exc)) from exc
         except (ChannelNameInvalid, ChannelFieldInvalid, ChannelDurationInvalid, ChannelVersionInvalid,
                 ChannelStyleNotFound, ChannelYouTubeTargetNotFound, YouTubeChannelIdentityInvalid) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        # -- estilos: biblioteca compartilhada (VS-05a) --
+        except VisualStyleNotFound as exc:
+            raise HTTPException(404, "visual style not found") from exc
+        except (DuplicateVisualStyle, VisualStyleVersionConflict) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (VisualStyleNameInvalid, VisualStyleParamsInvalid, VisualStyleFieldInvalid,
+                VisualStyleVersionInvalid) as exc:
             raise HTTPException(422, str(exc)) from exc
         except ProviderSpecInvalid as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -1637,6 +1677,63 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(404, "channel profile not found")
             return _channel_out(profile)
         return run(go)
+
+    # -- estilos: biblioteca compartilhada (VS-05a) ---------------------------
+
+    def _style_usage(uc) -> dict:
+        return _need(uc, "visual_style_usage", "style services unavailable").execute()
+
+    @router.get("/styles", response_model=list[VisualStyleOut])
+    def list_styles(include_archived: bool = False):
+        def go(uc):
+            styles = _need(uc, "list_visual_styles", "style services unavailable").execute(include_archived)
+            usage = _style_usage(uc)
+            return [_style_out(style, usage.get(style.id, 0)) for style in styles]
+        return run(go)
+
+    @router.post("/styles", status_code=201, response_model=VisualStyleOut)
+    def create_style(body: VisualStyleIn):
+        def go(uc):
+            style = _need(uc, "create_visual_style", "style services unavailable").execute(body.name, body.params)
+            return _style_out(style)
+        return run(go)
+
+    @router.get("/styles/{style_id}", response_model=VisualStyleOut)
+    def get_style(style_id: str):
+        def go(uc):
+            style = _need(uc, "get_visual_style", "style services unavailable").execute(style_id)
+            if style is None:
+                raise VisualStyleNotFound(f"visual style {style_id!r} does not exist")
+            return _style_out(style, _style_usage(uc).get(style.id, 0))
+        return run(go)
+
+    @router.patch("/styles/{style_id}", response_model=VisualStyleOut)
+    def update_style(style_id: str, body: VisualStyleUpdateIn):
+        def go(uc):
+            style = _need(uc, "update_visual_style", "style services unavailable").execute(
+                style_id, body.changes, body.expected_version)
+            if style is None:
+                raise VisualStyleNotFound(f"visual style {style_id!r} does not exist")
+            return _style_out(style)
+        return run(go)
+
+    @router.post("/styles/{style_id}/archive", response_model=VisualStyleOut)
+    def archive_style(style_id: str):
+        def go(uc):
+            style = _need(uc, "archive_visual_style", "style services unavailable").execute(style_id)
+            if style is None:
+                raise VisualStyleNotFound(f"visual style {style_id!r} does not exist")
+            return _style_out(style)
+        return run(go)
+
+    @router.get("/panel/estilos", response_class=HTMLResponse)
+    def styles_page_html():
+        def get_page(uc):
+            if uc.styles_page is None:
+                raise HTTPException(503, "style services unavailable")
+            return render_styles(uc.styles_page.execute())
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
 
     # -- providers (F10-03/F10-04) -------------------------------------------
 

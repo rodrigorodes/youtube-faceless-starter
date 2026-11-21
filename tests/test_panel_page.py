@@ -620,7 +620,7 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
     # A navegação renderizada na prévia é a mesma casca das outras telas do painel.
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
         assert any(expected in label for label in labels), expected
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
@@ -726,28 +726,25 @@ def _page_text(html: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", without_regions).split())
 
 
-def test_panel_shell_sidebar_marks_one_active_item_and_disables_unavailable_ones(client_env):
+def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(client_env):
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
 
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Início" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
     assert r.text.count('aria-current="page"') == 1
 
-    # Canais, Equipe e Analytics viraram links reais; so Configuracoes segue indisponivel.
-    for label in ("Configurações",):
-        item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
-        assert 'aria-disabled="true"' in item
-        assert 'tabindex="-1"' in item
-        assert '<em class="nav-tag">' in item
-        assert "href=" not in item
-        assert not item.lstrip().startswith("<a ")
+    # Estilos virou destino real (biblioteca compartilhada); nenhum item indisponível na casca.
+    assert not any('aria-disabled="true"' in item for item in items)
+    estilos = next(item for item in items if "Estilos" in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
+    assert 'href="/studio/panel/estilos"' in estilos
+    assert not estilos.lstrip().startswith("<span ")
 
     for label, href in (("Início", "#inicio-section"), ("Produção", "#producao-section"),
                         ("Tendências", "#trending-section"), ("Vídeos", "#videos-section"),
@@ -1039,7 +1036,7 @@ def test_panel_page_matches_approved_mockup_shell(client_env):
     assert 'aria-disabled="true"' in serie.group(0)
     assert 'tabindex="-1"' in serie.group(0)
 
-    for group in ("Operação", "Indisponível nesta versão"):
+    for group in ("Operação", "Gestão"):
         assert group in r.text
     for rail in ("Custo do mês", "Estado das fases", "Última falha"):
         assert rail in r.text

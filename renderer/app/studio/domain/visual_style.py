@@ -52,6 +52,10 @@ class VisualStyleParamsInvalid(VisualStyleError, ValueError):
     """Parâmetro com chave desconhecida, tipo ou valor inválido."""
 
 
+class VisualStyleFieldInvalid(VisualStyleError, ValueError):
+    """Campo de atualização desconhecido (fora de `UPDATABLE_FIELDS`)."""
+
+
 class VisualStyleVersionInvalid(VisualStyleError, ValueError):
     """Versão inválida (precisa ser inteiro >= 1)."""
 

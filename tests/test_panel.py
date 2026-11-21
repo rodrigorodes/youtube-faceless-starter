@@ -618,7 +618,7 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
     items = _primary_nav(html)
     labels = [_nav_text(item) for item in items]
 
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
@@ -655,18 +655,17 @@ def test_render_panel_shell_nav_targets_exist_in_the_page():
         assert f'id="{match.group(1)[1:]}"' in html, f"âncora morta na casca: {match.group(1)}"
 
 
-def test_render_panel_shell_disabled_nav_items_are_not_links():
+def test_render_panel_shell_has_no_disabled_nav_items_and_estilos_is_a_real_link():
     html = _render_panel_html()
     items = _primary_nav(html)
 
-    # Canais, Equipe e Analytics viraram links reais; o unico indisponivel e Configuracoes.
-    for label in ("Configurações",):
-        item = next(item for item in items if label in _nav_text(item))
-        assert 'aria-disabled="true"' in item
-        assert 'tabindex="-1"' in item
-        assert '<em class="nav-tag">' in item
-        assert "href=" not in item
-        assert not item.lstrip().startswith("<a ")
+    # "Configurações — em breve" virou a tela real de Estilos (biblioteca compartilhada, VS-05a):
+    # nenhum destino morto na casca.
+    assert not any('aria-disabled="true"' in item for item in items)
+    estilos = next(item for item in items if "Estilos" in _nav_text(item))
+    assert 'href="/studio/panel/estilos"' in estilos
+    assert not estilos.lstrip().startswith("<span ")
+    assert estilos.lstrip().startswith("<a ")
 
 
 def test_render_panel_has_one_h1_section_ids_and_no_invented_product_state():
@@ -905,7 +904,7 @@ def test_render_panel_matches_approved_mockup_structure_without_illustrative_dat
     html = _render_panel_html()
     visible = _visible_text(html)
 
-    for group in ("Operação", "Indisponível nesta versão"):
+    for group in ("Operação", "Gestão"):
         assert group in visible
 
     assert 'class="hero"' in html
