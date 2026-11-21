@@ -293,3 +293,20 @@ def test_create_project_response_does_not_carry_config(api):
     r = api["client"].post("/studio/projects", json={"name": "sem config"}, headers=WORKER_HEADER)
     assert r.status_code == 201
     assert "config" not in r.json()
+
+
+def test_channel_api_round_trips_the_style_reference(api):
+    from app.studio.adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
+    style = PostgresVisualStyleRepository(api["connect"]).create("Cinemático")
+    p_id = api["project_id"]
+    created = api["client"].post(f"/studio/projects/{p_id}/channels",
+                                 json={"name": "História", "style_id": style.id}, headers=WORKER_HEADER)
+    assert created.status_code == 201 and created.json()["style_id"] == style.id
+    assert api["client"].get(f"/studio/projects/{p_id}/channels", headers=WORKER_HEADER).json()["style_id"] == style.id
+
+
+def test_channel_api_refuses_a_channel_pointing_to_an_unknown_style(api):
+    other = api["videos"].create_project("Outro", niche="Geral", language="pt-BR")
+    r = api["client"].post(f"/studio/projects/{other.id}/channels",
+                           json={"name": "História", "style_id": "f" * 32}, headers=WORKER_HEADER)
+    assert r.status_code == 422 and "style" in r.json()["detail"].lower()

@@ -36,6 +36,7 @@ CREATABLE_FIELDS = (
     "audio",
     "thumbnail",
     "cta",
+    "style_id",
     "archived",
 )
 
@@ -53,6 +54,7 @@ UPDATABLE_FIELDS = (
     "audio",
     "thumbnail",
     "cta",
+    "style_id",
     "archived",
 )
 
@@ -87,6 +89,10 @@ class ChannelVersionConflict(ChannelError, ValueError):
 
 class ChannelProjectNotFound(ChannelError, LookupError):
     """O projeto (canal) informado não existe: o perfil não pode ser criado."""
+
+
+class ChannelStyleNotFound(ChannelError, LookupError):
+    """O estilo visual informado não existe: o canal não pode apontar para ele (VS-02)."""
 
 
 class ChannelLockTimeout(ChannelError, RuntimeError):
@@ -167,6 +173,9 @@ class ChannelProfile:
     audio: str = ""
     thumbnail: str = ""
     cta: str = ""
+    # VS-02: o estilo visual que este canal segue (biblioteca compartilhada). None = sem estilo;
+    # o render cai no bundle neutro. A referência é por chave — o plano grava (style_id, version).
+    style_id: str | None = None
     version: int = 1
     archived: bool = False
     created_at: datetime | None = None
@@ -187,6 +196,10 @@ class ChannelProfile:
         object.__setattr__(self, "audio", _text(self.audio, "audio", MAX_PROVIDER_SPEC_LENGTH))
         object.__setattr__(self, "thumbnail", _text(self.thumbnail, "thumbnail", MAX_THUMBNAIL_LENGTH))
         object.__setattr__(self, "cta", _text(self.cta, "cta", MAX_CTA_LENGTH))
+        if self.style_id is not None:
+            if not isinstance(self.style_id, str):
+                raise ChannelFieldInvalid("style_id must be a string or null")
+            check_id(self.style_id)
         object.__setattr__(self, "version", validate_version(self.version))
         if not isinstance(self.archived, bool):
             raise ChannelFieldInvalid("archived must be a boolean")

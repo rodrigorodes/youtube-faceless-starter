@@ -295,3 +295,23 @@ def test_concurrent_create_has_single_winner(chan_env):
     assert conn.execute(
         "SELECT count(*) FROM studio.channel_profiles WHERE project_id = %s", (p_id,)
     ).fetchone()[0] == 1
+
+
+def test_channel_can_point_to_a_visual_style_and_clear_it(chan_env):
+    from app.studio.adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
+    styles = PostgresVisualStyleRepository(chan_env["connect"])
+    style = styles.create("Cinemático", params={"music": {"bpm": 90}})
+    created = chan_env["repo"].create(chan_env["project_id"], "História", style_id=style.id)
+    assert created.style_id == style.id
+    assert chan_env["repo"].get(created.id).style_id == style.id  # persistiu
+    cleared = chan_env["repo"].update(created.id, 1, {"style_id": None})
+    assert cleared.style_id is None and cleared.version == 2
+
+
+def test_channel_pointing_to_an_unknown_style_is_refused(chan_env):
+    from app.studio.domain.channel import ChannelStyleNotFound
+    with pytest.raises(ChannelStyleNotFound):
+        chan_env["repo"].create(chan_env["project_id"], "História", style_id="f" * 32)
+    profile = chan_env["repo"].create(chan_env["project_id"], "Outro")
+    with pytest.raises(ChannelStyleNotFound):
+        chan_env["repo"].update(profile.id, 1, {"style_id": "f" * 32})

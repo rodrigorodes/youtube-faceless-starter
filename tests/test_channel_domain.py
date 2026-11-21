@@ -122,3 +122,12 @@ def test_clean_pillars_helper_returns_tuple():
     assert clean_pillars(None) == ()
     assert clean_pillars(["a", " a ", "b"]) == ("a", "b")
     assert clean_pillars(("a", "b")) == ("a", "b")  # aceita tupla e normaliza para tupla
+
+
+def test_style_id_is_optional_but_validated_when_present():
+    assert profile().style_id is None  # canal sem estilo é válido
+    assert profile(style_id="c" * 32).style_id == "c" * 32
+    with pytest.raises(InvalidId):
+        profile(style_id="not-an-id")
+    with pytest.raises(ChannelFieldInvalid):
+        profile(style_id=42)
