@@ -295,7 +295,15 @@ class Studio:
         register("voice", "piper", PiperVoice)
         # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
         # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
-        register("renderer", "ffmpeg", PlanFfmpegRenderer if settings.render_plan_enabled else DisabledRenderer)
+        # RP-06b: é aqui — e só aqui — que o executor recebe o repositório versionado do plano e
+        # a raiz do cache de artefatos: o reúso por fingerprint de conteúdo roda no caminho de
+        # produção (RunRender → executor) sem contaminar domain/application com banco ou mídia.
+        def _renderer(model: str):
+            if not settings.render_plan_enabled:
+                return DisabledRenderer(model)
+            return PlanFfmpegRenderer(model, plans=PostgresRenderPlanRepository(self._connect),
+                                      cache_root=settings.storage_root / "render-cache")
+        register("renderer", "ffmpeg", _renderer)
         self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
         self._analyzer = analyzer or FfmpegQa()
         self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(self._analyzer)

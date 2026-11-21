@@ -168,7 +168,18 @@ def test_unreadable_image_is_refused_with_a_clear_error(tmp_path):
 
 def test_the_registered_ffmpeg_renderer_is_the_plan_renderer():
     Studio(Settings())  # registra os provedores (sem banco)
-    assert isinstance(build("renderer", "ffmpeg:rich"), PlanFfmpegRenderer)
+    renderer = build("renderer", "ffmpeg:rich")
+    assert isinstance(renderer, PlanFfmpegRenderer)
+    # RP-06b: a composição é o único lugar que injeta o repositório do plano e a raiz do cache
+    # no executor. Sem esta fiação, o reúso não roda no caminho de produção.
+    assert renderer.plans is not None and renderer.cache_root is not None
+
+
+def test_the_kill_switch_still_disables_the_plan_renderer():
+    from app.studio.adapters.render_disabled import DisabledRenderer
+
+    Studio(Settings(render_plan_enabled=False))
+    assert isinstance(build("renderer", "ffmpeg:rich"), DisabledRenderer)
 
 
 # ------------------------------------------------------------------ paridade medida (FFmpeg)
@@ -196,3 +207,105 @@ def test_multi_scene_plan_renders_and_stays_within_the_qa_envelope(tmp_path):
     qa = evaluate_qa({**metrics, "expected_s": round(sum(spec.scene_seconds), 3)}, spec.format)
     assert qa.passed, qa.failures
     assert metrics["narration_lufs"] is not None and metrics["narration_lufs"] > -45
+
+
+# ------------------------- RP-06b: reúso consumido pelo executor (sem FFmpeg) -------------------------
+#
+# O grafo e o índice de cache **decidem** o reúso (RP-06); aqui o executor **consome** a decisão:
+# um shot/narração/montagem em ``cache_hits`` não roda FFmpeg — o artefato físico é copiado.
+# A prova é por **contagem de execuções** do runner (stub), não por inspeção do MP4.
+
+
+class FakePlanRepository:
+    """Superfície do repositório versionado, em memória, sem banco (mesma do Postgres)."""
+
+    def __init__(self):
+        self.documents: dict[tuple[str, int], object] = {}
+        self._entries: dict[str, dict] = {}
+        self.artifacts: dict[tuple[str, str], object] = {}
+
+    def save_plan(self, plan):
+        self.documents[(plan.plan_id, plan.revision)] = plan
+
+    def get_plan(self, plan_id, revision):
+        return self.documents.get((plan_id, revision))
+
+    def latest_plan(self, plan_id):
+        revisions = self.revisions(plan_id)
+        return self.documents[(plan_id, revisions[-1])] if revisions else None
+
+    def revisions(self, plan_id):
+        return sorted(revision for (pid, revision) in self.documents if pid == plan_id)
+
+    def record_entry(self, entry):
+        self._entries.setdefault(entry.plan_id, {})[entry.node] = entry
+
+    def record_entries(self, entries):
+        for entry in entries:
+            self.record_entry(entry)
+
+    def entries(self, plan_id):
+        return dict(self._entries.get(plan_id, {}))
+
+    def record_artifacts(self, artifacts):
+        for artifact in artifacts:
+            self.artifacts[(artifact.content_sha256, artifact.location)] = artifact
+
+    def artifact(self, content_sha256, location):
+        return self.artifacts.get((content_sha256, location))
+
+
+def _outputs(runner):
+    return [call[0][-1] for call in runner.calls]
+
+
+def test_changing_one_scene_reuses_the_other_scene_without_running_ffmpeg(tmp_path):
+    """Mudar A ⇒ o FFmpeg roda para A + concat + final; o segmento de B vem do cache."""
+    first = spec_for(tmp_path, scene_seconds=(2.0, 1.5), texts=("Primeira cena.", "Segunda cena."))
+    repo, runner = FakePlanRepository(), StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache")
+
+    renderer.render(first, first.work_dir / "final.mp4")
+    assert len(runner.calls) == 4  # primeira revisão: 2 shots + concat + mixagem
+
+    changed = spec_for(tmp_path, scene_seconds=(2.0, 1.5),
+                       texts=("Primeira cena reescrita por completo.", "Segunda cena."))
+    runner.calls.clear()
+    renderer.render(changed, changed.work_dir / "final.mp4")
+
+    outputs = _outputs(runner)
+    assert len(runner.calls) == 3, outputs  # A + concat + final (B reusado)
+    assert str(tmp_path / "work" / "scene_000.mp4") in outputs
+    assert str(tmp_path / "work" / "scene_001.mp4") not in outputs  # o FFmpeg não rodou para B
+    assert str(tmp_path / "work" / "video_only.mp4") in outputs and str(tmp_path / "work" / "final.mp4") in outputs
+
+
+def test_rendering_the_same_plan_again_reuses_the_final_mp4_without_ffmpeg(tmp_path):
+    """Nada mudou ⇒ acerto total: o MP4 final é o próprio artefato físico, zero FFmpeg."""
+    spec = spec_for(tmp_path, scene_seconds=(2.0,), texts=("Cena única do teste de reúso.",))
+    repo, runner = FakePlanRepository(), StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache")
+
+    renderer.render(spec, spec.work_dir / "final.mp4")
+    assert len(runner.calls) == 3  # 1 shot + concat + mixagem
+    runner.calls.clear()
+    out = renderer.render(spec, spec.work_dir / "final.mp4")
+
+    assert runner.calls == []  # nem um ffmpeg: o final saiu do cache
+    assert out.read_bytes() == b"stub"
+
+
+def test_a_corrupted_cached_artifact_is_not_reused(tmp_path):
+    """Honestidade do cache: artefato com hash divergente não é reusado — re-renderiza."""
+    spec = spec_for(tmp_path, scene_seconds=(2.0,), texts=("Cena do teste de corrupção.",))
+    repo, runner = FakePlanRepository(), StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache")
+    renderer.render(spec, spec.work_dir / "final.mp4")
+
+    for entry in repo.entries(f"plan:{spec.scenes[0].video_id}").values():
+        Path(entry.artifact_uri).write_bytes(b"corrompido")  # o conteúdo deixa de bater com o hash
+    runner.calls.clear()
+    renderer.render(spec, spec.work_dir / "final.mp4")
+
+    # nenhum artefato confere: tudo é regenerado (o "final" inclusive)
+    assert len(runner.calls) == 3 and str(tmp_path / "work" / "scene_000.mp4") in _outputs(runner)

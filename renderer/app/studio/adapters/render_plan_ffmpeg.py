@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -36,11 +37,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ... import rich
 from ..application.ports import RenderSpec
+from ..application.render_cache import PlanRegeneration
 from ..application.render_compiler import CompiledRender, compile_render_plan
 from ..domain.asset_resolver import IMAGE_CODECS, AssetDescriptor
 from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
-from ..domain.render_plan import AssetReference, Motion, StyleSnapshot
+from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
+from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
 from ..domain.render_plan_builder import StoryboardScene, build_render_plan
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
@@ -117,6 +120,31 @@ def text_card(fmt: VideoFormat, text: str, dst: Path) -> None:
     img.save(dst)
 
 
+def _sha256_file(path: Path) -> str:
+    """sha256 do conteúdo físico do artefato: é a identidade que o índice de cache guarda."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _slug(value: str) -> str:
+    """Nome de arquivo seguro e estável para um id lógico (plan_id/node_key têm ``:``)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("_")[:120] or "x"
+
+
+def _artifact_kind(node: NodeId) -> tuple[str | None, str]:
+    """(media_type, codec) do artefato físico de um nó, para o registro de ``plan_artifacts``.
+
+    ``media_type`` segue a whitelist do schema (image/video/graphic/text): áudio não é um
+    tipo aceito, então narração/trilha ficam sem media_type e só carregam o codec.
+    """
+    if node.kind in ("narration", "music"):
+        return None, "pcm_s16le"
+    return "video", "h264"
+
+
 def _run(cmd: list[str], timeout: int = 600) -> None:
     try:
         subprocess.run(cmd, check=True, timeout=timeout, capture_output=True)
@@ -160,15 +188,33 @@ class PlanFfmpegRenderer:
     name = "ffmpeg"
 
     def __init__(self, model: str = "rich", *, cycle: tuple[Motion, ...] | None = None,
-                 motions: Mapping[str, Motion] | None = None, timeout_floor: int = 300, runner=None):
+                 motions: Mapping[str, Motion] | None = None, timeout_floor: int = 300, runner=None,
+                 plans=None, cache_root: Path | None = None):
         self.model = model
         self.cycle = tuple(KEN_BURNS_CYCLE if cycle is None else cycle)
         self.motions = dict(motions or {})
         self.timeout_floor = timeout_floor
         self._run = runner or _run
+        # RP-06b: com um repositório a instância reusa artefatos (segmentos/wavs/montagem) por
+        # fingerprint de conteúdo. Sem repositório (unidade/kill-switch) o comportamento é o de
+        # antes: renderiza tudo, sem tocar banco nem cache.
+        self.plans = plans
+        self.cache_root = Path(cache_root) if cache_root is not None else None
+        self._regeneration = PlanRegeneration(plans) if plans is not None else None
 
     def render(self, spec: RenderSpec, out_path: Path) -> Path:
-        return self.execute(self.compile_spec(spec), spec.speech_wavs, Path(out_path))
+        """Rota de produção: decide o reúso, executa só o que falta e registra os artefatos.
+
+        Cada render é uma **revisão** nova do plano lógico (``revision + 1``): é isso que dá ao
+        ``PlanRegeneration`` a revisão anterior para comparar por fingerprint. Sem repositório,
+        a revisão é sempre 1 e nada é persistido (caminho de unidade).
+        """
+        plan = self._plan_for_render(spec)
+        compiled, labels = self._compile(plan, spec)
+        reuse = self._reuse_hits(plan, labels)
+        out = self.execute(compiled, spec.speech_wavs, Path(out_path), reuse=reuse)
+        self._record(plan, compiled, labels, reuse)
+        return out
 
     def compile_spec(self, spec: RenderSpec) -> CompiledRender:
         """Reconstrói o plano do ``RenderSpec`` e o compila (puro) — sem tocar FFmpeg.
@@ -176,11 +222,112 @@ class PlanFfmpegRenderer:
         Separado de ``execute`` para que o grafo/comando possa ser validado por unidade,
         sem renderizar nada (o compilador em si continua em ``application``).
         """
+        return self._compile(self._build_plan(spec), spec)[0]
+
+    def _compile(self, plan: RenderPlan, spec: RenderSpec) -> tuple[CompiledRender, dict[str, str]]:
         work = Path(spec.work_dir or ".")
-        plan = self._build_plan(spec)
         descriptors = self._descriptors(plan, spec)
         labels = {scene.id: scene.label for scene in spec.scenes}
-        return compile_render_plan(plan=plan, assets=descriptors, work_dir=str(work), labels=labels)
+        compiled = compile_render_plan(plan=plan, assets=descriptors, work_dir=str(work), labels=labels)
+        return compiled, labels
+
+    # ------------------------------------------------------------------ reúso (RP-06b)
+
+    def _plan_for_render(self, spec: RenderSpec) -> RenderPlan:
+        plan = self._build_plan(spec)
+        if self.plans is None:
+            return plan
+        previous = self.plans.latest_plan(plan.plan_id)
+        if previous is None:
+            return plan
+        # Nova revisão por render: a comparação por fingerprint é entre esta e a anterior.
+        return plan.model_copy(update={"revision": previous.revision + 1})
+
+    def _reuse_hits(self, plan: RenderPlan, labels: Mapping[str, str]) -> dict[NodeId, Path]:
+        """Nós reusáveis cujo artefato físico **existe e confere** com o hash registrado.
+
+        O ``PlanRegeneration`` aplica a propagação de dependência (mudar uma cena invalida
+        ``concat``/``final``); aqui só se confirma a evidência física. Qualquer dúvida (arquivo
+        ausente, hash divergente, erro de leitura) cai fora do reúso: re-renderizar é seguro.
+        """
+        if self._regeneration is None:
+            return {}
+        recorded = self.plans.entries(plan.plan_id)
+        decision = self._regeneration.decide(plan, labels=labels)
+        hits: dict[NodeId, Path] = {}
+        for node in decision.cache_hits:
+            entry = recorded.get(node)
+            if entry is None:
+                continue
+            path = Path(entry.artifact_uri)
+            try:
+                if not path.is_file() or _sha256_file(path) != entry.artifact_sha256:
+                    continue
+            except OSError:
+                continue
+            hits[node] = path
+        return hits
+
+    def _record(self, plan: RenderPlan, compiled: CompiledRender, labels: Mapping[str, str],
+                reuse: Mapping[NodeId, Path]) -> None:
+        """Persiste a revisão e registra cada artefato produzido/reusado — o cache do próximo ciclo.
+
+        Registra a identidade **física** real (``content_sha256`` do arquivo, codec, localização)
+        em ``plan_artifacts`` e a ligação **lógica** (fingerprint do nó → artefato) em
+        ``render_cache_entries``. Um nó sem artefato físico não é registrado: nada de cache
+        otimista.
+        """
+        if self.plans is None or self.cache_root is None:
+            return
+        graph = plan_graph(plan, labels=labels)
+        entries: list[CacheEntry] = []
+        artifacts: list[PlanArtifact] = []
+        for item in graph.nodes:
+            location = reuse.get(item.node)
+            if location is None:
+                produced = self._produced(item.node, compiled)
+                if produced is None or not Path(produced).is_file():
+                    continue
+                location = self._store(plan.plan_id, item.node, item.fingerprint, Path(produced))
+            try:
+                digest = _sha256_file(location)
+            except OSError:
+                continue
+            media_type, codec = _artifact_kind(item.node)
+            entries.append(CacheEntry(plan_id=plan.plan_id, node=item.node, fingerprint=item.fingerprint,
+                                      artifact_sha256=digest, artifact_uri=str(location), revision=plan.revision))
+            artifacts.append(PlanArtifact(content_sha256=digest, location=str(location), codec=codec,
+                                          media_type=media_type, byte_size=location.stat().st_size))
+        self.plans.save_plan(plan)
+        self.plans.record_entries(entries)
+        self.plans.record_artifacts(artifacts)
+
+    def _store(self, plan_id: str, node: NodeId, fingerprint: str, source: Path) -> Path:
+        """Copia o artefato produzido para o cache persistente (fora do `work/` descartável)."""
+        suffix = ".wav" if node.kind in ("narration", "music") else ".mp4"
+        dest = self.cache_root / _slug(plan_id) / node.kind / f"{_slug(node.key)}-{fingerprint[:16]}{suffix}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            shutil.copyfile(source, tmp)
+            os.replace(tmp, dest)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return dest
+
+    @staticmethod
+    def _produced(node: NodeId, compiled: CompiledRender) -> Path | None:
+        if node.kind == "visual":
+            return next((Path(s.output) for s in compiled.shots if s.shot_id == node.key), None)
+        if node.kind == "narration":
+            return next((Path(v.path) for v in compiled.audio.narration.voices if v.scene_id == node.key), None)
+        if node.kind == "music":
+            return Path(compiled.audio.music_path) if compiled.audio.music.source_id == node.key else None
+        if node.kind == "concat":
+            return Path(compiled.concat.output)
+        if node.kind == "final":
+            return Path(compiled.final_output)
+        return None
 
     # ------------------------------------------------------------------ construção
 
@@ -271,21 +418,44 @@ class PlanFfmpegRenderer:
 
     # ------------------------------------------------------------------ execução
 
-    def execute(self, compiled: CompiledRender, speech_wavs, out_path: Path) -> Path:
-        """Materializa overlays, monta áudio, roda FFmpeg e publica de forma atômica."""
+    def execute(self, compiled: CompiledRender, speech_wavs, out_path: Path, *,
+                reuse: Mapping[NodeId, Path] | None = None) -> Path:
+        """Materializa overlays, monta áudio, roda FFmpeg e publica de forma atômica.
+
+        ``reuse`` mapeia nó lógico → artefato físico já existente (RP-06b). Um shot/narração/
+        montagem em ``reuse`` **não** roda FFmpeg: o artefato é copiado para o caminho que o
+        plano espera. ``concat``/``final`` continuam sendo recomputados quando qualquer cena
+        mudou (a dependência os invalida); só quando **nada** mudou o MP4 final vem do cache.
+        """
+        reuse = reuse or {}
+        final_node = NodeId("final", "video")
+        if final_node in reuse:  # nada mudou: o MP4 final já existe como artefato físico
+            return self._publish(Path(reuse[final_node]), Path(out_path))
         Path(compiled.final_output).parent.mkdir(parents=True, exist_ok=True)
         fmt = VideoFormat(compiled.format)
         self._materialize(compiled, fmt)
-        narration_inputs = self._narration_inputs(compiled, speech_wavs)
+        narration_inputs = self._narration_inputs(compiled, speech_wavs, reuse)
         rich.build_narration_track(narration_inputs, Path(compiled.audio.narration.output))
-        self._write_music(compiled)
+        music_node = NodeId("music", compiled.audio.music.source_id)
+        if music_node in reuse:  # trilha inalterada: o WAV vem do cache
+            shutil.copyfile(reuse[music_node], Path(compiled.audio.music_path))
+        else:
+            self._write_music(compiled)
         total_seconds = compiled.total_ticks / compiled.ticks_per_second
         timeout = int(self.timeout_floor + 3 * total_seconds)
         for shot in compiled.shots:
-            self._run(list(shot.args), timeout)
-        Path(compiled.concat.manifest_path).write_text(
-            "".join(f"file '{Path(shot.output).as_posix()}'\n" for shot in compiled.shots), encoding="utf-8")
-        self._run(list(compiled.concat.args), timeout)
+            cached = reuse.get(NodeId("visual", shot.shot_id))
+            if cached is not None:  # cena não impactada: segmento de vídeo vem do cache
+                Path(shot.output).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(cached, shot.output)
+            else:
+                self._run(list(shot.args), timeout)
+        if NodeId("concat", "video") in reuse:
+            shutil.copyfile(reuse[NodeId("concat", "video")], compiled.concat.output)
+        else:
+            Path(compiled.concat.manifest_path).write_text(
+                "".join(f"file '{Path(shot.output).as_posix()}'\n" for shot in compiled.shots), encoding="utf-8")
+            self._run(list(compiled.concat.args), timeout)
         self._run(list(compiled.audio.args), timeout)
         return self._publish(Path(compiled.final_output), Path(out_path))
 
@@ -297,7 +467,9 @@ class PlanFfmpegRenderer:
             if shot.text_card is not None:
                 text_card(fmt, shot.text_card.text, Path(shot.text_card.path))
 
-    def _narration_inputs(self, compiled: CompiledRender, speech_wavs) -> list[Path]:
+    def _narration_inputs(self, compiled: CompiledRender, speech_wavs,
+                          reuse: Mapping[NodeId, Path] | None = None) -> list[Path]:
+        reuse = reuse or {}
         voices = compiled.audio.narration.voices
         wavs = list(speech_wavs)
         if len(wavs) != len(voices):
@@ -305,6 +477,10 @@ class PlanFfmpegRenderer:
         lengths = self._scene_seconds(compiled)
         inputs: list[Path] = []
         for voice, speech in zip(voices, wavs):
+            cached = reuse.get(NodeId("narration", voice.scene_id))
+            if cached is not None:  # narração não impactada: o WAV vem do cache
+                inputs.append(cached)
+                continue
             dst = Path(voice.path)
             if voice.source_id is None:  # cena silenciosa: silêncio do mesmo comprimento (C2)
                 _write_silence(dst, max(0.0, lengths.get(voice.scene_id, 0.0) - LEAD - TAIL))

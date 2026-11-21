@@ -17,7 +17,7 @@ from app.studio.adapters.postgres.render_plan_repo import PostgresRenderPlanRepo
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.application.render_cache import PlanRegeneration  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
-from app.studio.domain.render_cache import CacheEntry, NodeId, plan_graph  # noqa: E402
+from app.studio.domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph  # noqa: E402
 from app.studio.domain.render_plan import StyleSnapshot  # noqa: E402
 from app.studio.domain.render_plan_builder import (  # noqa: E402
     StoryboardScene,
@@ -147,6 +147,88 @@ def test_full_regeneration_cycle_against_the_repository(env):
     assert A_VISUAL in changed.invalidated
     assert B_VISUAL in changed.cache_hits
     assert changed.final_recompose is True
+
+
+def test_batch_registration_writes_entries_and_artifacts_idempotently(env):
+    """RP-06b: o executor registra a revisão inteira numa transação só (índice lógico + físico)."""
+    plans, video = env["plans"], env["video"]
+    plan = plan_for(video.id)
+    plans.save_plan(plan)
+    entries = [
+        CacheEntry(plan_id=plan.plan_id, node=A_VISUAL, fingerprint="1" * 64,
+                   artifact_sha256="a" * 64, artifact_uri="work/scene_000.mp4", revision=1),
+        CacheEntry(plan_id=plan.plan_id, node=B_VISUAL, fingerprint="2" * 64,
+                   artifact_sha256="b" * 64, artifact_uri="work/scene_001.mp4", revision=1),
+    ]
+    plans.record_entries(entries)
+    stored = plans.entries(plan.plan_id)
+    assert stored[A_VISUAL].artifact_uri == "work/scene_000.mp4" and stored[B_VISUAL].artifact_sha256 == "b" * 64
+
+    artifacts = [PlanArtifact(content_sha256="c" * 64, location="work/scene_000.mp4", codec="h264",
+                              media_type="video", byte_size=123)]
+    plans.record_artifacts(artifacts)
+    assert plans.artifact("c" * 64, "work/scene_000.mp4").codec == "h264"
+    plans.record_artifacts(artifacts), plans.record_entries(entries)  # repetir é idempotente
+    assert env["conn"].execute("SELECT count(*) FROM studio.plan_artifacts WHERE content_sha256 = %s",
+                               ("c" * 64,)).fetchone()[0] == 1
+
+
+def test_executor_reuses_the_unchanged_scene_against_the_real_repository(env, tmp_path):
+    """O reúso roda contra o Postgres real (documento JSONB → grafo), não só contra o fake."""
+    import math
+    import struct
+    import wave
+    from PIL import Image
+
+    from app.studio.adapters.render_plan_ffmpeg import PlanFfmpegRenderer
+    from app.studio.application.ports import RenderSpec
+    from app.studio.domain.contracts import Scene
+    from app.studio.domain.render import SIZE, make_cues, scene_length
+
+    video = env["video"]
+
+    def tone(path, seconds=1.2, rate=22050):
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(rate)
+            n = int(seconds * rate)
+            w.writeframes(b"".join(struct.pack("<h", int(32767 * 0.4 * math.sin(2 * math.pi * 220 * i / rate))) for i in range(n)))
+
+    def spec_for(texts):
+        scenes, images, wavs, lengths, cues, offset = [], [], [], [], [], 0.0
+        for idx, text in enumerate(texts):
+            asset_id = f"{idx + 1:032x}"
+            image = tmp_path / f"img{idx}.png"
+            Image.new("RGB", SIZE[VideoFormat.short], (20 + 30 * idx, 80, 160)).save(image)
+            wav = tmp_path / f"s{idx}.wav"
+            tone(wav)
+            length = scene_length(1.2)
+            scenes.append(Scene(id=asset_id, video_id=video.id, idx=idx, narration=text, label="QUA", caption="x",
+                                image_prompt="prompt de imagem válido", claim_ids=["c"], asset_id=asset_id))
+            images.append(image), wavs.append(wav), lengths.append(length)
+            cues += make_cues(text, offset, 1.2)
+            offset += length
+        return RenderSpec(scenes=scenes, images=images, speech_wavs=wavs, scene_seconds=lengths, cues=cues,
+                          format=VideoFormat.short, music=True, work_dir=tmp_path / "work")
+
+    class StubRunner:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, cmd, timeout=600):
+            self.calls.append(list(cmd))
+            from pathlib import Path
+            Path(cmd[-1]).write_bytes(b"stub")
+
+    (tmp_path / "work").mkdir(exist_ok=True)
+    runner = StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=env["plans"], cache_root=tmp_path / "cache")
+    renderer.render(spec_for(("Primeira cena do vídeo.", "Segunda cena do vídeo.")), tmp_path / "work" / "final.mp4")
+    assert len(runner.calls) == 4
+
+    runner.calls.clear()
+    renderer.render(spec_for(("Primeira cena reescrita por completo.", "Segunda cena do vídeo.")), tmp_path / "work" / "final.mp4")
+    outputs = [call[-1] for call in runner.calls]
+    assert len(runner.calls) == 3 and str(tmp_path / "work" / "scene_001.mp4") not in outputs
 
 
 def test_constraints_reject_bad_nodes_and_documents(env):

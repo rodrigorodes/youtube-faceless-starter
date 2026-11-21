@@ -286,6 +286,18 @@ class RenderPlanRepository(Protocol):
         """Revisões persistidas, em ordem crescente."""
     def record_entry(self, entry: CacheEntry) -> None:
         """Registra (ou atualiza) o artefato físico produzido por um nó numa revisão."""
+    def record_entries(self, entries: "Sequence[CacheEntry]") -> None:
+        """Registra, numa transação só, os artefatos produzidos por vários nós (RP-06b).
+
+        O executor que reusa segmentos registra todos os nós de uma revisão de uma vez: sem
+        isto, um plano de N cenas faria N conexões só para gravar o índice de cache.
+        """
+    def record_artifacts(self, artifacts: "Sequence[PlanArtifact]") -> None:
+        """Registra, numa transação só, os artefatos **físicos** produzidos (hash/codec/localização).
+
+        Separado de ``record_entries`` porque a identidade física (hash+localização) não carrega a
+        revisão do plano: o mesmo conteúdo reaproveitado por outra revisão é o mesmo registro.
+        """
     def entries(self, plan_id: str) -> dict[NodeId, CacheEntry]:
         """Último artefato conhecido por nó lógico (para decidir acerto de cache)."""
     def artifact(self, content_sha256: str, location: str) -> PlanArtifact | None:
