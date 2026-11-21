@@ -7,7 +7,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from ...application.use_cases import InvalidInput, ServiceUnavailable
-from ...domain.contracts import Project, QaReport, Video, VideoFormat, VideoStatus
+from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
+from ...domain.qa_report import QaReport
 from ...domain.ids import check_id
 from ...domain.states import assert_transition
 

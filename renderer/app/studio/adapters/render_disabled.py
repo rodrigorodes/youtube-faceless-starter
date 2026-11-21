@@ -35,3 +35,10 @@ class DisabledRenderer:
             "the plan-based renderer is disabled by STUDIO_RENDER_PLAN_ENABLED; "
             "there is no legacy fallback — roll back by redeploying the previous image"
         )
+
+    def qa_inputs(self, spec):
+        """Sem render não há plano/descriptors: recusa com a mesma causa do ``render``."""
+        raise RenderPlanDisabled(
+            "the plan-based renderer is disabled by STUDIO_RENDER_PLAN_ENABLED; "
+            "there is no legacy fallback — roll back by redeploying the previous image"
+        )

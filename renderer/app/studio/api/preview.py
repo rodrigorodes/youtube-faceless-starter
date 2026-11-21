@@ -317,15 +317,19 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
     v = p.video
     base = f"/studio/videos/{v.id}"
     reviewable = v.status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED)
-    qa_failed = p.qa is not None and not p.qa.passed
+    qa_failed = p.qa is not None and not p.qa.is_publishable
     player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file?output_asset_id={e(p.output_asset_id)}"><track kind="captions" srclang="pt-BR" label="Português" '
               f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="bad" role="alert" style="padding: 2rem; background: var(--surface); border-radius: 8px; text-align: center;">Sem arquivo de vídeo renderizado.</p>'
     qa = "<p style='color: var(--text-muted); font-size: 0.85rem;'>Sem relatório de QA.</p>"
     if p.qa is not None:
-        rows = "".join(f"<tr><th scope='row'>{e(k)}</th><td>{e(val)}</td></tr>" for k, val in sorted(p.qa.metrics.items()))
-        fails = "".join(f"<li>{e(f)}</li>" for f in p.qa.failures)
-        qa = (f'<p class="{"ok" if p.qa.passed else "bad"}" style="font-weight: 600; font-size: 0.9rem;">QA {"aprovado" if p.qa.passed else "REPROVADO"}</p>'
-              f"{f'<ul style=\"color: var(--bad); margin: 0.35rem 0;\">{fails}</ul>' if fails else ''}<table><caption class='hint' style='display:none;'>Métricas medidas</caption>{rows}</table>")
+        aprovado = p.qa.is_publishable
+        counts = p.qa.severity_counts
+        findings = "".join(f"<li>{e(f.evidence)} <span class='hint'>({e(f.severity)} · {e(f.check_id)})</span></li>" for f in p.qa.findings)
+        resumo = (f"{counts['blocking']} bloqueante(s), {counts['warning']} aviso(s), {counts['info']} informativo(s) · "
+                  f"cobertura {e(p.qa.coverage.status)}")
+        qa = (f'<p class="{"ok" if aprovado else "bad"}" style="font-weight: 600; font-size: 0.9rem;">QA {"aprovado" if aprovado else "REPROVADO"}</p>'
+              f"{f'<ul style=\"color: var(--bad); margin: 0.35rem 0;\">{findings}</ul>' if findings else ''}"
+              f"<p class='hint' style='color: var(--text-muted); font-size: 0.8rem;'>{resumo}</p>")
     scenes = "".join(f"<li>{('<strong>' + e(s.label) + '</strong> ') if s.label else ''}{e(s.narration)}</li>" for s in p.scenes)
     sources = "".join(f'<li><a href="{e(u)}" rel="noopener noreferrer" target="_blank">{e(u)}</a></li>' for u in p.sources if u.startswith(("https://", "http://")))
     credits = "".join(f"<li>{e(c)}</li>" for c in p.credits)

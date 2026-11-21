@@ -5,7 +5,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from ...domain.contracts import Asset, QaReport, RenderJob, VideoStatus
+from ...domain.contracts import Asset, RenderJob, VideoStatus
+from ...domain.qa_report import QaReport
 from ...domain.ids import check_id
 from ...application.use_cases import ServiceUnavailable
 from .editorial_repo import _Base
@@ -74,7 +75,7 @@ class PostgresRenderJobRepository(_Base):
             row = conn.execute("SELECT status FROM studio.videos WHERE id = %s FOR UPDATE", (video_id,)).fetchone()
             if row is None or row[0] not in (VideoStatus.ASSETS_READY.value, VideoStatus.RENDERED.value):
                 return False
-            new = VideoStatus.AWAITING_APPROVAL if qa.passed else VideoStatus.RENDERED
+            new = VideoStatus.AWAITING_APPROVAL if qa.is_publishable else VideoStatus.RENDERED
             conn.execute("UPDATE studio.videos SET status = %s, qa_report = %s, updated_at = now() WHERE id = %s",
                          (new.value, Jsonb(qa.model_dump(mode="json")), video_id))
             conn.execute("UPDATE studio.render_jobs SET status = 'SUCCEEDED', output_asset_id = %s, finished_at = now() WHERE id = %s",

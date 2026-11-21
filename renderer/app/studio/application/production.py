@@ -23,7 +23,6 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Protocol
@@ -47,12 +46,11 @@ from ..domain.production_run import (
     StageTransitionResult,
 )
 from ..domain.qa_report import (
-    QaCoverage,
-    QaFinding,
     QaGateError,
     QaReport as VersionedQaReport,
     RenderVersion,
     approve as approve_qa,
+    blocking_evidence,
 )
 from .editorial import Editorial
 from .media import Media
@@ -308,37 +306,24 @@ class QaHandler(_AvailableHandler):
         report = video.qa_report
         if report is None:
             raise StageExecutionFailed("the render has no QA report")
-        if not report.passed:
-            raise StageExecutionFailed("QA failed: " + "; ".join(report.failures))
+        if not report.is_publishable:
+            raise StageExecutionFailed("QA failed: " + "; ".join(blocking_evidence(report)))
         return StageOutcome(checkpoint=Checkpoint(
             {"stage": self.stage.value, "render_job": job.id, "qa_passed": True}, context.checkpoint_version))
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _findings(suggestions: str, failures: Sequence[str]) -> tuple[QaFinding, ...]:
-    return tuple(
-        QaFinding(finding_id=f"qa-{index}", check_id="studio.render.qa", category="technical",
-                  severity="blocking", evidence=failure, suggested_action=suggestions)
-        for index, failure in enumerate(failures) if failure.strip()
-    )
-
-
 class RenderQaGate:
-    """Monta o contrato versionado da F6 a partir do estado persistido (render + QA + aprovação).
+    """Liga o relatório de QA **persistido** ao gate de aprovação por versão (F6).
 
-    A identidade do render é declarada, não recalculada: o `render_id` é o job e o `checksum` é a
-    chave do asset de saída (a mesma que a publicação usa). O gate recusa render superado e cobertura
-    não verificada; sem render ou sem QA devolve `None` (nada a aprovar).
+    Fonte única: o relatório é o que o loop de render produziu e gravou em ``videos.qa_report``
+    (F6), não uma segunda medição. A identidade do render é declarada, não recalculada: o
+    ``render_id`` é o job e o ``checksum`` é a chave do asset de saída (a mesma que a publicação
+    usa). O gate recusa render superado e cobertura não verificada; sem render ou sem QA devolve
+    ``None`` (nada a aprovar).
     """
 
-    CHECK = "studio.render.qa"
-
-    def __init__(self, videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
-                 clock: Callable[[], datetime] = _utc_now):
-        self.videos, self.jobs, self.assets, self.clock = videos, jobs, assets, clock
+    def __init__(self, videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository):
+        self.videos, self.jobs, self.assets = videos, jobs, assets
 
     def _render_version(self, video_id: str) -> tuple[RenderJob, RenderVersion] | None:
         # `latest` é o render de saída mais recente (não a versão aprovada): se um render novo
@@ -356,17 +341,16 @@ class RenderQaGate:
             return None
         job, latest = version
         video = _require_video(self.videos, video_id)
-        legacy = video.qa_report
-        if legacy is None:
+        report = video.qa_report
+        if report is None:
             return None
         approved = self.assets.get(approved_asset_id) if approved_asset_id else None
         requested = RenderVersion(render_id=job.id, checksum=approved.cache_key if approved else latest.checksum)
-        report = VersionedQaReport(
-            render_id=job.id, checksum=latest.checksum, generated_at=self.clock(),
-            coverage=QaCoverage(status="verified"), checks_run=(self.CHECK,),
-            findings=_findings("Regenerar o render ou corrigir a causa.", legacy.failures),
-        )
-        return report, latest, requested
+        # O relatório persistido é o mesmo que o loop produziu; só a identidade é reamarrada ao
+        # render que se pretende aprovar (o gate da F6 é sobre a versão aprovada). Os achados e a
+        # cobertura são os do relatório — nada é remedido aqui.
+        bound = report.model_copy(update={"render_id": job.id, "checksum": latest.checksum})
+        return bound, latest, requested
 
 
 class ApprovalHandler(_AvailableHandler):
@@ -438,8 +422,7 @@ class PublishHandler(_AvailableHandler):
 
 def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: StartRender, run_render: RunRender,
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
-                         approvals: ApprovalRepository, publish: RunPublication | None = None,
-                         clock: Callable[[], datetime] = _utc_now
+                         approvals: ApprovalRepository, publish: RunPublication | None = None
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     handlers: dict[ProductionStage, StageHandler] = {
@@ -449,7 +432,7 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
         ProductionStage.ASSETS: AssetsHandler(media),
         ProductionStage.RENDER: RenderHandler(start_render, run_render, jobs),
         ProductionStage.QA: QaHandler(videos, jobs),
-        ProductionStage.APPROVAL: ApprovalHandler(videos, approvals, RenderQaGate(videos, jobs, assets, clock)),
+        ProductionStage.APPROVAL: ApprovalHandler(videos, approvals, RenderQaGate(videos, jobs, assets)),
     }
     handlers[ProductionStage.RESEARCH] = UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON)
     handlers[ProductionStage.PUBLISH] = (PublishHandler(publish) if publish is not None

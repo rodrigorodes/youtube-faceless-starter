@@ -36,7 +36,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from ... import rich
-from ..application.ports import RenderSpec
+from ..application.ports import RenderQaInputs, RenderSpec
 from ..application.render_cache import PlanRegeneration
 from ..application.render_compiler import CompiledRender, compile_render_plan
 from ..domain.asset_resolver import IMAGE_CODECS, AssetDescriptor
@@ -215,6 +215,16 @@ class PlanFfmpegRenderer:
         out = self.execute(compiled, spec.speech_wavs, Path(out_path), reuse=reuse)
         self._record(plan, compiled, labels, reuse)
         return out
+
+    def qa_inputs(self, spec: RenderSpec) -> RenderQaInputs:
+        """Plano lógico + descriptors resolvidos — a entrada do QA versionado (F6).
+
+        Reconstrói o plano do ``RenderSpec`` (a mesma entrada do ``render``) e resolve os
+        descriptors dos assets: é o único ponto com I/O de leitura de mídia, então é daqui
+        que o QA persistido tira o plano e a resolução dos assets, mantendo o núcleo puro.
+        """
+        plan = self._build_plan(spec)
+        return RenderQaInputs(plan=plan, descriptors=tuple(self._descriptors(plan, spec).values()))
 
     def compile_spec(self, spec: RenderSpec) -> CompiledRender:
         """Reconstrói o plano do ``RenderSpec`` e o compila (puro) — sem tocar FFmpeg.
