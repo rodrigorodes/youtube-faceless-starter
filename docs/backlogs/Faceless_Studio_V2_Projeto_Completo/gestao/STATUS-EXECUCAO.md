@@ -236,7 +236,8 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 3. **F5 / RP-05 — motor audiovisual real** (beats múltiplos, FFmpeg): RP-05 é onde a medição real de
    vídeo acontece; hoje o `AssetResolver` valida vídeo por metadado **declarado**, não medido.
 
-**Baseline:** `main` local com 1924 passed, 35 skipped, 0 failed (o gate de higiene voltou a passar
-após `7f248cd`, que corrigiu falsos positivos do scanner em código de canal/segredos).
+**Baseline:** `main` local com **1926 passed, 35 skipped, 0 failed** (1961 coletados) rodado com
+Postgres real e as duas DSNs; o gate de higiene voltou a passar após `7f248cd`, que corrigiu falsos
+positivos do scanner em código de canal/segredos.
 
 **Nada aqui foi publicado.** `main` local tem tudo; o remoto não foi tocado (sem push).
