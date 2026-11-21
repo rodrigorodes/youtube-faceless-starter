@@ -183,7 +183,7 @@ fases (RP-00…RP-07).
 | RP-02 timeline e sincronização | ✅ | fatia 3 — `eadb938`, `5e1e0ed`, `ad2f8b2` |
 | RP-03 builder | ✅ | `0982a08`/`1bead3f` — builder + compilador puro (`domain/render_plan_builder.py`, `application/render_compiler.py`) |
 | RP-04 asset resolver | ✅ | `9e6387b` — porta `AssetResolver`, manifesto com `content_sha256` próprio (C1), validação multi-asset |
-| RP-05 FFmpeg adapter | ❌ | fatia 6 — **a medição real de vídeo (ffprobe) fica aqui** |
+| RP-05 FFmpeg (executor) + remoção do legado | ✅ | `a60a78c` executor (`adapters/render_plan_ffmpeg.py`, publicação atômica) + `0bde80c` **removeu** `adapters/render_ffmpeg.py` após paridade medida (duração Δ0,04 s; LUFS −15,3; silêncio/preto 0,0; `passed=True`) |
 | RP-06 regeneração seletiva | ❌ | fatia 7 (depende de D2, ✅) |
 | RP-07 QA e rollout | ❌ | fatia 8 |
 
