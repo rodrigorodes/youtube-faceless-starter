@@ -177,9 +177,17 @@ Design aprovado para seguir: `docs/superpowers/specs/2026-11-20-render-plan-foun
 
 ---
 
-## Aprovações do usuário (fonte de verdade de design)
+## UX é gate, não preferência
 
-| Data | Artefato | Escopo da aprovação |
+As 7 regras canônicas de `produto/JORNADA-E-TELAS.md` estão consolidadas em
+`tests/test_ux_contract.py` (`assert_ux_contract`), para toda fatia de UI de agora em diante:
+três estados sempre com **texto** (glifo não conta), item indisponível **não focável**, ausência
+de custo **nunca** `US$ 0,00`, sem stack trace para o operador, avançado **fechado por padrão**,
+viewport + media query, um único `<h1>`, sem barra de progresso afirmando linearidade, e
+**nenhum texto ilustrativo do mockup vazando** para o produto. Cada regra tem sonda própria que
+prova que a checagem morde.
+
+## Aprovações do usuário (fonte de verdade de design)| Data | Artefato | Escopo da aprovação |
 |---|---|---|
 | 2026-11-20 | `produto/mockup-proposta.html` | linguagem visual do painel (slice G1) |
 | 2026-11-20 | `produto/` (todos os mockups) | **toda a pasta**: 8 telas da jornada em `mockup-telas.html` + PNGs (`tela-*.png`, desktop e mobile) + `JORNADA-E-TELAS.md`. Passa a ser a referência visual de **todas** as fatias de UI (G, H e as telas seguintes) |
