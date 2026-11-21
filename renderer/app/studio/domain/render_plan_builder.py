@@ -34,6 +34,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from .channel import ChannelProfile
 from .contracts import Asset, Scene as StoryboardRow, VideoFormat
@@ -174,6 +175,7 @@ def build_render_plan(
     music: bool = True,
     timebase: Timebase | None = None,
     motions: Mapping[str, Motion] | None = None,
+    music_params: Mapping[str, Any] | None = None,
     created_at: datetime | None = None,
 ) -> RenderPlan:
     """Constrói um ``RenderPlan`` v1 válido a partir do storyboard medido.
@@ -181,6 +183,10 @@ def build_render_plan(
     Determinístico: a mesma entrada (e a mesma ordem de cenas) produz o **mesmo** plano.
     Levanta ``PlanBuildError`` para entrada inconsistente; o contrato (``RenderPlan``)
     levanta ``ValidationError`` para o que é de forma (duração fora do formato, ids etc.).
+
+    ``music_params`` são os parâmetros **do estilo** para a trilha (bpm/seed): quando
+    presentes, sobrepõem o default do sistema (``DEFAULT_MUSIC_PARAMS`` — bpm 122, seed 7);
+    ausentes/parciais caem no default por chave (o executor lê cada chave com fallback).
     """
     timebase = timebase or Timebase(ticks_per_second=DEFAULT_TICKS_PER_SECOND)
     tps = timebase.ticks_per_second
@@ -265,7 +271,7 @@ def build_render_plan(
             kind="music",
             duration_ticks=total_ticks + tps,  # a síntese cobre a duração + 1 s (legado)
             silent=not music,
-            params={} if not music else dict(DEFAULT_MUSIC_PARAMS),
+            params={} if not music else dict(music_params or DEFAULT_MUSIC_PARAMS),
         )
     )
 

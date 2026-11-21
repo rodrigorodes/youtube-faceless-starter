@@ -32,6 +32,7 @@ from .adapters.postgres.category_repo import PostgresCategoryRepository
 from .adapters.postgres.analytics_learning_repo import PostgresAnalyticsLearningRepository
 from .adapters.channel_analytics import ChannelAnalyticsAdapter
 from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
+from .adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
 from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
 from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
@@ -73,7 +74,7 @@ from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
                                            GetYouTubeChannel)
 from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
-from .domain.render_plan_builder import style_snapshot_for_channel
+from .domain.visual_style import resolve_style
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
@@ -164,17 +165,25 @@ def channel_guard_limits(videos, budgets):
     return limits_for
 
 
-def _style_for_project(project_id, channels):
-    """RP-016: a identidade versionada do render é a do canal do projeto.
+def _style_for_project(project_id, channels, styles):
+    """VS-03/RP-016: o estilo **resolvido** do render é o do canal do projeto.
 
-    Sem canal (ou id inválido), devolve None — o renderer usa o bundle neutro. Mesma
-    tolerância do ``channel_guard_limits``: um id estranho não derruba o render.
+    Resolve o caminho real: canal do projeto → ``style_id`` → ``VisualStyle`` → ``ResolvedStyle``
+    (snapshot versionado + motion/music). Sem canal, sem ``style_id`` ou estilo inexistente,
+    devolve None — o renderer usa o bundle neutro. Mesma tolerância do ``channel_guard_limits``:
+    um id estranho não derruba o render.
     """
     try:
         profile = channels.get_by_project(project_id)
     except InvalidId:
         return None
-    return style_snapshot_for_channel(profile) if profile is not None else None
+    if profile is None or profile.style_id is None:
+        return None
+    try:
+        style = styles.get(profile.style_id)
+    except InvalidId:
+        return None
+    return resolve_style(profile, style)
 
 
 def build_google_oauth(settings: "Settings",
@@ -411,6 +420,8 @@ class Studio:
         # RP-016: o perfil do canal é a identidade versionada do render. Uma instância só,
         # reusada pela fiação do render (abaixo) e pela página de Canais.
         channel_repo = PostgresChannelProfileRepository(connect)
+        # VS-03: a biblioteca de estilos; o render resolve o estilo do canal do projeto.
+        style_repo = PostgresVisualStyleRepository(connect)
         secret_store = FileSecretStore(s.secrets_root or (s.storage_root / "secrets"))
 
         paid_guard = None
@@ -453,7 +464,7 @@ class Studio:
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
                          paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
-                         style_for=lambda project_id: _style_for_project(project_id, channel_repo))
+                         style_for=lambda project_id: _style_for_project(project_id, channel_repo, style_repo))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)

@@ -139,3 +139,59 @@ def test_settings_read_the_oauth_file_path_from_env():
                                   "STUDIO_GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:8000/cb"})
     assert settings.google_client_secret_file == Path("/tmp/synthetic-oauth.json")
     assert settings.google_oauth_redirect_uri == "http://localhost:8000/cb"
+
+
+# -- VS-03: o estilo do canal é resolvido de verdade (fakes, sem banco) --
+
+
+class _Profile:
+    def __init__(self, project_id, style_id):
+        self.project_id, self.style_id = project_id, style_id
+
+
+class _Channels:
+    def __init__(self, profile=None, raises=False):
+        self.profile, self.raises = profile, raises
+
+    def get_by_project(self, project_id):
+        if self.raises:
+            from app.studio.domain.ids import InvalidId
+            raise InvalidId("bad id")
+        return self.profile
+
+
+class _Styles:
+    def __init__(self, style=None):
+        self.style = style
+
+    def get(self, style_id):
+        return self.style if style_id == (self.style.id if self.style else None) else None
+
+
+def test_style_for_project_resolves_the_channel_visual_style():
+    from app.studio.composition import _style_for_project
+    from app.studio.domain.visual_style import VisualStyle
+
+    style_id = "a" * 32
+    visual = VisualStyle(id=style_id, name="Cinemático",
+                         params={"motion": ["zoom_in", "pan_right"], "music": {"bpm": 90}})
+    resolved = _style_for_project("b" * 32, _Channels(_Profile("b" * 32, style_id)), _Styles(visual))
+    assert resolved is not None
+    assert resolved.snapshot.style_id == style_id and resolved.snapshot.version == 1
+    assert resolved.motion == ("zoom_in", "pan_right") and resolved.music == {"bpm": 90}
+
+
+def test_style_for_project_is_none_without_channel_or_style():
+    from app.studio.composition import _style_for_project
+    from app.studio.domain.visual_style import VisualStyle
+
+    style_id = "a" * 32
+    visual = VisualStyle(id=style_id, name="Cinemático")
+    # sem canal
+    assert _style_for_project("b" * 32, _Channels(None), _Styles(visual)) is None
+    # canal sem style_id
+    assert _style_for_project("b" * 32, _Channels(_Profile("b" * 32, None)), _Styles(visual)) is None
+    # style_id aponta para um estilo inexistente
+    assert _style_for_project("b" * 32, _Channels(_Profile("b" * 32, style_id)), _Styles(None)) is None
+    # id inválido não derruba a composição (mesma tolerância do channel_guard_limits)
+    assert _style_for_project("not-a-hex-id", _Channels(raises=True), _Styles(visual)) is None
