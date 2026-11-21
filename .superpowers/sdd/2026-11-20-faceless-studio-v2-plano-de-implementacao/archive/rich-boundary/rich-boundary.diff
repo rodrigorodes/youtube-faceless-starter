@@ -1,0 +1,130 @@
+diff --git a/renderer/app/rich.py b/renderer/app/rich.py
+index be85396..b596a52 100644
+--- a/renderer/app/rich.py
++++ b/renderer/app/rich.py
+@@ -1,20 +1,25 @@
+ """Modo "rich": áudio (narração Piper, trilha sintetizada e faixa de narração) e utilidades de texto.
+ 
+-Sem dependência do restante do app. Funções bloqueantes: chame com asyncio.to_thread.
++O alinhamento áudio↔vídeo e os parâmetros determinísticos da trilha **não** são recriados
++aqui: vêm do domínio puro (``studio.domain.render`` para ``FPS``/``LEAD``/``TAIL``/
++``scene_length`` e ``studio.domain.render_plan_builder`` para ``DEFAULT_MUSIC_PARAMS``). A
++direção adapter→domínio é a correta e é o que impede que os dois lados divirjam em
++silêncio. Funções bloqueantes: chame com asyncio.to_thread.
+ 
+ O vídeo (Ken Burns), a legenda queimada e a montagem final saíram daqui com o renderer
+ legado: agora são produzidos pelo executor do Render Plan
+ (``studio/adapters/render_plan_ffmpeg.py``), que consome deste módulo o áudio (narração e
+ trilha) e as fontes/``_wrap`` para compor os overlays de texto.
+ """
+-import math
+ import os
+ import wave
+ 
+ import numpy as np
+ 
+-FPS = 25
+-LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
++# Fonte canônica do tempo de cena (reexportados para os consumidores deste módulo).
++from .studio.domain.render import FPS, LEAD, TAIL, scene_length  # noqa: F401
++from .studio.domain.render_plan_builder import DEFAULT_MUSIC_PARAMS
++
+ FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+ MUSIC_SR = 44100
+@@ -39,11 +44,6 @@ def wav_duration(path):
+         return wav.getnframes() / wav.getframerate()
+ 
+ 
+-def scene_length(speech_seconds):
+-    """Duração da cena em quadros inteiros, para áudio e vídeo ficarem alinhados."""
+-    return math.ceil((LEAD + speech_seconds + TAIL) * FPS) / FPS
+-
+-
+ def build_narration_track(speech_wavs, out_path):
+     """Junta as falas com silêncio de lead/tail. Devolve as durações (s) de cada cena."""
+     lengths, rate, chunks = [], None, []
+@@ -66,12 +66,17 @@ def build_narration_track(speech_wavs, out_path):
+     return lengths
+ 
+ 
+-def synth_music(seconds, path, bpm=122):
+-    """Loop eletrônico original (house/minimal) gerado por síntese. Sem samples nem músicas de terceiros."""
++def synth_music(seconds, path, bpm=DEFAULT_MUSIC_PARAMS["bpm"], seed=DEFAULT_MUSIC_PARAMS["seed"]):
++    """Loop eletrônico original (house/minimal) gerado por síntese. Sem samples nem músicas de terceiros.
++
++    ``bpm``/``seed`` são os mesmos parâmetros determinísticos que o Render Plan carrega em
++    ``GeneratedAudioSource.params`` (``DEFAULT_MUSIC_PARAMS``): quem executa tem de honrar o
++    que o plano documenta, senão o áudio diverge do fingerprint que o cache usa.
++    """
+     sr = MUSIC_SR
+     n = int(seconds * sr)
+     out = np.zeros(n)
+-    rng = np.random.default_rng(7)
++    rng = np.random.default_rng(seed)
+     beat = 60.0 / bpm
+ 
+     def put(sig, start):
+diff --git a/renderer/app/studio/adapters/render_plan_ffmpeg.py b/renderer/app/studio/adapters/render_plan_ffmpeg.py
+index bf81e9b..4022fcd 100644
+--- a/renderer/app/studio/adapters/render_plan_ffmpeg.py
++++ b/renderer/app/studio/adapters/render_plan_ffmpeg.py
+@@ -44,7 +44,7 @@ from ..domain.contracts import VideoFormat
+ from ..domain.render import LEAD, SIZE, TAIL
+ from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
+ from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
+-from ..domain.render_plan_builder import StoryboardScene, build_render_plan
++from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardScene, build_render_plan
+ 
+ FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
+ # Identidade do canal por chave + versão (R4). O RenderSpec do RunRender não carrega o
+@@ -515,7 +515,11 @@ class PlanFfmpegRenderer:
+         if music.silent:  # `music=False` mantém o grafo de mixagem com a trilha muda (C2)
+             _write_silence(path, seconds)
+         else:
+-            rich.synth_music(seconds, path, bpm=int(music.params.get("bpm", 122)))
++            # bpm/seed vêm do plano (canônico em DEFAULT_MUSIC_PARAMS); o fallback é o mesmo objeto
++            params = music.params
++            rich.synth_music(seconds, path,
++                             bpm=int(params.get("bpm", DEFAULT_MUSIC_PARAMS["bpm"])),
++                             seed=int(params.get("seed", DEFAULT_MUSIC_PARAMS["seed"])))
+ 
+     @staticmethod
+     def _publish(source: Path, out_path: Path) -> Path:
+diff --git a/tests/test_rich.py b/tests/test_rich.py
+index 56abc1d..69c7316 100644
+--- a/tests/test_rich.py
++++ b/tests/test_rich.py
+@@ -11,6 +11,8 @@ os.environ.setdefault("JOB_DIR", "/tmp/yfs-test/jobs")
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+ 
+ from app import rich  # noqa: E402
++from app.studio.domain import render as domain_render  # noqa: E402
++from app.studio.domain.render_plan_builder import DEFAULT_MUSIC_PARAMS  # noqa: E402
+ 
+ 
+ def write_tone(path, seconds, rate=22050):
+@@ -21,9 +23,20 @@ def write_tone(path, seconds, rate=22050):
+ 
+ def test_scene_length_is_whole_frames():
+     for speech in (1.0, 3.37, 5.123):
+-        total = rich.scene_length(speech)
+-        assert math.isclose(total * rich.FPS, round(total * rich.FPS), abs_tol=1e-9)
+-        assert total >= speech + rich.LEAD + rich.TAIL
++        total = domain_render.scene_length(speech)  # a função canônica, não uma cópia do rich
++        assert math.isclose(total * domain_render.FPS, round(total * domain_render.FPS), abs_tol=1e-9)
++        assert total >= speech + domain_render.LEAD + domain_render.TAIL
++
++
++def test_rich_reexports_the_canonical_timing_and_music_constants():
++    """Fonte única: o que `rich` expõe é o MESMO objeto do domínio, não uma recópia.
++
++    Se alguém reintroduzir `FPS`/`LEAD`/`TAIL`/`scene_length` no `rich`, a identidade falha;
++    se mudar `DEFAULT_MUSIC_PARAMS`, os defaults do `synth_music` acompanham.
++    """
++    assert rich.scene_length is domain_render.scene_length
++    assert (rich.FPS, rich.LEAD, rich.TAIL) == (domain_render.FPS, domain_render.LEAD, domain_render.TAIL)
++    assert rich.synth_music.__defaults__ == (DEFAULT_MUSIC_PARAMS["bpm"], DEFAULT_MUSIC_PARAMS["seed"])
+ 
+ 
+ def test_narration_track_matches_scene_lengths(tmp_path):

@@ -1,0 +1,16 @@
+# python -c 'import app.main' (no container, PYTHONPATH=renderer) — prova de boot e ausencia de ciclo
+app.main import OK
+
+# from app import rich; rich.scene_length is app.studio.domain.render.scene_length
+rich.scene_length is domain.render.scene_length -> True
+synth_music defaults -> (122, 7)
+
+# tests/test_main_boot.py (boot + GET /health)
+..                                                                       [100%]
+=============================== warnings summary ===============================
+../../../../../../../../usr/local/lib/python3.12/site-packages/starlette/testclient.py:37
+  /usr/local/lib/python3.12/site-packages/starlette/testclient.py:37: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = typing.Callable[[], typing.ContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2 passed, 1 warning in 0.67s
