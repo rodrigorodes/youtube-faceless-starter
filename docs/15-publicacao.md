@@ -62,6 +62,15 @@ O canal é consentido pelo app OAuth do projeto, não por credencial dentro do n
   --project-id <id>` (grava o refresh token no cofre; nunca o imprime).
 - Configuração: `STUDIO_GOOGLE_CLIENT_SECRET_FILE` e `STUDIO_GOOGLE_OAUTH_REDIRECT_URI` (padrão
   `http://localhost:8000/studio/oauth/callback`).
+- **O `docker-compose.yml` precisa encaminhar** essas duas variáveis ao serviço `renderer`: ele
+  enumera o `environment` explicitamente, então pôr no `.env` **não** basta — sem o encaminhamento,
+  `Settings.google_client_secret_file` fica `None` e o painel diz "OAuth do YouTube não configurado
+  no servidor" (era esse o caso até o fix de 2026-11-21).
+- No **Google Cloud Console** o `redirect_uri` acima precisa constar em *Authorized redirect URIs*
+  do app OAuth, senão o Google devolve `redirect_uri_mismatch` (o nosso lado aceita; o Google não).
+  E, em modo *Testing*, a conta Google precisa estar entre os **test users** do consent screen,
+  senão vem `access_denied`.
+- O cofre de tokens fica em `storage/secrets/` (fora do git). Confira que continua ignorado.
 - O escopo `https://www.googleapis.com/auth/youtube.upload` basta para publicar. Sem
   `youtube`/`youtube.force-ssl` a API **não** apaga nem altera vídeos depois do upload.
 - Modo *Testing* do Google: o refresh token expira em 7 dias (reconecte). `videos.insert` tem bucket

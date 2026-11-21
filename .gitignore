@@ -18,3 +18,4 @@ storage/projects/
 client_secret*.json
 credentials/
 *.credentials.json
+storage/secrets/
