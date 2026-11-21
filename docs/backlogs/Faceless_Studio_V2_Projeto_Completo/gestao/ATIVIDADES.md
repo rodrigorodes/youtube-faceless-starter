@@ -125,3 +125,20 @@ suíte acusa divergência. O gerador só lê; não altera dados.
   Ambos confirmados no código e corrigidos na VS-05c.
 - **Alarme falso — scanner de segredos**: falhou uma vez por eu tê-lo rodado com arquivo em conflito
   (`composition.py` nos stages 1/2/3); o guard recusa rodar assim, por projeto. Não era vazamento.
+
+## Veredito final da suíte (2026-11-21)
+
+`main` @ `990136b` — **2603 passed, 0 failed, 35 skipped**, em 8 partições (**8/8 verdes**).
+Baseline anterior: 2430 passed / 0 failed / 35 skipped. Ou seja: **+173 testes** novos,
+nenhuma falha nova, o mesmo número de skips (35, pré-existentes).
+
+Cobertura do veredito: a suíte inteira (148 arquivos de teste), não só as fatias.
+
+## Encerramento da orquestração
+
+- **Postgres extras removidos**: `integ-pg-a`, `integ-pg-b`, `integ-pg-orch`
+  (preservados: `integ-pg`, o stack do app, o n8n e os volumes).
+- **Worktrees das 12 fatias removidos** — as **branches foram preservadas**, então nada do
+  trabalho se perde; só as pastas de trabalho saíram. O repo do dono ficou intacto.
+- Nenhum container de teste órfão.
+- **Base do app resetada e migrada**: ver `OPERACAO-reset-base-2026-11-21.md`.
