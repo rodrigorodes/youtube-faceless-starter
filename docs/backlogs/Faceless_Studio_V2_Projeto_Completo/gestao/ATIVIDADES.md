@@ -146,3 +146,23 @@ Cobertura do veredito: a suíte inteira (148 arquivos de teste), não só as fat
   trabalho se perde; só as pastas de trabalho saíram. O repo do dono ficou intacto.
 - Nenhum container de teste órfão.
 - **Base do app resetada e migrada**: ver `OPERACAO-reset-base-2026-11-21.md`.
+
+## Achado do dono (2026-11-21) — o fluxo de produção não fechava pela UI
+
+O dono criou um vídeo e ele ficou **preso em `IDEA`**. Diagnóstico verificado, com prova:
+
+1. **Dois fluxos de criação.** O form do **Início** (`panel.py`) só criava o vídeo
+   (`POST /studio/videos`) e recarregava a página; quem iniciava a produção era o assistente de
+   `/panel/novo-video` (`panel_production.py` → `POST /production-runs`). Prova: log com
+   `POST /studio/videos 201` e **nenhum** `POST .../production-runs`; e a página do vídeo sem
+   nenhum controle de produção.
+2. **A produção exige fontes.** O stage `SCRIPT` (1º do `COORDINATOR_DAG`) recusa sem claims:
+   `SourceRefused: no sources with checkable claims: add sources first`
+   (`application/editorial.py:215`). Confirmado disparando um run real — falhou com essa mensagem.
+3. **A UI não expõe fontes.** `POST /videos/{id}/sources` existe, mas nenhuma tela o usava (a tela
+   "Pesquisa" do desenho aprovado não foi implementada).
+4. **A allowlist default é de outro nicho** (`amsterdam-dance-event.nl`). Mas `execute_text`
+   (URL + texto colado) **não** valida allowlist — é a saída legítima para qualquer nicho.
+
+Os 2 runs de teste criados pelo orquestrador para provar o item 2 foram **removidos** (o vídeo
+voltou a `IDEA`, 0 fontes, 0 runs).
