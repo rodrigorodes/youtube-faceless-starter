@@ -6,14 +6,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
-from app.studio.domain.render_plan import Motion  # noqa: E402
+from app.studio.domain.render_plan import Motion, StyleSnapshot  # noqa: E402
 from app.studio.domain.visual_style import (  # noqa: E402
     MOTIONS,
+    ResolvedStyle,
     VisualStyle,
     VisualStyleNameInvalid,
     VisualStyleParamsInvalid,
     VisualStyleVersionInvalid,
     clean_params,
+    resolve_style,
 )
 
 SID = "a" * 32
@@ -119,3 +121,37 @@ def test_version_must_be_a_positive_integer():
     for bad in (0, -1, "1", 1.5, True):
         with pytest.raises(VisualStyleVersionInvalid):
             style(version=bad)
+
+
+# ---------- VS-03: resolução do estilo para o render (puro, sem banco) ----------
+
+
+def test_resolve_style_without_a_style_is_none():
+    assert resolve_style(None, None) is None
+
+
+def test_resolve_style_projects_the_snapshot_and_the_applicable_params():
+    s = style(params={"motion": ["zoom_in", "pan_right"], "music": {"bpm": 90, "seed": 4},
+                      "transition": {"kind": "fade", "duration_ticks": 8}})
+    resolved = resolve_style(None, s)
+    assert resolved is not None
+    assert resolved.snapshot == StyleSnapshot(style_id=SID, version=1)
+    assert resolved.motion == ("zoom_in", "pan_right")
+    assert resolved.music == {"bpm": 90, "seed": 4}
+    # a transição é carregada por fidelidade, mas ainda NÃO é aplicada pelo render (fatia futura)
+    assert resolved.transition == {"kind": "fade", "duration_ticks": 8}
+
+
+def test_resolve_style_defaults_are_empty_when_params_are_absent():
+    resolved = resolve_style(None, style())
+    assert isinstance(resolved, ResolvedStyle)
+    assert resolved.motion == () and resolved.music == {} and resolved.transition == {}
+
+
+def test_resolve_style_override_wins_over_the_channel_style():
+    channel = style(params={"motion": ["zoom_in"]})
+    override = VisualStyle(id="b" * 32, name="Override do vídeo", version=5,
+                           params={"motion": ["pan_left"], "music": {"bpm": 60}})
+    resolved = resolve_style(None, channel, override=override)
+    assert resolved.snapshot == StyleSnapshot(style_id=override.id, version=5)
+    assert resolved.motion == ("pan_left",) and resolved.music == {"bpm": 60}

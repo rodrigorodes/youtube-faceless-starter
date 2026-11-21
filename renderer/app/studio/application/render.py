@@ -13,7 +13,7 @@ from ..domain.contracts import Asset, AssetKind, RenderJob, UsageEntry, VideoSta
 from ..domain.qa_report import QaReport
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, make_cues, scene_length, split_chunks, to_srt
 from ..domain.render_cache import NodeId, narration_fingerprint
-from ..domain.render_plan import StyleSnapshot
+from ..domain.visual_style import ResolvedStyle
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
@@ -100,7 +100,7 @@ class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
                  steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
-                 narration_reuse: bool = True, style_for: Callable[[str], StyleSnapshot | None] | None = None):
+                 narration_reuse: bool = True, style_for: Callable[[str], ResolvedStyle | None] | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
         self.steps, self.paid = steps, paid

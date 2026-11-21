@@ -18,8 +18,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, get_args
 
+from .channel import ChannelProfile
 from .ids import check_id
-from .render_plan import Motion
+from .render_plan import Motion, StyleSnapshot
 
 MAX_NAME_LENGTH = 120
 MAX_VOICE_MODEL_LENGTH = 200
@@ -237,3 +238,55 @@ class VisualStyle:
         object.__setattr__(self, "version", validate_version(self.version))
         if not isinstance(self.archived, bool):
             raise VisualStyleParamsInvalid("archived must be a boolean")
+
+
+@dataclass(frozen=True)
+class ResolvedStyle:
+    """Estilo **resolvido** para o render: a referência versionada **e** os parâmetros aplicáveis.
+
+    É a ponte pura entre o agregado ``VisualStyle`` e o executor: o ``snapshot`` (chave +
+    versão) é o que o ``RenderPlan`` grava (R4/RP-016) e ``motion``/``music`` são o que o
+    render **de fato** honra hoje. O tipo não carrega o objeto inteiro (nem nome/`extra`),
+    só o que o render consome — o plano referencia, não copia.
+
+    ``transition`` é **carregada** desde já, por fidelidade ao estilo, mas **ainda não é
+    aplicada**: o builder/compilador/executor não leem transição hoje (o plano a representa
+    como ``Transition`` em ``Shot.transition``, que ninguém preenche). Ligá-la é fatia
+    futura; aqui ela fica só carregada, sem fingir suporte.
+
+    ``motion`` vazio significa "sem ciclo declarado": o executor cai no seu próprio ciclo
+    de Ken Burns. ``music`` vazio (ou parcial) significa "usar o default do plano" para as
+    chaves ausentes (bpm 122 / seed 7).
+    """
+
+    snapshot: StyleSnapshot
+    motion: tuple[Motion, ...] = ()
+    music: dict[str, int] = field(default_factory=dict)
+    transition: dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
+                  override: VisualStyle | None = None) -> ResolvedStyle | None:
+    """Decide o estilo efetivo de um render a partir do estilo do canal (``style``) e do
+    ``override`` do vídeo, quando existir.
+
+    Puro (sem I/O, sem banco): a leitura do ``VisualStyle`` e do override do vídeo mora em
+    ``adapters/``/``composition.py``; aqui só se projeta o agregado já carregado no que o
+    render consome. Sem estilo (``style`` e ``override`` ausentes), devolve ``None`` — o
+    renderer cai no bundle neutro (``studio-default@1``).
+
+    O ``override`` (o "pode sobrepor" do vídeo, VS-05) tem precedência sobre o do canal; o
+    parâmetro já fica pronto mesmo que a chamada ainda não use override. ``profile`` entra
+    para manter a resolução ancorada no canal (o snapshot sai do estilo efetivo, não do
+    perfil) e é o ponto natural de precedências futuras por canal.
+    """
+    chosen = override if override is not None else style
+    if chosen is None:
+        return None
+    params = chosen.params
+    return ResolvedStyle(
+        snapshot=StyleSnapshot(source="channel", style_id=chosen.id, version=chosen.version),
+        motion=tuple(params.get("motion", ())),
+        music=dict(params.get("music", {})),
+        transition=dict(params.get("transition", {})),
+    )

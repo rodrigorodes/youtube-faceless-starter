@@ -380,6 +380,9 @@ class PlanFfmpegRenderer:
                 voice_id=spec.voice_id,
             ))
         manifest = list(manifest_by_id.values())
+        # VS-03: o motion do estilo (ciclo de câmera) sobrepõe o ciclo default da instância
+        # quando o estilo o declara; sem estilo (ou sem motion), mantém-se ``self.cycle``.
+        cycle = spec.style.motion if (spec.style is not None and spec.style.motion) else self.cycle
         return build_render_plan(
             plan_id=f"plan:{video_id}",
             revision=1,
@@ -388,18 +391,25 @@ class PlanFfmpegRenderer:
             format=spec.format,
             scenes=scenes,
             assets=manifest,
-            style_snapshot=spec.style or StyleSnapshot(style_id=DEFAULT_STYLE_ID, version=DEFAULT_STYLE_VERSION),
+            style_snapshot=(spec.style.snapshot if spec.style is not None else None)
+            or StyleSnapshot(style_id=DEFAULT_STYLE_ID, version=DEFAULT_STYLE_VERSION),
             disclosure=spec.disclosure,
             music=spec.music,
-            motions=self._motions([row.id for row in rows]),
+            motions=self._motions([row.id for row in rows], cycle),
+            music_params=(spec.style.music if spec.style is not None else None),
         )
 
-    def _motions(self, scene_ids: list[str]) -> dict[str, Motion]:
-        """Movimento declarado por cena: o ciclo por posição, sobreposto por ``motions``."""
+    def _motions(self, scene_ids: list[str], cycle: tuple[Motion, ...] | None = None) -> dict[str, Motion]:
+        """Movimento declarado por cena: o ciclo por posição, sobreposto por ``motions``.
+
+        ``cycle`` é o ciclo efetivo (o do estilo, quando ele declara motion); ``None`` mantém
+        o ciclo da instância (``self.cycle``). O ``motions`` por ``scene_id`` continua vencendo.
+        """
+        chosen_cycle = self.cycle if cycle is None else cycle
         known = set(scene_ids)
         chosen: dict[str, Motion] = {}
         for index, scene_id in enumerate(scene_ids):
-            chosen[scene_id] = self.cycle[index % len(self.cycle)] if self.cycle else "none"
+            chosen[scene_id] = chosen_cycle[index % len(chosen_cycle)] if chosen_cycle else "none"
         chosen.update({scene_id: motion for scene_id, motion in self.motions.items() if scene_id in known})
         return chosen
 

@@ -246,13 +246,16 @@ def test_input_hash_follows_the_content(tmp_path):
 # ---------- run ----------
 def test_run_carries_the_resolved_style_into_the_render_spec(tmp_path):
     from app.studio.domain.render_plan import StyleSnapshot
+    from app.studio.domain.visual_style import ResolvedStyle
     w = world(tmp_path)
     job = starter(w).execute(V)
     run, _, renderer = runner(w)
     seen = []
-    run.style_for = lambda project_id: seen.append(project_id) or StyleSnapshot(style_id="canal-1", version=7)
+    style = ResolvedStyle(snapshot=StyleSnapshot(style_id="canal-1", version=7),
+                          motion=("zoom_in", "zoom_out"), music={"bpm": 90})
+    run.style_for = lambda project_id: seen.append(project_id) or style
     run.execute(job.id)
-    assert seen == [P] and renderer.specs[0].style == StyleSnapshot(style_id="canal-1", version=7)
+    assert seen == [P] and renderer.specs[0].style == style
 
 
 def test_run_without_a_style_resolver_leaves_the_spec_style_unset(tmp_path):
