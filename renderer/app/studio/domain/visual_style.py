@@ -257,12 +257,23 @@ class ResolvedStyle:
     ``motion`` vazio significa "sem ciclo declarado": o executor cai no seu próprio ciclo
     de Ken Burns. ``music`` vazio (ou parcial) significa "usar o default do plano" para as
     chaves ausentes (bpm 122 / seed 7).
+
+    ``caption`` (tamanho/posição da legenda) e ``palette`` (cores do overlay) são **aplicados**
+    pelo executor (VS-04): o adapter parte do layout/cores atuais como default e sobrepõe só as
+    chaves declaradas aqui. Vazio = comportamento default de sempre (byte-a-byte).
+
+    ``voice`` é **carregada** desde já, por fidelidade ao estilo, mas **ainda não é aplicada**:
+    a precedência da voz (``PIPER_VOICE`` env > voz do projeto > default) vive em ``rich.py`` e
+    não muda nesta fatia — a decisão de quem vence está registrada no relatório do VS-04.
     """
 
     snapshot: StyleSnapshot
     motion: tuple[Motion, ...] = ()
     music: dict[str, int] = field(default_factory=dict)
     transition: dict[str, Any] = field(default_factory=dict)
+    caption: dict[str, Any] = field(default_factory=dict)
+    palette: dict[str, Any] = field(default_factory=dict)
+    voice: dict[str, Any] = field(default_factory=dict)
 
 
 def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
@@ -289,4 +300,7 @@ def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
         motion=tuple(params.get("motion", ())),
         music=dict(params.get("music", {})),
         transition=dict(params.get("transition", {})),
+        caption=dict(params.get("caption", {})),
+        palette=dict(params.get("palette", {})),
+        voice=dict(params.get("voice", {})),
     )
