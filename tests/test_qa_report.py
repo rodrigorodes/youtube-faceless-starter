@@ -648,8 +648,9 @@ def test_publishable_payload_reads_the_persisted_shape_and_legacy_rows():
     assert publishable_payload(report().model_dump(mode="json")) is True
     blocked = report(findings=(finding(finding_id="f-audio", check_id="audio", severity="blocking", evidence="sem áudio"),))
     assert publishable_payload(blocked.model_dump(mode="json")) is False
-    # compatibilidade com linhas gravadas ANTES da adoção (shape legado): não inventa identidade
-    assert publishable_payload({"schema_version": 1, "passed": True, "failures": [], "metrics": {}}) is True
+    # linhas gravadas ANTES da adoção (shape legado) NÃO são publicáveis: não foram produzidas
+    # pelo avaliador atual e não podem "alegar QA verificado" (só override humano libera).
+    assert publishable_payload({"schema_version": 1, "passed": True, "failures": [], "metrics": {}}) is False
     assert publishable_payload({"schema_version": 1, "passed": False, "failures": ["x"]}) is False
     assert publishable_payload(None) is False and publishable_payload({}) is False
 

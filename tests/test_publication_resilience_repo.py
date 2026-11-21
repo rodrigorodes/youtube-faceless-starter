@@ -21,6 +21,12 @@ from app.studio.domain.publication_policy import PublicConfirmationRequired, ide
 
 S = VideoStatus
 URI = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=AbC123"
+# QA no contrato novo (F6, cobertura verificada): um relatório verde de verdade para o intent.
+QA_PASS = {
+    "render_id": "a" * 32, "checksum": "b" * 64, "generated_at": "2026-11-21T12:00:00+00:00",
+    "coverage": {"status": "verified", "reason": None}, "checks_run": ["render.media_metrics"],
+    "findings": [], "schema_version": 1,
+}
 
 
 @pytest.fixture()
@@ -66,7 +72,7 @@ def claimed(env):
 
 
 def test_approval_writes_an_immutable_intent_with_render_id_and_checksum(env):
-    vid, asset, job, key = approved(env, qa={"passed": True, "failures": []})
+    vid, asset, job, key = approved(env, qa=QA_PASS)
     intent = env["approvals"].intent(vid)
     assert intent is not None
     assert (intent.video_id, intent.render_id, intent.checksum, intent.output_asset_id) == (vid, job, key, asset)

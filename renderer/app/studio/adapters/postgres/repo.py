@@ -1,15 +1,19 @@
 """Repositório Postgres. Implementa a porta VideoRepository; é o único escritor do schema studio."""
+import json
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import datetime, timezone
 
 import psycopg
 from psycopg.rows import dict_row
+from pydantic import ValidationError
 
 from ...application.use_cases import InvalidInput, ServiceUnavailable
 from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
-from ...domain.qa_report import QaReport
+from ...domain.qa_report import QaCoverage, QaFinding, QaReport
 from ...domain.ids import check_id
+from ...domain.schema import SCHEMA_VERSION
 from ...domain.states import assert_transition
 
 
@@ -24,9 +28,74 @@ def _translated():
         raise InvalidInput("invalid data") from exc
 
 
+# Marcador explícito da identidade de um relatório legado: NÃO é um render_id/checksum de
+# verdade (não casa com o formato 32/64-hex que o gate da F8 exige) — é a declaração de que a
+# identidade se perdeu antes da unificação (RP-07b) e não pode ser fabricada.
+_LEGACY_QA_IDENTITY = "legacy"
+_LEGACY_QA_CHECK = "render.legacy_report"
+_LEGACY_QA_FINDING = "legacy-qa-report"
+# Instante sentinela: o relatório legado não guardava ``generated_at``. O epoch deixa claro
+# que o timestamp também se perdeu — nunca é lido como frescor do relatório.
+_LEGACY_QA_INSTANT = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _legacy_qa_report(payload: dict) -> QaReport:
+    """Upcast de um ``qa_report`` no shape legado (``passed``/``failures``/``metrics``).
+
+    Linhas gravadas antes da unificação do QA (RP-07b) continuam no formato antigo. Em vez de
+    deixar o ``model_validate`` estourar (500 na prévia), a linha é convertida para o contrato
+    novo **sem inventar** o que não existia e sem descartar nada:
+
+    - ``coverage`` é ``not_verified``: o relatório não foi produzido pelo avaliador atual, logo
+      não pode se declarar ``verified`` (nada executado não é evidência de qualidade).
+    - um achado ``info`` registra o fato e preserva o payload legado inteiro (inclusive
+      ``metrics``) como evidência — dado algum é perdido em silêncio.
+    - ``render_id``/``checksum`` recebem o marcador explícito ``legacy`` (não parece identidade
+      de render válida) e ``generated_at`` é o epoch sentinela: identidade e instante se
+      perderam e não são fabricados.
+    """
+    evidence = json.dumps(payload, sort_keys=True, ensure_ascii=True)
+    return QaReport(
+        render_id=_LEGACY_QA_IDENTITY,
+        checksum=_LEGACY_QA_IDENTITY,
+        generated_at=_LEGACY_QA_INSTANT,
+        coverage=QaCoverage(status="not_verified",
+                            reason="legacy report from before the QA unification; not verified by the current evaluator"),
+        checks_run=(_LEGACY_QA_CHECK,),
+        findings=(QaFinding(
+            finding_id=_LEGACY_QA_FINDING,
+            check_id=_LEGACY_QA_CHECK,
+            category="technical",
+            severity="info",
+            evidence=evidence,
+            suggested_action="Re-run the current QA evaluation on this render before publishing.",
+        ),),
+    )
+
+
+def _qa_report(payload: dict | None) -> QaReport | None:
+    """Valida o ``qa_report`` novo; se for uma linha legada reconhecível, faz o upcast.
+
+    Só o shape legado é tolerado. Um payload novo corrompido continua levantando
+    ``ValidationError`` (falha alta): mascarar corrupção do formato atual seria pior.
+    """
+    if not payload:
+        return None
+    try:
+        return QaReport.model_validate(payload)
+    except ValidationError:
+        # Só o shape legado na versão conhecida é tolerado. ``schema_version`` desconhecida
+        # continua falhando alto (mesma disciplina de ``load_versioned``): não se adivinha a
+        # semântica de uma versão futura nem se mascara corrupção do formato atual.
+        if (isinstance(payload, dict) and payload.get("schema_version") == SCHEMA_VERSION
+                and "passed" in payload and "render_id" not in payload):
+            return _legacy_qa_report(payload)
+        raise
+
+
 def _video(row: dict) -> Video:
     row = dict(row)
-    row["qa_report"] = QaReport.model_validate(row["qa_report"]) if row["qa_report"] else None
+    row["qa_report"] = _qa_report(row["qa_report"])
     return Video.model_validate(row)
 
 
