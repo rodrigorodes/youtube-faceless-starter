@@ -47,8 +47,9 @@ from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapsh
 from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardScene, build_render_plan
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
-# Identidade do canal por chave + versão (R4). O RenderSpec do RunRender não carrega o
-# perfil do canal; o bundle neutro é declarado aqui até a fiação do StyleSnapshot (RP-016).
+# Bundle neutro usado **apenas quando o vídeo não tem canal/estilo a referenciar** (RP-016):
+# com um estilo resolvido a montante, o ``RenderSpec`` o carrega e ele é usado. Sem canal,
+# ``studio-default@1`` é honesto — não há identidade real a apontar.
 DEFAULT_STYLE_ID = "studio-default"
 DEFAULT_STYLE_VERSION = 1
 # Licença das imagens que o próprio estúdio gera a partir dos assets licenciados.
@@ -387,7 +388,7 @@ class PlanFfmpegRenderer:
             format=spec.format,
             scenes=scenes,
             assets=manifest,
-            style_snapshot=StyleSnapshot(style_id=DEFAULT_STYLE_ID, version=DEFAULT_STYLE_VERSION),
+            style_snapshot=spec.style or StyleSnapshot(style_id=DEFAULT_STYLE_ID, version=DEFAULT_STYLE_VERSION),
             disclosure=spec.disclosure,
             music=spec.music,
             motions=self._motions([row.id for row in rows]),

@@ -13,7 +13,7 @@ from ..domain.asset_resolver import AssetDescriptor
 from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
-from ..domain.render_plan import AssetReference, RenderPlan
+from ..domain.render_plan import AssetReference, RenderPlan, StyleSnapshot
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
@@ -57,6 +57,9 @@ class RenderSpec:
     disclosure: str = "Ilustração gerada por IA"
     work_dir: Path | None = None  # onde o renderer grava intermediários
     voice_id: str = ""            # identidade da voz (nome+modelo): entra no fingerprint da narração (RP-06c)
+    # RP-016: identidade **versionada** de quem produziu o vídeo, resolvida a montante
+    # (canal → estilo). ``None`` = não há canal/estilo a referenciar; o renderer usa o default.
+    style: StyleSnapshot | None = None
 
 
 @dataclass(frozen=True)

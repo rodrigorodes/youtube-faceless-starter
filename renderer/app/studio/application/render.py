@@ -13,6 +13,7 @@ from ..domain.contracts import Asset, AssetKind, RenderJob, UsageEntry, VideoSta
 from ..domain.qa_report import QaReport
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, make_cues, scene_length, split_chunks, to_srt
 from ..domain.render_cache import NodeId, narration_fingerprint
+from ..domain.render_plan import StyleSnapshot
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
@@ -99,10 +100,14 @@ class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
                  steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
-                 narration_reuse: bool = True):
+                 narration_reuse: bool = True, style_for: Callable[[str], StyleSnapshot | None] | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
         self.steps, self.paid = steps, paid
+        # RP-016: de quem é a identidade visual versionada do plano. Injetada pela composição
+        # (o core não conhece banco): o canal → estilo do projeto. Sem resolvedor, o plano não
+        # referencia estilo e o renderer usa o default — o comportamento de antes desta fiação.
+        self.style_for = style_for
         # RP-06c: o índice de cache do plano (fingerprint da entrada da narração) permite pular o
         # TTS de uma cena inalterada. Sem repositório (unidade), o comportamento é o de antes.
         self.plans = plans
@@ -212,9 +217,11 @@ class RunRender:
             cues += make_cues(scene.narration, offset, speech)
             offset += length
         stock = any(a.provider == "stock" for _, a in pairs)
+        style = self.style_for(video.project_id) if self.style_for is not None else None
         spec = RenderSpec(scenes=[s for s, _ in pairs], images=[self.files.image_path(a.path) for _, a in pairs], speech_wavs=wavs,
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
-                          disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id)
+                          disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id,
+                          style=style)
         mp4 = renderer.render(spec, work / "final.mp4")
         # A identidade do render nasce antes do QA: é o mesmo checksum que a publicação reutiliza
         # (o asset de saída), então o relatório já sai vinculado à versão que será aprovada.

@@ -244,6 +244,25 @@ def test_input_hash_follows_the_content(tmp_path):
 
 
 # ---------- run ----------
+def test_run_carries_the_resolved_style_into_the_render_spec(tmp_path):
+    from app.studio.domain.render_plan import StyleSnapshot
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w)
+    seen = []
+    run.style_for = lambda project_id: seen.append(project_id) or StyleSnapshot(style_id="canal-1", version=7)
+    run.execute(job.id)
+    assert seen == [P] and renderer.specs[0].style == StyleSnapshot(style_id="canal-1", version=7)
+
+
+def test_run_without_a_style_resolver_leaves_the_spec_style_unset(tmp_path):
+    w = world(tmp_path)
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w)
+    run.execute(job.id)
+    assert renderer.specs[0].style is None  # sem canal a referenciar, o renderer cai no bundle neutro
+
+
 def test_run_success_passes_everything_to_renderer_and_advances(tmp_path):
     w = world(tmp_path)
     job = starter(w).execute(V)

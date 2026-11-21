@@ -73,6 +73,7 @@ from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
                                            GetYouTubeChannel)
 from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
+from .domain.render_plan_builder import style_snapshot_for_channel
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
@@ -161,6 +162,19 @@ def channel_guard_limits(videos, budgets):
         limits = budgets.get(video.project_id)
         return limits.guard_limits() if limits is not None else None
     return limits_for
+
+
+def _style_for_project(project_id, channels):
+    """RP-016: a identidade versionada do render é a do canal do projeto.
+
+    Sem canal (ou id inválido), devolve None — o renderer usa o bundle neutro. Mesma
+    tolerância do ``channel_guard_limits``: um id estranho não derruba o render.
+    """
+    try:
+        profile = channels.get_by_project(project_id)
+    except InvalidId:
+        return None
+    return style_snapshot_for_channel(profile) if profile is not None else None
 
 
 def build_google_oauth(settings: "Settings",
@@ -394,6 +408,9 @@ class Studio:
         budget_repo = PostgresChannelBudgetRepository(connect)
         usage_repo = PostgresChannelUsageRepository(connect)
         youtube_repo = PostgresYouTubeChannelRepository(connect)
+        # RP-016: o perfil do canal é a identidade versionada do render. Uma instância só,
+        # reusada pela fiação do render (abaixo) e pela página de Canais.
+        channel_repo = PostgresChannelProfileRepository(connect)
         secret_store = FileSecretStore(s.secrets_root or (s.storage_root / "secrets"))
 
         paid_guard = None
@@ -435,7 +452,8 @@ class Studio:
             pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
-                         paid=paid_guard, plans=PostgresRenderPlanRepository(connect))
+                         paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
+                         style_for=lambda project_id: _style_for_project(project_id, channel_repo))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
@@ -467,7 +485,6 @@ class Studio:
         list_categories = ListCategories(category_repo, repo)
         save_category = SaveCategory(category_repo, repo)
         delete_category = DeleteCategory(category_repo)
-        channel_repo = PostgresChannelProfileRepository(connect)
         implementations = _provider_implementations(s)
         probes = _provider_probes(s, implementations)
         refresh_trends = RefreshTrends(

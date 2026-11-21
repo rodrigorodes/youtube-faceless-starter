@@ -144,6 +144,19 @@ def test_compiled_caption_windows_are_semi_open(tmp_path):
     assert enables and all(e.startswith("gte(t,") and "*lt(t," in e for e in enables)
 
 
+def test_plan_style_snapshot_comes_from_the_spec_and_falls_back_when_absent(tmp_path):
+    # RP-016: com um canal/estilo resolvido a montante, o plano aponta para ele; sem canal,
+    # o bundle neutro ``studio-default@1`` é usado (não há identidade real a referenciar).
+    import dataclasses
+
+    from app.studio.domain.render_plan import StyleSnapshot
+    spec = spec_for(tmp_path)
+    assert PlanFfmpegRenderer()._build_plan(spec).style_snapshot == StyleSnapshot(style_id="studio-default", version=1)
+    channel = StyleSnapshot(style_id="canal-7", version=3)
+    plan = PlanFfmpegRenderer()._build_plan(dataclasses.replace(spec, style=channel))
+    assert plan.style_snapshot == channel
+
+
 def test_executor_writes_a_silent_music_track_when_music_is_off(tmp_path):
     spec = spec_for(tmp_path, music=False)
     PlanFfmpegRenderer(runner=StubRunner()).render(spec, tmp_path / "work" / "final.mp4")
