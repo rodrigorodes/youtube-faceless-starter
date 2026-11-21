@@ -159,3 +159,16 @@ def test_config_ignores_untrusted_debug_and_lease_parameters():
     assert cfg({}) == expected
     assert cfg({"body": {"lease_seconds": 20, "debug_wait_after": "upload"}}) == expected
     assert cfg({"body": {"lease_seconds": 99999}}) == expected
+
+
+def test_f8_07_keeps_the_automatic_workflow_disabled_until_it_uses_the_native_gated_path():
+    """F8-07: só reabilita depois de migrar para o caminho nativo e provar falha/concorrência.
+
+    O workflow legado usa o claim antigo, que não exige a intenção F8 (render_id/checksum/QA).
+    Enquanto isso, ele continua inativo — ativar agora burlaria o gate de publicação.
+    """
+    assert WF["active"] is False
+    assert "/publication/publish" not in json.dumps(WF)  # ainda não fala com o executor nativo
+    readme = (ROOT / "workflows" / "README-publish-approval.md").read_text(encoding="utf-8")
+    assert "active\": false" in readme or "`\"active\": false`" in readme
+    assert "/publication/publish" in readme and "concorrência" in readme

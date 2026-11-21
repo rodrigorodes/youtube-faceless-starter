@@ -71,13 +71,15 @@ def test_wizard_page_renders_real_channel_and_honest_fields(env):
         assert "Motivo:" in r.text
 
 
-def test_wizard_page_marks_research_and_publish_unavailable_with_reason(env):
+def test_wizard_page_marks_only_the_truly_unavailable_stage_with_a_reason(env):
+    """F8: a publicação deixou de ser indisponível; só a pesquisa continua sem backend."""
     client = env["client"]
     r = client.get("/studio/panel/novo-video", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "indisponível" in r.text
-    assert "research automático não existe" in r.text
-    assert "F8" in r.text
+    assert "indisponível" in r.text and "research automático não existe" in r.text
+    assert "Publicação" in r.text
+    # o "F8" (motivo antigo da publicação indisponível) não pode continuar na tela
+    assert "F8" not in r.text
 
 
 def test_wizard_page_marks_its_nav_as_the_production_screen(env):
@@ -115,9 +117,9 @@ def test_execution_page_renders_real_run_with_stepper_and_contract(env):
     assert_ux_contract(r.text, page="painel/execução")
 
     assert "Tema real do operador" in r.text
-    assert "Etapa <b>1 de 7</b>" in r.text
+    assert "Etapa <b>1 de 8</b>" in r.text
     assert "Não há barra de progresso nem percentual" in r.text
-    for label in ("Roteiro", "Fact-check", "Cenas", "Render", "QA", "Aprovação"):
+    for label in ("Roteiro", "Fact-check", "Cenas", "Render", "QA", "Aprovação", "Publicação"):
         assert label in r.text
 
 

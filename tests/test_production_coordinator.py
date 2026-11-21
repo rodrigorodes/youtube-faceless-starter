@@ -40,7 +40,8 @@ from conftest import verified_test_connect
 
 PROJECT, VIDEO, CHANNEL = "a" * 32, "b" * 32, "d" * 32
 AVAILABLE = (ProductionStage.SCRIPT, ProductionStage.FACTCHECK, ProductionStage.STORYBOARD,
-             ProductionStage.ASSETS, ProductionStage.RENDER, ProductionStage.QA, ProductionStage.APPROVAL)
+             ProductionStage.ASSETS, ProductionStage.RENDER, ProductionStage.QA, ProductionStage.APPROVAL,
+             ProductionStage.PUBLISH)
 
 
 @pytest.fixture
@@ -97,7 +98,6 @@ def handlers(**overrides):
     built = {stage: _StubHandler(stage) for stage in AVAILABLE}
     built.update(overrides)
     built[ProductionStage.RESEARCH] = UnavailableStageHandler(ProductionStage.RESEARCH, "sem research")
-    built[ProductionStage.PUBLISH] = UnavailableStageHandler(ProductionStage.PUBLISH, "sem publish")
     return built
 
 
@@ -119,7 +119,7 @@ def test_default_pipeline_excludes_unavailable_stages(db):
     coordinator = _coordinator(db)
     assert coordinator.default_pipeline() == AVAILABLE
     unavailable = dict(coordinator.unavailable_stages())
-    assert set(unavailable) == {ProductionStage.RESEARCH, ProductionStage.PUBLISH}
+    assert set(unavailable) == {ProductionStage.RESEARCH}
 
 
 def test_start_is_idempotent_and_persists_the_available_stages(db):
@@ -136,8 +136,6 @@ def test_start_is_idempotent_and_persists_the_available_stages(db):
 
 def test_start_refuses_unavailable_and_unknown_stages(db):
     coordinator = _coordinator(db)
-    with pytest.raises(StageCapabilityUnavailable):
-        coordinator.start(VIDEO, "run-key-2", stages=[ProductionStage.SCRIPT, ProductionStage.PUBLISH])
     with pytest.raises(StageCapabilityUnavailable):
         coordinator.start(VIDEO, "run-key-3", stages=[ProductionStage.RESEARCH])
     with pytest.raises(StageCapabilityUnavailable):

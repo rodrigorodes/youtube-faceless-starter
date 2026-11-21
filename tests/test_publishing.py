@@ -417,3 +417,19 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     assert "--bg: #0f0f0f" in html_doc
     assert "--surface: #181818" in html_doc
 
+
+
+# ---------- F8: visibilidade e confirmação pública ----------
+def test_public_approval_requires_an_explicit_second_confirmation():
+    from app.studio.domain.publication_policy import PublicConfirmationRequired
+    v = Videos()
+    use, a = approver(v)
+    with pytest.raises(PublicConfirmationRequired):
+        use.execute(V, output_asset_id="9" * 32, visibility="public")
+    assert a.calls == [] and v.video.status == S.AWAITING_APPROVAL
+    use.execute(V, output_asset_id="9" * 32, visibility="public", confirm_public=True)
+    assert a.calls[0][2]["visibility"] == "public" and a.calls[0][2]["public_confirmed"] is True
+    v2 = Videos()
+    use2, a2 = approver(v2)
+    use2.execute(V, output_asset_id="9" * 32, visibility="unlisted")
+    assert a2.calls[0][2]["visibility"] == "unlisted" and a2.calls[0][2]["public_confirmed"] is False

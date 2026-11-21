@@ -5,6 +5,7 @@ import contextlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
@@ -18,6 +19,8 @@ from ..domain.channel_budget import BudgetLimits, CostSummary
 from ..domain.provider import ProviderKind, ProviderProbeResult
 from ..domain.youtube_channel import YouTubeChannel
 from ..domain.saas import ByokKey, KeyAuditAction, MembershipStatus, Role
+from ..domain.youtube_oauth import OAuthIdentity, OAuthTokenResponse
+from ..domain.publication_policy import PublicationIntentEvidence
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
@@ -249,15 +252,18 @@ class RenderStorage(Protocol):
 
 class ApprovalRepository(Protocol):
     def decide(self, video_id: str, expected: VideoStatus, decision: str, *, title: str, description: str, tags: list[str],
-               publish_at: "datetime | None", reason: str, qa_override: bool, output_asset_id: str | None = None) -> bool:
+               publish_at: "datetime | None", reason: str, qa_override: bool, output_asset_id: str | None = None,
+               visibility: str = "private", public_confirmed: bool = False) -> bool:
         """Numa transação: estado expected → APPROVED/REJECTED (se expected é RENDERED, passa por AWAITING_APPROVAL), grava os
-        metadados do vídeo e a linha de `approvals`. False se o estado já não é `expected`."""
+        metadados do vídeo, a linha de `approvals` e (se aprovado) a `publication_intents` imutável com render/checksum.
+        False se o estado já não é `expected`."""
     def get(self, video_id: str) -> Approval | None: ...
 
 
 class PublicationRepository(Protocol):
-    def claim(self, lease_seconds: int, max_attempts: int) -> Publication | None:
-        """Reivindica atomicamente um vídeo APPROVED sem publicação prévia; nunca retoma tentativa ambígua."""
+    def claim(self, lease_seconds: int, max_attempts: int, video_id: str | None = None) -> Publication | None:
+        """Reivindica atomicamente um vídeo APPROVED sem publicação prévia; nunca retoma tentativa ambígua.
+        `video_id` restringe ao dono do run do coordenador."""
     def get(self, video_id: str) -> Publication | None: ...
     def get_by_id(self, publication_id: str) -> Publication | None: ...
     def abort_before_delivery(self, publication_id: str, attempt: int) -> bool:
@@ -405,6 +411,97 @@ class SecretStore(Protocol):
     def set(self, scope: str, key: str, value: str) -> None: ...
     def delete(self, scope: str, key: str) -> None: ...
     def names(self, scope: str) -> tuple[str, ...]: ...
+
+
+class OAuthClient(Protocol):
+    """Cliente OAuth do Google/YouTube (F8-05). O adaptador concreto injeta o HTTP.
+
+    Nenhum método devolve erro com corpo cru: a aplicação recebe uma exceção de domínio
+    (`OAuthReconnectRequired`/`OAuthTransientError`) sem token nem client secret na mensagem.
+    """
+
+    def exchange_code(self, code: str, redirect_uri: str, code_verifier: str) -> OAuthTokenResponse: ...
+    def refresh(self, refresh_token: str) -> OAuthTokenResponse: ...
+    def revoke(self, token: str) -> None: ...
+    def identity(self, access_token: str) -> OAuthIdentity: ...
+
+
+@dataclass(frozen=True)
+class PublicationIntentRecord:
+    """Linha de `publication_intents` lida do banco (evidência imutável de F8-02)."""
+
+    evidence: PublicationIntentEvidence
+    approved_at: datetime | None = None
+
+
+class PublicationIntentRepository(Protocol):
+    def get(self, video_id: str) -> PublicationIntentEvidence | None:
+        """Intenção gravada na mesma transação da aprovação; None se o vídeo não foi aprovado."""
+
+
+class UploadOutcome(str, Enum):
+    UPLOADED = "UPLOADED"          # há um id do YouTube confirmado
+    INCOMPLETE = "INCOMPLETE"      # 308: sessão viva, continuar do offset
+    RETRYABLE = "RETRYABLE"        # rede/5xx: pode repetir, preservando a sessão quando existe
+    PERMANENT = "PERMANENT"        # metadado inválido/quota/token inválido: não repetir sozinho
+    AMBIGUOUS = "AMBIGUOUS"        # timeout/404/410: não presumir sucesso; reconciliar
+
+
+@dataclass(frozen=True)
+class UploadRequest:
+    """Tudo que o executor precisa para um upload resumable idempotente."""
+
+    idempotency_key: str
+    file_path: Path
+    file_size: int
+    content_type: str
+    youtube_body: dict
+    upload_uri: str | None = None
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class UploadResult:
+    outcome: UploadOutcome
+    youtube_video_id: str | None = None
+    upload_uri: str | None = None
+    offset: int = 0
+    error: str | None = None
+
+
+class YouTubeUploader(Protocol):
+    """Porta do upload nativo: nenhuma mídia/SDK entra no núcleo; o adaptador faz o HTTP."""
+
+    def upload(self, request: UploadRequest, access_token: str) -> UploadResult: ...
+    def reconcile(self, request: UploadRequest, access_token: str) -> UploadResult:
+        """Pergunta ao YouTube se a sessão produziu vídeo; NUNCA inventa sucesso."""
+
+
+class PublicationQueueRepository(Protocol):
+    """Fila resiliente: retry com backoff, DLQ e reconciliação (F8-03/F8-04).
+
+    Separada de `PublicationRepository` para o caminho legado (n8n) continuar estrito: o
+    `claim` antigo nunca retoma tentativa ambígua; só esta porta reivindica devido-para-retry.
+    """
+
+    def claim_retry(self, lease_seconds: int, max_attempts: int, video_id: str | None = None) -> Publication | None:
+        """Reivindica publicação PENDING/FAILED não-DLQ, sem id confirmado e sem ambiguidade."""
+
+    def record_session(self, publication_id: str, attempt: int, upload_uri: str, offset: int) -> bool:
+        """Grava a sessão resumable e o offset já aceito, na tentativa atual."""
+
+    def retry_later(self, publication_id: str, attempt: int, error: str, delay_seconds: int,
+                    failure_class: str) -> bool:
+        """Falha transiente: solta o lease e agenda a próxima tentativa com backoff."""
+
+    def dead_letter(self, publication_id: str, attempt: int, error: str, failure_class: str) -> bool:
+        """Falha permanente/ambígua esgotada: DLQ explícita; nunca vira sucesso."""
+
+    def mark_ambiguous(self, publication_id: str, attempt: int, error: str) -> bool:
+        """Resultado externo desconhecido: marca UNKNOWN; exige reconciliação antes de retry."""
+
+    def resolve_ambiguous(self, publication_id: str, *, retry: bool, error: str, failure_class: str) -> bool:
+        """Reconciliação: `retry=True` só quando provou que não há vídeo; senão DLQ/humano."""
 
 
 class ProviderProbe(Protocol):

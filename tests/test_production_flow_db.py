@@ -58,8 +58,8 @@ def test_production_flow_get_actions_and_events(studio, client, video_id):
     assert body["state"] == "CREATED"
     assert body["next_action"] == "run" and body["next_stage"] == "script"
     assert [item["stage"] for item in body["stages"]] == [
-        "script", "factcheck", "storyboard", "assets", "render", "qa", "approval"]
-    assert {item["stage"] for item in body["unavailable_stages"]} == {"research", "publish"}
+        "script", "factcheck", "storyboard", "assets", "render", "qa", "approval", "publish"]
+    assert {item["stage"] for item in body["unavailable_stages"]} == {"research"}
     assert body["events"][0]["event_type"] == "production.run.created"
 
     assert client.post(f"/studio/videos/{video_id}/production-runs/{run_id}/pause",
@@ -85,7 +85,7 @@ def test_production_flow_idempotent_start_does_not_duplicate(studio, video_id):
 def test_production_flow_rejects_unavailable_stage(studio, video_id):
     uc = studio.use_cases()
     with pytest.raises(StageCapabilityUnavailable):
-        uc.production.coordinator.start(video_id, "flow-3", stages=[ProductionStage.PUBLISH])
+        uc.production.coordinator.start(video_id, "flow-3", stages=[ProductionStage.RESEARCH])
 
 
 def test_production_run_of_another_video_is_404(studio, client, video_id):
