@@ -52,6 +52,7 @@ from .application.panel import BuildPanel
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .application.channels_page import BuildChannelsPage
 from .application.channel_budget import GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
 from .application.secrets import GetPublicProjectConfig
@@ -403,8 +404,18 @@ class Studio:
         worker = ProductionWorker(coordinator)
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id))
-        panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
+        panel_repo = PostgresPanelRepository(connect)
+        panel = BuildPanel(panel_repo, s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
         script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
+        providers_service = ProviderService(repo, self.environ, implementations, probes)
+        channel_budget = GetChannelBudget(
+            budget_repo, repo, usage_repo,
+            default_hard_monthly=Decimal(str(s.max_cost_month)),
+            default_hard_video=Decimal(str(s.max_cost_video)))
+        youtube_channel = GetYouTubeChannel(youtube_repo, secret_store)
+        project_config = GetPublicProjectConfig(repo)
+        channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
+                                          providers_service, channel_budget, youtube_channel, project_config)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
@@ -417,16 +428,14 @@ class Studio:
                                   update_channel_profile=UpdateChannelProfile(channel_repo),
                                   list_channel_profiles=ListChannelProfiles(channel_repo),
 production=production, script_view=script_view,
-                                  providers=ProviderService(repo, self.environ, implementations, probes),
-                                  get_channel_budget=GetChannelBudget(
-                                      budget_repo, repo, usage_repo,
-                                      default_hard_monthly=Decimal(str(s.max_cost_month)),
-                                      default_hard_video=Decimal(str(s.max_cost_video))),
+                                  providers=providers_service,
+                                  get_channel_budget=channel_budget,
                                   set_channel_budget=SetChannelBudget(budget_repo, repo),
-                                  get_youtube_channel=GetYouTubeChannel(youtube_repo, secret_store),
+                                  get_youtube_channel=youtube_channel,
                                   associate_youtube_channel=AssociateYouTubeChannel(youtube_repo, secret_store),
                                   disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
-                                  get_project_config=GetPublicProjectConfig(repo))
+                                  get_project_config=project_config,
+                                  channels_page=channels_page)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

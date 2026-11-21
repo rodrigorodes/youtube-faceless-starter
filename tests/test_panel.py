@@ -632,6 +632,7 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
         ("Produção", "#producao-section"),
         ("Tendências", "#trending-section"),
         ("Vídeos", "#videos-section"),
+        ("Canais", "/studio/canais"),
     ):
         item = next(item for item in items if label in _nav_text(item))
         assert f'href="{href}"' in item
@@ -657,7 +658,7 @@ def test_render_panel_shell_disabled_nav_items_are_not_links():
     html = _render_panel_html()
     items = _primary_nav(html)
 
-    for label in ("Canais", "Analytics", "Equipe", "Configurações"):
+    for label in ("Analytics", "Equipe", "Configurações"):
         item = next(item for item in items if label in _nav_text(item))
         assert 'aria-disabled="true"' in item
         assert 'tabindex="-1"' in item
