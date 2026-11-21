@@ -71,6 +71,7 @@ from .panel_production import (
 )
 from .panel_new_video import render_new_video_v3
 from .panel_videos import render_videos
+from .panel_trends import render_tendencias_v3
 from ..application.errors import VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
@@ -1256,7 +1257,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             p_id = check_id(project_id) if project_id else None
-            return render_tendencias(uc.panel.execute(days=days, project_id=p_id))
+            return render_tendencias_v3(uc.panel.execute(days=days, project_id=p_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
