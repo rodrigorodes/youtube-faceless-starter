@@ -78,6 +78,8 @@ class Video(_Model):
     description: str = ""
     tags: list[str] = Field(default_factory=list)
     privacy: Privacy = "private"
+    # VS-02b: estilo que **sobrepõe** o do canal neste vídeo. Nulo (o normal) = herda o do canal.
+    style_id: str | None = None
     qa_report: QaReport | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

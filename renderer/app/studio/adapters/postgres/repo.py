@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
+from ...application.errors import VisualStyleNotFound
 from ...application.use_cases import InvalidInput, ServiceUnavailable
 from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
 from ...domain.qa_report import QaCoverage, QaFinding, QaReport
@@ -143,14 +144,14 @@ class PostgresVideoRepository:
             video_id = uuid.uuid4().hex
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
                 cur.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, %s, %s) "
-                            "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, qa_report, schema_version, created_at, updated_at",
+                            "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
                             (video_id, check_id(project_id), topic, fmt.value))
                 return _video(cur.fetchone())
 
     def get_video(self, video_id: str) -> Video | None:
         with _translated():
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT id, project_id, topic, format, status, title, description, tags, privacy, qa_report, schema_version, created_at, updated_at "
+                cur.execute("SELECT id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at "
                             "FROM studio.videos WHERE id = %s", (check_id(video_id),))
                 row = cur.fetchone()
             return _video(row) if row else None
@@ -162,3 +163,21 @@ class PostgresVideoRepository:
                 cur = conn.execute("UPDATE studio.videos SET status = %s, updated_at = now() WHERE id = %s AND status = %s",
                                    (new.value, check_id(video_id), expected.value))
                 return cur.rowcount == 1  # verificar e agir numa operação só
+
+    def set_video_style(self, video_id: str, style_id: str | None) -> Video | None:
+        """VS-02b: fixa (ou limpa, com None) o estilo que **sobrepõe** o do canal neste vídeo.
+
+        Devolve None se o vídeo não existe; `VisualStyleNotFound` se o estilo não existe (a FK
+        recusa apontar para um estilo inexistente — nunca fica um vínculo quebrado).
+        """
+        with _translated():
+            with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                try:
+                    cur.execute(
+                        "UPDATE studio.videos SET style_id = %s, updated_at = now() WHERE id = %s "
+                        "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
+                        (check_id(style_id) if style_id is not None else None, check_id(video_id)))
+                except psycopg.errors.ForeignKeyViolation as exc:
+                    raise VisualStyleNotFound(f"visual style {style_id!r} does not exist") from exc
+                row = cur.fetchone()
+            return _video(row) if row else None

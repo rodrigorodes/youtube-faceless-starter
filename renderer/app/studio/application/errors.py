@@ -13,3 +13,7 @@ class ProjectNotFound(LookupError):
     pass
 
 
+class VisualStyleNotFound(LookupError):
+    """O estilo visual referenciado não existe (VS-02b: override de vídeo, VS-02: canal)."""
+
+

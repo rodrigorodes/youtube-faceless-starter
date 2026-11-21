@@ -226,6 +226,18 @@
       "$ref": "#/$defs/VideoStatus",
       "default": "IDEA"
     },
+    "style_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Style Id"
+    },
     "tags": {
       "items": {
         "type": "string"
