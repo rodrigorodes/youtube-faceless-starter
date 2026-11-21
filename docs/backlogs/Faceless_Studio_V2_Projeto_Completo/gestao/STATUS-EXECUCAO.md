@@ -253,15 +253,18 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 3. **F5 / RP-05 — motor audiovisual real** (beats múltiplos, FFmpeg): RP-05 é onde a medição real de
    vídeo acontece; hoje o `AssetResolver` valida vídeo por metadado **declarado**, não medido.
 
-**Baseline:** `main` local com **1926 passed, 35 skipped, 0 failed** (1961 coletados) rodado com
-Postgres real e as duas DSNs; o gate de higiene voltou a passar após `7f248cd`, que corrigiu falsos
-positivos do scanner em código de canal/segredos.
+**Veredito do `main` após as fatias A…I, G, E, H, F11, RP-03 e F8:** **2310 passed, 0 failed, 35 skipped**
+(122 arquivos, 8 partições sequenciais, `rc=0` em todas) com Postgres real e as duas DSNs. Os 35 skips
+são de plataforma (Node.js ausente) — as ~100 provas de orçamento **rodaram**. O gate de higiene passa
+(`scan` → exit 0) e `export_contracts --check` → exit 0 dentro do container.
 
-**Flakiness — causa medida (não é bug de código):** com várias suítes em paralelo,
-`test_render_adapters` falha porque o `ffmpeg` do container morre com **SIGKILL (rc 137)** e
-produz `mp4` de 48 bytes; `test_render_api`/`test_publish_api` caem no mesmo ponto
-(`PIL.UnidentifiedImageError`). Reproduzido **na base limpa** (`git stash`) com o mesmo resultado
-— portanto é pressão de memória do ambiente, não regressão.
+**OOM — causa medida (não é bug de código):** o teto é a **VM do Docker (7,65 GB)**, não o host.
+O `integ-pg` acumulou **1,4 GB de page cache** e, somado aos containers das fatias em paralelo,
+estourava a VM → o `ffmpeg` do container morria com **SIGKILL (rc 137)** e saía `mp4` de 48 bytes
+(`test_render_adapters`), com `test_render_api`/`test_publish_api` caindo em seguida. Recriado o
+Postgres limpo (**1,4 GB → 38 MB**) e rodando a suíte em **partições sequenciais**, ficou **2310 passed,
+0 failed** com 6,2–6,9 GB livres — e o mesmo subconjunto sempre passou isolado. Rodar a suíte
+**serializada/em partições, sem Postgres concorrente** é a condição para veredito confiável.
 
 **Calibração TTS — limites declarados:** prosódia/entonação não modeladas; as constantes valem só para a voz
 `pt_BR-faber-medium` em `length_scale` padrão (o teste **recusa** com outra voz por hash/versão); o `LEAD/TAIL`
