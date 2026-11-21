@@ -554,14 +554,15 @@ def blocking_evidence(report: QaReport) -> tuple[str, ...]:
 def publishable_payload(payload: object) -> bool:
     """Interpreta o ``qa_report`` **persistido** (jsonb) para a decisão de publicação.
 
-    Aceita o shape versionado da F6 (``render_id``/``coverage``/``findings``) e, por
-    compatibilidade, o shape legado (``passed``/``failures``) de linhas gravadas **antes**
-    desta adoção — sem inventar identidade para as antigas. Fail-closed: payload ausente,
-    inválido ou ilegível nunca é publicável.
+    Aceita apenas o shape versionado da F6 (``render_id``/``coverage``/``findings``). O shape
+    legado (``passed``/``failures``/``metrics``) de linhas gravadas **antes** da adoção **não é
+    publicável**: não foi produzido pelo avaliador atual, então não pode "alegar QA verificado"
+    para passar o gate da F8 — a única saída é um override humano registrado na aprovação.
+    Fail-closed: payload ausente, ilegível ou de qualquer shape antigo devolve ``False``.
     """
     if not isinstance(payload, dict):
         return False
     try:
         return QaReport.model_validate(payload).is_publishable
     except (ValidationError, TypeError, ValueError):
-        return payload.get("passed") is True  # compatibilidade com o shape anterior à adoção
+        return False
