@@ -41,6 +41,7 @@ from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
+from .panel_team import render_team
 from .panel_production import (
     STAGE_LABELS,
     ExecutionView,
@@ -56,6 +57,7 @@ from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, Qa
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
+from ..domain.saas import OrganizationNotFound
 from ..domain.states import InvalidTransition
 
 
@@ -574,6 +576,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(422, "invalid id") from exc
         except ProjectNotFound as exc:
             raise HTTPException(404, "project not found") from exc
+        except OrganizationNotFound as exc:
+            raise HTTPException(404, "organization not found") from exc
         except (InvalidTransition, InvalidInput) as exc:
             raise HTTPException(422, str(exc)) from exc
         except ServiceUnavailable as exc:
@@ -916,6 +920,17 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             p_id = check_id(project_id) if project_id else None
             view = uc.panel.execute(days=days, project_id=p_id)
             return render_panel(view)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/equipe", response_class=HTMLResponse)
+    def panel_team_html(org_id: str | None = None):
+        def get_page(uc):
+            if uc.team_view is None:
+                raise HTTPException(503, "team services unavailable")
+            view = uc.team_view.execute(org_id=org_id)
+            month = uc.panel.month_cost() if uc.panel is not None else None
+            return render_team(view, month=month)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

@@ -725,7 +725,8 @@ def test_panel_shell_sidebar_marks_one_active_item_and_disables_unavailable_ones
     assert len(active) == 1 and "Início" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
     assert r.text.count('aria-current="page"') == 1
 
-    for label in ("Analytics", "Equipe", "Configurações"):
+    # "Canais" e "Equipe" viraram links reais; os indisponiveis sao apenas estes.
+    for label in ("Analytics", "Configurações"):
         item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
         assert 'aria-disabled="true"' in item
         assert 'tabindex="-1"' in item

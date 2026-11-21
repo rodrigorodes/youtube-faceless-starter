@@ -658,7 +658,9 @@ def test_render_panel_shell_disabled_nav_items_are_not_links():
     html = _render_panel_html()
     items = _primary_nav(html)
 
-    for label in ("Analytics", "Equipe", "Configurações"):
+    # Depois que "Canais" (F10 UI) e "Equipe" (F11) viraram links reais, os indisponíveis
+    # restantes na casca sao apenas estes.
+    for label in ("Analytics", "Configurações"):
         item = next(item for item in items if label in _nav_text(item))
         assert 'aria-disabled="true"' in item
         assert 'tabindex="-1"' in item
