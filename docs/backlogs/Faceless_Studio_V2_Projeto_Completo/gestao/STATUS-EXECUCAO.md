@@ -261,4 +261,16 @@ produz `mp4` de 48 bytes; `test_render_api`/`test_publish_api` caem no mesmo pon
 — portanto é pressão de memória do ambiente, não regressão. Rodar a suíte **serializada** é a
 condição para veredito confiável.
 
+## Pendências de ligação entre fatias (nascem dos merges)
+
+Nem toda pendência é card novo: algumas são costura entre fatias que fecharam em paralelo.
+
+| # | Pendência | Origem | O que falta |
+|---|---|---|---|
+| L1 | **"Reautorizar" na tela de Canais está desabilitado** | tela de Canais (F10 UI) foi construída quando **não havia OAuth real** | a **F8** entrega o fluxo de consentimento; depois disso o controle tem backend e o motivo do `aria-disabled` deixa de valer |
+| L2 | **Mutações de Equipe não expostas na rota** | F11 — a rota exibe só a leitura | as mutações existem no serviço, mas só podem ser expostas **com ator autenticado** (F11-02: sessão/OIDC). Hoje a tela diz isso. |
+| L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | o protótipo abre Início com `aria-current` em "Vídeos" (alias); se um dia houver tela própria, revisar |
+
+---
+
 **Nada aqui foi publicado.** `main` local tem tudo; o remoto não foi tocado (sem push).
