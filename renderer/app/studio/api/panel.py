@@ -3059,6 +3059,15 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
             '<span class="section-sub" style="margin: 0;">Prévia e aprovação ficam disponíveis após a renderização.</span>'
         )
 
+    # A casca aprovada exige o card lateral. A view do detalhe não traz orçamento do mês:
+    # nada é inventado — o card só repete onde fica o diagnóstico técnico.
+    side_card_html = (
+        '<div class="side-card">'
+        '<h2>Diagnóstico</h2>'
+        '<p>ID, erros brutos e uso de modelos ficam em Avançado — diagnóstico.</p>'
+        '</div>'
+    )
+
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -3070,47 +3079,7 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#detalhe-heading">Ir para o conteúdo</a>
   <div class="app-layout">
-    <aside class="sidebar" aria-label="Barra lateral">
-      <div class="brand">
-        <div class="brand-icon">🎬</div>
-        <div>
-          <div class="brand-title">FACELESS STUDIO</div>
-          <div class="brand-sub">Pipeline de Vídeos</div>
-        </div>
-      </div>
-      <nav class="nav-menu" aria-label="Navegação do vídeo">
-        <ul class="nav-list">
-          <li>
-            <a class="nav-item" href="/studio/panel">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-              <span>Painel</span>
-            </a>
-          </li>
-          <li>
-            <span class="nav-item active" aria-current="page">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
-              <span>Detalhe do Vídeo</span>
-            </span>
-          </li>
-          <li>
-            <a class="nav-item" href="/studio/videos/{e(v.id)}/roteiro">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="13" x2="14" y2="13"></line></svg>
-              <span>Roteiro</span>
-            </a>
-          </li>
-          {preview_nav_html}
-          <li>
-            <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-              <span>API Docs</span>
-            </a>
-          </li>
-        </ul>
-      </nav>
-      <div class="sidebar-footer">
-        <div style="font-size: 0.72rem; color: var(--text-muted);">ID, erros brutos e uso de modelos ficam em Avançado — diagnóstico.</div>
-      </div>
-    </aside>
+    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html)}
 
     <main class="main-content">
       <header class="topbar">
@@ -3166,6 +3135,23 @@ def render_video(view: VideoDetailView) -> tuple[str, dict[str, str]]:
         </details>
       </div>
     </main>
+
+    <aside class="rail" aria-label="Ações do vídeo">
+      <section class="card" aria-labelledby="h-video-nav">
+        <h2 id="h-video-nav">Neste vídeo</h2>
+        <nav class="nav-menu" aria-label="Navegação do vídeo">
+          <ul class="nav-list">
+            <li>
+              <a class="nav-item" href="/studio/videos/{e(v.id)}/roteiro">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="13" x2="14" y2="13"></line></svg>
+                <span>Roteiro</span>
+              </a>
+            </li>
+            {preview_nav_html}
+          </ul>
+        </nav>
+      </section>
+    </aside>
   </div>
   <script nonce="{nonce}">
     function wireRetry(buttonId, url) {{

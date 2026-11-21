@@ -637,6 +637,22 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
         assert f'href="{href}"' in item
 
 
+def test_render_panel_shell_nav_targets_exist_in_the_page():
+    """Todo item da casca aponta para âncora que existe na página — "Vídeos" não é link morto."""
+    html = _render_panel_html()
+    items = _primary_nav(html)
+
+    videos = next(item for item in items if "Vídeos" in _nav_text(item))
+    assert 'href="#videos-section"' in videos
+    assert 'id="videos-section"' in html
+
+    for item in items:
+        match = re.search(r'href="(#[^"]+)"', item)
+        if match is None:
+            continue
+        assert f'id="{match.group(1)[1:]}"' in html, f"âncora morta na casca: {match.group(1)}"
+
+
 def test_render_panel_shell_disabled_nav_items_are_not_links():
     html = _render_panel_html()
     items = _primary_nav(html)
