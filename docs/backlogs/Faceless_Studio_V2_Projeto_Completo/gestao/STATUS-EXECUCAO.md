@@ -253,10 +253,11 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 3. **F6 — editor visual e QA editorial** (player/timeline, narração por formulário, QA editorial):
    a fatia F6 entregou severidade e aprovação presa a `render_id`; faltam o editor e o QA editorial.
 
-**Veredito do `main` após TODAS as fatias (A…I, G, E, H, F11, RP-00..04, F8, L1, L2):**
-**2332 passed, 0 failed, 35 skipped** (123 arquivos, 8 partições sequenciais, `rc=0` em todas)
+**Veredito final do `main` (após Render Plan RP-00..07, ligações L1/L2 e limpeza do legado):**
+**2403 passed, 0 failed, 35 skipped** (132 arquivos, 8 partições sequenciais, `rc=0` em todas)
 com Postgres real e as duas DSNs. Os 35 skips são de plataforma (Node.js ausente) — as ~100
 provas de orçamento **rodaram**. O gate de higiene passa (`scan` → exit 0) e
+`export_contracts --check` → exit 0 dentro do container.
 `export_contracts --check` → exit 0 dentro do container.
 
 **OOM — causa medida (não é bug de código):** o teto é a **VM do Docker (7,65 GB)**, não o host.
