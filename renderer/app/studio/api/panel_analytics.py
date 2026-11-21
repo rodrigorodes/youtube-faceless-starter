@@ -22,6 +22,7 @@ from ..application.analytics_dashboard import (
 )
 from ..application.panel import MonthCost
 from . import panel as shell
+from . import shell_v3
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -350,173 +351,140 @@ def _filters_html(view: AnalyticsDashboardView) -> str:
 
 
 def render_analytics(view: AnalyticsDashboardView,
-                     month: MonthCost | None = None) -> tuple[str, dict[str, str]]:
+                     month: MonthCost | None = None,
+                     projects: list[tuple[str, str]] | None = None) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
-    side_card = (
-        shell.budget_side_card(month) if month is not None
-        else '<div class="side-card"><h2>Orçamento do mês</h2>'
-             '<p>Consulte o painel Início para o custo registrado.</p></div>'
+    proj_list = projects if projects is not None else (
+        [(p.id, p.label) for p in view.projects] if view.projects else [(view.project_id, view.project_name)]
     )
-    tiles = "".join(_tile_html(tile) for tile in view.tiles)
-    period_state = (
-        _measured_badge() if view.has_measurements
-        else _badge("s-idle", "○", "Ainda não disponível")
+    cost_str = (
+        f"Custo do mês: {month.text}"
+        if month is not None and month.breakdown.calls > 0
+        else "Não disponível: nenhuma chamada registrada neste mês."
     )
-    if view.has_measurements:
-        subtitle = f"Recorte de {e(view.period_label)} · última coleta: {e(view.last_collected_text)}."
-    elif not view.readiness.publication_available:
-        subtitle = "Nenhuma publicação coletada ainda neste canal."
-    elif not view.readiness.scope_granted:
-        subtitle = "Escopo yt-analytics.readonly não concedido; nenhuma métrica pode ser lida."
-    elif view.last_collected_at is not None:
-        subtitle = (f"Há coleta registrada em {e(view.last_collected_text)}, mas nenhuma "
-                    f"observação cobre exatamente a janela de {view.period.days} dias.")
+
+    period_options = "".join(
+        f'<option value="{d}"{" selected" if d == view.period.days else ""}>Últimos {d} dias</option>'
+        for d in (7, 28, 90)
+    )
+
+    if not view.has_measurements:
+        content_html = """
+        <div id="desempenho-vazio" class="vazio">
+          <p><b>Sem medição neste período.</b></p>
+          <p class="micro" style="margin:0">Publique um vídeo e conecte o canal para ver os números reais aqui.</p>
+        </div>"""
     else:
-        subtitle = "Nenhuma medição coletada nesta janela."
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Desempenho</title>
-  <style nonce="{nonce}">{shell.CSS}{ANALYTICS_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#analytics-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="analytics", base_href="/studio/panel", side_card_html=side_card, nonce=nonce)}
-    <main class="main-content" id="analytics-main">
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h1 id="analytics-heading">Desempenho</h1>
-            <p class="page-goal">Ação primária: <b>aprender</b>. CTR e retenção aparecem só quando a
-            API entrega e a permissão existe — fora disso, “ainda não disponível”.</p>
+        tiles = "".join(_tile_html(tile) for tile in view.tiles)
+        subtitle = f"Recorte de {e(view.period_label)} · última coleta: {e(view.last_collected_text)}."
+        period_state = _measured_badge()
+        content_html = f"""
+        <div class="card" style="margin-bottom:18px">
+          <div class="spread">
+            <div><h2>Métricas do período</h2><p class="dim" style="margin:0.25rem 0 0">{subtitle}</p></div>
+            {period_state}
           </div>
-          <span class="dim">Canal: {e(view.project_name)} · {e(view.period_label)}</span>
+          <div class="tiles">{tiles}</div>
         </div>
-        {_filters_html(view)}
-      </div>
 
-      <div class="card">
-        <div class="spread">
-          <div><h2>Métricas do período</h2><p class="dim" style="margin:0.25rem 0 0">{subtitle}</p></div>
-          {period_state}
+        <div class="card" style="margin-bottom:18px">
+          <h2>Desempenho por vídeo</h2>
+          {_video_table_html(view.video_rows)}
         </div>
-        <div class="tiles">{tiles}</div>
-        <p class="fine">Zero não é o mesmo que “sem dado”: quando a API não devolve o valor, o estado é
-        <b>ainda não disponível</b> — nunca 0% nem estimativa apresentada como medição. Taxa não é
-        somada entre vídeos; Short e long-form não entram na mesma média.</p>
-      </div>
 
-      <details class="advanced">
-        <summary class="advanced-summary">Como a tela fica quando houver dado</summary>
-        <div class="advanced-body">
-          <p>A estrutura é a mesma desta página: um bloco por formato comparável, com o valor medido,
-          a origem e a cobertura de vídeos. Quando a coleta existir, ela preenche estes blocos; até
-          então, o estado vazio acima é o dado real.</p>
-          <p>Taxas aparecem por vídeo, ou por um único vídeo comparável — nunca como média de médias.
-          Vídeos de duração muito diferente não são agrupados.</p>
+        <div class="card" style="margin-bottom:18px">
+          <h2>Por pilar e formato</h2>
+          {_pillar_table_html(view.pillar_rows)}
         </div>
-      </details>
 
-      <div class="card">
-        <h2>Desempenho por vídeo</h2>
-        <p class="dim" style="margin:0.25rem 0 0">Cada número diz de onde vem — ou por que não existe.</p>
-        {_video_table_html(view.video_rows)}
-      </div>
+        <div class="card" style="margin-bottom:18px">
+          <h2>Insights</h2>
+          {_insights_html(view.insights)}
+        </div>
 
-      <div class="card">
-        <h2>Por pilar e formato</h2>
-        <p class="dim" style="margin:0.25rem 0 0">Recorte por pilar dentro do formato; pilar não
-        registrado aparece como tal, não é deduzido do tema.</p>
-        {_pillar_table_html(view.pillar_rows)}
-      </div>
+        <div class="card" style="margin-bottom:18px">
+          <h2>Recomendações</h2>
+          {_recommendations_html(view)}
+          <div id="analytics-feedback" class="feedback" role="status" aria-live="polite"></div>
+        </div>
 
-      <div class="card">
-        <h2>Insights</h2>
-        <p class="dim" style="margin:0.25rem 0 0.6rem"><b>Observação</b> é o que o dado mostra;
-        <b>hipótese</b> é o que ainda não foi comprovado. Os dois têm rótulos diferentes, com
-        evidência e nível de confiança.</p>
-        {_insights_html(view.insights)}
-      </div>
+        <div class="card" style="margin-bottom:18px">
+          <h2>Histórico de experimentos</h2>
+          {_experiments_html(view.experiments)}
+        </div>
 
-      <div class="card">
-        <h2>Recomendações</h2>
-        <p class="dim" style="margin:0.25rem 0 0.6rem">Uma recomendação sugere, não decide.
-        <b>Nada é reconfigurado sozinho</b>: aplicar exige edição manual do perfil do canal e
-        aprovação humana.</p>
-        {_recommendations_html(view)}
-        <div id="analytics-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-      </div>
+        {_advanced_html(view)}"""
 
-      <div class="card">
-        <h2>Histórico de experimentos</h2>
-        <p class="dim" style="margin:0.25rem 0 0.6rem">Thumbnail e título, conforme o que o YouTube
-        realmente oferece. O histórico registra rotação manual; não declara A/B da plataforma.</p>
-        {_experiments_html(view.experiments)}
-      </div>
+    body = f"""      <section class="pagina" id="pagina-desempenho" aria-labelledby="t-desempenho">
+        <div class="secao-cab">
+          <div>
+            <p class="eyebrow">CRESCIMENTO DO CANAL</p>
+            <h1 class="h1" id="t-desempenho">Desempenho</h1>
+            <p class="lead">Acompanhe o resultado sem perder o foco na criação.</p>
+          </div>
+          <div class="campo" style="margin:0">
+            <label for="periodo">Período</label>
+            <select id="periodo" class="campo" style="min-width:150px">
+              {period_options}
+            </select>
+          </div>
+        </div>
 
-      {_advanced_html(view)}
-    </main>
+        {content_html}
+        <script id="analytics-data" type="application/json">{json.dumps(view.project_id)}</script>
+      </section>"""
 
-    <aside class="rail" aria-label="Resumo">
-      <section class="card" aria-labelledby="h-honest">
-        <h2 id="h-honest">Honestidade do dado</h2>
-        <p class="fine">CTR e retenção dependem de escopos e permissão da API do canal. Quando o dado
-        não vem, mostramos <b>ainda não disponível</b>; nunca preenchemos com 0 nem com estimativa
-        disfarçada de medição.</p>
-      </section>
-      <section class="card" aria-labelledby="h-fresh">
-        <h2 id="h-fresh">Frescor e origem</h2>
-        <div class="kv"><span>Última coleta</span><span>{e(view.last_collected_text)}</span></div>
-        <div class="kv"><span>Escopo de leitura</span><span>{e(view.scope_text)}</span></div>
-        <div class="kv"><span>Canal</span><span>{e(view.channel_text)}</span></div>
-        <div class="kv"><span>Publicação</span><span>{e("disponível" if view.readiness.publication_available else "nenhuma registrada")}</span></div>
-        <p class="fine">A coleta só começa após a primeira publicação e com
-        <code>yt-analytics.readonly</code> autorizado no canal.</p>
-      </section>
-      <section class="card" aria-labelledby="h-not-does">
-        <h2 id="h-not-does">O que esta tela não faz</h2>
-        <p class="fine">Não muda configuração, não promete métrica que a API não entrega e não junta
-        vídeos não comparáveis numa média só. Origem não confiável aparece como
-        <b>origem desconhecida</b>.</p>
-      </section>
-    </aside>
-  </div>
-  <script nonce="{nonce}">
-    const PROJECT = {json.dumps(view.project_id)};
-    document.querySelectorAll('[data-recommendation-id]').forEach((btn) => {{
-      btn.addEventListener('click', async () => {{
-        const feedback = document.getElementById('analytics-feedback');
-        const recommendationId = btn.getAttribute('data-recommendation-id');
-        const decision = btn.getAttribute('data-decision');
-        btn.disabled = true;
-        if (feedback) feedback.textContent = 'Registrando a revisão...';
-        try {{
-          const res = await fetch('/studio/panel/analytics/recommendations/' +
-            encodeURIComponent(recommendationId) + '/decision', {{
-            method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify({{ project_id: PROJECT, decision }})
-          }});
-          const data = await res.json().catch(() => ({{}}));
-          if (res.ok) {{
+    page_js = """
+(function () {
+  var sel = document.getElementById('periodo');
+  if (sel) {
+    sel.addEventListener('change', function () {
+      var u = new URL(location.href);
+      u.searchParams.set('days', sel.value);
+      location.href = u.toString();
+    });
+  }
+  var elData = document.getElementById('analytics-data');
+  var project = elData ? JSON.parse(elData.textContent) : '';
+  document.querySelectorAll('[data-recommendation-id]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var feedback = document.getElementById('analytics-feedback');
+      var recommendationId = btn.getAttribute('data-recommendation-id');
+      var decision = btn.getAttribute('data-decision');
+      btn.disabled = true;
+      if (feedback) feedback.textContent = 'Registrando a revisão...';
+      fetch('/studio/panel/analytics/recommendations/' + encodeURIComponent(recommendationId) + '/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: project, decision: decision })
+      }).then(function (res) { return res.json().catch(function () { return {}; }).then(function (d) { return [res, d]; }); })
+        .then(function (par) {
+          var res = par[0], data = par[1];
+          if (res.ok) {
             if (feedback) feedback.textContent = 'Revisão registrada. Nada foi reconfigurado.';
             location.reload();
-          }} else {{
+          } else {
             btn.disabled = false;
-            if (feedback) feedback.textContent = 'Não foi possível: ' +
-              (typeof data.detail === 'string' ? data.detail : 'tente novamente');
-          }}
-        }} catch (err) {{
+            if (feedback) feedback.textContent = 'Não foi possível: ' + (typeof data.detail === 'string' ? data.detail : 'tente novamente');
+          }
+        }).catch(function (err) {
           btn.disabled = false;
           if (feedback) feedback.textContent = 'Falha de rede: ' + err.message;
-        }}
-      }});
-    }});
-  </script>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+        });
+    });
+  });
+})();
+"""
+
+    html = shell_v3.render_document(
+        title="Faceless Studio — Desempenho",
+        active="desempenho",
+        crumb="Desempenho",
+        body_html=body,
+        nonce=nonce,
+        projects=proj_list,
+        project_id=view.project_id,
+        cost_note=cost_str,
+        page_js=page_js,
+    )
+    return html, shell._headers(nonce)
