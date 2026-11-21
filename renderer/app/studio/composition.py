@@ -43,7 +43,7 @@ from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
-from .adapters.render_ffmpeg import FfmpegRenderer
+from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from .adapters.storage import FileAssetStore, FileRenderStorage
 from .adapters.voice_piper import PiperVoice
 from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
@@ -285,7 +285,7 @@ class Studio:
         register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
         register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
         register("voice", "piper", PiperVoice)
-        register("renderer", "ffmpeg", FfmpegRenderer)
+        register("renderer", "ffmpeg", PlanFfmpegRenderer)
         self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
         self._analyzer = analyzer or FfmpegQa()
         self._use_cases: UseCases | None = None
