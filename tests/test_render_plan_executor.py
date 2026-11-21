@@ -95,6 +95,27 @@ def test_executor_materializes_overlays_writes_audio_and_runs_the_planned_comman
     assert not list((tmp_path / "work").glob("*.tmp"))
 
 
+def test_materialized_overlays_are_transparent_and_keep_the_shorts_ui_area_free(tmp_path):
+    # Portado de tests/test_rich.py (make_overlay): a produção dos overlays saiu do rich.py
+    # para o executor do plano — static_overlay (selo/disclosure) e caption_overlay (legenda).
+    from app.studio.adapters.render_plan_ffmpeg import caption_overlay, static_overlay
+
+    width, height = SIZE[VideoFormat.short]
+    static = tmp_path / "static.png"
+    static_overlay(VideoFormat.short, "QUA • 21/10", "Ilustração gerada por IA", static)
+    static_img = Image.open(static)
+    assert static_img.size == (width, height) and static_img.mode == "RGBA"
+    assert static_img.getchannel("A").getextrema()[0] == 0  # transparente onde não há conteúdo
+
+    caption = tmp_path / "caption.png"
+    caption_overlay(VideoFormat.short, "Legenda de teste bem longa " * 4, caption)
+    caption_img = Image.open(caption)
+    assert caption_img.size == (width, height) and caption_img.mode == "RGBA"
+    alpha = caption_img.getchannel("A")
+    assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] > 150  # texto opaco presente
+    assert alpha.crop((0, 1700, width, height)).getextrema() == (0, 0)  # área inferior da UI dos Shorts fica livre
+
+
 def test_executor_publishes_atomically_and_leaves_no_partial_file(tmp_path):
     spec = spec_for(tmp_path)
     runner = StubRunner()
