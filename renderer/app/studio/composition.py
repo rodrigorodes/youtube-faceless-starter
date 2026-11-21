@@ -36,7 +36,10 @@ from .adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
 from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
 from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
-from .adapters.postgres.youtube_identity_repo import PostgresChannelAuthorizationRepository
+from .adapters.postgres.youtube_identity_repo import (PostgresChannelAuthorizationRepository,
+                                                       PostgresGoogleAccountRepository,
+                                                       PostgresOAuthGrantRepository,
+                                                       PostgresYouTubeChannelIdentityRepository)
 from .adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
 from .adapters.secret_store import FileSecretStore
 from .adapters.token_env import EnvRefreshTokenProvider
@@ -86,6 +89,8 @@ from .application.publication_execution import (FallbackTokenProvider, MissingTo
                                                 RunPublication)
 from .application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAccessToken, GetChannelStatus,
                                         RefreshYouTubeChannel, RevokeConsent)
+from .application.connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel,
+                                      ListConnections, RevokeAuthorization, Unlink)
 from .domain.youtube_oauth import OAuthConfigurationError
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.render_cache import PlanRegeneration
@@ -427,6 +432,12 @@ class Studio:
         # VS-03: a biblioteca de estilos; o render resolve o estilo do canal do projeto.
         style_repo = PostgresVisualStyleRepository(connect)
         secret_store = FileSecretStore(s.secrets_root or (s.storage_root / "secrets"))
+        # YT-04a: a identidade de publicação nova (conta → autorizações → canais) tem repositórios
+        # próprios; o vínculo validado também é o que o gate da publicação (YT-03) consulta.
+        google_accounts = PostgresGoogleAccountRepository(connect)
+        oauth_grants = PostgresOAuthGrantRepository(connect)
+        youtube_identities = PostgresYouTubeChannelIdentityRepository(connect)
+        channel_authorizations = PostgresChannelAuthorizationRepository(connect)
 
         paid_guard = None
         if s.budget_guard:  # caminhos pagos passam a exigir reserva; desligado por padrão até a operação estar pronta
@@ -481,15 +492,26 @@ class Studio:
             revoke_channel = RevokeConsent(oauth_client, youtube_repo, secret_store)
             tokens = FallbackTokenProvider(EnsureAccessToken(oauth_client, youtube_repo, secret_store),
                                            EnvRefreshTokenProvider(oauth_client, s.token_env_path))
+            begin_account_consent = BeginAccountConsent(oauth_client, secret_store,
+                                                        redirect_uri=s.google_oauth_redirect_uri)
+            complete_account_consent = CompleteAccountConsent(
+                oauth_client, google_accounts, oauth_grants, youtube_identities, channel_authorizations,
+                secret_store, redirect_uri=s.google_oauth_redirect_uri)
+            revoke_authorization = RevokeAuthorization(oauth_grants, channel_authorizations, youtube_identities,
+                                                       secret_store, oauth_client)
         else:
             begin_oauth = complete_oauth = refresh_channel = revoke_channel = None
+            begin_account_consent = complete_account_consent = None
+            # Sem app OAuth não há como revogar no Google; a revogação local continua possível.
+            revoke_authorization = RevokeAuthorization(oauth_grants, channel_authorizations, youtube_identities,
+                                                       secret_store, None)
             tokens = MissingTokenProvider()
         uploader = GoogleYouTubeUploader()
         # YT-03: o gate de identidade compara o canal do token com o destino do canal do projeto,
         # resolvendo a autorização validada (channel_authorizations). Wiring só aqui.
         publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens,
                                  channels=channel_repo,
-                                 authorizations=PostgresChannelAuthorizationRepository(connect))
+                                 authorizations=channel_authorizations)
         reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
             approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),
@@ -553,6 +575,11 @@ class Studio:
                                           oauth_available=oauth_client is not None)
         # VS-05a: a biblioteca de estilos é a projeção da tela de Estilos (lista + uso medido).
         styles_page = BuildStylesPage(style_repo)
+        # YT-04a: Conexões (serviço + API). A página "Conexões" é a YT-04b, outra fatia.
+        list_connections = ListConnections(google_accounts, oauth_grants, youtube_identities,
+                                           channel_authorizations, channel_repo, secret_store)
+        link_studio_channel = LinkStudioChannel(channel_repo, youtube_identities)
+        unlink_studio_channel = Unlink(channel_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
@@ -582,6 +609,10 @@ production=production, script_view=script_view,
                                   analytics_register_experiment=analytics_register_experiment,
                                   begin_youtube_oauth=begin_oauth, complete_youtube_oauth=complete_oauth,
                                   refresh_youtube_channel=refresh_channel, revoke_youtube_channel=revoke_channel,
+                                  list_connections=list_connections, begin_account_consent=begin_account_consent,
+                                  complete_account_consent=complete_account_consent,
+                                  revoke_authorization=revoke_authorization,
+                                  link_studio_channel=link_studio_channel, unlink_studio_channel=unlink_studio_channel,
                                   resolve_actor=ResolveActor(saas_repo),
                                   invite_member=InviteMember(saas_repo, saas_clock),
                                   change_member_role=ChangeMemberRole(saas_repo),
