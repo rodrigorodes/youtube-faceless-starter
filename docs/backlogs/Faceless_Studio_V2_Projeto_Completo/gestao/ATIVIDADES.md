@@ -31,16 +31,17 @@ Sem push/merge remoto (bloqueado pelo harness).
 | YT-03 | A publicação **bloqueia** quando o token não resolve para o canal esperado (a regra do desenho) | 153 testes | merge `145c786` |
 
 | VS-05a | Biblioteca de Estilos: API `/styles`, tela `/panel/estilos`, menu; contagem de uso medida | 438 testes (integração) | merge `759fe71` |
+| YT-04a | Serviço + API de Conexões (conta → canais → vínculo validado → revogar isolado); tokens só no cofre | 442 testes (integração) | merge `8e2556e` |
+| VS-05b | Seletor de estilo no canal (Aparência) + override no vídeo + `PATCH /videos/{id}/style` | 485 testes (integração) | merge `6df1762` |
 
 ## Em execução (paralelo)
 
-**Onda 4 (em execução):** VS-05b (seletor de estilo no canal + override no vídeo) e YT-04a (serviço + API de Conexões: conectar conta → canais → vincular → revogar; **sem** painel). Postgres dedicados `integ-pg-a`/`integ-pg-b`.
+**Onda 5 (em execução):** YT-04b (página **Conexões** + menu) e VS-05c (**correções** achadas na VS-05b: o override do vídeo não chegava ao render, e o `archive` não limpava os vínculos). Postgres dedicados `integ-pg-a`/`integ-pg-b`.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **YT-04b** | UX: página **Conexões** + item de menu (conectar → escolher canal → confirmar → revogar) | YT-04a |
 | **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05b, YT-04b |
 
 ## Bloqueadas
@@ -58,7 +59,22 @@ Sem push/merge remoto (bloqueado pelo harness).
   geometria/cor do overlay — mudar só `caption.font_size`/`palette` **não invalida** o cache
   (gap pré-existente, documentado na VS-04).
 - **Preferência de grant**: com várias autorizações `CONECTADAS` para o mesmo canal, o resolvedor
-  devolve a primeira na ordem de entrada; a política fica para a YT-04.
+  devolve a primeira na ordem de entrada; a política segue aberta.
+- **`archive` mentia (sendo corrigido na VS-05c)**: a docstring prometia que "os canais passam a
+  resolver o padrão do estúdio", mas o `archive` **não** limpava `channel_profiles.style_id` e o
+  `get` devolvia estilo arquivado — verificado em `visual_style_repo.py::archive` + `composition.py`.
+- **Override do vídeo não chegava ao render (sendo corrigido na VS-05c)**: `render.py:220` chamava
+  `style_for(video.project_id)` e `_style_for_project` só olhava o estilo do canal — o
+  `videos.style_id` existia na tela e era ignorado no render.
+- **Abas do canal (§5.2) não construídas**: a VS-05b entregou a **Aparência** como card, sem
+  reescrever a tela em abas (Identidade/Publicação/Custos seguem como estão).
+- **E-mail da conta Google (YT-04a)**: com os escopos atuais (`youtube.upload`/`youtube.readonly`)
+  o Google não expõe o e-mail (isso exige `openid`/`userinfo.email`). O callback aceita `email`
+  opcional como reserva; sem nenhum dos dois, o serviço **recusa** (`AccountIdentityUnavailable`,
+  422) em vez de inventar uma conta. Habilitar o e-mail real exige escopo/extensão do adapter.
+- **Guard do scanner de segredos**: `secret_hygiene.py` **recusa rodar** com arquivo em conflito
+  (`if stage != b"0": raise ValueError("Unmerged files ... cannot be scanned safely")`). Rodá-lo no
+  meio de um merge **não** indica vazamento — foi o que aconteceu uma vez nesta orquestração.
 
 ## Princípios que valem para toda fatia
 
