@@ -192,7 +192,7 @@ def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     assert "Conexões" in _nav_text(active[0])
     assert 'href="/studio/panel/conexoes"' in active[0]
     assert html.count('aria-current="page"') == 1
-    assert "Gestão" in page_text(html)
+    assert "Configuração" in page_text(html)
     # Estilos e Equipe seguem como destinos reais; nada de "Configurações — em breve".
     labels = " ".join(_nav_text(item) for item in items)
     assert "Estilos" in labels and "Equipe" in labels

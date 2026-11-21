@@ -636,7 +636,7 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
     # A navegação renderizada na prévia é a mesma casca das outras telas do painel.
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho", "Canais", "Estilos", "Equipe"):
         assert any(expected in label for label in labels), expected
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
@@ -751,7 +751,7 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
 
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho", "Canais", "Estilos", "Equipe"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
@@ -765,10 +765,10 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     assert not estilos.lstrip().startswith("<span ")
 
     # IA-01: Início/Produção/Tendências/Vídeos são rotas de servidor reais, não âncoras de uma página.
-    for label, href in (("Início", "/studio/panel"), ("Produção", "/studio/panel/producao"),
+    for label, href in (("Início", "/studio/panel"), ("Novo vídeo", "/studio/panel/novo-video"),
                         ("Tendências", "/studio/panel/tendencias"), ("Vídeos", "/studio/panel/videos"),
                         ("Canais", "/studio/canais"),
-                        ("Analytics", "/studio/panel/analytics")):
+                        ("Desempenho", "/studio/panel/analytics")):
         item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
         assert f'href="{href}"' in item
 
@@ -1064,7 +1064,7 @@ def test_panel_page_matches_approved_mockup_shell(client_env):
     assert 'aria-disabled="true"' in serie.group(0)
     assert 'tabindex="-1"' in serie.group(0)
 
-    for group in ("Operação", "Gestão"):
+    for group in ("Operação", "Configuração"):
         assert group in r.text
     for rail in ("Custo do mês", "Estado das fases", "Última falha"):
         assert rail in r.text
@@ -1199,7 +1199,7 @@ def test_panel_ia01_each_route_renders_only_its_own_section(client_env):
     assert '<div class="grid-summary">' not in tendencias.text
 
     # Exatamente um aria-current="page" por página, no item certo da nav.
-    for r, label in ((inicio, "Início"), (producao, "Produção"), (tendencias, "Tendências")):
+    for r, label in ((inicio, "Início"), (producao, "Vídeos"), (tendencias, "Tendências")):
         assert r.text.count('aria-current="page"') == 1
         active = next(item for item in _nav_items(r.text) if 'aria-current="page"' in item)
         assert label in re.sub(r"<[^>]+>", " ", active)

@@ -143,7 +143,7 @@ def test_styles_page_menu_has_estilos_active_and_no_dead_configuracoes(env):
     assert not any('aria-disabled="true"' in item for item in items)
     # a seção "Indisponível nesta versão" não existe vazia
     assert "Indisponível nesta versão" not in html
-    assert "Gestão" in page_text(html)
+    assert "Configuração" in page_text(html)
 
 
 # ------------------------------------------------------------- acessibilidade

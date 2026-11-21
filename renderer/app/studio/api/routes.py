@@ -1266,6 +1266,26 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         """
         return RedirectResponse(url="/studio/panel#videos", status_code=302)
 
+    # UX-02: Configurações como área de rotas reais. Cada seção leva à tela que já existe; a
+    # tela continua sendo a rota canônica (seus formulários publicam nela), sem duplicar página.
+    _SETTINGS_SECTIONS = {
+        "canais": "/studio/canais",
+        "estilos": "/studio/panel/estilos",
+        "conexoes": "/studio/panel/conexoes",
+        "equipe": "/studio/panel/equipe",
+    }
+
+    @router.get("/configuracoes")
+    def settings_root_redirect():
+        return RedirectResponse(url=_SETTINGS_SECTIONS["canais"], status_code=302)
+
+    @router.get("/configuracoes/{section}")
+    def settings_section_redirect(section: str):
+        target = _SETTINGS_SECTIONS.get(section)
+        if target is None:
+            raise HTTPException(404, "unknown settings section")
+        return RedirectResponse(url=target, status_code=302)
+
     @router.get("/panel/equipe", response_class=HTMLResponse)
     def panel_team_html(org_id: str | None = None):
         def get_page(uc):
