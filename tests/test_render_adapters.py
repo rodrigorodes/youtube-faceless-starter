@@ -13,7 +13,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.adapters.qa_ffmpeg import FfmpegQa  # noqa: E402
-from app.studio.adapters.render_ffmpeg import FfmpegRenderer  # noqa: E402
+from app.studio.adapters.render_plan_ffmpeg import PlanFfmpegRenderer  # noqa: E402
 from app.studio.adapters.storage import FileRenderStorage  # noqa: E402
 from app.studio.application.ports import RenderSpec  # noqa: E402
 from app.studio.domain.contracts import Scene, VideoFormat  # noqa: E402
@@ -39,7 +39,7 @@ def spec_for(tmp, fmt=VideoFormat.short, amplitude=0.4, texts=("Primeira cena do
         wav = tmp / f"s{i}.wav"
         tone_wav(wav, 1.0, amplitude)
         length = scene_length(1.0)
-        scenes.append(Scene(id=f"{i:032x}", video_id="v" * 32, idx=i, narration=text, label="QUA", image_prompt="prompt de imagem válido"))
+        scenes.append(Scene(id=f"{i:032x}", video_id="v" * 32, idx=i, narration=text, label="QUA", image_prompt="prompt de imagem válido", asset_id=f"{i:032x}"))
         images.append(img), wavs.append(wav), lengths.append(length)
         cues += make_cues(text, offset, 1.0)
         offset += length
@@ -56,7 +56,7 @@ def probe(path):
 @pytest.mark.parametrize("fmt", [VideoFormat.short, VideoFormat.long])
 def test_renders_mp4_with_audio_video_and_the_format_size(tmp_path, fmt):
     spec = spec_for(tmp_path, fmt)
-    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    out = PlanFfmpegRenderer().render(spec, tmp_path / "work" / "final.mp4")
     info = probe(out)
     video = next(s for s in info["streams"] if s["codec_type"] == "video")
     assert (video["width"], video["height"]) == SIZE[fmt] and any(s["codec_type"] == "audio" for s in info["streams"])
@@ -65,7 +65,7 @@ def test_renders_mp4_with_audio_video_and_the_format_size(tmp_path, fmt):
 
 def test_subtitles_are_burned_into_the_frames(tmp_path):
     spec = spec_for(tmp_path)
-    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    out = PlanFfmpegRenderer().render(spec, tmp_path / "work" / "final.mp4")
     cue = spec.cues[0]
     frame_with, frame_without = tmp_path / "with.png", tmp_path / "without.png"
     for t, dst in (((cue.start + cue.end) / 2, frame_with), (spec.scene_seconds[0] + spec.scene_seconds[1] - 0.05, frame_without)):
@@ -80,7 +80,7 @@ def test_no_leftovers_other_than_the_output_are_required_and_ffmpeg_failure_has_
     spec = spec_for(tmp_path)
     spec.images[0].write_bytes(b"nao e imagem")
     with pytest.raises(RuntimeError, match="ffmpeg|image"):
-        FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+        PlanFfmpegRenderer().render(spec, tmp_path / "work" / "final.mp4")
 
 
 def lavfi(tmp_path, name, video, audio):
@@ -123,7 +123,7 @@ def analyze_job(out, spec):
 
 def test_end_to_end_rendered_video_passes_qa(tmp_path):
     spec = spec_for(tmp_path)
-    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    out = PlanFfmpegRenderer().render(spec, tmp_path / "work" / "final.mp4")
     qa = analyze_job(out, spec)
     assert qa.passed, qa.failures
     assert qa.metrics["narration_lufs"] is not None and qa.metrics["narration_lufs"] > -45
@@ -132,7 +132,7 @@ def test_end_to_end_rendered_video_passes_qa(tmp_path):
 @pytest.mark.parametrize("music", [True, False])
 def test_muted_narration_fails_qa_with_or_without_the_music_track(tmp_path, music):
     spec = spec_for(tmp_path, amplitude=0.0, music=music)
-    out = FfmpegRenderer("rich").render(spec, tmp_path / "work" / "final.mp4")
+    out = PlanFfmpegRenderer().render(spec, tmp_path / "work" / "final.mp4")
     qa = analyze_job(out, spec)
     assert not qa.passed and any("narration" in f for f in qa.failures), qa
     if music:
@@ -146,8 +146,11 @@ def test_qa_without_a_narration_file_reports_no_narration_metrics(tmp_path):
 
 
 def test_adjacent_cues_never_share_a_frame(tmp_path):
-    from app.studio.adapters.render_ffmpeg import _scene_enable
-    assert _scene_enable(1.0, 2.0) == "gte(t,1.000)*lt(t,2.000)"
+    # a janela da legenda é semiaberta [a, b): comportamento do renderer antigo, agora no compilador puro
+    compiled = PlanFfmpegRenderer().compile_spec(spec_for(tmp_path))
+    enables = [c.enable for shot in compiled.shots for c in shot.captions]
+    assert enables and all(e.startswith("gte(t,") and "*lt(t," in e for e in enables)
+    assert all(e.endswith(")") for e in enables)
 
 
 # ---------- storage ----------
