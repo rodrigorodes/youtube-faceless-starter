@@ -135,6 +135,15 @@ def test_channels_page_with_real_data_satisfies_the_ux_contract(env):
     assert_ux_contract(r.text, page="canais/com-dados")
 
 
+def test_channels_state_badges_carry_real_text_not_only_an_icon(env):
+    _seed_profile(env)
+    html = page(env).text
+    bodies = re.findall(r'<span class="state s-[a-z]+"[^>]*>(.*?)</span>', html, re.S)
+    assert bodies
+    for body in bodies:
+        assert re.search(r"[A-Za-zÀ-ÿ]{3,}", body), body
+
+
 def test_channels_page_uses_the_approved_shell(env):
     html = page(env).text
     items = nav_items(html)

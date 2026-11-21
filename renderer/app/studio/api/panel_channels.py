@@ -69,9 +69,10 @@ CHANNELS_CSS = """
 
 
 def _badge(kind: str, icon: str, label: str) -> str:
+    # Texto primeiro: o rótulo vive no próprio badge, não só no ícone decorativo (regra R1 do contrato).
     return (
-        f'<span class="state {e(kind)}"><span class="state-icon" aria-hidden="true">{e(icon)}</span> '
-        f'{e(label)}</span>'
+        f'<span class="state {e(kind)}">{e(label)} '
+        f'<span class="state-icon" aria-hidden="true">{e(icon)}</span></span>'
     )
 
 
