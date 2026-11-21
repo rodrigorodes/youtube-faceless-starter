@@ -1724,4 +1724,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         return run(lambda uc: _need(uc, "get_project_config", "config services unavailable").execute(
             check_id(project_id)))
 
+    @router.put("/projects/{project_id}/config", response_model=ProjectConfigOut)
+    def set_project_config(project_id: str, body: dict):
+        # Corpo cru (`dict`): a validação mora no caso de uso para recusar chave desconhecida sem
+        # ecoar o valor ofensor — o handler 422 padrão do FastAPI incluiria `input` (o valor cru).
+        return run(lambda uc: _need(uc, "set_project_config", "config services unavailable").execute(
+            check_id(project_id), body))
+
     return router

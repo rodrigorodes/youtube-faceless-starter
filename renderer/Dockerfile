@@ -8,7 +8,8 @@ RUN mkdir -p /opt/voices && cd /opt/voices \
  && printf '%s  %s\n%s  %s\n' \
     75e913eb463db0b6ac7ddf68d3e4c9ac19ace36dc3b710a81039b448352b8ffc pt_BR-faber-medium.onnx \
     6b6801319e5a70aa4d75c63343515f55d1cd671ecd1ac511586bc16216812261 pt_BR-faber-medium.onnx.json | sha256sum -c -
-ENV PIPER_VOICE=/opt/voices/pt_BR-faber-medium.onnx
+# Sem `ENV PIPER_VOICE`: o caminho sai do modelo do spec (STUDIO_VOICE, default faber -> este
+# arquivo) e `PIPER_VOICE` fica só como override de caminho. Veja docs/04-variaveis-de-ambiente.md.
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

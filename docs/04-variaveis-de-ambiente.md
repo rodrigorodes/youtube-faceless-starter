@@ -13,7 +13,8 @@ Todas ficam no arquivo `.env` na raiz do projeto (copiado de `.env.example`). O 
 | `OPENCODE_MODEL` | não | `openai/gpt-6-luna` | Modelo de texto do bridge: `provider/model[#variante]` |
 | `OPENCODE_IMAGE_MODEL` | não | `openrouter/recraft/recraft-v4.1-flash-v2:free` | Modelo de imagem do provider `opencode`; o bridge recusa os que não terminam em `:free` |
 | `OPENCODE_ALLOW_PAID_IMAGES` | não | (vazio) | `1` libera modelos de imagem pagos no bridge |
-| `STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER` | não | `opencode:openai/gpt-6-luna`, `opencode:openrouter/recraft/recraft-v4.1-flash-v2:free`, `piper:pt_BR-faber-medium`, `ffmpeg:rich` | Provedor padrão de cada porta (`<provedor>:<modelo>`); o `config` do projeto sobrescreve. Em uso: `STUDIO_TEXT` (`opencode`, `demo`) e `STUDIO_IMAGE` (`opencode`, `placeholder`, `stock`, `veo`). `STUDIO_VOICE` (`piper`) e `STUDIO_RENDERER` (`ffmpeg`) |
+| `STUDIO_TEXT`, `STUDIO_IMAGE`, `STUDIO_VOICE`, `STUDIO_RENDERER` | não | `opencode:openai/gpt-6-luna`, `opencode:openrouter/recraft/recraft-v4.1-flash-v2:free`, `piper:pt_BR-faber-medium`, `ffmpeg:rich` | Provedor padrão de cada porta (`<provedor>:<modelo>`); o `config` do projeto sobrescreve. Em uso: `STUDIO_TEXT` (`opencode`, `demo`) e `STUDIO_IMAGE` (`opencode`, `placeholder`, `stock`, `veo`). `STUDIO_VOICE` (`piper`) **troca de verdade a voz** (o modelo do spec vira `/opt/voices/<modelo>.onnx`) e `STUDIO_RENDERER` (`ffmpeg`) |
+| `PIPER_VOICE` | não | `/opt/voices/pt_BR-faber-medium.onnx` | Caminho explícito do arquivo de voz do Piper; **sobrepõe** o modelo do spec. Para outra voz: monte o `.onnx` (+ `.onnx.json`) em `/opt/voices` e aponte `PIPER_VOICE`, ou use `STUDIO_VOICE=piper:<nome>` para uma voz já instalada. Vozes pt_BR do repositório do Piper: `faber`, `cadu`, `jeff` (`medium`) e `edresson` (`low`) |
 | `STUDIO_DATABASE_URL` | não | montada pelo compose | Banco do schema `studio`; sem ela o `/studio` responde 503 (a rota legada `/videos` responde 410) |
 | `STUDIO_BROWSER_USER`, `STUDIO_BROWSER_PASSWORD`, `STUDIO_WORKER_TOKEN` | sim para Studio | vazios | Credenciais distintas e persistentes; configuração e limites em [17](17-studio-auth.md). Sem elas `/studio` responde 503. |
 | `STUDIO_ALLOWED_HOSTS` | não | `localhost,127.0.0.1,renderer` | Hosts aceitos pela API `/studio`, separados por vírgula. Configuração protege contra DNS rebinding, mas **não substitui autenticação**; não exponha a API à rede. |
@@ -35,6 +36,7 @@ Valores fixos no `docker-compose.yml` (não vêm do `.env`): `MAX_DURATION_SECON
 3. **`N8N_ENCRYPTION_KEY` não pode mudar** depois que existirem credenciais salvas: elas ficam ilegíveis. Guarde a chave (cofre de senhas) junto com o backup do volume `n8n_data`.
 4. O **bridge do OpenCode** (provider `opencode`) consome a cota da conta logada e seus termos se aplicam. Veja [07](07-openai-luna-oauth.md).
 5. Depois de editar o `.env`, aplique com `docker compose up -d` (recria só o que mudou).
+6. **Trocar a voz do Piper invalida a calibração de duração.** `domain/narration_duration.py` mediu os números (`MEASURED_*`) **só** para `piper:pt_BR-faber-medium`; com outra voz o erro da estimativa volta (antes de calibrar era +15,6%). `tests/test_tts_calibration.py` **pula** (compara hash da voz e versão do Piper) quando a voz é outra — a perda do guarda é silenciosa. Recalibre com `scripts/tts_calibration.py` e atualize `scripts/tts_calibration_samples.json`.
 
 ## Portas
 

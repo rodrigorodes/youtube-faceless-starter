@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from ...application.use_cases import InvalidInput, ServiceUnavailable
 from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
@@ -50,6 +51,18 @@ class PostgresVideoRepository:
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
                 cur.execute("SELECT id, name, niche, language, budget_usd_month, config, created_at "
                             "FROM studio.projects WHERE id = %s", (check_id(project_id),))
+                row = cur.fetchone()
+            if row is None:
+                return None
+            row["budget_usd_month"] = float(row["budget_usd_month"])
+            return Project.model_validate(row)
+
+    def set_project_config(self, project_id: str, config: dict[str, str]) -> Project | None:
+        with _translated():
+            with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("UPDATE studio.projects SET config = %s WHERE id = %s "
+                            "RETURNING id, name, niche, language, budget_usd_month, config, created_at",
+                            (Jsonb(config), check_id(project_id)))
                 row = cur.fetchone()
             if row is None:
                 return None

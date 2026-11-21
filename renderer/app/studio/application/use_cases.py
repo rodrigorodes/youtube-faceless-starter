@@ -21,7 +21,7 @@ from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCateg
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
-from .secrets import GetPublicProjectConfig
+from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
 from .youtube_oauth import (BeginConsent, CompleteConsent, RefreshYouTubeChannel, RevokeConsent)
 from .saas import (ChangeMemberRole, InviteMember, RegisterByokKey, RemoveMember, ResolveActor,
@@ -106,6 +106,7 @@ class UseCases:
     associate_youtube_channel: AssociateYouTubeChannel | None = None
     disconnect_youtube_channel: DisconnectYouTubeChannel | None = None
     get_project_config: GetPublicProjectConfig | None = None
+    set_project_config: SetPublicProjectConfig | None = None
     # F10 (UI): projeção da tela de Canais consumindo os casos de uso acima
     channels_page: "BuildChannelsPage | None" = None
     # F11: leitura da tela de Equipe (tenancy/BYOK).
@@ -157,6 +158,7 @@ class UseCases:
                   associate_youtube_channel: AssociateYouTubeChannel | None = None,
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
                   get_project_config: GetPublicProjectConfig | None = None,
+                  set_project_config: SetPublicProjectConfig | None = None,
                   channels_page: "BuildChannelsPage | None" = None,
                   team_view: "BuildTeamView | None" = None,
                   analytics_repo: AnalyticsRepository | None = None,
@@ -182,6 +184,7 @@ class UseCases:
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
                    get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
+                   set_project_config,
                    channels_page,
                    team_view,
                    analytics_repo, analytics_dashboard, analytics_collection, analytics_decide,

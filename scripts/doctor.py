@@ -14,6 +14,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ["POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY"]
+# Portas de provider do estúdio (application/config.py). O bridge do OpenCode é exigido quando
+# alguma delas aponta para o provider `opencode`.
+STUDIO_KINDS = ("STUDIO_TEXT", "STUDIO_IMAGE", "STUDIO_VOICE", "STUDIO_RENDERER")
 
 
 @dataclass
@@ -51,6 +54,15 @@ def check_env(env_text: str, required: list[str], optional: list[str] = ()) -> l
     return checks
 
 
+def uses_opencode_bridge(values: dict[str, str]) -> bool:
+    """Verdadeiro se alguma porta do estúdio aponta para o provider `opencode` (`opencode:<modelo>`)."""
+    for var in STUDIO_KINDS:
+        provider = values.get(var, "").partition(":")[0].strip().lower()
+        if provider == "opencode":
+            return True
+    return False
+
+
 def check_port(host: str, port: int, expect_open: bool) -> Check:
     try:
         with socket.create_connection((host, port), timeout=2):
@@ -83,7 +95,7 @@ def run_all(root: Path = ROOT, network: bool = True) -> list[Check]:
         return [Check(".env", False, "arquivo ausente (copie .env.example para .env)")]
     text = env_path.read_text(encoding="utf-8")
     values = parse_env(text)
-    needs_bridge = "opencode" in (values.get("AI_PROVIDER", "").lower(), values.get("IMAGE_PROVIDER", "").lower())
+    needs_bridge = uses_opencode_bridge(values)
     checks = [Check(".env", True, "presente"), check_env_permissions(env_path)]
     checks += check_env(text, REQUIRED + (["OPENCODE_BRIDGE_TOKEN"] if needs_bridge else []),
                         [] if needs_bridge else ["OPENCODE_BRIDGE_TOKEN"])

@@ -229,6 +229,32 @@ def test_project_config_never_exposes_secrets(api):
     assert "LEAK" not in r.text and "shh" not in r.text
 
 
+def test_put_project_config_validates_persists_and_never_echoes_rejected_values(api):
+    client = api["client"]
+    p_id = api["project_id"]
+    valid = {"text": "demo", "image": "placeholder", "voice": "piper:pt_BR-faber-medium",
+             "renderer": "ffmpeg:rich"}
+    r = client.put(f"/studio/projects/{p_id}/config", json=valid, headers=WORKER_HEADER)
+    assert r.status_code == 200, r.text
+    assert r.json()["config"] == valid
+    assert client.get(f"/studio/projects/{p_id}/config", headers=WORKER_HEADER).json()["config"] == valid
+
+    # chave desconhecida (com valor com cara de segredo) -> 422 e o valor não vaza
+    extra = client.put(f"/studio/projects/{p_id}/config",
+                       json={**valid, "OPENAI_API_KEY": "sk-live-LEAK"}, headers=WORKER_HEADER)
+    assert extra.status_code == 422
+    assert "OPENAI_API_KEY" in extra.text and "LEAK" not in extra.text
+
+    # spec em branco -> 422
+    assert client.put(f"/studio/projects/{p_id}/config",
+                      json={**valid, "text": "   "}, headers=WORKER_HEADER).status_code == 422
+    # porta faltando -> 422
+    assert client.put(f"/studio/projects/{p_id}/config",
+                      json={"text": "demo"}, headers=WORKER_HEADER).status_code == 422
+    # o config persistido não mudou depois das recusas
+    assert client.get(f"/studio/projects/{p_id}/config", headers=WORKER_HEADER).json()["config"] == valid
+
+
 def test_create_project_response_does_not_carry_config(api):
     r = api["client"].post("/studio/projects", json={"name": "sem config"}, headers=WORKER_HEADER)
     assert r.status_code == 201

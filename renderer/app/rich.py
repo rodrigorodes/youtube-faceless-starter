@@ -10,6 +10,7 @@ trilha) e as fontes/``_wrap`` para compor os overlays de texto.
 import math
 import os
 import wave
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -18,17 +19,42 @@ LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 MUSIC_SR = 44100
+DEFAULT_VOICE = "/opt/voices/pt_BR-faber-medium.onnx"  # a voz baixada e conferida no Dockerfile
 _voice = None
+_voice_loaded = None  # caminho do modelo carregado em `_voice`
+_requested_voice = None  # voz pedida pelo chamador (o spec do projeto via porta Voice)
 
 
 # ---------- áudio ----------
 
+@contextmanager
+def use_voice(voice_path):
+    """Aponta a voz pedida para o próximo ``synthesize_speech`` e restaura o valor ao sair.
+
+    A porta Voice (``PiperVoice``) usa isto para passar o arquivo derivado do spec do projeto
+    (``STUDIO_VOICE``/``Project.config.voice``). Precedência final: ``PIPER_VOICE`` (caminho
+    explícito) > voz pedida aqui > ``DEFAULT_VOICE``.
+    """
+    global _requested_voice
+    previous = _requested_voice
+    _requested_voice = voice_path
+    try:
+        yield
+    finally:
+        _requested_voice = previous
+
+
 def synthesize_speech(text, path):
-    """Narração pt-BR com Piper (voz definida em PIPER_VOICE). Devolve a duração em segundos."""
-    global _voice
-    from piper import PiperVoice
-    if _voice is None:
-        _voice = PiperVoice.load(os.getenv("PIPER_VOICE", "/opt/voices/pt_BR-faber-medium.onnx"))
+    """Narração pt-BR com Piper. Voz: PIPER_VOICE > voz do spec > default. Devolve a duração (s)."""
+    global _voice, _voice_loaded
+    wanted = os.getenv("PIPER_VOICE") or _requested_voice or DEFAULT_VOICE
+    if _voice is None or _voice_loaded != wanted:
+        if not os.path.isfile(wanted):
+            # Nunca cair para outra voz em silêncio: falha dizendo o caminho esperado.
+            raise FileNotFoundError(f"voz do Piper não encontrada: {wanted}")
+        from piper import PiperVoice
+        _voice = PiperVoice.load(wanted)
+        _voice_loaded = wanted
     with wave.open(str(path), "wb") as wav:
         _voice.synthesize_wav(text, wav)
     return wav_duration(path)
