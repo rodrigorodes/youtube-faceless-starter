@@ -33,16 +33,18 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-05a | Biblioteca de Estilos: API `/styles`, tela `/panel/estilos`, menu; contagem de uso medida | 438 testes (integração) | merge `759fe71` |
 | YT-04a | Serviço + API de Conexões (conta → canais → vínculo validado → revogar isolado); tokens só no cofre | 442 testes (integração) | merge `8e2556e` |
 | VS-05b | Seletor de estilo no canal (Aparência) + override no vídeo + `PATCH /videos/{id}/style` | 485 testes (integração) | merge `6df1762` |
+| VS-05c | **Correções**: override do vídeo chega ao render (precedência vídeo > canal > neutro); `archive` limpa os vínculos + docstring corrigida | 211 testes | merge `08508ab` |
+| YT-04b | Página **Conexões** no painel (conta → canais → confirmar → revogar) + menu | 378 testes (integração) | merge `42f73ca` |
 
 ## Em execução (paralelo)
 
-**Onda 5 (em execução):** YT-04b (página **Conexões** + menu) e VS-05c (**correções** achadas na VS-05b: o override do vídeo não chegava ao render, e o `archive` não limpava os vínculos). Postgres dedicados `integ-pg-a`/`integ-pg-b`.
+**RF-01 (em execução — última fatia):** reframe de vocabulário "projeto" → "canal" na interface (o canal é a unidade; 21 ocorrências na UI). Postgres dedicado `integ-pg-a`.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05b, YT-04b |
+| — | **Veredito completo da suíte** (partições) + limpeza dos Postgres extras (`integ-pg-a/b/orch`) | RF-01 |
 
 ## Bloqueadas
 
