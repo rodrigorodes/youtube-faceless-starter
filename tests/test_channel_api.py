@@ -5,6 +5,7 @@ associação YouTube sem tokens na resposta e Project.config sanitizado.
 """
 import base64
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -186,7 +187,7 @@ def test_youtube_association_never_returns_tokens(api):
     payload = {"channel_id": "UC123", "title": "Canal",
                "scopes": ["https://www.googleapis.com/auth/youtube.upload"],
                "access_token": "ya29.access-secret", "refresh_token": "1//refresh-secret",
-               "token_expires_at": "2026-11-21T12:00:00+00:00"}
+               "token_expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}
     r = client.put(f"/studio/projects/{p_id}/youtube-channel", json=payload, headers=WORKER_HEADER)
     assert r.status_code == 200, r.text
     raw = r.text
