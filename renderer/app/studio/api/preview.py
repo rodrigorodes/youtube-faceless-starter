@@ -30,13 +30,26 @@ async function send(action) {
     if (v('publish_at')) body.publish_at = new Date(v('publish_at')).toISOString();
     if (v('override_reason')) body.override_reason = v('override_reason');
   } else if (v('reject_reason')) { body.reason = v('reject_reason'); }
+  const btn = action === 'approve' ? btnApprove : btnReject;
+  if (btn) { btn.disabled = true; btn.classList.add('carregando'); }
+  if (window.StudioLoading) window.StudioLoading.start();
   out.textContent = 'Enviando…';
   try {
     const r = await fetch(form.dataset.base + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await r.json().catch(() => ({}));
-    if (r.ok) { out.textContent = action === 'approve' ? 'Aprovado. A publicação é feita pelo workflow do n8n.' : 'Rejeitado.'; setTimeout(() => location.reload(), 900); }
-    else out.textContent = 'Erro ' + r.status + ': ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
-  } catch (err) { out.textContent = 'Falha de rede: ' + err.message; }
+    if (r.ok) {
+      out.textContent = action === 'approve' ? 'Aprovado. A publicação é feita pelo workflow do n8n.' : 'Rejeitado.';
+      setTimeout(() => location.reload(), 900);
+    } else {
+      out.textContent = 'Erro ' + r.status + ': ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+      if (btn) { btn.disabled = false; btn.classList.remove('carregando'); }
+      if (window.StudioLoading) window.StudioLoading.done();
+    }
+  } catch (err) {
+    out.textContent = 'Falha de rede: ' + err.message;
+    if (btn) { btn.disabled = false; btn.classList.remove('carregando'); }
+    if (window.StudioLoading) window.StudioLoading.done();
+  }
 }
 const btnApprove = document.getElementById('approve');
 if (btnApprove) btnApprove.addEventListener('click', () => send('approve'));

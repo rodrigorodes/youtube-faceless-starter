@@ -666,6 +666,8 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
         const url = '/studio/videos/' + encodeURIComponent(videoId) +
           '/production-runs/' + encodeURIComponent(runId) + '/' + action;
         btn.disabled = true;
+        btn.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start();
         if (feedback) feedback.textContent = 'Aplicando...';
         try {{
           const res = await fetch(url, {{
@@ -679,11 +681,15 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
             location.reload();
           }} else {{
             btn.disabled = false;
+            btn.classList.remove('carregando');
+            if (window.StudioLoading) window.StudioLoading.done();
             if (feedback) feedback.textContent = 'Não foi possível: ' +
               (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite esta ação');
           }}
         }} catch (err) {{
           btn.disabled = false;
+          btn.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
           if (feedback) feedback.textContent = 'Falha de rede: ' + err.message;
         }}
       }});

@@ -109,6 +109,76 @@ PRODUCT_CSS = """
 .state.s-fail { color: var(--err); }
 .state.s-idle, .state.state-idle { color: var(--muted); }
 
+/* Indicador de atividade e spinner (Modern Web Guidance › spinner) */
+@keyframes spin {
+  to { transform: rotate(1turn); }
+}
+.state.s-run .state-icon {
+  display: inline-block;
+  animation: spin 1.2s linear infinite;
+  transform-origin: center center;
+}
+
+/* Spinner integrado nos botões para ações assíncronas */
+.btn.carregando, .btn.is-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.btn.carregando::before, .btn.is-loading::before {
+  content: '';
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  vertical-align: -1px;
+}
+
+/* Barra de progresso de atividade no topo da página (padrão YouTube/Vercel/Modern Web) */
+#barra-progresso-topo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accentfill));
+  z-index: 9999;
+  transition: width 0.25s ease, opacity 0.3s ease;
+  pointer-events: none;
+  box-shadow: 0 0 10px var(--accentfill);
+  opacity: 0;
+}
+#barra-progresso-topo.ativo {
+  opacity: 1;
+}
+#barra-progresso-topo.finalizado {
+  width: 100% !important;
+  opacity: 0;
+  transition: width 0.12s ease, opacity 0.35s ease 0.1s;
+}
+
+/* Shimmer / Skeleton screens para carregamento de conteúdo */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton, .esqueleto {
+  background: linear-gradient(90deg, var(--panel2) 25%, var(--soft) 50%, var(--panel2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite ease-in-out;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state.s-run .state-icon, .btn.carregando::before, .btn.is-loading::before, .skeleton, .esqueleto {
+    animation: none !important;
+  }
+}
+
 /* Ação necessária e avisos */
 .act-card { border-color: var(--warn); border-left-width: 4px; background: var(--soft); }
 
@@ -359,9 +429,36 @@ SHELL_JS = """
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', pintarTema);
   }
 
+  // ---- indicador de atividade / loading de topo ----
+  var bar = $('#barra-progresso-topo');
+  var barTimer = null;
+  window.StudioLoading = {
+    start: function () {
+      if (!bar) return;
+      clearTimeout(barTimer);
+      bar.classList.remove('finalizado');
+      bar.classList.add('ativo');
+      bar.style.width = '22%';
+      barTimer = setTimeout(function () {
+        bar.style.width = '68%';
+        barTimer = setTimeout(function () { bar.style.width = '84%'; }, 400);
+      }, 150);
+    },
+    done: function () {
+      if (!bar) return;
+      clearTimeout(barTimer);
+      bar.classList.add('finalizado');
+      barTimer = setTimeout(function () {
+        bar.classList.remove('ativo', 'finalizado');
+        bar.style.width = '0%';
+      }, 450);
+    }
+  };
+
   // ---- canal ativo: recarrega a tela no canal escolhido ----
   var sel = $('#canal-ativo');
   if (sel) sel.addEventListener('change', function () {
+    window.StudioLoading.start();
     var u = new URL(location.href);
     u.searchParams.set('project_id', sel.value);
     location.href = u.toString();
@@ -385,7 +482,10 @@ SHELL_JS = """
       var nome = $('#canal-nome').value.trim();
       if (!nome) return;
       var btn = $('#btn-salvar-canal');
-      btn.disabled = true; fb.removeAttribute('data-tipo'); fb.textContent = 'Cadastrando canal…';
+      btn.disabled = true;
+      btn.classList.add('carregando');
+      window.StudioLoading.start();
+      fb.removeAttribute('data-tipo'); fb.textContent = 'Cadastrando canal…';
       fetch('/studio/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: nome, niche: $('#canal-nicho').value.trim(), language: $('#canal-idioma').value })
@@ -399,10 +499,15 @@ SHELL_JS = """
             fb.setAttribute('data-tipo', 'erro');
             fb.textContent = 'Erro ao cadastrar: ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
             btn.disabled = false;
+            btn.classList.remove('carregando');
+            window.StudioLoading.done();
           }
         })
         .catch(function (err) {
-          fb.setAttribute('data-tipo', 'erro'); fb.textContent = 'Falha de rede: ' + err.message; btn.disabled = false;
+          fb.setAttribute('data-tipo', 'erro'); fb.textContent = 'Falha de rede: ' + err.message;
+          btn.disabled = false;
+          btn.classList.remove('carregando');
+          window.StudioLoading.done();
         });
     });
   }
@@ -425,6 +530,7 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
   <script nonce="{nonce}">{THEME_BOOT_JS}</script>
 </head>
 <body>
+<div id="barra-progresso-topo" aria-hidden="true"></div>
 <a class="skip" href="#conteudo">Ir para o conteúdo</a>
 <div class="app">
   {render_sidebar(active=active, cost_note=cost_note)}
