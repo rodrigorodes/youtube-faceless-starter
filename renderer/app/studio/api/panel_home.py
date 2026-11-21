@@ -132,6 +132,14 @@ HOME_JS = """
         if (window.StudioLoading) window.StudioLoading.done();
       });
   });
+  document.querySelectorAll('.hero-foot .chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      document.querySelectorAll('.hero-foot .chip').forEach(function (c) { c.classList.remove('on'); });
+      chip.classList.add('on');
+      var r = chip.querySelector('input[type="radio"]');
+      if (r) r.checked = true;
+    });
+  });
   document.addEventListener('click', function (ev) {
     var alvo = ev.target.closest ? ev.target.closest('[data-usar-tendencia]') : null;
     if (!alvo || !topic) return;
@@ -183,24 +191,33 @@ def render_home(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, str
         <p class="eyebrow">SEU ESPAÇO DE CRIAÇÃO</p>
         <div class="hero">
           <h1 id="t-inicio">O que você vai criar hoje?</h1>
-          <p>De uma ideia para um vídeo pronto — o canal já define estilo, voz e idioma.</p>
+          <p>De uma ideia para um vídeo pronto. Sem complicação.</p>
           {gate}
           <form id="create-video-form">
-            <div class="hero-linha">
-              <div class="campo-tema">
-                <label for="topic">Tema do vídeo</label>
-                <input type="text" id="topic" name="topic" minlength="3" maxlength="300" required{disabled}
-                       placeholder="Ex.: por que os agentes de IA estão mudando o trabalho" value="{e(topic, quote=True)}">
+            <div class="promptrow hero-linha">
+              <div class="campo-tema" style="flex:1">
+                <label class="sr-only" for="topic">Tema do vídeo</label>
+                <input class="prompt" type="text" id="topic" name="topic" minlength="3" maxlength="300" required{disabled}
+                       placeholder="Ex.: Por que a inteligência artificial está mudando tudo?" value="{e(topic, quote=True)}">
               </div>
-              <button class="btn btn-primario" type="submit" id="btn-create-video"{disabled}>Criar vídeo →</button>
+              <button class="btn btn-primario primary" type="submit" id="btn-create-video"{disabled}>✦ &nbsp; Criar vídeo <span>→</span></button>
             </div>
-            <fieldset class="formatos">
-              <legend>Formato</legend>
-              <label class="formato"><input type="radio" name="format" value="long" checked> Vídeo (16:9)</label>
-              <label class="formato"><input type="radio" name="format" value="short"> Short (9:16)</label>
-            </fieldset>
+            <div class="hero-foot">
+              <fieldset class="formatos">
+                <legend class="sr-only">Formato</legend>
+                <label class="chip on formato" id="homeLong">
+                  <input type="radio" name="format" value="long" checked class="sr-only">
+                  <span>▣ &nbsp; Vídeo (16:9)</span>
+                </label>
+                <label class="chip formato" id="homeShort">
+                  <input type="radio" name="format" value="short" class="sr-only">
+                  <span>▯ &nbsp; Short (9:16)</span>
+                </label>
+              </fieldset>
+              <span class="hint">Seu estilo e voz são aplicados automaticamente</span>
+            </div>
             <p class="feedback" id="create-video-feedback" role="status"></p>
-            <p class="micro">Ao criar, o vídeo abre para você informar a fonte; a produção só começa depois disso.</p>
+            <p class="micro" style="margin-top:12px">Ao criar, o vídeo abre para você informar a fonte; a produção só começa depois disso.</p>
           </form>
         </div>
 

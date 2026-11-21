@@ -76,16 +76,19 @@ PRODUCT_CSS = """
   background: var(--panel3, #22222d);
   border-color: #595268;
 }
-.btn-primary, .btn-primario {
-  background: var(--accentfill); color: var(--onaccent); border-color: var(--accentfill); font-weight: 700;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accentfill) 32%, transparent);
+.btn.primary, .btn-primary, .btn-primario {
+  background: var(--accent); color: #100d17 !important; border-color: var(--accent); font-weight: 700;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
 }
-.btn-primary:hover, .btn-primario:hover { filter: brightness(1.1); box-shadow: 0 4px 20px color-mix(in srgb, var(--accentfill) 45%, transparent); }
+.btn.primary:hover:not(:disabled), .btn-primary:hover:not(:disabled), .btn-primario:hover:not(:disabled) {
+  background: #ab90ff !important; border-color: #ab90ff !important; color: #100d17 !important;
+  box-shadow: 0 6px 22px color-mix(in srgb, #ab90ff 52%, transparent);
+}
 .btn-danger, .btn-perigo { background: #7a2436; color: #fff; border-color: #7a2436; font-weight: 650; }
 .btn-danger:hover, .btn-perigo:hover { background: #8e2b40; filter: brightness(1.08); }
-.btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
-.btn-ghost { background: transparent; border-color: var(--line); }
-.btn-ghost:hover { background: var(--panel2); border-color: #595268; }
+.btn-sm, .btn.small { padding: 8px 12px; font-size: 12px; border-radius: 8px; }
+.btn-ghost, .btn.ghost { background: transparent; border-color: var(--line); }
+.btn-ghost:hover, .btn.ghost:hover { background: var(--panel2); border-color: #595268; }
 
 /* Campos e formulários V3 */
 .field, .campo { margin-bottom: 18px; display: flex; flex-direction: column; gap: 6px; }
@@ -258,6 +261,20 @@ select option:checked {
 
 /* Ação necessária e avisos */
 .act-card { border-color: var(--warn); border-left-width: 4px; background: var(--soft); }
+
+/* Início / Hero V3 Mockup */
+.hero { padding: 38px 42px 36px; background: linear-gradient(120deg, #1c1a2a, #17171f 68%); border: 1px solid #343041; border-radius: 19px; position: relative; overflow: hidden; }
+.hero::after { content: '✦'; position: absolute; right: 37px; top: -42px; font-size: 200px; color: rgba(150, 117, 251, 0.055); pointer-events: none; line-height: 1; user-select: none; }
+.hero h1 { font-size: 32px; letter-spacing: -1.2px; line-height: 1.2; margin: 0 0 9px; color: light-dark(#111116, #ffffff); }
+.hero p { color: #a9a6b9; margin: 0 0 26px; font-size: 14px; }
+.promptrow, .hero-linha { display: flex; align-items: stretch; gap: 10px; position: relative; z-index: 1; }
+.prompt, .campo-tema input { flex: 1; border-radius: 11px; border: 1px solid #4a435e; background: rgba(11, 11, 17, 0.7); color: white; padding: 15px 16px; outline: none; min-width: 0; font-size: 14px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.prompt:focus, .campo-tema input:focus { border-color: var(--accent) !important; outline: none; box-shadow: 0 0 0 3px rgba(150, 117, 251, 0.18); }
+.hero-foot { display: flex; gap: 10px; margin-top: 17px; align-items: center; flex-wrap: wrap; }
+.chip { border: 1px solid #393743; border-radius: 30px; background: #201f2a; color: #b5b3c0; padding: 8px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.15s ease; user-select: none; }
+.chip:hover { border-color: #756397; color: #fff; }
+.chip.on, .chip:has(input:checked) { border-color: #8870c6; background: rgba(150, 117, 251, 0.16); color: #d8ccff; font-weight: 650; box-shadow: 0 2px 10px rgba(150, 117, 251, 0.12); }
+.hero-foot .hint { margin-left: auto; color: #767387; font-size: 12px; }
 
 /* Etapas e checklist da execução */
 .steps { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
