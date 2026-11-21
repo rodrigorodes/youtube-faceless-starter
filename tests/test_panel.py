@@ -633,6 +633,7 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
         ("Tendências", "#trending-section"),
         ("Vídeos", "#videos-section"),
         ("Canais", "/studio/canais"),
+        ("Analytics", "/studio/panel/analytics"),
     ):
         item = next(item for item in items if label in _nav_text(item))
         assert f'href="{href}"' in item
@@ -658,9 +659,8 @@ def test_render_panel_shell_disabled_nav_items_are_not_links():
     html = _render_panel_html()
     items = _primary_nav(html)
 
-    # Depois que "Canais" (F10 UI) e "Equipe" (F11) viraram links reais, os indisponíveis
-    # restantes na casca sao apenas estes.
-    for label in ("Analytics", "Configurações"):
+    # Canais, Equipe e Analytics viraram links reais; o unico indisponivel e Configuracoes.
+    for label in ("Configurações",):
         item = next(item for item in items if label in _nav_text(item))
         assert 'aria-disabled="true"' in item
         assert 'tabindex="-1"' in item

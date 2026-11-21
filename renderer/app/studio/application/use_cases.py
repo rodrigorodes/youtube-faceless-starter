@@ -11,6 +11,10 @@ from .panel import BuildPanel
 from .ports import CategoryRepository, ChannelProfileRepository, TrendRepository, VideoRepository
 from .trends import IngestTrends
 from .analytics import Analytics
+from .analytics_collection import CollectMetrics
+from .analytics_dashboard import BuildAnalyticsDashboard
+from .analytics_learning import DecideRecommendation, RegisterExperiment
+from .analytics_ports import AnalyticsRepository
 from .observability import Resume
 from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
@@ -103,6 +107,12 @@ class UseCases:
     # F11: leitura da tela de Equipe (tenancy/BYOK). As mutações existem no serviço, mas a rota
     # só as expõe quando houver ator autenticado (F11-02).
     team_view: "BuildTeamView | None" = None
+    # F9 (analytics e loop de aprendizado)
+    analytics_repo: AnalyticsRepository | None = None
+    analytics_dashboard: BuildAnalyticsDashboard | None = None
+    analytics_collection: CollectMetrics | None = None
+    analytics_decide: DecideRecommendation | None = None
+    analytics_register_experiment: RegisterExperiment | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -130,7 +140,12 @@ class UseCases:
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
                   get_project_config: GetPublicProjectConfig | None = None,
                   channels_page: "BuildChannelsPage | None" = None,
-                  team_view: "BuildTeamView | None" = None) -> "UseCases":
+                  team_view: "BuildTeamView | None" = None,
+                  analytics_repo: AnalyticsRepository | None = None,
+                  analytics_dashboard: BuildAnalyticsDashboard | None = None,
+                  analytics_collection: CollectMetrics | None = None,
+                  analytics_decide: DecideRecommendation | None = None,
+                  analytics_register_experiment: RegisterExperiment | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -138,4 +153,6 @@ class UseCases:
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
                    get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
                    channels_page,
-                   team_view)
+                   team_view,
+                   analytics_repo, analytics_dashboard, analytics_collection, analytics_decide,
+                   analytics_register_experiment)

@@ -28,6 +28,8 @@ from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.production_repo import build_postgres_production_run_repository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
+from .adapters.postgres.analytics_learning_repo import PostgresAnalyticsLearningRepository
+from .adapters.channel_analytics import ChannelAnalyticsAdapter
 from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
 from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
@@ -49,6 +51,9 @@ from .adapters.text_opencode import OpenCodeText
 from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
 from .application.analytics import Analytics
+from .application.analytics_collection import CollectMetrics
+from .application.analytics_dashboard import BuildAnalyticsDashboard
+from .application.analytics_learning import DecideRecommendation, RegisterExperiment
 from .application.panel import BuildPanel
 from .application.saas import BuildTeamView
 from .application.trends import IngestTrends
@@ -406,6 +411,12 @@ class Studio:
         worker = ProductionWorker(coordinator)
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id))
+        analytics_learning_repo = PostgresAnalyticsLearningRepository(connect)
+        analytics_dashboard = BuildAnalyticsDashboard(analytics_learning_repo)
+        analytics_collection = CollectMetrics(
+            ChannelAnalyticsAdapter(youtube_repo, secret_store), analytics_learning_repo)
+        analytics_decide = DecideRecommendation(analytics_learning_repo)
+        analytics_register_experiment = RegisterExperiment(analytics_learning_repo)
         panel_repo = PostgresPanelRepository(connect)
         panel = BuildPanel(panel_repo, s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
         team_view = BuildTeamView(PostgresSaasRepository(connect), lambda: datetime.now(timezone.utc))
@@ -439,7 +450,12 @@ production=production, script_view=script_view,
                                   disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
                                   get_project_config=project_config,
                                   channels_page=channels_page,
-                                  team_view=team_view)
+                                  team_view=team_view,
+                                  analytics_repo=analytics_learning_repo,
+                                  analytics_dashboard=analytics_dashboard,
+                                  analytics_collection=analytics_collection,
+                                  analytics_decide=analytics_decide,
+                                  analytics_register_experiment=analytics_register_experiment)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

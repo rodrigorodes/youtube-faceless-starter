@@ -1,16 +1,17 @@
 """Rotas /studio. Só falam com casos de uso; nunca com repositório ou banco."""
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import base64
 import binascii
 import hashlib
 import hmac
 import os
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..application.config import ProviderNotFound
 from ..application.budget import (BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition,
@@ -23,6 +24,10 @@ from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailabl
                                ProviderSpecInvalid)
 from ..domain.youtube_channel import YouTubeChannelInvalid
 from ..application.analytics import DailyMetric
+from ..application.analytics_collection import (AnalyticsPillarNotFound, AnalyticsVideoNotFound,
+                                                 CollectionRequest)
+from ..application.analytics_dashboard import AnalyticsFilterNotFound
+from ..application.analytics_learning import conclusion_from
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.longform import ScriptApprovalRefused, ScriptVersionStale
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
@@ -42,6 +47,7 @@ from .preview import render_preview
 from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
 from .panel_team import render_team
+from .panel_analytics import render_analytics
 from .panel_production import (
     STAGE_LABELS,
     ExecutionView,
@@ -54,6 +60,8 @@ from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.analytics_learning import AnalyticsPeriod, DashboardQuery, ExperimentVariant
+from ..domain.insight import MetricWindow
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
@@ -563,6 +571,50 @@ def _budget_out(view) -> dict:
             "video": _decision_out(view.video)}
 
 
+class AnalyticsDecisionIn(BaseModel):
+    project_id: str
+    decision: Literal["accepted_for_review", "rejected"]
+
+
+class AnalyticsCollectIn(BaseModel):
+    video_id: str
+    days: int = 7
+    pillar_id: str | None = None
+
+
+class ExperimentVariantIn(BaseModel):
+    variant_id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=200)
+    is_control: bool = False
+
+
+class ExperimentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    video_id: str
+    kind: Literal["thumbnail", "title"]
+    status: Literal["planned", "running", "finished", "abandoned"] = "planned"
+    variants: list[ExperimentVariantIn] = Field(min_length=2)
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    conclusion: str | None = Field(default=None, max_length=2000)
+    conclusion_confidence: Literal["low", "medium", "high"] | None = None
+    conclusion_basis: str | None = Field(default=None, max_length=2000)
+    conclusion_observation_ids: list[str] = Field(default_factory=list)
+
+
+def _operator() -> str:
+    return os.getenv("STUDIO_BROWSER_USER", "").strip() or "operador local"
+
+
+def _analytics_period(days: int):
+    try:
+        return AnalyticsPeriod(days=days, end_at=datetime.now(timezone.utc))
+    except ValidationError:
+        raise HTTPException(422, "days must be 7, 28 or 90") from None
+
+
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
     router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard), Depends(_authenticate)])
 
@@ -646,6 +698,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, str(exc)) from exc
         except RunNotFound as exc:
             raise HTTPException(404, "production run not found") from exc
+        except (AnalyticsFilterNotFound, AnalyticsVideoNotFound, AnalyticsPillarNotFound) as exc:
+            raise HTTPException(404, str(exc)) from exc
         # -- canais/providers/budget (F10-03..07) --
         except ChannelProjectNotFound as exc:
             raise HTTPException(404, "project not found") from exc
@@ -952,6 +1006,103 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return render_channels(uc.channels_page.execute(check_id(project_id) if project_id else None))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
+
+    # -- analytics e loop de aprendizado (F9-01/02/03/05/06) ----------------------------
+
+    @router.get("/panel/analytics", response_class=HTMLResponse)
+    def panel_analytics_html(project: str | None = None, video: str | None = None,
+                             pillar: str | None = None, days: int = 7):
+        period = _analytics_period(days)
+
+        def get_page(uc):
+            if uc.analytics_repo is None or uc.analytics_dashboard is None:
+                raise HTTPException(503, "analytics services unavailable")
+            project_id = check_id(project) if project else None
+            video_id = check_id(video) if video else None
+            pillar_id = check_id(pillar) if pillar else None
+            chosen = project_id
+            if chosen is None:
+                projects = uc.analytics_repo.projects()
+                if not projects:
+                    raise ProjectNotFound("no project registered")
+                chosen = projects[0][0]
+            view = uc.analytics_dashboard.execute(DashboardQuery(
+                project_id=chosen, video_id=video_id, pillar_id=pillar_id, period=period))
+            month = uc.panel.month_cost() if uc.panel is not None else None
+            return render_analytics(view, month)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.post("/panel/analytics/recommendations/{recommendation_id}/decision")
+    def decide_recommendation(recommendation_id: str, body: AnalyticsDecisionIn):
+        def decide(uc):
+            if uc.analytics_decide is None:
+                raise HTTPException(503, "analytics services unavailable")
+            record = uc.analytics_decide.execute(check_id(body.project_id),
+                                                 check_id(recommendation_id),
+                                                 body.decision, _operator())
+            return {"recommendation_id": record.recommendation_id, "decision": record.decision,
+                    "applied": False,
+                    "message": "registro de revisão; nenhuma configuração do canal foi alterada"}
+        return run(decide)
+
+    @router.post("/analytics/collect")
+    def collect_analytics(body: AnalyticsCollectIn):
+        period = _analytics_period(body.days)
+
+        def collect(uc):
+            if uc.analytics_collection is None:
+                raise HTTPException(503, "analytics services unavailable")
+            outcome = uc.analytics_collection.execute(CollectionRequest(
+                video_id=check_id(body.video_id), period=period,
+                pillar_id=check_id(body.pillar_id) if body.pillar_id else None))
+            return {
+                "collected": outcome.collected,
+                "saved": outcome.saved,
+                "reason": outcome.reason,
+                "readiness": {
+                    "ready": outcome.readiness.is_ready,
+                    "scope": outcome.readiness.scope,
+                    "channel_connected": outcome.readiness.channel_connected,
+                    "scope_granted": outcome.readiness.scope_granted,
+                    "publication_available": outcome.readiness.publication_available,
+                    "reasons": list(outcome.readiness.reasons),
+                },
+            }
+        return run(collect)
+
+    @router.post("/analytics/experiments", status_code=201)
+    def register_experiment(body: ExperimentIn):
+        if (body.window_start is None) != (body.window_end is None):
+            raise HTTPException(422, "window_start and window_end must be provided together")
+        try:
+            window = (MetricWindow(start_at=body.window_start, end_at=body.window_end)
+                      if body.window_start is not None else None)
+        except ValidationError:
+            raise HTTPException(422, "invalid experiment window") from None
+        variants = tuple(ExperimentVariant(variant_id=item.variant_id, label=item.label,
+                                           is_control=item.is_control) for item in body.variants)
+        operator = _operator()
+
+        def register(uc):
+            if uc.analytics_register_experiment is None:
+                raise HTTPException(503, "analytics services unavailable")
+            project_id, video_id = check_id(body.project_id), check_id(body.video_id)
+            conclusion = conclusion_from(
+                statement=body.conclusion, level=body.conclusion_confidence,
+                basis=body.conclusion_basis,
+                observation_ids=[check_id(item) for item in body.conclusion_observation_ids],
+                declared_by=operator)
+            try:
+                record = uc.analytics_register_experiment.execute(
+                    project_id=project_id, video_id=video_id, kind=body.kind,
+                    status=body.status, variants=variants, approved_by=operator,
+                    window=window, conclusion=conclusion)
+            except ValidationError:
+                raise HTTPException(422, "invalid experiment") from None
+            return {"experiment_id": record.experiment_id, "applied": False,
+                    "message": "histórico de rotação manual; nenhum A/B de plataforma foi declarado"}
+        return run(register)
 
     @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)
     def render_status(video_id: str):
