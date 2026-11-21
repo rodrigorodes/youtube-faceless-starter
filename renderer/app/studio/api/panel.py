@@ -3,6 +3,7 @@ Sem dependências externas; todo texto é escapado e a CSP é protegida por nonc
 """
 import html
 import secrets
+from urllib.parse import quote
 
 from ..application.panel import CostBreakdown, CostKind, MonthCost, PanelView, VideoDetailView, cost_kind
 from ..application.script_view import ScriptPageView
@@ -87,15 +88,18 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
                       channels_href: str | None = "/studio/canais") -> str:
     """Navegação principal em dois grupos (G1), reutilizada por todas as páginas do painel.
 
-    `active` marca o único item atual; `base_href` prefixa as âncoras quando a página aberta não
-    contém as seções (as telas novas voltam ao painel em vez de apontar para âncora inexistente).
+    `active` marca o único item atual. IA-01: Início, Produção e Tendências deixaram de ser âncoras
+    de uma página única e passaram a ser **rotas de servidor reais** — cada uma devolve só a sua
+    tela. Por isso `base_href` não é mais usado (fica na assinatura por compatibilidade com as
+    telas que o passavam); "Vídeos" aponta para `/studio/panel/videos`, a rota real que redireciona
+    para o bloco `#videos` do Início (destino real, sem link morto).
     `channels_href` é o link real da tela de Canais (F10), já entregue nesta versão; `None` omite o item.
     """
     links = [
-        ("inicio", "Início", f"{base_href}#inicio-section"),
-        ("producao", "Produção", f"{base_href}#producao-section"),
-        ("tendencias", "Tendências", f"{base_href}#trending-section"),
-        ("videos", "Vídeos", f"{base_href}#videos-section"),
+        ("inicio", "Início", "/studio/panel"),
+        ("producao", "Produção", "/studio/panel/producao"),
+        ("tendencias", "Tendências", "/studio/panel/tendencias"),
+        ("videos", "Vídeos", "/studio/panel/videos"),
         ("analytics", "Analytics", "/studio/panel/analytics"),
     ]
     if channels_href:
@@ -1759,15 +1763,42 @@ def _headers(nonce: str) -> dict[str, str]:
     }
 
 
-def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
+# IA-01: uma tela por rota de servidor. Cada caminho devolve **só** o HTML da sua seção.
+_PANEL_PATHS = {
+    "inicio": "/studio/panel",
+    "producao": "/studio/panel/producao",
+    "tendencias": "/studio/panel/tendencias",
+}
+_PANEL_TITLES = {
+    "inicio": "Faceless Studio — Painel",
+    "producao": "Faceless Studio — Produção",
+    "tendencias": "Faceless Studio — Tendências",
+}
+_PANEL_SKIP_HREFS = {
+    "inicio": "#inicio-section",
+    "producao": "#producao-section",
+    "tendencias": "#trending-section",
+}
+
+
+def _render_panel_page(view: PanelView, *, mode: str = "inicio",
+                       topic: str = "") -> tuple[str, dict[str, str]]:
+    """Casca única das telas operacionais; `mode` decide **o que** entra em `<main>`.
+
+    Início, Produção e Tendências compartilham a casca (sidebar, topbar, rail e o mesmo script
+    guardado por presença de elemento), mas cada modo renderiza apenas as suas seções — o HTML de
+    uma tela nunca aparece dentro da outra (critério de aceite da IA-01).
+    """
     nonce = secrets.token_urlsafe(16)
     days = view.days
+    panel_path = _PANEL_PATHS[mode]
     current_project_id = view.project_id or (view.projects[0][0] if view.projects else "")
+    new_video_href = "#new-video-section" if mode == "inicio" else "/studio/panel#new-video-section"
 
     filters_html = "".join(
-        f'<a class="filter-link {"active" if d == days else ""}" href="/studio/panel?project_id={e(current_project_id)}&days={d}">{d} dias</a>'
+        f'<a class="filter-link {"active" if d == days else ""}" href="{panel_path}?project_id={e(current_project_id)}&days={d}">{d} dias</a>'
         if current_project_id
-        else f'<a class="filter-link {"active" if d == days else ""}" href="/studio/panel?days={d}">{d} dias</a>'
+        else f'<a class="filter-link {"active" if d == days else ""}" href="{panel_path}?days={d}">{d} dias</a>'
         for d in (7, 14, 30)
     )
 
@@ -1962,8 +1993,15 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                     f'<a href="{e(t.video_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-compact btn-watch-yt">▶️ Assistir no YouTube</a>'
                 )
             if t.create_action:
+                # IA-01: o formulário vive no Início. O botão é um destino real que leva o tema
+                # pré-preenchido por parâmetro tratado pela rota do Início (sem JS cross-page).
+                create_params = [f"topic={quote(t.topic)}"]
+                if current_project_id:
+                    create_params.append(f"project_id={quote(current_project_id)}")
+                create_params.append(f"days={days}")
+                create_href = "/studio/panel?" + "&".join(create_params)
                 action_buttons.append(
-                    f'<button type="button" class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}" style="white-space: nowrap;">✨ Criar Vídeo deste Tema</button>'
+                    f'<a class="btn btn-primary btn-create-from-trend" data-topic="{e(t.topic)}" href="{e(create_href)}" style="white-space: nowrap;">✨ Criar Vídeo deste Tema</a>'
                 )
             actions_html = f'<div class="trend-actions-row">{"".join(action_buttons)}</div>' if action_buttons else ""
 
@@ -2360,11 +2398,122 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
     side_card_html = budget_side_card(view.month, budget_bar_html)
 
+    # --- IA-01: cada modo monta só as suas seções; nada de "cinco telas numa página". ---
+    inicio_producao_body_html = (
+        f"""
+          <article class="card empty" id="inicio-producao-vazia">
+            <h3>Nenhuma execução registrada</h3>
+            <p class="muted">Quando você produzir um vídeo, o andamento aparece aqui com etapa atual, próxima ação e custo.</p>
+            {steps_chips_html}
+            <p class="fine">Etapas exibidas sem estado: nenhuma foi iniciada. Não há percentual porque não existe execução registrada.</p>
+          </article>
+        """
+        if total_videos == 0
+        else f"""
+          <div class="card">
+            <div class="spread">
+              <h3>Em produção agora</h3>
+              <span class="dim">Em execução: {running_count} · Ação necessária: {action_count} · Concluídos: {done_count}</span>
+            </div>
+            <p class="muted">O quadro completo — status por fase e custo — fica na tela Produção.</p>
+            <div class="row"><a class="btn btn-primary" href="/studio/panel/producao">Ver Produção</a></div>
+          </div>
+        """
+    )
+    inicio_producao_html = f"""
+      <section class="block panel-section" id="inicio-producao-section" aria-labelledby="inicio-producao-heading">
+        <div class="block-head">
+          <h2 id="inicio-producao-heading">Produção</h2>
+          {state_legend_html}
+        </div>
+        {inicio_producao_body_html}
+      </section>
+    """
+
+    trends_count = len(view.trends)
+    last_trends_text = view.last_collected_at.strftime("%d/%m %H:%M") if view.last_collected_at else ""
+    if trends_count == 0:
+        trends_resumo_body = (
+            '<div class="card empty">Ainda não há tendências coletadas no período selecionado. '
+            'Abra a tela Tendências para buscar agora.</div>'
+        )
+    else:
+        trends_resumo_body = (
+            f'<div class="card"><p class="muted">{trends_count} tema(s) coletado(s) no período'
+            + (f' · última coleta: {e(last_trends_text)}' if last_trends_text else '')
+            + '.</p><div class="row"><a class="btn btn-primary" href="/studio/panel/tendencias">'
+            'Ver todas as tendências</a></div></div>'
+        )
+    inicio_tendencias_html = f"""
+      <section class="block panel-section" id="inicio-tendencias-section" aria-labelledby="inicio-tendencias-heading">
+        <div class="block-head">
+          <h2 id="inicio-tendencias-heading">Tendências</h2>
+        </div>
+        <p class="section-sub">Resumo do período. Filtros por região e pilar, evidências e o botão «Criar Vídeo deste Tema» ficam na tela Tendências.</p>
+        {trends_resumo_body}
+      </section>
+    """
+    producao_section_html = f"""
+      <section class="block panel-section" id="producao-section" aria-labelledby="producao-heading">
+        <div class="block-head">
+          <h1 id="producao-heading" tabindex="-1">Produção</h1>
+          {state_legend_html}
+        </div>
+        {producao_body_html}
+      </section>
+    """
+    tendencias_section_html = f"""
+      <section class="block panel-section" id="trending-section" aria-labelledby="trending-heading">
+        <div class="block-head">
+          <h1 id="trending-heading" tabindex="-1">Tendências</h1>
+        </div>
+        <p class="section-sub">Temas coletados com evidências, região e origem. Origem não identificada aparece como desconhecida.</p>
+        {trends_html}
+      </section>
+    """
+
+    rail_cost_section = f"""
+      <section class="card" aria-labelledby="h-custo">
+        <h2 id="h-custo">Custo do mês</h2>
+        {rail_cost_html}
+        <p class="fine">Real é cobrança confirmada; estimado aguarda reconciliação e consome o teto até lá. “Sem custo” nunca vira valor e “desconhecido” não é zero.</p>
+      </section>"""
+    rail_fases_section = f"""
+      <section class="card" aria-labelledby="h-fase">
+        <h2 id="h-fase">Estado das fases</h2>
+        {fases_html}
+      </section>"""
+    rail_inicio_html = f"""<aside class="rail" aria-label="Resumo">{rail_cost_section}
+      <section class="card" aria-labelledby="h-falha">
+        <h2 id="h-falha">Última falha</h2>
+        {ultima_falha_html}
+      </section>{rail_fases_section}
+    </aside>"""
+    rail_producao_html = f"""<aside class="rail" aria-label="Resumo">{rail_cost_section}{rail_fases_section}
+    </aside>"""
+    trend_stale_note = (
+        "A coleta mais recente é anterior ao período selecionado; os dados aparecem marcados como desatualizados."
+        if view.trends_status == "stale" else
+        "Cada tema traz a origem e a data da coleta."
+    )
+    rail_tendencias_html = f"""<aside class="rail" aria-label="Resumo">
+      <section class="card" aria-labelledby="h-frescor">
+        <h2 id="h-frescor">Frescor</h2>
+        <div class="kv"><span>Última coleta</span><span>{e(last_trends_text) or "sem registro"}</span></div>
+        <div class="kv"><span>Temas no período</span><span>{trends_count}</span></div>
+        <div class="kv"><span>Situação</span><span>{e("Desatualizado" if view.trends_status == "stale" else ("Coleta registrada" if trends_count else "Sem coleta"))}</span></div>
+        <p class="fine">{e(trend_stale_note)} A coleta é dado real da API; “views” vem da lista de tendências e é aproximado.</p>
+      </section>
+    </aside>"""
+
+    # O modal de pilares pertence à tela Tendências; o modal de canal é casca e vale para todas.
+    overlays_html = project_modal_html + (modal_html if mode == "tendencias" else "")
+
     create_form_html = f"""
         <form id="create-video-form" class="idea-row">
           <div>
             <label class="sr-only" for="topic">Tema do vídeo</label>
-            <input type="text" id="topic" name="topic" class="new-video-topic input" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
+            <input type="text" id="topic" name="topic" class="new-video-topic input" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" value="{e(topic)}" required>
           </div>
           <div>
             <label class="sr-only" for="new-video-project">Canal</label>
@@ -2401,7 +2550,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             <div id="new-video-section">{create_form_html}</div>
           </div>
           <div id="p-tend" role="tabpanel" aria-labelledby="tab-tend" hidden>
-            <p class="note">Use a seção <a href="#trending-section">Tendências</a>; o botão «Criar Vídeo deste Tema» preenche o tema acima.</p>
+            <p class="note">Use a tela <a href="/studio/panel/tendencias">Tendências</a>; o botão «Criar Vídeo deste Tema» abre este Início com o tema já preenchido.</p>
           </div>
           <div id="p-serie" role="tabpanel" aria-labelledby="tab-serie" hidden>
             <p class="note">Séries e playlists ainda não têm backend nesta versão; por isso a aba está indisponível.</p>
@@ -2420,24 +2569,55 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       </details>
     """
 
+    if mode == "producao":
+        main_html = f"""
+      {producao_section_html}
+      {warning_html}
+      {advanced_panel_html}
+        """
+        rail_html = rail_producao_html
+    elif mode == "tendencias":
+        main_html = f"""
+      {tendencias_section_html}
+      {advanced_panel_html}
+        """
+        rail_html = rail_tendencias_html
+    else:
+        main_html = f"""
+      {hero_html}
+      {inicio_producao_html}
+      <section class="block panel-section" id="precisa-section" aria-labelledby="precisa-heading">
+        <h2 id="precisa-heading">Precisa de você</h2>
+        {precisa_body_html}
+      </section>
+      {inicio_tendencias_html}
+      {warning_html}
+      <section class="block panel-section" id="videos" aria-labelledby="videos-heading">
+        <h2 id="videos-heading">Vídeos</h2>
+        {body_html}
+      </section>
+      {advanced_panel_html}
+        """
+        rail_html = rail_inicio_html
+
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
-  <title>Faceless Studio — Painel</title>
+  <title>{_PANEL_TITLES[mode]}</title>
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
-  <a class="skip-link" href="#inicio-section">Ir para o conteúdo</a>
+  <a class="skip-link" href="{_PANEL_SKIP_HREFS[mode]}">Ir para o conteúdo</a>
   <div class="app-layout">
-    {render_sidebar(active="inicio", side_card_html=side_card_html, channels_href="/studio/canais")}
+    {render_sidebar(active=mode, side_card_html=side_card_html, channels_href="/studio/canais")}
 
     <main class="main-content">
       <header class="topbar">
         <div class="topbar-actions" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-          <a class="btn btn-primary btn-compact" href="#new-video-section" id="nav-btn-new-video">+ Novo Vídeo</a>
+          <a class="btn btn-primary btn-compact" href="{new_video_href}" id="nav-btn-new-video">+ Novo Vídeo</a>
           <div class="project-switcher">
             <label for="global-project-select" style="font-weight: 600; font-size: 0.85rem; color: var(--text-muted);">Canal Ativo:</label>
             <select id="global-project-select" class="form-select-compact">
@@ -2452,57 +2632,12 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         </div>
       </header>
 
-      {hero_html}
-
-      <section class="block panel-section" id="producao-section" aria-labelledby="producao-heading">
-        <div class="block-head">
-          <h2 id="producao-heading">Produção</h2>
-          {state_legend_html}
-        </div>
-        {producao_body_html}
-      </section>
-
-      <section class="block panel-section" id="precisa-section" aria-labelledby="precisa-heading">
-        <h2 id="precisa-heading">Precisa de você</h2>
-        {precisa_body_html}
-      </section>
-
-      <section class="block panel-section" id="trending-section" aria-labelledby="trending-heading">
-        <div class="block-head">
-          <h2 id="trending-heading">Tendências</h2>
-        </div>
-        <p class="section-sub">Temas coletados com evidências, região e origem. Origem não identificada aparece como desconhecida.</p>
-        {trends_html}
-      </section>
-
-      {warning_html}
-
-      <section class="block panel-section" id="videos-section" aria-labelledby="videos-heading">
-        <h2 id="videos-heading">Vídeos</h2>
-        {body_html}
-      </section>
-
-      {advanced_panel_html}
+      {main_html}
     </main>
 
-    <aside class="rail" aria-label="Resumo">
-      <section class="card" aria-labelledby="h-custo">
-        <h2 id="h-custo">Custo do mês</h2>
-        {rail_cost_html}
-        <p class="fine">Real é cobrança confirmada; estimado aguarda reconciliação e consome o teto até lá. “Sem custo” nunca vira valor e “desconhecido” não é zero.</p>
-      </section>
-      <section class="card" aria-labelledby="h-falha">
-        <h2 id="h-falha">Última falha</h2>
-        {ultima_falha_html}
-      </section>
-      <section class="card" aria-labelledby="h-fase">
-        <h2 id="h-fase">Estado das fases</h2>
-        {fases_html}
-      </section>
-    </aside>
+    {rail_html}
   </div>
-  {modal_html}
-  {project_modal_html}
+  {overlays_html}
   <script nonce="{nonce}">
     const form = document.getElementById('create-video-form');
     if (form) {{
@@ -2530,7 +2665,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             const msg = document.createElement('span');
             msg.textContent = 'Erro ao criar: ' + why + ' ';
             const link = document.createElement('a');
-            link.href = '#videos-section';
+            link.href = '#videos';
             link.textContent = 'Ver meus vídeos';
             feedback.append(msg, link);
             if (btn) btn.disabled = false;
@@ -2591,13 +2726,14 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
     const navBtnNew = document.getElementById('nav-btn-new-video');
     if (navBtnNew) {{
       navBtnNew.addEventListener('click', (ev) => {{
-        ev.preventDefault();
+        // Fora do Início o formulário não existe nesta página: o href do servidor manda para
+        // /studio/panel#new-video-section — não interceptamos (nada de preventDefault órfão).
         const details = document.getElementById('new-video-section');
+        if (!details) return;
+        ev.preventDefault();
         const input = document.getElementById('topic') || document.getElementById('new-video-topic');
-        if (details) {{
-          if ('open' in details) details.open = true;
-          details.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-        }}
+        if ('open' in details) details.open = true;
+        details.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         if (input) {{
           setTimeout(() => input.focus(), 200);
         }}
@@ -2764,7 +2900,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         const val = globalProjectSelect.value;
         const urlParams = new URLSearchParams(window.location.search);
         const days = urlParams.get('days') || '{days}';
-        window.location.href = '/studio/panel?project_id=' + encodeURIComponent(val) + '&days=' + encodeURIComponent(days);
+        window.location.href = '{panel_path}?project_id=' + encodeURIComponent(val) + '&days=' + encodeURIComponent(days);
       }});
     }}
 
@@ -2826,7 +2962,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             if (projectFeedback) projectFeedback.textContent = 'Canal criado com sucesso! Redirecionando...';
             const urlParams = new URLSearchParams(window.location.search);
             const days = urlParams.get('days') || '{days}';
-            window.location.href = '/studio/panel?project_id=' + encodeURIComponent(data.id) + '&days=' + encodeURIComponent(days);
+            window.location.href = '{panel_path}?project_id=' + encodeURIComponent(data.id) + '&days=' + encodeURIComponent(days);
           }} else {{
             const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
             if (projectFeedback) projectFeedback.textContent = 'Erro ao cadastrar: ' + errMsg;
@@ -3002,6 +3138,23 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 </body>
 </html>"""
     return html_content, _headers(nonce)
+
+
+def render_panel(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, str]]:
+    """Início: hero + criar vídeo + produção em andamento + precisa de atenção + resumo de
+    tendências + bloco Vídeos. `topic` pré-preenche o tema (usado pelo «Criar Vídeo deste Tema»
+    vindo da tela Tendências)."""
+    return _render_panel_page(view, mode="inicio", topic=topic)
+
+
+def render_producao(view: PanelView) -> tuple[str, dict[str, str]]:
+    """Produção: quadro completo de execução (status por fase e custo), sem as outras telas."""
+    return _render_panel_page(view, mode="producao")
+
+
+def render_tendencias(view: PanelView) -> tuple[str, dict[str, str]]:
+    """Tendências: lista completa com filtros por região/pilar, evidências e «Criar Vídeo deste Tema»."""
+    return _render_panel_page(view, mode="tendencias")
 
 
 def _video_style_card(style_view) -> str:

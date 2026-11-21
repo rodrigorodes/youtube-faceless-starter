@@ -103,8 +103,9 @@ def test_video_detail_uses_the_shell_and_videos_has_a_real_destination():
         assert any(expected in label for label in labels), f"painel/vídeo: '{expected}' fora da casca"
 
     videos = next(item for item in items if "Vídeos" in _visible_text(item))
-    # Destino real: a lista vive no painel; nada de link morto.
-    assert 'href="/studio/panel#videos-section"' in videos, videos
+    # IA-01: destino real e sem link morto — a rota /studio/panel/videos redireciona (302) para o
+    # bloco `#videos` do Início.
+    assert 'href="/studio/panel/videos"' in videos, videos
 
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1, f"painel/vídeo: {len(active)} itens ativos na casca"

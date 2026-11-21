@@ -407,7 +407,7 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
 
         <div class="origin-chips" role="tablist" aria-label="Origem do vídeo">
           <button class="cat-pill active" role="tab" aria-selected="true" aria-pressed="true" type="button">Minha ideia</button>
-          <a class="cat-pill" role="tab" aria-selected="false" aria-pressed="false" href="/studio/panel#trending-section">Tendência</a>
+          <a class="cat-pill" role="tab" aria-selected="false" aria-pressed="false" href="/studio/panel/tendencias">Tendência</a>
           <button class="cat-pill" role="tab" aria-selected="false" aria-pressed="false" type="button" aria-disabled="true" tabindex="-1" disabled>Série</button>
         </div>
 

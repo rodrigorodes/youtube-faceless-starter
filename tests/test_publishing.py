@@ -427,8 +427,9 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
     for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Estilos", "Equipe"):
         assert expected in labels, f"prévia: '{expected}' fora da casca"
-    assert 'href="/studio/panel#trending-section"' in nav.group(1)
-    assert 'href="/studio/panel#videos-section"' in nav.group(1)
+    # IA-01: Tendências e Vídeos são rotas reais (Tendências é tela própria; Vídeos redireciona).
+    assert 'href="/studio/panel/tendencias"' in nav.group(1)
+    assert 'href="/studio/panel/videos"' in nav.group(1)
     assert 'href="/docs"' in html_doc
     assert 'href="http://localhost:5678"' in html_doc
 
