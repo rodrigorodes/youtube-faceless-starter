@@ -421,3 +421,26 @@ mesmo fallback aqui, e usarão Inter onde ela estiver instalada.
 - Chrome headless não aceita janela abaixo de **500px**; o layout móvel foi verificado até 500px
   (sem estouro horizontal em 1440/1280/1024/860/500), não em 390px.
 - O protótipo não grava nada: pilares criados existem só na memória da página.
+
+## UX-01 — fundação visual e casca (2026-11-21)
+
+Plano: `docs/superpowers/plans/2026-11-21-ux-01-fundacao-visual-e-casca.md`. Aplicado ao painel
+real (rotas de servidor), sem mudar behavior.
+
+- **Tipografia do protótipo**: `--font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+  "Segoe UI", sans-serif`, `line-height 1.5`; h1 35px/-1.3px/730; eyebrow 10px/2px; nav 560/750;
+  brand 780. Fica num bloco no fim do CSS, vencendo as definições espalhadas sem reescrevê-las.
+- **Navegação na IA aprovada**: Operação = Início · Novo vídeo · Vídeos · Tendências · Desempenho;
+  Configuração = Canais · Estilos · Conexões · Equipe. "Produção" sai do menu.
+- **Produção continua alcançável**: link permanente "Abrir Produção" no estado vazio do Início.
+- **Analytics vira Desempenho** no menu, no `<title>` e no `<h1>`.
+- **Aliases de casca**: `_NAV_ALIASES = {"analytics": "desempenho", "producao": "videos"}` — telas
+  fora do menu continuam com exatamente um item atual.
+- **Testes novos**: a fonte não pode divergir do protótipo; todo item de menu tem ícone decorativo.
+
+Prova: `PYTHONPATH=renderer python -m pytest tests/test_panel.py tests/test_ux_contract.py
+tests/test_analytics_page.py` → **63 passed, 14 skipped** (os de banco exigem `STUDIO_TEST_DSN` e a
+prova do Postgres descartável). Conferência visual do HTML renderizado no Chrome headless.
+
+Pendente (fatias próprias): **UX-02** Configurações como área (`/configuracoes/<seção>`),
+**UX-03** tema claro, **UX-04** Tendências no visual novo.
