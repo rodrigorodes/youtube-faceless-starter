@@ -1,0 +1,59 @@
+diff --git a/tests/test_render_plan_executor.py b/tests/test_render_plan_executor.py
+index abefbb3..7a38468 100644
+--- a/tests/test_render_plan_executor.py
++++ b/tests/test_render_plan_executor.py
+@@ -95,6 +95,27 @@ def test_executor_materializes_overlays_writes_audio_and_runs_the_planned_comman
+     assert not list((tmp_path / "work").glob("*.tmp"))
+ 
+ 
++def test_materialized_overlays_are_transparent_and_keep_the_shorts_ui_area_free(tmp_path):
++    # Portado de tests/test_rich.py (make_overlay): a produção dos overlays saiu do rich.py
++    # para o executor do plano — static_overlay (selo/disclosure) e caption_overlay (legenda).
++    from app.studio.adapters.render_plan_ffmpeg import caption_overlay, static_overlay
++
++    width, height = SIZE[VideoFormat.short]
++    static = tmp_path / "static.png"
++    static_overlay(VideoFormat.short, "QUA • 21/10", "Ilustração gerada por IA", static)
++    static_img = Image.open(static)
++    assert static_img.size == (width, height) and static_img.mode == "RGBA"
++    assert static_img.getchannel("A").getextrema()[0] == 0  # transparente onde não há conteúdo
++
++    caption = tmp_path / "caption.png"
++    caption_overlay(VideoFormat.short, "Legenda de teste bem longa " * 4, caption)
++    caption_img = Image.open(caption)
++    assert caption_img.size == (width, height) and caption_img.mode == "RGBA"
++    alpha = caption_img.getchannel("A")
++    assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] > 150  # texto opaco presente
++    assert alpha.crop((0, 1700, width, height)).getextrema() == (0, 0)  # área inferior da UI dos Shorts fica livre
++
++
+ def test_executor_publishes_atomically_and_leaves_no_partial_file(tmp_path):
+     spec = spec_for(tmp_path)
+     runner = StubRunner()
+diff --git a/tests/test_rich.py b/tests/test_rich.py
+index 927dfdc..56abc1d 100644
+--- a/tests/test_rich.py
++++ b/tests/test_rich.py
+@@ -41,22 +41,3 @@ def test_music_is_original_bounded_and_nonsilent(tmp_path):
+         import numpy as np
+         data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+     assert 0.3 < np.abs(data).max() / 32767 <= 0.81 and data.std() > 500
+-
+-
+-def test_overlay_has_transparency_and_text(tmp_path):
+-    from PIL import Image
+-    rich.make_overlay("QUA • 21/10", "Legenda de teste bem longa " * 4, tmp_path / "o.png")
+-    img = Image.open(tmp_path / "o.png")
+-    assert img.size == (rich.W, rich.H) and img.mode == "RGBA"
+-    alpha = img.getchannel("A")
+-    assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] > 150
+-    assert alpha.crop((0, 1700, rich.W, rich.H)).getextrema() == (0, 0)  # área inferior da UI dos Shorts fica livre
+-
+-
+-def test_cover_image_fills_frame(tmp_path):
+-    import io
+-    from PIL import Image
+-    buf = io.BytesIO()
+-    Image.new("RGB", (768, 1344), (1, 2, 3)).save(buf, "PNG")
+-    rich.cover_image(buf.getvalue(), tmp_path / "c.png")
+-    assert Image.open(tmp_path / "c.png").size == (rich.W, rich.H)
