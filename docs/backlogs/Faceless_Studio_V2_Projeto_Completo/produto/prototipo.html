@@ -1,0 +1,1362 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Faceless Studio V2 — protótipo navegável</title>
+<link rel="stylesheet" href="prototipo.css">
+</head>
+<body>
+
+<a class="skip" href="#conteudo">Ir para o conteúdo</a>
+
+<div class="app">
+  <!-- ══════════ casca: sidebar única (a troca de tela acontece à direita) ══════════ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">FS</div>
+      <div>
+        <div class="brand-name">Faceless Studio V2</div>
+        <div class="brand-sub">YouTube Automation</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Principal">
+      <p class="nav-label">Operação</p>
+      <ul>
+        <li><a href="#inicio" data-screen="inicio"><span class="ico" aria-hidden="true">⌂</span> Início</a></li>
+        <li><a href="#tendencias" data-screen="tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
+        <li><a href="#novo" data-screen="novo"><span class="ico" aria-hidden="true">＋</span> Novo vídeo</a></li>
+        <li><a href="#producao" data-screen="producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+        <li><a href="#pesquisa" data-screen="pesquisa"><span class="ico" aria-hidden="true">◔</span> Pesquisa</a></li>
+        <li><a href="#roteiro" data-screen="roteiro"><span class="ico" aria-hidden="true">≡</span> Roteiro</a></li>
+        <li><a href="#editor" data-screen="editor"><span class="ico" aria-hidden="true">✂</span> Editor</a></li>
+        <li><a href="#preview" data-screen="preview"><span class="ico" aria-hidden="true">▷</span> Preview e QA</a></li>
+        <li><a href="#publicacao" data-screen="publicacao"><span class="ico" aria-hidden="true">⇪</span> Publicação</a></li>
+      </ul>
+
+      <p class="nav-label" style="margin-top:16px">Aprendizado e gestão</p>
+      <ul>
+        <li><a href="#analytics" data-screen="analytics"><span class="ico" aria-hidden="true">▦</span> Analytics</a></li>
+        <li><a href="#canais" data-screen="canais"><span class="ico" aria-hidden="true">◎</span> Canais <span class="tag">nova</span></a></li>
+        <li><a href="#equipe" data-screen="equipe"><span class="ico" aria-hidden="true">☰</span> Equipe <span class="tag">SaaS · adiada</span></a></li>
+        <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">⚙</span> Configurações <em>em breve</em></span></li>
+      </ul>
+    </nav>
+
+    <div class="side-card">
+      <h3>Orçamento do mês</h3>
+      <p>Real US$ 0,07 · Estimado US$ 0,05 · Sem custo 3 chamadas · Desconhecido 1</p>
+    </div>
+
+    <p class="mock-flag">Mockup de proposta · dados ilustrativos</p>
+  </aside>
+
+  <main class="views" id="conteudo">
+
+    <!-- ══════════════════════ 1. INÍCIO ══════════════════════ -->
+    <section class="view" id="inicio" aria-labelledby="t-inicio">
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-inicio" tabindex="-1">Início</h2>
+          <p class="goal">Ação primária: <b>iniciar vídeo</b>. Runs ativos, atenção humana, orçamento e saúde das integrações.</p>
+        </div>
+        <span class="screen-no">Tela 1 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <header class="hero">
+            <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Um comando, do briefing à publicação</p>
+            <h1>Transforme uma ideia em um vídeo <span class="accent-word">publicado</span></h1>
+            <p class="lede">Roteiro, imagens, narração, edição, thumbnail, publicação e análise — com dois pontos de aprovação humana e teto de custo.</p>
+
+            <div class="tabs" role="tablist" aria-label="Origem do vídeo">
+              <button class="tab" role="tab" aria-selected="true" id="tab-ideia" aria-controls="p-ideia" type="button">Minha ideia</button>
+              <button class="tab" role="tab" aria-selected="false" id="tab-tend" aria-controls="p-tend" type="button">Tendência</button>
+              <button class="tab" role="tab" aria-selected="false" id="tab-serie" aria-controls="p-serie" type="button">Série / Playlist</button>
+            </div>
+
+            <form class="idea-row" id="p-ideia" role="tabpanel" aria-labelledby="tab-ideia" onsubmit="return false">
+              <label class="skip" for="tema">Tema do vídeo</label>
+              <input class="input" id="tema" placeholder="Como a OpenAI ganha dinheiro?">
+              <label class="skip" for="dur">Duração alvo</label>
+              <select class="input" id="dur" style="width:auto">
+                <option>480 s (8 min)</option>
+                <option>60 s</option>
+                <option>180 s</option>
+              </select>
+              <label class="skip" for="voz">Voz</label>
+              <select class="input" id="voz" style="width:auto">
+                <option>pt-BR · Faber (Piper)</option>
+              </select>
+              <button class="btn btn-primary" type="submit" data-screen="novo">✦ Produzir vídeo</button>
+            </form>
+            <p class="note">A produção começa no modo assistido. Você aprova o roteiro e o preview antes de qualquer publicação.</p>
+          </header>
+
+          <section class="block" aria-labelledby="h-producao">
+            <div class="block-head">
+              <h2 id="h-producao">Produção</h2>
+              <div class="state-legend" aria-label="Legenda de estados">
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span>
+                <span class="state s-run"><span class="glyph" aria-hidden="true">▶</span> Em execução</span>
+                <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+              </div>
+            </div>
+
+            <article class="card empty">
+              <h3>Nenhuma execução registrada</h3>
+              <p class="muted">Quando você produzir um vídeo, o andamento aparece aqui com etapa atual, próxima ação e custo.</p>
+              <ol class="steps" aria-label="Etapas da produção">
+                <li><span class="num">1</span> Roteiro</li>
+                <li><span class="num">2</span> Fontes</li>
+                <li><span class="num">3</span> Fact-check</li>
+                <li><span class="num">4</span> Cenas</li>
+                <li><span class="num">5</span> Voz</li>
+                <li><span class="num">6</span> Render</li>
+                <li><span class="num">7</span> QA</li>
+                <li><span class="num">8</span> Publicação</li>
+              </ol>
+              <p class="fine">Etapas exibidas sem estado: nenhuma foi iniciada. Não há percentual porque não existe execução registrada.</p>
+            </article>
+          </section>
+
+          <section class="block" aria-labelledby="h-prox">
+            <h2 id="h-prox">Precisa de você</h2>
+            <div class="next">
+              <article class="card">
+                <div class="spread"><h3>Revisar roteiro</h3><span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span></div>
+                <p class="muted">“Como a OpenAI ganha dinheiro?” · 8 cenas · 7 min 40 s estimados</p>
+                <p class="dim">Aprovar ou editar antes de gerar storyboard e voz.</p>
+                <div class="row">
+                  <button class="btn btn-primary" type="button" data-screen="roteiro">Revisar roteiro</button>
+                  <button class="btn btn-ghost" type="button" data-screen="editor">Ver cenas</button>
+                </div>
+              </article>
+              <article class="card">
+                <div class="spread"><h3>Preview pronto para aprovação</h3><span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span></div>
+                <p class="muted">2 alertas não bloqueantes de QA · render <code>sha256:9f2c…</code></p>
+                <p class="dim">Aprovar libera thumbnail e metadados. Publicação pública pede confirmação extra.</p>
+                <div class="row">
+                  <button class="btn btn-primary" type="button" data-screen="preview">Abrir preview</button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="block" aria-labelledby="h-tend">
+            <div class="block-head">
+              <h2 id="h-tend">Tendências</h2>
+              <span class="dim" style="font-size:12px">Fonte: YouTube Brasil · YouTube EUA · atualizado há 2 h</span>
+            </div>
+            <search>
+              <div class="filters" aria-label="Filtros de tendências">
+                <button class="chip" type="button" aria-pressed="true">Brasil</button>
+                <button class="chip" type="button" aria-pressed="false">EUA</button>
+                <button class="chip" type="button" aria-pressed="false">Origem desconhecida</button>
+                <button class="chip" type="button" aria-pressed="false">Todos os pilares</button>
+              </div>
+            </search>
+
+            <div class="trends">
+              <article class="card trend">
+                <div class="thumb" aria-hidden="true">miniatura</div>
+                <span class="region">Brasil</span>
+                <h4>O novo modelo de IA que está assumindo o mercado</h4>
+                <div class="metrics"><span>1,2 mi views</span><span>há 2 dias</span></div>
+                <button class="btn" style="min-height:38px" type="button" data-screen="novo">Usar tendência</button>
+              </article>
+              <article class="card trend">
+                <div class="thumb" aria-hidden="true">miniatura</div>
+                <span class="region">EUA</span>
+                <h4>Google vs OpenAI: quem lidera agentes em 2026?</h4>
+                <div class="metrics"><span>890 mil views</span><span>há 1 dia</span></div>
+                <button class="btn" style="min-height:38px" type="button" data-screen="novo">Usar tendência</button>
+              </article>
+              <article class="card trend">
+                <div class="thumb" aria-hidden="true">miniatura</div>
+                <span class="region">Origem desconhecida</span>
+                <h4>Registro histórico sem região declarada</h4>
+                <div class="metrics"><span>650 mil views</span><span>há 4 dias</span></div>
+                <button class="btn" style="min-height:38px" type="button" aria-disabled="true">Sem região confiável</button>
+              </article>
+            </div>
+            <div><button class="btn btn-ghost" type="button" aria-expanded="false">Ver mais tendências (+2)</button></div>
+          </section>
+
+          <section class="block" aria-labelledby="h-videos">
+            <h2 id="h-videos">Vídeos</h2>
+            <div class="card" style="padding:8px 18px">
+              <div class="list">
+                <div class="item item-4">
+                  <div><div class="item-title">Como a OpenAI ganha dinheiro?</div><div class="item-sub">Canal: IA e Tecnologia · 7 min 40 s</div></div>
+                  <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Concluído</span>
+                  <span class="cost"><b>Real</b> US$ 0,07</span>
+                  <button class="btn btn-ghost" style="min-height:38px" type="button" data-screen="publicacao">Abrir</button>
+                </div>
+                <div class="item item-4">
+                  <div><div class="item-title">Agentes de IA na prática</div><div class="item-sub">Etapa atual: imagens · próxima ação: nenhuma</div></div>
+                  <span class="state s-run"><span class="glyph" aria-hidden="true">▶</span> Em execução</span>
+                  <span class="cost"><b>Estimado</b> US$ 0,05</span>
+                  <button class="btn btn-ghost" style="min-height:38px" type="button" data-screen="producao">Acompanhar</button>
+                </div>
+                <div class="item item-4">
+                  <div><div class="item-title">O que muda com o novo modelo</div><div class="item-sub">Roteiro aguardando aprovação há 3 h</div></div>
+                  <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+                  <span class="cost"><b>Sem custo</b></span>
+                  <button class="btn btn-primary" style="min-height:38px" type="button" data-screen="roteiro">Revisar roteiro</button>
+                </div>
+                <div class="item item-4">
+                  <div><div class="item-title">Bastidores: como escolhemos os temas</div><div class="item-sub">Custo não confirmado pelo provedor</div></div>
+                  <span class="state s-fail"><span class="glyph" aria-hidden="true">×</span> Falhou</span>
+                  <span class="cost"><b>Desconhecido</b></span>
+                  <button class="btn btn-ghost" style="min-height:38px" type="button" data-screen="producao">Ver correção</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <details class="advanced">
+            <summary><span aria-hidden="true">▸</span> Avançado — diagnóstico (IDs, traces, uso de modelos)</summary>
+            <div class="body">
+              <p style="margin:0 0 8px">Somente para depuração. Não é necessário para operar o fluxo.</p>
+              <p style="margin:0">run_id <code>run_7f3a</code> · video_id <code>vid_2b91</code> · stage_id <code>render</code> · trace <code>4f2c1a</code></p>
+              <p style="margin:8px 0 0">Uso de modelos: 3 chamadas · 1.240 tokens · 1 render · 1 chamada de imagem (estimada).</p>
+            </div>
+          </details>
+        </div>
+
+        <aside class="rail" aria-label="Resumo">
+          <section class="card" aria-labelledby="h-custo">
+            <h3 id="h-custo">Custo do mês</h3>
+            <div class="kv"><span>Real confirmado <span class="tag">ACTUAL</span></span><span>US$ 0,07</span></div>
+            <div class="kv"><span>Estimado <span class="tag">ESTIMATE</span></span><span>US$ 0,05</span></div>
+            <div class="kv"><span>Sem custo <span class="tag">FREE</span></span><span>2 chamadas</span></div>
+            <div class="kv"><span>Custo desconhecido</span><span>1 registro</span></div>
+            <p class="fine">Estimativa não é custo cobrado. O teto consome o valor estimado até a reconciliação; custo desconhecido não é tratado como zero.</p>
+          </section>
+
+          <section class="card" aria-labelledby="h-falha">
+            <h3 id="h-falha">Última falha</h3>
+            <p style="margin:0 0 6px"><strong>Render interrompido</strong></p>
+            <p class="muted" style="margin:0 0 6px; font-size:13px">O que fazer: revisar a cena 3 (narração longa para o tempo da imagem) e tentar novamente.</p>
+            <p class="dim" style="margin:0 0 12px; font-size:12px">Detalhe técnico disponível em Avançado.</p>
+            <button class="btn btn-primary" style="width:100%" type="button" data-screen="producao">Tentar novamente</button>
+          </section>
+
+          <section class="card" aria-labelledby="h-fase">
+            <h3 id="h-fase">Estado das fases</h3>
+            <div class="kv"><span>F0 Segurança e docs</span><span class="state s-done" style="padding:2px 8px">✓</span></div>
+            <div class="kv"><span>F1 Reservas e execução</span><span class="state s-act" style="padding:2px 8px">parcial</span></div>
+            <div class="kv"><span>F5 Audiovisual</span><span class="state s-act" style="padding:2px 8px">domínio</span></div>
+            <div class="kv"><span>F6 QA</span><span class="state s-act" style="padding:2px 8px">contrato</span></div>
+            <div class="kv"><span>F8 Publicação</span><span class="state s-fail" style="padding:2px 8px">não iniciada</span></div>
+            <div class="kv"><span>F11 SaaS</span><span class="state s-fail" style="padding:2px 8px">adiada</span></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 2. TENDÊNCIAS ══════════════════════ -->
+    <section class="view" id="tendencias" aria-labelledby="t-tendencias" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-tendencias" tabindex="-1">Tendências</h2>
+          <p class="goal">Ação primária: <b>usar a tendência</b>. Região é sempre explícita; nunca “Global” sem origem.</p>
+        </div>
+        <span class="screen-no">Tela 2 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div>
+                <h3>Tendências do YouTube</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Coletadas 2 h atrás. Cada cartão diz de onde vem o dado.</p>
+              </div>
+              <button class="btn btn-sm" type="button">Atualizar agora</button>
+            </div>
+            <div class="filters" style="margin-top:12px" role="group" aria-label="Filtrar por região">
+              <button class="chip" type="button" aria-pressed="true">Todos</button>
+              <button class="chip" type="button" aria-pressed="false">Brasil</button>
+              <button class="chip" type="button" aria-pressed="false">EUA</button>
+              <button class="chip" type="button" aria-pressed="false">Origem desconhecida</button>
+            </div>
+          </div>
+
+          <div class="trends">
+            <article class="card trend">
+              <div class="thumb" aria-hidden="true">capa do vídeo base</div>
+              <span class="region">Brasil · BR</span>
+              <h4 style="margin:0">Como a OpenAI ganha dinheiro?</h4>
+              <div class="metrics"><span>1,2 mi views</span><span>·</span><span>2 d</span></div>
+              <p class="dim" style="margin:0;font-size:12px">Origem: trending #4 · base: <code>yt:abc123</code></p>
+              <button class="btn btn-primary btn-sm" type="button" data-screen="novo">Usar tendência</button>
+            </article>
+
+            <article class="card trend">
+              <div class="thumb" aria-hidden="true">capa do vídeo base</div>
+              <span class="region">EUA · US</span>
+              <h4 style="margin:0">Por que o streaming ficou caro</h4>
+              <div class="metrics"><span>840 mil views</span><span>·</span><span>1 d</span></div>
+              <p class="dim" style="margin:0;font-size:12px">Origem: trending #9 · base: <code>yt:def456</code></p>
+              <button class="btn btn-primary btn-sm" type="button" data-screen="novo">Usar tendência</button>
+            </article>
+
+            <article class="card trend">
+              <div class="thumb" aria-hidden="true">capa do vídeo base</div>
+              <span class="region">Origem desconhecida</span>
+              <h4 style="margin:0">Fim das senhas em 2026</h4>
+              <div class="metrics"><span>— views</span><span>·</span><span>5 h</span></div>
+              <p class="dim" style="margin:0;font-size:12px">Agregação sem <code>regionCode</code> confiável. Não rotulamos como “Global”.</p>
+              <button class="btn btn-sm" type="button" aria-disabled="true">Sem região confiável</button>
+            </article>
+          </div>
+
+          <p class="fine">Não é “Global”: quando o dado não traz região confiável, o rótulo é <b>origem desconhecida</b> — a mesma regra que corrigimos na fatia F3-07.</p>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Frescor</h3>
+            <div class="kv"><span>Última coleta</span><span>há 2 h</span></div>
+            <div class="kv"><span>Cota da API hoje</span><span>18 / 100</span></div>
+            <p class="fine">Cota é dado real da API; “views” vem da lista de tendências e é aproximado.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 3. NOVO VÍDEO ══════════════════════ -->
+    <section class="view" id="novo" aria-labelledby="t-novo" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-novo" tabindex="-1">Novo vídeo</h2>
+          <p class="goal">Ação primária: <b>produzir vídeo</b>. Nada é cobrado antes do teto ser confirmado.</p>
+        </div>
+        <span class="screen-no">Tela 3 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <h3>Transforme uma ideia em um vídeo publicado</h3>
+            <p class="dim" style="margin:6px 0 16px;font-size:13px">Quatro decisões. O resto o Studio resolve por você.</p>
+
+            <div class="filters" style="margin-bottom:16px" role="tablist" aria-label="Origem do vídeo">
+              <button class="chip" role="tab" aria-selected="true" aria-pressed="true" type="button">Minha ideia</button>
+              <button class="chip" role="tab" aria-selected="false" aria-pressed="false" type="button">Tendência</button>
+              <button class="chip" role="tab" aria-selected="false" aria-pressed="false" type="button">Série</button>
+            </div>
+
+            <div class="grid-2">
+              <div class="field" style="grid-column:1/-1">
+                <label for="nv-tema">Tema</label>
+                <input class="input" id="nv-tema" value="Como a OpenAI ganha dinheiro?">
+                <span class="hint">Uma frase basta. O roteiro é seu; a pesquisa confirma.</span>
+              </div>
+
+              <div class="field">
+                <label for="nv-canal">Canal</label>
+                <select class="input" id="nv-canal"><option>Finanças Descomplicadas</option></select>
+                <span class="hint">Define voz, identidade e orçamento.</span>
+              </div>
+
+              <div class="field">
+                <label for="nv-publico">Público</label>
+                <input class="input" id="nv-publico" value="Adultos curiosos, sem formação técnica">
+              </div>
+
+              <div class="field">
+                <label for="nv-dur">Duração alvo</label>
+                <select class="input" id="nv-dur"><option>480 s (8 min) — padrão</option><option>60 s (Short)</option><option>1200 s (20 min)</option></select>
+              </div>
+
+              <div class="field">
+                <label for="nv-estilo">Estilo de edição</label>
+                <select class="input" id="nv-estilo"><option>Documentário cinematográfico</option></select>
+                <span class="hint">Preset do canal. Estruturado por completo só na fatia de estilo.</span>
+              </div>
+
+              <div class="field">
+                <label for="nv-idioma">Idioma</label>
+                <select class="input" id="nv-idioma"><option>Português (Brasil)</option><option>Inglês (EUA)</option></select>
+              </div>
+
+              <div class="field">
+                <label for="nv-teto">Teto de custo deste vídeo</label>
+                <input class="input" id="nv-teto" value="US$ 1,50">
+                <span class="hint">Estimativa, não preço fixo. O teto consome o valor estimado até a reconciliação.</span>
+              </div>
+            </div>
+
+            <div class="spread" style="margin-top:18px">
+              <p class="fine" style="margin:0">
+                Estimado de hoje para este perfil: <b>US$ 0,42</b> · pode variar com a duração real da voz.<br>
+                Custo desconhecido não é tratado como zero.
+              </p>
+              <button class="btn btn-primary" type="button" data-screen="producao">Produzir vídeo</button>
+            </div>
+          </div>
+
+          <div class="card empty">
+            <h3>Modo de execução</h3>
+            <p class="muted" style="margin:6px 0 0;font-size:13px">
+              <b>Interativo</b> (você aprova o roteiro) ou <b>com teto</b> (o Studio segue sozinho até o teto). Publicar nunca é automático.
+            </p>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>O que acontece ao produzir</h3>
+            <ol class="steps" aria-label="Etapas da produção">
+              <li><span class="num">1</span> Roteiro</li><li><span class="num">2</span> Fontes</li><li><span class="num">3</span> Fact-check</li>
+              <li><span class="num">4</span> Cenas</li><li><span class="num">5</span> Voz</li><li><span class="num">6</span> Render</li>
+              <li><span class="num">7</span> QA</li><li><span class="num">8</span> Publicação</li>
+            </ol>
+            <p class="fine">Pausas humanas: após o roteiro e antes de publicar.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 4. PRODUÇÃO ══════════════════════ -->
+    <section class="view" id="producao" aria-labelledby="t-producao" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-producao" tabindex="-1">Produção</h2>
+          <p class="goal">Ação primária: <b>acompanhar / corrigir</b>. Sem percentual inventado — etapa atual, próxima ação e custo.</p>
+        </div>
+        <span class="screen-no">Tela 4 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div>
+                <h3>Como a OpenAI ganha dinheiro?</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Execução <code>run_7f31</code> · iniciada há 6 min · modo interativo</p>
+              </div>
+              <span class="state s-run"><span class="glyph" aria-hidden="true">◐</span> Em execução</span>
+            </div>
+
+            <ol class="steps" aria-label="Etapas da produção">
+              <li><span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Roteiro</span></li>
+              <li><span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Fontes</span></li>
+              <li><span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Fact-check</span></li>
+              <li aria-current="step"><span class="state s-run"><span class="glyph" aria-hidden="true">◐</span> Cenas</span></li>
+              <li><span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Voz</span></li>
+              <li><span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Render</span></li>
+              <li><span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> QA</span></li>
+              <li><span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Publicação</span></li>
+            </ol>
+            <p class="fine">Etapa <b>4 de 8</b> · nenhuma etapa concluída é refeita. Não há barra de progresso: o trabalho não é linear.</p>
+          </div>
+
+          <div class="card" style="border-color:#7a2436">
+            <div class="spread">
+              <div>
+                <span class="state s-fail"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+                <h3 style="margin:10px 0 0">A fonte “relatório anual 2026” não abriu</h3>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">O que fazer: <b>aprovar uma fonte alternativa</b> ou remover a afirmação que depende dela. Nada foi publicado.</p>
+              </div>
+              <div class="row">
+                <button class="btn btn-sm" type="button" data-screen="pesquisa">Ver fontes</button>
+                <button class="btn btn-primary btn-sm" type="button">Tentar novamente</button>
+              </div>
+            </div>
+            <p class="fine">Detalhe técnico (trace, mensagem crua) em <b>Avançado</b>, no fim da página — não aqui.</p>
+          </div>
+
+          <details class="advanced">
+            <summary><span aria-hidden="true">▸</span> Avançado — diagnóstico</summary>
+            <div class="body">
+              <p style="margin:0 0 8px"><b>Registro de uso de modelos</b></p>
+              <div class="kv"><span>roteiro · gpt-5-mini</span><span>Estimado US$ 0,02</span></div>
+              <div class="kv"><span>imagens · stock</span><span>Sem custo</span></div>
+              <div class="kv"><span>voz · piper:pt-BR-faber-medium</span><span>Sem custo (local)</span></div>
+              <p class="fine">IDs: <code>run_7f31</code> · <code>video_9a2</code> · trace <code>4c1f…e8b</code></p>
+            </div>
+          </details>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Custo desta execução</h3>
+            <div class="kv"><span>Real</span><span>US$ 0,07</span></div>
+            <div class="kv"><span>Estimado</span><span>US$ 0,05</span></div>
+            <div class="kv"><span>Sem custo</span><span>3 chamadas</span></div>
+            <div class="kv"><span>Desconhecido</span><span>1 chamada</span></div>
+            <p class="fine">Real e estimado nunca são somados num número só. Ausência de custo não é <code>US$ 0,00</code>.</p>
+          </div>
+          <div class="card"><h3>Ações</h3>
+            <div class="row" style="margin-top:8px">
+              <button class="btn btn-sm" type="button">Pausar</button>
+              <button class="btn btn-sm btn-ghost" type="button">Cancelar</button>
+            </div>
+            <p class="fine">“Revisar” só aparece quando existe artefato para revisar.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 5. PESQUISA ══════════════════════ -->
+    <section class="view" id="pesquisa" aria-labelledby="t-pesquisa" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-pesquisa" tabindex="-1">Pesquisa</h2>
+          <p class="goal">Ação primária: <b>aprovar fontes</b>. Proveniência, claim, data e licença sempre visíveis.</p>
+        </div>
+        <span class="screen-no">Tela 5 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div><h3>Fontes para “Como a OpenAI ganha dinheiro?”</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">3 fontes propostas · 1 precisa de decisão sua</p></div>
+              <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Ação necessária</span>
+            </div>
+
+            <div class="list" style="margin-top:14px">
+              <div class="item">
+                <div>
+                  <div class="item-title">Relatório anual 2026 (fonte oficial)</div>
+                  <div class="item-sub">openai.com · capturada há 3 min · data do documento: 2026-02-11 · licença: <b>uso permitido com citação</b></div>
+                  <div class="item-sub">Sustenta 4 claims · <code>snap_1a</code></div>
+                </div>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Aprovada</span>
+                <button class="btn btn-sm btn-ghost" type="button">Inspecionar</button>
+              </div>
+
+              <div class="item">
+                <div>
+                  <div class="item-title">Reportagem: “receita de assinaturas cresce 40%”</div>
+                  <div class="item-sub">reuters.com · capturada há 3 min · publicada em 2026-01-30 · licença: <b>citação curta</b></div>
+                  <div class="item-sub">Sustenta 2 claims · <code>snap_2b</code></div>
+                </div>
+                <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Precisa de decisão</span>
+                <button class="btn btn-primary btn-sm" type="button" data-screen="roteiro">Aprovar</button>
+              </div>
+
+              <div class="item">
+                <div>
+                  <div class="item-title">Vídeo de terceiro: “vazamento de números”</div>
+                  <div class="item-sub">youtube.com · claim de terceiro <b>não confirmável</b> · sem documento primário</div>
+                  <div class="item-sub">Rejeitada automaticamente: não inventamos conteúdo para fechar a lacuna.</div>
+                </div>
+                <span class="state s-fail"><span class="glyph" aria-hidden="true">✕</span> Descartada</span>
+                <button class="btn btn-sm btn-ghost" type="button">Ver motivo</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Regra aplicada</h3>
+            <p class="fine" style="margin:0">Fonte inacessível ou claim de terceiro sem documento primário é <b>descartada</b>, nunca preenchida com texto genérico.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 6. ROTEIRO ══════════════════════ -->
+    <section class="view" id="roteiro" aria-labelledby="t-roteiro" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-roteiro" tabindex="-1">Roteiro</h2>
+          <p class="goal">Ação primária: <b>aprovar versão</b>. A aprovação fica presa a uma versão; editar cria outra.</p>
+        </div>
+        <span class="screen-no">Tela 6 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div><h3>Versão 2 · 8 min 12 s estimados</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">4 capítulos · 18 cenas · fact-check concluído (7 claims)</p></div>
+              <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Aguardando sua aprovação</span>
+            </div>
+
+            <div class="list" style="margin-top:12px">
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">1. Onde o dinheiro entra</div>
+                  <div class="item-sub">Gancho 0:00–0:22 · 4 cenas · 2 claims verificados</div></div>
+                <span class="cost"><b>1 min 48 s</b></span>
+              </div>
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">2. Assinaturas e API</div>
+                  <div class="item-sub">Desenvolvimento · 6 cenas · 3 claims verificados</div></div>
+                <span class="cost"><b>3 min 05 s</b></span>
+              </div>
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">3. Parcerias e nuvem</div>
+                  <div class="item-sub">6 cenas · 1 claim aguardando fonte alternativa</div></div>
+                <span class="cost"><b>2 min 31 s</b></span>
+              </div>
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">4. Payoff e convite</div>
+                  <div class="item-sub">2 cenas · CTA</div></div>
+                <span class="cost"><b>0 min 48 s</b></span>
+              </div>
+            </div>
+
+            <div class="spread" style="margin-top:16px">
+              <p class="fine" style="margin:0">Aprovar congela esta versão (<code>script_v2</code>). Editar cria a v3 e invalida só o que depende dela.</p>
+              <div class="row">
+                <button class="btn" type="button" data-screen="editor">Editar cenas</button>
+                <button class="btn btn-primary" type="button" data-screen="editor">Aprovar versão 2</button>
+              </div>
+            </div>
+          </div>
+
+          <details class="advanced">
+            <summary><span aria-hidden="true">▸</span> Avançado — versões e fact-check</summary>
+            <div class="body">
+              <div class="kv"><span>script_v1</span><span>substituída</span></div>
+              <div class="kv"><span>script_v2</span><span>atual · hash <code>8d3c…41a</code></span></div>
+              <p class="fine">Cada claim aponta para o snapshot da fonte que o sustenta.</p>
+            </div>
+          </details>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Duração</h3>
+            <div class="kv"><span>Alvo</span><span>480 s</span></div>
+            <div class="kv"><span>Estimado</span><span>492 s</span></div>
+            <p class="fine">Estimativa por palavras/minuto. A duração real só existe depois do TTS — por isso a página não promete “exato”.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 7. EDITOR ══════════════════════ -->
+    <section class="view" id="editor" aria-labelledby="t-editor" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-editor" tabindex="-1">Editor</h2>
+          <p class="goal">Ação primária: <b>regenerar cena</b>. Uma cena muda sem refazer as outras.</p>
+        </div>
+        <span class="screen-no">Tela 7 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div><h3>Cena 7 · “Assinaturas e API”</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">3 shots · narração e legenda herdadas do roteiro aprovado</p></div>
+              <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Renderizada</span>
+            </div>
+
+            <div class="play" style="margin-top:14px" aria-hidden="true">pré-visualização da cena</div>
+
+            <div class="track" style="margin-top:16px">
+              <h4>Shots (visual)</h4>
+              <div class="strip">
+                <div class="cel v">shot 1 · imagem</div><div class="cel v">shot 2 · imagem</div><div class="cel v">shot 3 · gráfico</div>
+              </div>
+            </div>
+            <div class="track" style="margin-top:10px">
+              <h4>Narração</h4>
+              <div class="strip"><div class="cel a">voz · cena 7</div></div>
+            </div>
+            <div class="track" style="margin-top:10px">
+              <h4>Legendas</h4>
+              <div class="strip"><div class="cel s">leg 1</div><div class="cel s">leg 2</div><div class="cel s">leg 3</div></div>
+            </div>
+
+            <p class="fine">Alterar a cena 7 invalida apenas o render final. Os assets das outras 17 cenas são reaproveitados — não se paga de novo por eles.</p>
+
+            <div class="spread" style="margin-top:14px">
+              <p class="fine" style="margin:0">Regenerar esta cena: <b>Estimado US$ 0,05</b> (2 imagens). Sem custo para a voz local.</p>
+              <div class="row">
+                <button class="btn" type="button">Trocar voz da cena</button>
+                <button class="btn btn-primary" type="button">Regenerar cena</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Cenas</h3>
+            <div class="kv"><span>Cena 6</span><span>✓</span></div>
+            <div class="kv"><span>Cena 7</span><span>em edição</span></div>
+            <div class="kv"><span>Cena 8</span><span>✓</span></div>
+            <p class="fine">Cada cena tem identidade própria; trocar a mídia não muda a identidade editorial.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 8. PREVIEW / QA ══════════════════════ -->
+    <section class="view" id="preview" aria-labelledby="t-preview" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-preview" tabindex="-1">Preview e QA</h2>
+          <p class="goal">Ação primária: <b>aprovar o vídeo</b>. Bloqueio impede publicar; alerta não impede.</p>
+        </div>
+        <span class="screen-no">Tela 8 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div><h3>Render final</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">1920×1080 · 8 min 04 s · hash <code>9f2b…c70</code> · QA executado</p></div>
+              <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> 1 alerta, nenhum bloqueio</span>
+            </div>
+
+            <div class="sev" style="margin-top:14px">
+              <div class="line sev-w">
+                <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Alerta</span>
+                <div>
+                  <b>Silêncio de 2,1 s na cena 3</b>
+                  <p>Evidência: <code>narration_silence_ratio 0,21</code> na cena 3. Não bloqueia, mas atrapalha a retenção.</p>
+                </div>
+                <button class="btn btn-sm" type="button" data-screen="editor">Ir para a cena 3</button>
+              </div>
+
+              <div class="line sev-i">
+                <span class="state s-run"><span class="glyph" aria-hidden="true">i</span> Info</span>
+                <div>
+                  <b>Legenda com 3 linhas em 1 trecho</b>
+                  <p>Sugestão de quebra. Informativo.</p>
+                </div>
+                <button class="btn btn-sm btn-ghost" type="button">Ver trecho</button>
+              </div>
+            </div>
+
+            <div class="spread" style="margin-top:16px">
+              <p class="fine" style="margin:0">Aprovar aqui é o que libera a publicação — e a aprovação vale para <b>este</b> hash. Um novo render exige nova aprovação.</p>
+              <button class="btn btn-primary" type="button" data-screen="publicacao">Aprovar preview</button>
+            </div>
+          </div>
+
+          <details class="advanced">
+            <summary><span aria-hidden="true">▸</span> Avançado — métricas do QA</summary>
+            <div class="body">
+              <div class="kv"><span>durabilidade</span><span>484,2 s (esperado 484,0 s)</span></div>
+              <div class="kv"><span>loudness (LUFS)</span><span>-16,1</span></div>
+              <div class="kv"><span>silêncio</span><span>0,18</span></div>
+              <div class="kv"><span>quadros pretos</span><span>0,02</span></div>
+              <p class="fine">Métrica ausente reprova (falha fechada) — é o gate de QA da fatia F6.</p>
+            </div>
+          </details>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Regra do gate</h3>
+            <p class="fine" style="margin:0">Aprovação exige o <b>render mais recente</b> e um relatório compatível com ele. Render antigo não aprova render novo.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 9. PUBLICAÇÃO ══════════════════════ -->
+    <section class="view" id="publicacao" aria-labelledby="t-publicacao" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-publicacao" tabindex="-1">Publicação</h2>
+          <p class="goal">Ação primária: <b>publicar / agendar</b>. Privado por padrão; público exige confirmação extra.</p>
+        </div>
+        <span class="screen-no">Tela 9 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <h3>Metadados</h3>
+            <div class="grid-2" style="margin-top:12px">
+              <div class="field" style="grid-column:1/-1">
+                <label for="titulo">Título</label>
+                <input class="input" id="titulo" value="Como a OpenAI realmente ganha dinheiro">
+                <span class="hint">Sem clickbait: o título tem de ser sustentado pelo vídeo.</span>
+              </div>
+              <div class="field">
+                <label for="visib">Visibilidade</label>
+                <select class="input" id="visib"><option>Privado (recomendado)</option><option>Não listado</option><option>Público</option></select>
+              </div>
+              <div class="field">
+                <label for="agenda">Agendamento</label>
+                <input class="input" id="agenda" value="Assim que aprovado">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Thumbnail</h3>
+            <p class="dim" style="margin:6px 0 12px;font-size:12.5px">3 conceitos com justificativa. Escolher um não publica nada.</p>
+            <div class="variants">
+              <button class="variant" type="button" aria-pressed="true">
+                <div class="vthumb" aria-hidden="true">variante A</div>
+                <b style="font-size:13px">A · “o gráfico”</b>
+                <span class="dim" style="font-size:12px">Rosto neutro não disponível; aposta no dado visual.</span>
+              </button>
+              <button class="variant" type="button" aria-pressed="false">
+                <div class="vthumb" aria-hidden="true">variante B</div>
+                <b style="font-size:13px">B · “a pergunta”</b>
+                <span class="dim" style="font-size:12px">Texto curto, alto contraste.</span>
+              </button>
+              <button class="variant" type="button" aria-pressed="false">
+                <div class="vthumb" aria-hidden="true">variante C</div>
+                <b style="font-size:13px">C · “o contraste”</b>
+                <span class="dim" style="font-size:12px">Antes/depois simplificado.</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Pronto para enviar</span>
+                <p class="muted" style="margin:8px 0 0;font-size:13px">QA sem bloqueio · preview aprovado no hash <code>9f2b…c70</code> · canal conectado: Finanças Descomplicadas</p>
+              </div>
+              <div class="row">
+                <button class="btn" type="button">Agendar</button>
+                <button class="btn btn-primary" type="button" command="show-modal" commandfor="pub">Publicar…</button>
+              </div>
+            </div>
+            <p class="fine">Publicar abre uma confirmação. Visibilidade pública pede confirmação <b>reforçada</b>.</p>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Regra</h3>
+            <p class="fine" style="margin:0">Upload só com render + QA + aprovação válidos. Se o envio falhar no meio, o Studio <b>reconcilia</b> com o YouTube antes de tentar de novo — nunca publica duas vezes.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 10. ANALYTICS ══════════════════════ -->
+    <section class="view" id="analytics" aria-labelledby="t-analytics" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-analytics" tabindex="-1">Analytics</h2>
+          <p class="goal">Ação primária: <b>aprender</b>. CTR e retenção aparecem só quando a API entrega e a permissão existe — fora disso, “ainda não disponível”.</p>
+        </div>
+        <span class="screen-no">Tela 10 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div>
+                <h3>Desempenho</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Recorte por canal, vídeo, pilar e período. Cada número diz de onde vem — ou por que não existe.</p>
+              </div>
+              <button class="btn btn-sm" type="button">Atualizar agora</button>
+            </div>
+            <div class="filters" style="margin-top:12px" role="group" aria-label="Filtrar por dimensão">
+              <button class="chip" type="button" aria-pressed="true">Canal: Finanças Descomplicadas</button>
+              <button class="chip" type="button" aria-pressed="false">Vídeo: todos</button>
+              <button class="chip" type="button" aria-pressed="false">Pilar: todos</button>
+            </div>
+            <div class="filters" style="margin-top:8px" role="group" aria-label="Filtrar por período">
+              <button class="chip" type="button" aria-pressed="true">7 dias</button>
+              <button class="chip" type="button" aria-pressed="false">28 dias</button>
+              <button class="chip" type="button" aria-pressed="false">90 dias</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div><h3>Métricas do período</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Nenhuma publicação coletada ainda neste canal.</p></div>
+              <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Ainda não disponível</span>
+            </div>
+
+            <div class="tiles" style="margin-top:14px">
+              <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Views</span>
+                <span class="why">Sem publicação autorizada/coletada. O valor só existe depois do primeiro envio com o escopo de leitura.</span></div>
+              <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">CTR (cliques / impressões)</span>
+                <span class="why">Depende de impressões, que a API expõe por janela e permissão. Sem isso, não estimamos.</span></div>
+              <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Retenção média</span>
+                <span class="why">Só vem da API de Analytics do canal. Não derivamos de duração nem de palavras/minuto.</span></div>
+              <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Tempo assistido</span>
+                <span class="why">Mesma origem da retenção. Ausência de dado não é 0.</span></div>
+            </div>
+
+            <p class="fine">Zero não é o mesmo que “sem dado”: quando a API não devolve o valor, o estado é <b>ainda não disponível</b> — nunca 0% nem estimativa apresentada como medição.</p>
+          </div>
+
+          <details class="advanced">
+            <summary><span aria-hidden="true">▸</span> Como a tela fica quando houver dado (exemplo de layout · dados ilustrativos)</summary>
+            <div class="body">
+              <p style="margin:0 0 12px">Os números abaixo são <b>ilustrativos</b>, só para fixar o layout aprovado. Não são medição deste canal.</p>
+              <div class="tiles">
+                <div class="tile"><span class="metric num">12,4 mil</span><span class="label">Views</span><span class="why">Origem: API YouTube Analytics · janela 7 d</span></div>
+                <div class="tile"><span class="metric num">4,8%</span><span class="label">CTR</span><span class="why">Ilustrativo · requer impressões</span></div>
+                <div class="tile"><span class="metric num">41,2%</span><span class="label">Retenção média</span><span class="why">Ilustrativo · amostra de 3 vídeos</span></div>
+                <div class="tile"><span class="metric num">318 h</span><span class="label">Tempo assistido</span><span class="why">Ilustrativo</span></div>
+              </div>
+
+              <p style="margin:16px 0 6px"><b>Por dimensão</b></p>
+              <div class="kv"><span>Pilar “Como funciona o dinheiro”</span><span class="num">5,1% CTR · 44% retenção (ilustrativo)</span></div>
+              <div class="kv"><span>Pilar “Notícias de IA”</span><span class="num">3,2% CTR · 33% retenção (ilustrativo)</span></div>
+              <div class="kv"><span>Short de 60 s</span><span>retenção não comparável com long-form</span></div>
+              <p class="fine">Comparações só entre vídeos comparáveis; um Short de 60 s e um vídeo de 8 min não entram na mesma média.</p>
+            </div>
+          </details>
+
+          <div class="card">
+            <h3>Insights</h3>
+            <p class="dim" style="margin:6px 0 10px;font-size:12.5px">
+              <b>Observação</b> é o que o dado mostra; <b>hipótese</b> é o que ainda não foi comprovado. Os dois são rótulos diferentes, com evidência e nível de confiança.
+            </p>
+
+            <div class="list">
+              <div class="ins">
+                <div class="spread">
+                  <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Observação · confiança alta</span>
+                  <span class="dim" style="font-size:11.5px">exemplo ilustrativo</span>
+                </div>
+                <p>Neste canal, os vídeos long-form retiveram mais do que os Shorts no mesmo período.</p>
+                <div class="ev">Evidência: <code>retention_avg p50</code> de 6 vídeos comparáveis · janela 28 d · amostra suficiente.</div>
+              </div>
+
+              <div class="ins">
+                <div class="spread">
+                  <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Hipótese · confiança baixa</span>
+                  <span class="dim" style="font-size:11.5px">exemplo ilustrativo</span>
+                </div>
+                <p>Títulos em forma de pergunta <b>podem</b> elevar o CTR neste canal público.</p>
+                <div class="ev">Evidência frágil: apenas 3 vídeos, sem controle de tema nem período. Fica registrada como hipótese, <b>não</b> como conclusão.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card empty">
+            <h3>Recomendações</h3>
+            <p class="muted" style="margin:6px 0 0;font-size:13px">
+              Uma recomendação sugere, não decide. <b>Nada é reconfigurado sozinho</b>: aplicar cria uma nova versão do perfil do canal e só vale depois da sua aprovação — e você pode recusar sem efeito.
+            </p>
+            <div class="spread" style="margin-top:14px">
+              <p class="fine" style="margin:0">Exemplo ilustrativo: “manter ~8 min no próximo vídeo do pilar de finanças”.</p>
+              <div class="row">
+                <button class="btn btn-sm btn-ghost" type="button">Recusar</button>
+                <button class="btn btn-sm" type="button" aria-disabled="true">Aplicar (abre confirmação)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Honestidade do dado</h3>
+            <p class="fine" style="margin:0">CTR e retenção dependem de escopos e permissão da API do canal. Quando o dado não vem, mostramos <b>ainda não disponível</b>; nunca preenchemos com 0 nem com estimativa disfarçada de medição.</p>
+          </div>
+          <div class="card"><h3>Frescor e origem</h3>
+            <div class="kv"><span>Última coleta</span><span>nunca (sem publicação)</span></div>
+            <div class="kv"><span>Escopo de leitura</span><span>não concedido</span></div>
+            <p class="fine">A coleta só começa após a primeira publicação e com <code>yt-analytics.readonly</code> autorizado no canal.</p>
+          </div>
+          <div class="card"><h3>O que esta tela não faz</h3>
+            <p class="fine" style="margin:0">Não muda configuração, não promete métrica que a API não entrega e não junta vídeos não comparáveis numa média só.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 11. CANAIS ══════════════════════ -->
+    <section class="view" id="canais" aria-labelledby="t-canais" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-canais" tabindex="-1">Canais</h2>
+          <p class="goal">Ação primária: <b>configurar canal</b>. Hoje a configuração vive no <code>.env</code>/código; esta tela é a proposta (F10) que destrava a UI da fatia H.</p>
+        </div>
+        <span class="screen-no">Tela 11 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card">
+            <div class="spread">
+              <div><h3>Finanças Descomplicadas</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Canal ativo · perfil versionado <code>channel_v3</code></p></div>
+              <button class="btn btn-sm" type="button">Adicionar canal</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Estratégia e identidade</h3>
+            <p class="dim" style="margin:6px 0 14px;font-size:12.5px">Define o que o Studio produz por padrão neste canal. Alterar aqui cria uma nova versão do perfil.</p>
+            <div class="grid-2">
+              <div class="field"><label for="cn-nicho">Nicho</label>
+                <input class="input" id="cn-nicho" value="Finanças pessoais explicadas sem jargão"></div>
+              <div class="field"><label for="cn-estrategia">Estratégia</label>
+                <select class="input" id="cn-estrategia"><option>Educação long-form (8–12 min)</option><option>Shorts de descoberta</option></select></div>
+              <div class="field"><label for="cn-idioma">Idioma</label>
+                <select class="input" id="cn-idioma"><option>Português (Brasil)</option><option>Inglês (EUA)</option></select></div>
+              <div class="field"><label for="cn-publico">Público</label>
+                <input class="input" id="cn-publico" value="Adultos curiosos, sem formação técnica"></div>
+              <div class="field" style="grid-column:1/-1"><label for="cn-pilares">Pilares editoriais</label>
+                <input class="input" id="cn-pilares" value="Como funciona o dinheiro · Notícias de IA · Ferramentas do dia a dia"></div>
+              <div class="field"><label for="cn-identidade">Identidade visual</label>
+                <input class="input" id="cn-identidade" value="Paleta grafite+violeta · tipografia sans geométrica">
+                <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span></div>
+              <div class="field"><label for="cn-voz">Voz padrão</label>
+                <select class="input" id="cn-voz"><option>pt-BR · Piper “faber-medium” (local)</option></select>
+                <span class="hint">Voz local: sem custo por chamada.</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div><h3>Providers por tarefa</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Cada tarefa aponta para um provider com capability, custo estimado, rate limit e disponibilidade.</p></div>
+              <button class="btn btn-sm" type="button">Reordenar fallback</button>
+            </div>
+
+            <div class="list" style="margin-top:14px">
+              <div class="item item-4">
+                <div><div class="item-title">Roteiro · OpenAI <code>gpt-5-mini</code></div>
+                  <div class="item-sub">Capability: texto longo · rate limit 500 rpm · disponibilidade: <b>disponível</b></div></div>
+                <span class="cost"><b>Estimado</b> US$ 0,02 / 1k tokens</span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+                <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+              </div>
+
+              <div class="item item-4">
+                <div><div class="item-title">Imagens · Stock local (Pexels)</div>
+                  <div class="item-sub">Capability: imagem estática · rate limit 200/h · disponibilidade: <b>disponível</b></div></div>
+                <span class="cost"><b>Sem custo</b></span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+                <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+              </div>
+
+              <div class="item item-4">
+                <div><div class="item-title">Voz · Piper <code>pt-BR-faber-medium</code></div>
+                  <div class="item-sub">Capability: TTS local · sem rate limit de rede · disponibilidade: <b>disponível</b></div></div>
+                <span class="cost"><b>Sem custo</b> (local)</span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+                <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+              </div>
+
+              <div class="item item-4">
+                <div><div class="item-title">Imagem generativa · provider externo</div>
+                  <div class="item-sub">Capability: imagem por prompt · não configurado · sem credencial</div></div>
+                <span class="cost">Custo <b>desconhecido</b></span>
+                <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Indisponível</span>
+                <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+              </div>
+            </div>
+            <p class="fine">Custo <b>estimado</b> não é preço cobrado, e custo <b>desconhecido</b> não é tratado como zero. Disponibilidade reflete o estado real do adapter (<code>working</code>/<code>experimental</code>/<code>disabled</code>).</p>
+          </div>
+
+          <div class="card">
+            <h3>Orçamento do canal</h3>
+            <p class="dim" style="margin:6px 0 14px;font-size:12.5px">Limites por mês (valores ilustrativos). O consumo real, estimado e desconhecido nunca são somados num número só.</p>
+            <div class="grid-2">
+              <div class="field"><label for="cn-soft">Limite soft</label>
+                <input class="input" id="cn-soft" value="US$ 5,00">
+                <span class="hint">Ao atingir, o Studio <b>pausa</b> e pede sua decisão.</span></div>
+              <div class="field"><label for="cn-hard">Limite hard</label>
+                <input class="input" id="cn-hard" value="US$ 12,00">
+                <span class="hint">Ao atingir, o Studio <b>para sozinho</b>. Não ultrapassa.</span></div>
+            </div>
+            <div class="kv" style="margin-top:14px"><span>Consumido no mês — real confirmado</span><span>US$ 0,07</span></div>
+            <div class="kv"><span>Consumido no mês — estimado</span><span>US$ 0,05</span></div>
+            <div class="kv"><span>Chamadas sem custo</span><span>3</span></div>
+            <div class="kv"><span>Chamadas com custo desconhecido</span><span>1</span></div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div><h3>Canal do YouTube</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Associação e status do OAuth. O segredo nunca é exibido — só o estado e os escopos.</p></div>
+              <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Conectado</span>
+            </div>
+
+            <div class="list" style="margin-top:14px">
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">Finanças Descomplicadas</div>
+                  <div class="item-sub">Canal associado · escopos: <code>youtube.upload</code>, <code>yt-analytics.readonly</code></div></div>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+              </div>
+              <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+                <div><div class="item-title">Credencial (OAuth)</div>
+                  <div class="item-sub">Refresh token no <b>vault</b> · <span class="mask">•••• •••• •••• 7f2a</span> · expira em 51 min · renovação automática</div></div>
+                <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="reauth">Reautorizar</button>
+              </div>
+            </div>
+            <p class="fine">Só o <b>status</b> e a máscara aparecem; o valor do token e o client secret ficam no secret store e nunca voltam para o browser (F10-06/F10-07).</p>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Versionamento</h3>
+            <p class="fine" style="margin:0">Cada alteração cria uma versão do <code>ChannelProfile</code>, auditável. Nada de editar <code>.env</code> nem trocar código para mudar estratégia, providers ou orçamento.</p>
+          </div>
+          <div class="card"><h3>Segredos</h3>
+            <p class="fine" style="margin:0">Credenciais vivem em vault/secret store, <b>não</b> no <code>Project.config</code> devolvido ao browser. A UI mostra apenas máscara e status.</p>
+          </div>
+          <div class="card"><h3>Estado</h3>
+            <div class="kv"><span>F10 Canais</span><span class="state s-act" style="padding:2px 8px">proposta</span></div>
+            <p class="fine">Tela marcada <em>em breve</em> nos mockups anteriores; existe aqui para destravar a UI da fatia H.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══════════════════════ 12. EQUIPE (SaaS) ══════════════════════ -->
+    <section class="view" id="equipe" aria-labelledby="t-equipe" hidden>
+      <header class="top">
+        <div>
+          <h2 class="title" id="t-equipe" tabindex="-1">Equipe (SaaS)</h2>
+          <p class="goal">Ação primária: <b>gerir acesso</b>. Multiusuário, tenants e BYOK são F11 (P2) e estão <b>adiados</b>; esta tela é o modelo proposto, não algo instalado.</p>
+        </div>
+        <span class="screen-no">Tela 12 de 12 · dados ilustrativos</span>
+      </header>
+
+      <div class="view-grid">
+        <div class="col-main">
+          <div class="card empty">
+            <div class="spread">
+              <div>
+                <span class="state s-fail"><span class="glyph" aria-hidden="true">✕</span> Adiada · F11 (P2)</span>
+                <h3 style="margin:10px 0 0">Ainda não implementado</h3>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">
+                  Hoje o Studio é <b>mono-usuário</b>: não há organização, papéis nem BYOK. Esta tela antecipa o modelo do F11, que só entra depois do MVP estável. Sem plano de preços nosso.
+                </p>
+              </div>
+              <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Modelo proposto</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div><h3>Membros</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Papéis por organização. Nomes e e-mails ilustrativos.</p></div>
+              <button class="btn btn-sm" type="button" aria-disabled="true">Convidar</button>
+            </div>
+
+            <div class="list" style="margin-top:14px">
+              <div class="item item-4">
+                <div class="person"><span class="avatar" aria-hidden="true">A</span>
+                  <div><div class="item-title">Ana Ribeiro</div><div class="item-sub">ana@exemplo.com.br</div></div></div>
+                <span class="role owner">owner</span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+                <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+              </div>
+
+              <div class="item item-4">
+                <div class="person"><span class="avatar" aria-hidden="true">B</span>
+                  <div><div class="item-title">Bruno Salles</div><div class="item-sub">bruno@exemplo.com.br</div></div></div>
+                <span class="role editor">editor</span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+                <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+              </div>
+
+              <div class="item item-4">
+                <div class="person"><span class="avatar" aria-hidden="true">C</span>
+                  <div><div class="item-title">Carla Nunes</div><div class="item-sub">carla@exemplo.com.br</div></div></div>
+                <span class="role reviewer">reviewer</span>
+                <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Convite pendente</span>
+                <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+              </div>
+
+              <div class="item item-4">
+                <div class="person"><span class="avatar" aria-hidden="true">D</span>
+                  <div><div class="item-title">Diego Prado</div><div class="item-sub">diego@exemplo.com.br</div></div></div>
+                <span class="role viewer">viewer</span>
+                <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Somente leitura</span>
+                <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Papéis</h3>
+            <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Quatro papéis canônicos (F11-02). Papel é permissão de acesso, não plano comercial.</p>
+            <div class="list">
+              <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+                <span class="role owner">owner</span>
+                <div class="item-sub">Administra organização, membros, chaves e orçamento. Único papel que altera papéis.</div>
+              </div>
+              <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+                <span class="role editor">editor</span>
+                <div class="item-sub">Cria e edita vídeos, canais e configuração de provider. Não gerencia membros nem chaves.</div>
+              </div>
+              <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+                <span class="role reviewer">reviewer</span>
+                <div class="item-sub">Aprova roteiro e preview e recusa. Não publica nem edita configuração.</div>
+              </div>
+              <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+                <span class="role viewer">viewer</span>
+                <div class="item-sub">Só leitura: acompanha estado, custos e relatórios.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Organização e isolamento</h3>
+            <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Um tenant isola registros, storage, jobs e custos. Nada atravessa a fronteira.</p>
+            <div class="kv"><span>Organização</span><span>Estúdio Exemplo Ltda</span></div>
+            <div class="kv"><span>Workspace</span><span>Produção</span></div>
+            <div class="kv"><span>Isolamento</span><span>registros · storage · jobs · custos · logs</span></div>
+            <div class="kv"><span>Teste de vazamento entre tenants</span><span>previsto no F11-03</span></div>
+          </div>
+
+          <div class="card">
+            <div class="spread">
+              <div><h3>Chaves BYOK</h3>
+                <p class="dim" style="margin:4px 0 0;font-size:12.5px">Credencial própria do cliente, por tenant e provider. O valor nunca é exibido depois de salvo — só a máscara.</p></div>
+              <button class="btn btn-sm" type="button" aria-disabled="true">Adicionar chave</button>
+            </div>
+
+            <div class="list" style="margin-top:14px">
+              <div class="item item-4">
+                <div><div class="item-title">OpenAI</div>
+                  <div class="item-sub">Máscara <span class="mask">sk-…••••7f2a</span> · criada há 12 d · última rotação há 12 d</div></div>
+                <span class="cost"><b>Consumo</b> US$ 3,10 (ilustrativo)</span>
+                <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativa</span>
+                <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="revoke">Revogar…</button>
+              </div>
+
+              <div class="item item-4">
+                <div><div class="item-title">ElevenLabs</div>
+                  <div class="item-sub">Máscara <span class="mask">xi-…••••9d01</span> · rotacionada há 3 d</div></div>
+                <span class="cost"><b>Consumo</b> US$ 0,84 (ilustrativo)</span>
+                <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Rotacionada</span>
+                <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="revoke">Revogar…</button>
+              </div>
+
+              <div class="item item-4">
+                <div><div class="item-title">Provider de imagem externo</div>
+                  <div class="item-sub">Sem chave registrada</div></div>
+                <span class="cost">Consumo <b>desconhecido</b></span>
+                <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Não configurado</span>
+                <button class="btn btn-sm" type="button" aria-disabled="true">Adicionar chave</button>
+              </div>
+            </div>
+            <p class="fine">Máscara, status e consumo atribuído aparecem; o <b>valor</b> da chave nunca. Rotação e revogação são auditadas por tenant.</p>
+          </div>
+
+          <div class="card">
+            <h3>Consumo por tenant</h3>
+            <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Medição de uso por tenant e provider. Números ilustrativos; não há tabela de preços aqui.</p>
+            <div class="kv"><span>Tenant “Estúdio Exemplo Ltda” — custo real</span><span>US$ 3,94 (ilustrativo)</span></div>
+            <div class="kv"><span>— custo desconhecido</span><span>1 registro</span></div>
+            <div class="kv"><span>— chaves ativas</span><span>2</span></div>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="card"><h3>Fora de escopo hoje</h3>
+            <p class="fine" style="margin:0">Não existe login, organização, papel, tenant nem BYOK no produto atual. Tudo nesta tela é <b>modelo proposto</b> para o F11, adiado para depois do MVP.</p>
+          </div>
+          <div class="card"><h3>Por que adiar</h3>
+            <p class="fine" style="margin:0">F11-03 exige testes de isolamento contra vazamento entre tenants antes de qualquer uso hospedado. Sem isso, abrir multiusuário é risco.</p>
+          </div>
+          <div class="card"><h3>Sem preços</h3>
+            <p class="fine" style="margin:0">Nenhum plano, crédito ou preço nosso é afirmado. Papel é permissão; consumo é medição, não cobrança.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ══════════ confirmações: <dialog> nativo (a semântica de modal vem do elemento) ══════════ -->
+<dialog id="pub" aria-labelledby="pub-t">
+  <h3 id="pub-t">Publicar “Como a OpenAI realmente ganha dinheiro”?</h3>
+  <p>O envio é definitivo e pode ser revertido apenas no YouTube. Canal <b>Finanças Descomplicadas</b>, visibilidade <b>privada</b>.</p>
+  <form method="dialog" class="row">
+    <button class="btn" value="cancel" autofocus>Cancelar</button>
+    <button class="btn btn-primary" value="ok">Confirmar envio</button>
+  </form>
+</dialog>
+
+<dialog id="reauth" aria-labelledby="reauth-t">
+  <h3 id="reauth-t">Reautorizar o canal?</h3>
+  <p>Você será levado ao consentimento do Google para reconceder <code>youtube.upload</code> e <code>yt-analytics.readonly</code>. Nenhuma produção em andamento é afetada.</p>
+  <form method="dialog" class="row">
+    <button class="btn" value="cancel" autofocus>Cancelar</button>
+    <button class="btn btn-primary" value="ok">Ir para o consentimento</button>
+  </form>
+</dialog>
+
+<dialog id="revoke" aria-labelledby="revoke-t">
+  <h3 id="revoke-t">Revogar esta chave BYOK?</h3>
+  <p>As tarefas que usam este provider param até você cadastrar outra chave. A ação é auditada e não pode ser desfeita; o valor salvo não é exibido em nenhum momento.</p>
+  <form method="dialog" class="row">
+    <button class="btn" value="cancel" autofocus>Cancelar</button>
+    <button class="btn btn-primary" value="ok">Revogar chave</button>
+  </form>
+</dialog>
+
+<script>
+  // Troca de tela: links de navegação + View Transitions com fallback.
+  // NÃO é tablist: a guidance de `tabs` proíbe o padrão ARIA de abas para navegação de página.
+  (function () {
+    var views = Array.prototype.slice.call(document.querySelectorAll('.views > .view'));
+    var triggers = Array.prototype.slice.call(document.querySelectorAll('[data-screen]'));
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    function idFromHash() {
+      var h = location.hash.replace(/^#/, '');
+      return views.some(function (v) { return v.id === h; }) ? h : 'inicio';
+    }
+
+    function render(id) {
+      var active = null;
+      views.forEach(function (v) {
+        var on = v.id === id;
+        v.toggleAttribute('hidden', !on);
+        if (on) active = v;
+      });
+      triggers.forEach(function (t) {
+        if (t.tagName === 'A' && t.dataset.screen === id) t.setAttribute('aria-current', 'page');
+        else if (t.tagName === 'A') t.removeAttribute('aria-current');
+      });
+      var heading = active && active.querySelector('h2.title');
+      if (heading) document.title = heading.textContent.trim() + ' — Faceless Studio V2';
+    }
+
+    function routeFocus(id) {
+      var active = document.getElementById(id);
+      var heading = active && active.querySelector('h2.title');
+      if (heading) heading.focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+    }
+
+    function show(id, moveFocus) {
+      var supportsVT = typeof document.startViewTransition === 'function' && !reduceMotion.matches;
+      if (supportsVT) {
+        var t = document.startViewTransition(function () { render(id); });
+        if (moveFocus) t.finished.finally(function () { routeFocus(id); });
+      } else {
+        render(id);
+        if (moveFocus) routeFocus(id);
+      }
+    }
+
+    triggers.forEach(function (t) {
+      t.addEventListener('click', function (e) {
+        // Deixa o <dialog> nativo (command/commandfor) em paz.
+        if (t.hasAttribute('command')) return;
+        e.preventDefault();
+        var id = t.dataset.screen;
+        if (location.hash === '#' + id) { show(id, true); return; }
+        location.hash = id; // cria entrada de histórico; o hashchange conclui
+      });
+    });
+
+    window.addEventListener('hashchange', function () { show(idFromHash(), true); });
+
+    // Estado inicial: a 1ª view já vem visível no HTML (fallback sem JS).
+    // Aqui sincronizamos aria-current/título, e respeitamos um hash de deep link.
+    render(idFromHash());
+  })();
+</script>
+
+</body>
+</html>
