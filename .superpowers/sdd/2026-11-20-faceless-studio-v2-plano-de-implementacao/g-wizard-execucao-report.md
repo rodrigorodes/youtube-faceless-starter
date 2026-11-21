@@ -52,11 +52,16 @@ variáveis `STUDIO_TEST_DSN` **e** `STUDIO_BUDGET_DISPOSABLE_DSN` + `STUDIO_BUDG
   → **39 passed**; +1 em `tests/test_panel.py` (`month_cost`) → **40 novos**.
 - Focado (arch+contrato+painel+produção+novos): **196 passed, 1 skipped**; subconjunto dos arquivos
   novos: **123 passed, 1 skipped**.
-- **Suíte completa: 1759 passed, 35 skipped, 2 failed** em 195 s. As 2 falhas são
+- **Suíte completa** (docker, Postgres descartável): primeiro run **1759 passed, 35 skipped, 2 failed**;
+  runs seguintes variaram entre **2 e 5 falhas**. As 2 fixas são
   `tests/test_secrets_hygiene.py::test_real_starter_archive_is_safe_and_keeps_scripts_executable` e
   `::test_extracted_starter_runs_contract_snapshot_and_backup_import` — **ambientais**: o `.git` do
-  worktree é um *gitfile* apontando para fora do mount, e o `render_plan.py` está *untracked* na
-  mesma árvore. Não é regressão desta fatia (mesmo par em D2/G1).
+  worktree é um *gitfile* apontando para fora do mount e o `render_plan.py` está *untracked*. As
+  falhas variáveis aparecem em `tests/test_publish_api.py`/`tests/test_render_adapters.py`
+  (render/ffmpeg com threadpool sob carga; várias worktrees de outras fatias rodando na mesma
+  máquina). **Controle no commit-pai `b0f0711`** (sem a fatia G): **8 failed, 1714 passed** — os
+  mesmos arquivos flaky. Portanto não é regressão da G; as famílias flaky passam isoladas
+  (`test_publish_api.py` → 14 passed; o teste reprovado → 1 passed).
 - `tests/test_architecture.py` verde (módulo novo fica em `api/`; `domain/`/`application/` sem
   import de PIL/numpy/cv2/ffmpeg/SDK).
 
@@ -111,3 +116,20 @@ usando `render_sidebar(...)`.
   é a garantia automatizada. O JavaScript (criação do vídeo + ações do run) não é exercitado por
   teste de navegador — só o HTML/contrato.
 - A página de execução usa o custo do **vídeo** (ver item 5), por ausência de atribuição por run.
+
+---
+
+## Correção posterior (controlador, 2026-11-20)
+
+O diagnóstico acima atribui **as duas falhas fixas** a causas ambientais apenas (`gitfile` e
+`render_plan.py` untracked). Isso estava **incompleto**: no `main`, com `.git` real, a checagem de
+higiene reprovava **4 arquivos rastreados** — e três deles não eram da fatia G:
+
+- `renderer/app/studio/api/routes.py` — `refresh_token=body.refresh_token` (referência de código);
+- `renderer/app/studio/application/youtube_channels.py` — `REFRESH_TOKEN = "refresh_token"` (nome da chave);
+- `tests/test_channel_api.py` e `tests/test_channel_secrets.py` — valores sintéticos de teste.
+
+Todos **falsos positivos** da heurística, nenhum segredo real. Corrigidos em `7f248cd` sem enfraquecer
+o gate (`scripts/secret_hygiene.py scan` → exit 0; `test_secrets_hygiene.py` + `test_channel_secrets.py`
+→ 40 passed). A lição: em worktree com `.git` gitfile a checagem de higiene **aborta antes de avaliar**,
+então ela não serve de veredito ali — o veredito tem de vir do `main` com gitdir real.
