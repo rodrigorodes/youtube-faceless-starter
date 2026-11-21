@@ -64,3 +64,27 @@ As migrações já estão aplicadas, mas o **container do app roda uma imagem an
 novas: o painel em `http://localhost:8000/studio/panel` **ainda não tem** "Estilos" nem
 "Conexões". Para vê-las é preciso **reconstruir e reiniciar** o serviço `renderer` com o
 código atual do `main` — decisão do dono (a orientação anterior era manter o app no ar).
+
+## Executado em seguida (decisões 1 e 2 do dono)
+
+**1. `renderer` reconstruído e reiniciado com o `main` atual**
+
+- `docker compose build renderer` — a imagem só tinha 27 migrações; a nova tem **32**.
+- `docker compose up -d renderer` → container **Recreated**, `healthy` em 6s.
+
+| Verificação | Antes | Depois |
+| --- | --- | --- |
+| arquivos de migração na imagem | 27 | **32** |
+| `/studio/panel/estilos` | 404 (não existia) | **401** sem login · **200** logado |
+| `/studio/panel/conexoes` | 404 | **401** sem login · **200** logado |
+| `/health` | 200 | 200 |
+
+Prova de render (logado, sem imprimir credencial): a página de Estilos traz "Estilos" (6×),
+a de Conexões traz "Conex" (4×). Base segue limpa após o boot: `projetos=0 · vídeos=0 ·
+estilos=0 · canais=0 · contas=0 · migrações=32`.
+
+**2. `storage/` limpo**
+
+377 MB → **0 B** (231 arquivos: `jobs` 272 MB, `output` 63 MB, `render-cache` 24 MB).
+Preservados os rastreados (`storage/jobs/.gitkeep`, `storage/output/.gitkeep`) — `git status`
+limpo, nada versionado foi perdido.
