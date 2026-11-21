@@ -225,3 +225,45 @@ def test_unavailable_handler_never_succeeds():
     assert handler.available is False
     with pytest.raises(StageCapabilityUnavailable):
         handler.execute(context(ProductionStage.PUBLISH))
+
+
+# ---------- F8: estágio publish real ----------
+class _Publish:
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.calls = []
+
+    def execute(self, **kw):
+        self.calls.append(kw)
+        return self.outcome
+
+
+def _publish_outcome(result, detail=None, youtube=None, publication="f" * 32):
+    from app.studio.application.publication_execution import PublicationResult, PublicationRun
+    from app.studio.domain.contracts import Publication, PublicationStatus
+    return PublicationRun(result=result, publication=Publication(id=publication, video_id=VIDEO,
+                                                                 status=PublicationStatus.UPLOADED),
+                          youtube_video_id=youtube, detail=detail)
+
+
+def test_publish_handler_completes_only_with_a_confirmed_video_id():
+    from app.studio.application.publication_execution import PublicationResult
+    from app.studio.application.production import PublishHandler
+    publish = _Publish(_publish_outcome(PublicationResult.UPLOADED, youtube="oNQ2KN37sfQ"))
+    handler = PublishHandler(publish)
+    assert handler.available is True and handler.stage is ProductionStage.PUBLISH
+    outcome = handler.execute(context(ProductionStage.PUBLISH))
+    assert publish.calls == [{"video_id": VIDEO}]
+    assert outcome.checkpoint.payload["youtube_video_id"] == "oNQ2KN37sfQ"
+    assert outcome.checkpoint.payload["publication_id"] == "f" * 32
+
+
+@pytest.mark.parametrize("result,detail", [
+    ("IDLE", None), ("RETRY", "HTTP 503"), ("RECONCILE", "unknown"), ("BLOCKED", "QA"), ("DEAD_LETTER", "quota")])
+def test_publish_handler_never_turns_an_incomplete_publication_into_success(result, detail):
+    from app.studio.application.publication_execution import PublicationResult
+    from app.studio.application.production import PublishHandler
+    handler = PublishHandler(_Publish(_publish_outcome(PublicationResult(result), detail=detail)))
+    with pytest.raises(StageExecutionFailed) as caught:
+        handler.execute(context(ProductionStage.PUBLISH))
+    assert result in str(caught.value) or (detail or "") in str(caught.value)

@@ -7,6 +7,7 @@ from pathlib import Path
 from ..domain.contracts import Approval, Publication, QaReport, Scene, Video, VideoStatus
 from ..domain.publish import (InvalidPublishData, build_description, default_description, default_title, valid_upload_uri, valid_youtube_id,
                               validate_metadata, validate_publish_at, youtube_insert_body)
+from ..domain.publication_policy import resolve_visibility
 from .editorial import StateConflict, VideoNotFound, _require_video
 from .ports import (ApprovalRepository, AssetRepository, PublicationRepository, RenderJobRepository, RenderStorage, ScriptRepository,
                     SnapshotRepository, ThumbnailMaker, VideoRepository)
@@ -37,7 +38,8 @@ class Approve:
         self.videos, self.scripts, self.approvals, self.clock = videos, scripts, approvals, clock
 
     def execute(self, video_id: str, *, title: str | None = None, description: str | None = None, tags: list[str] | None = None,
-                publish_at: datetime | None = None, override_reason: str | None = None, output_asset_id: str | None = None) -> tuple[Video, bool]:
+                publish_at: datetime | None = None, override_reason: str | None = None, output_asset_id: str | None = None,
+                visibility: str = "private", confirm_public: bool = False) -> tuple[Video, bool]:
         """Idempotente: vídeo já aprovado/publicado devolve (vídeo, False) sem nova decisão."""
         video = _require_video(self.videos, video_id)
         if video.status in (VideoStatus.APPROVED, VideoStatus.PUBLISHED):
@@ -60,8 +62,10 @@ class Approve:
             description if description is not None else (video.description or default_description(script.text if script else "")),
             tags if tags is not None else video.tags)
         when = validate_publish_at(publish_at, self.clock())
+        final_visibility = resolve_visibility(visibility, confirm_public)
         if not self.approvals.decide(video_id, video.status, "approved", title=final_title, description=final_desc, tags=final_tags,
-                                     publish_at=when, reason=reason, qa_override=override, output_asset_id=output_asset_id):
+                                     publish_at=when, reason=reason, qa_override=override, output_asset_id=output_asset_id,
+                                     visibility=final_visibility, public_confirmed=final_visibility == "public"):
             raise StateConflict("the video state or render changed, reload and try again")
         return _require_video(self.videos, video_id), True
 
@@ -275,3 +279,5 @@ class Publishing:
     get: GetPublication
     thumbnail: GetThumbnail
     preview: GetPreview
+    publish: object | None = None      # F8: executor nativo (RunPublication), sem acoplar o núcleo ao adaptador
+    reconcile: object | None = None    # F8: reconciliação de resultado ambíguo

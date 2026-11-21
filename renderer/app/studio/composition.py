@@ -31,7 +31,10 @@ from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
 from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
 from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
+from .adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
 from .adapters.secret_store import FileSecretStore
+from .adapters.token_env import EnvRefreshTokenProvider
+from .adapters.youtube_publisher import GoogleYouTubeUploader
 from .adapters.provider_probes import HttpReachableProbe, LocalProviderProbe
 from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
@@ -61,6 +64,11 @@ from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
+from .application.publication_execution import (FallbackTokenProvider, MissingTokenProvider, ReconcilePublication,
+                                                RunPublication)
+from .application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAccessToken, GetChannelStatus,
+                                        RefreshYouTubeChannel, RevokeConsent)
+from .domain.youtube_oauth import OAuthConfigurationError
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
@@ -142,6 +150,22 @@ def channel_guard_limits(videos, budgets):
     return limits_for
 
 
+def build_google_oauth(settings: "Settings",
+                       transport=None) -> GoogleOAuthClient | None:
+    """Monta o cliente OAuth a partir do client secret **no caminho original** (somente leitura).
+
+    App ausente/inválido não derruba a composição: devolve None e a API responde 503 com motivo.
+    """
+    if settings.google_client_secret_file is None:
+        return None
+    try:
+        return google_oauth_from_client_secret(settings.google_client_secret_file,
+                                               redirect_uri=settings.google_oauth_redirect_uri,
+                                               transport=transport)
+    except (OAuthConfigurationError, OSError):
+        return None
+
+
 def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
     """Implementações registradas e o que cada uma é capaz de fazer (F10-03).
 
@@ -209,6 +233,8 @@ class Settings:
     budget_guard: bool = False  # liga a reserva preventiva de orçamento nos caminhos pagos (STUDIO_BUDGET_GUARD=1)
     production_mode: ProductionMode = ProductionMode.INTERACTIVE  # modo do coordenador (STUDIO_PRODUCTION_MODE)
     secrets_root: Path | None = None  # cofre de segredos (F10-07); None = <storage_root>/secrets
+    google_client_secret_file: Path | None = None  # app OAuth web do Google (F8-05); lido no lugar, nunca copiado
+    google_oauth_redirect_uri: str = "http://localhost:8000/studio/oauth/callback"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -223,7 +249,9 @@ class Settings:
                    _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
                    Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")),
                    _production_mode(env.get("STUDIO_PRODUCTION_MODE")),
-                   Path(secrets_root) if secrets_root else None)
+                   Path(secrets_root) if secrets_root else None,
+                   Path(env["STUDIO_GOOGLE_CLIENT_SECRET_FILE"]) if env.get("STUDIO_GOOGLE_CLIENT_SECRET_FILE") else None,
+                   env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback")
 
 
 RETRY_SECONDS = 5.0
@@ -367,12 +395,28 @@ class Studio:
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
+        oauth_client = build_google_oauth(s)
+        if oauth_client is not None:
+            get_channel_status = GetChannelStatus(youtube_repo, secret_store)
+            begin_oauth = BeginConsent(oauth_client, secret_store, redirect_uri=s.google_oauth_redirect_uri)
+            complete_oauth = CompleteConsent(oauth_client, youtube_repo, secret_store, redirect_uri=s.google_oauth_redirect_uri)
+            refresh_channel = RefreshYouTubeChannel(EnsureAccessToken(oauth_client, youtube_repo, secret_store), get_channel_status)
+            revoke_channel = RevokeConsent(oauth_client, youtube_repo, secret_store)
+            tokens = FallbackTokenProvider(EnsureAccessToken(oauth_client, youtube_repo, secret_store),
+                                           EnvRefreshTokenProvider(oauth_client, s.token_env_path))
+        else:
+            begin_oauth = complete_oauth = refresh_channel = revoke_channel = None
+            tokens = MissingTokenProvider()
+        uploader = GoogleYouTubeUploader()
+        publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens)
+        reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
             approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),
             claim=ClaimPublication(repo, scripts, assets, jobs, snaps, pubs, files), set_uri=SetUploadUri(pubs), uploaded=MarkUploaded(pubs),
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
-            preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files))
+            preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files),
+            publish=publish, reconcile=reconcile)
         trend_repo = PostgresTrendRepository(connect)
         ingest_trends = IngestTrends(trend_repo, repo, s.trend_hosts)
         category_repo = PostgresCategoryRepository(connect)
@@ -395,7 +439,8 @@ class Studio:
         # O coordenador roda o render em linha (enqueue no-op); a fila de render HTTP continua a mesma.
         coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
-                                        run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals)
+                                        run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
+                                        publish=publish)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
         # pode dispensar a pausa intermediária; o teto é o soft do canal (fallback: settings).
         budget = _ChannelBudgetFloor(usage, repo, budget_repo, Decimal(str(s.max_cost_month))) if s.budget_guard else None
@@ -426,7 +471,9 @@ production=production, script_view=script_view,
                                   get_youtube_channel=GetYouTubeChannel(youtube_repo, secret_store),
                                   associate_youtube_channel=AssociateYouTubeChannel(youtube_repo, secret_store),
                                   disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
-                                  get_project_config=GetPublicProjectConfig(repo))
+                                  get_project_config=GetPublicProjectConfig(repo),
+                                  begin_youtube_oauth=begin_oauth, complete_youtube_oauth=complete_oauth,
+                                  refresh_youtube_channel=refresh_channel, revoke_youtube_channel=revoke_channel)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

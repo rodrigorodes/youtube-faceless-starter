@@ -99,3 +99,43 @@ def test_channel_budget_floor_uses_soft_limit_and_falls_back():
     assert projection.projected_usd == Decimal("4.0")
     default = floor.project(type("R", (), {"video_id": "c" * 32}), None)
     assert default.ceiling_usd == Decimal("15")  # sem budget de canal: teto das settings
+
+
+# -- F8-05: OAuth configurado pelo arquivo original, nunca copiado --
+
+
+def test_google_oauth_is_built_from_the_client_secret_file_without_copying_it(tmp_path):
+    import json
+
+    from app.studio.composition import build_google_oauth
+    secret = tmp_path / "client-secret-synthetic.json"
+    secret.write_text(json.dumps({"web": {
+        "client_id": "client-id.apps.googleusercontent.com",
+        "client_secret": "your_client_secret",
+        "redirect_uris": ["http://localhost:8000/studio/oauth/callback"]}}), encoding="utf-8")
+    settings = Settings(google_client_secret_file=secret, google_oauth_redirect_uri="http://localhost:8000/studio/oauth/callback")
+    client = build_google_oauth(settings)
+    assert client is not None and "your_client_secret" not in repr(client)
+    assert "your_client_secret" not in client.authorization_url(
+        "http://localhost:8000/studio/oauth/callback", ("https://www.googleapis.com/auth/youtube.upload",),
+        "state-abcdefghijklmnop", "challenge")
+
+
+def test_google_oauth_is_none_when_the_file_is_missing_or_the_redirect_is_not_registered(tmp_path):
+    import json
+
+    from app.studio.composition import build_google_oauth
+    assert build_google_oauth(Settings()) is None
+    assert build_google_oauth(Settings(google_client_secret_file=tmp_path / "missing.json")) is None
+    secret = tmp_path / "client-secret-synthetic.json"
+    secret.write_text(json.dumps({"web": {"client_id": "id", "client_secret": "your_client_secret", 
+                                          "redirect_uris": ["http://localhost:9000/other"]}}), encoding="utf-8")
+    assert build_google_oauth(Settings(google_client_secret_file=secret,
+                                       google_oauth_redirect_uri="http://localhost:8000/studio/oauth/callback")) is None
+
+
+def test_settings_read_the_oauth_file_path_from_env():
+    settings = Settings.from_env({"STUDIO_GOOGLE_CLIENT_SECRET_FILE": "/tmp/synthetic-oauth.json",
+                                  "STUDIO_GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:8000/cb"})
+    assert settings.google_client_secret_file == Path("/tmp/synthetic-oauth.json")
+    assert settings.google_oauth_redirect_uri == "http://localhost:8000/cb"

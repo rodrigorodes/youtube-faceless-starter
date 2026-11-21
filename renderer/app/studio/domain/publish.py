@@ -123,12 +123,18 @@ def valid_upload_uri(uri) -> bool:
     return len(ids) == 1 and _UPLOAD_ID.fullmatch(ids[0]) is not None
 
 
-def youtube_insert_body(title: str, description: str, tags: list[str], publish_at: datetime | None) -> dict:
-    """Corpo do `videos.insert`. Sempre `private` (com `publishAt` o YouTube publica sozinho); declara conteúdo sintético e não-infantil."""
+def youtube_insert_body(title: str, description: str, tags: list[str], publish_at: datetime | None,
+                        visibility: str = "private") -> dict:
+    """Corpo do `videos.insert`.
+
+    Privado por padrão. Com `publishAt` o YouTube agenda via `private` (e publica sozinho no horário);
+    sem agenda, a visibilidade confirmada vira `privacyStatus`. Declara conteúdo sintético e não-infantil.
+    """
+    from .publication_policy import body_privacy_status
     snippet = {"title": title, "description": description, "categoryId": "24", "defaultLanguage": "pt-BR", "defaultAudioLanguage": "pt-BR"}
     if tags:
         snippet["tags"] = tags
-    status = {"privacyStatus": "private", "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}
+    status = {"privacyStatus": body_privacy_status(visibility, publish_at), "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}
     if publish_at is not None:
         status["publishAt"] = publish_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     return {"snippet": snippet, "status": status}

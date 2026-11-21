@@ -10,12 +10,20 @@ from datetime import datetime, timezone
 
 from ..domain.ids import check_id
 from ..domain.youtube_channel import YouTubeChannel, YouTubeChannelInvalid
+from ..domain.youtube_oauth import derive_channel_status
 from .errors import ServiceUnavailable
 from .ports import SecretStore, YouTubeChannelRepository
 
 ACCESS_TOKEN = "access_token"
 REFRESH_TOKEN = "refresh_token"
-_KEYS = (ACCESS_TOKEN, REFRESH_TOKEN)
+TOKEN_EXPIRES_AT = "token_expires_at"
+OAUTH_SCOPES = "oauth_scopes"
+OAUTH_STATE = "oauth_state"
+OAUTH_CODE_VERIFIER = "oauth_code_verifier"
+OAUTH_STATE_EXPIRES_AT = "oauth_state_expires_at"
+OAUTH_REVOKED = "oauth_revoked"
+_KEYS = (ACCESS_TOKEN, REFRESH_TOKEN, TOKEN_EXPIRES_AT, OAUTH_SCOPES, OAUTH_STATE,
+         OAUTH_CODE_VERIFIER, OAUTH_STATE_EXPIRES_AT, OAUTH_REVOKED)
 
 
 def youtube_scope(project_id: str) -> str:
@@ -78,8 +86,28 @@ class GetYouTubeChannel:
             return {"project_id": p_id, "channel_id": None, "title": "", "scopes": [],
                     "oauth_status": "DISCONNECTED", "connected": False,
                     "token_expires_at": None, "updated_at": None}
-        return channel.public(has_credentials=_has_credentials(self.secrets, youtube_scope(p_id)),
-                              now=self.now())
+        scope = youtube_scope(p_id)
+        names = set(_safe(lambda: self.secrets.names(scope)))
+        expiry = _parse_iso(_safe(lambda: self.secrets.get(scope, TOKEN_EXPIRES_AT))) or channel.token_expires_at
+        revoked = _safe(lambda: self.secrets.get(scope, OAUTH_REVOKED)) == "1"
+        status = derive_channel_status(has_credentials=bool(names & {ACCESS_TOKEN, REFRESH_TOKEN}),
+                                       revoked=revoked, expires_at=expiry, now=self.now(),
+                                       stored=channel.oauth_status.value)
+        return {"project_id": p_id, "channel_id": channel.channel_id, "title": channel.title,
+                "scopes": list(channel.scopes), "oauth_status": status,
+                "connected": status == "CONNECTED",
+                "token_expires_at": expiry.isoformat() if expiry else None,
+                "updated_at": channel.updated_at.isoformat() if channel.updated_at else None}
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
 
 
 class DisconnectYouTubeChannel:

@@ -29,12 +29,17 @@ from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
 from ..application.media import AssetRefused
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
+from ..application.publication_execution import PublicationResult
+from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid
 from ..application.render import RenderRefused
 from ..domain.production_run import (InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
                                      ProductionIdempotencyConflict, ProductionRunLockTimeout,
                                      ProductionRunReferencedEntityNotFound, ProductionStage, RunState,
                                      RunTransitionResult)
 from ..domain.publish import InvalidPublishData, srt_to_vtt
+from ..domain.publication_policy import PublicationPolicyError, PublicConfirmationRequired
+from ..domain.youtube_oauth import (OAuthConfigurationError, OAuthError, OAuthReconnectRequired,
+                                    OAuthTransientError)
 from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
@@ -229,6 +234,8 @@ class ApproveIn(BaseModel):
     publish_at: datetime | None = None
     override_reason: str | None = Field(default=None, max_length=500)
     output_asset_id: str | None = None
+    visibility: str = Field(default="private", max_length=16)  # F8-06: público exige confirmação extra
+    confirm_publication: bool = False
 
 
 class RejectIn(BaseModel):
@@ -271,6 +278,30 @@ class FailedIn(BaseModel):
     attempt: int = Field(ge=1)
     error: str = Field(max_length=2000)
     retryable: bool
+
+
+class PublishIn(BaseModel):
+    lease_seconds: int = Field(default=1800, ge=20, le=7200)
+    max_attempts: int | None = Field(default=None, ge=1, le=20)
+
+
+class PublicationRunOut(BaseModel):
+    result: str
+    publication: Publication | None = None
+    youtube_video_id: str | None = None
+    detail: str | None = None
+
+
+class OAuthAuthorizeOut(BaseModel):
+    project_id: str
+    authorization_url: str
+    state: str
+    expires_at: datetime
+
+
+class OAuthCallbackIn(BaseModel):
+    code: str = Field(min_length=1, max_length=4000)
+    state: str = Field(min_length=1, max_length=256)
 
 
 class TransitionIn(BaseModel):
@@ -595,6 +626,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(502, f"model output rejected: {exc}") from exc
         except InvalidPublishData as exc:
             raise HTTPException(422, str(exc)) from exc
+        except (PublicConfirmationRequired, PublicationPolicyError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ConsentStateInvalid as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ChannelNotConnected as exc:
+            raise HTTPException(409, f"YouTube channel reconnect required: {exc}") from exc
+        except OAuthReconnectRequired as exc:
+            raise HTTPException(409, f"YouTube channel reconnect required: {exc}") from exc
+        except OAuthTransientError as exc:
+            raise HTTPException(502, f"YouTube OAuth is temporarily unavailable: {exc}") from exc
+        except OAuthConfigurationError as exc:
+            raise HTTPException(503, f"YouTube OAuth is not configured: {exc}") from exc
+        except OAuthError as exc:
+            raise HTTPException(502, f"YouTube OAuth failed: {exc}") from exc
         except PublicationNotFound as exc:
             raise HTTPException(404, "publication not found") from exc
         except PublicationConflict as exc:
@@ -964,7 +1009,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         body = body or ApproveIn()
         video, changed = run(lambda uc: publishing(uc).approve.execute(
             check_id(video_id), title=body.title, description=body.description, tags=body.tags, publish_at=body.publish_at,
-            override_reason=body.override_reason, output_asset_id=check_id(body.output_asset_id) if body.output_asset_id else None))
+            override_reason=body.override_reason, output_asset_id=check_id(body.output_asset_id) if body.output_asset_id else None,
+            visibility=body.visibility, confirm_public=body.confirm_publication))
         return DecisionOut(video=video, changed=changed)
 
     @router.post("/videos/{video_id}/reject", response_model=DecisionOut)
@@ -1014,6 +1060,35 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/publications/{publication_id}/thumbnail-set", response_model=Publication, response_model_exclude={"upload_uri"})
     def thumbnail_set(publication_id: str):
         return run(lambda uc: publishing(uc).thumbnail_set.execute(check_id(publication_id)))
+
+    @router.post("/videos/{video_id}/publication/publish", response_model=PublicationRunOut,
+                 response_model_exclude={"publication": {"upload_uri"}})
+    def publish_publication(video_id: str, body: PublishIn | None = None):
+        """Executa um passo do caminho nativo de publicação (F8) para ESTE vídeo."""
+        body = body or PublishIn()
+
+        def go(uc):
+            executor = publishing(uc).publish
+            if executor is None:
+                raise HTTPException(503, "publication executor unavailable")
+            outcome = executor.execute(body.lease_seconds, body.max_attempts, video_id=check_id(video_id))
+            return PublicationRunOut(result=outcome.result.value, publication=outcome.publication,
+                                     youtube_video_id=outcome.youtube_video_id, detail=outcome.detail)
+        return run(go)
+
+    @router.post("/publications/{publication_id}/reconcile", response_model=PublicationRunOut,
+                 response_model_exclude={"publication": {"upload_uri"}})
+    def reconcile_publication(publication_id: str):
+        """Reconcilia um resultado externo desconhecido; nunca presume sucesso."""
+        uuid = check_id(publication_id)
+        def go(uc):
+            service = publishing(uc).reconcile
+            if service is None:
+                raise HTTPException(503, "publication reconciliation unavailable")
+            outcome = service.execute(uuid)
+            return PublicationRunOut(result=outcome.result.value, publication=outcome.publication,
+                                     youtube_video_id=outcome.youtube_video_id, detail=outcome.detail)
+        return run(go)
 
     # -- produção (D2): iniciar, acompanhar e agir por estado -------------------
 
@@ -1281,6 +1356,28 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def delete_youtube_channel(project_id: str):
         return run(lambda uc: {"deleted": _need(
             uc, "disconnect_youtube_channel", "youtube services unavailable").execute(check_id(project_id))})
+
+    # -- OAuth real: consentimento, callback, refresh e revogação (F8-05) -----
+
+    @router.post("/projects/{project_id}/youtube-oauth/authorize", response_model=OAuthAuthorizeOut)
+    def begin_youtube_oauth(project_id: str):
+        return run(lambda uc: _need(uc, "begin_youtube_oauth", "youtube OAuth is not configured").execute(
+            check_id(project_id)))
+
+    @router.post("/projects/{project_id}/youtube-oauth/callback", response_model=YouTubeChannelOut)
+    def complete_youtube_oauth(project_id: str, body: OAuthCallbackIn):
+        return run(lambda uc: _need(uc, "complete_youtube_oauth", "youtube OAuth is not configured").execute(
+            check_id(project_id), body.code, body.state))
+
+    @router.post("/projects/{project_id}/youtube-oauth/refresh", response_model=YouTubeChannelOut)
+    def refresh_youtube_oauth(project_id: str):
+        return run(lambda uc: _need(uc, "refresh_youtube_channel", "youtube OAuth is not configured").execute(
+            check_id(project_id)))
+
+    @router.post("/projects/{project_id}/youtube-oauth/revoke", response_model=YouTubeChannelOut)
+    def revoke_youtube_oauth(project_id: str):
+        return run(lambda uc: _need(uc, "revoke_youtube_channel", "youtube OAuth is not configured").execute(
+            check_id(project_id)))
 
     # -- configuração pública do projeto (F10-07) ----------------------------
 

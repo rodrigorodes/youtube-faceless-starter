@@ -18,6 +18,7 @@ from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig
 from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
+from .youtube_oauth import (BeginConsent, CompleteConsent, RefreshYouTubeChannel, RevokeConsent)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
@@ -97,6 +98,11 @@ class UseCases:
     associate_youtube_channel: AssociateYouTubeChannel | None = None
     disconnect_youtube_channel: DisconnectYouTubeChannel | None = None
     get_project_config: GetPublicProjectConfig | None = None
+    # F8-05: OAuth real atrás de porta (consentimento/refresh/revogação)
+    begin_youtube_oauth: BeginConsent | None = None
+    complete_youtube_oauth: CompleteConsent | None = None
+    refresh_youtube_channel: RefreshYouTubeChannel | None = None
+    revoke_youtube_channel: RevokeConsent | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -122,10 +128,15 @@ class UseCases:
                   get_youtube_channel: GetYouTubeChannel | None = None,
                   associate_youtube_channel: AssociateYouTubeChannel | None = None,
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
-                  get_project_config: GetPublicProjectConfig | None = None) -> "UseCases":
+                  get_project_config: GetPublicProjectConfig | None = None,
+                  begin_youtube_oauth: BeginConsent | None = None,
+                  complete_youtube_oauth: CompleteConsent | None = None,
+                  refresh_youtube_channel: RefreshYouTubeChannel | None = None,
+                  revoke_youtube_channel: RevokeConsent | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
-                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config)
+                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
+                   begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel)

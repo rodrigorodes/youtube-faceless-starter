@@ -59,7 +59,7 @@ def _projection(state=RunState.CREATED, video=VIDEO, next_action="run", next_sta
         stages=tuple(stages or [_stage("script", "PENDING"), _stage("factcheck", "PENDING")]),
         next_stage=next_stage, next_action=next_action, mode=ProductionMode.INTERACTIVE,
         available_stages=(ProductionStage.SCRIPT, ProductionStage.APPROVAL),
-        unavailable_stages=((ProductionStage.RESEARCH, "sem research"), (ProductionStage.PUBLISH, "sem publish")))
+        unavailable_stages=((ProductionStage.RESEARCH, "sem research"),))
 
 
 class _Coordinator:
@@ -178,7 +178,7 @@ def test_get_returns_projection_next_action_and_events_without_secrets():
     assert response.status_code == 200
     body = response.json()
     assert body["next_action"] == "run" and body["next_stage"] == "script"
-    assert {item["stage"] for item in body["unavailable_stages"]} == {"research", "publish"}
+    assert {item["stage"] for item in body["unavailable_stages"]} == {"research"}
     assert body["events"][0]["event_type"] == "production.stage.claimed"
     assert "token" not in str(body).lower().replace("fencing_token", "")
 

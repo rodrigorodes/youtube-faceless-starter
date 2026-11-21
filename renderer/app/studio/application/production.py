@@ -56,6 +56,7 @@ from ..domain.qa_report import (
 )
 from .editorial import Editorial
 from .media import Media
+from .publication_execution import PublicationResult, RunPublication
 from .ports import (
     ApprovalRepository,
     AssetRepository,
@@ -407,12 +408,38 @@ def _require_video(videos: VideoRepository, video_id: str) -> Video:
 
 
 RESEARCH_REASON = "research automático não existe (F3 pendente); adicione fontes ao vídeo antes de produzir"
-PUBLISH_REASON = "publicação (F8) não é executada pelo coordenador; nunca auto-aprova e exige o fluxo de publicação"
+PUBLISH_REASON = "publication executor is not configured (F8); nothing is uploaded and success is never simulated"
+
+
+class PublishHandler(_AvailableHandler):
+    """Estágio `publish` real (F8): executa o caminho nativo e nunca finge sucesso.
+
+    O executor já reivindica a publicação do vídeo deste run, aplica o gate de QA/render e decide
+    retry/DLQ/reconciliação. Aqui só traduzimos o desfecho para o coordenador: só `UPLOADED`
+    conclui a etapa; o resto falha com o motivo real (sem autoaprovação e sem retry cego).
+    """
+
+    stage = ProductionStage.PUBLISH
+
+    def __init__(self, publish: RunPublication):
+        self.publish = publish
+
+    def execute(self, context: StageContext) -> StageOutcome:
+        outcome = self.publish.execute(video_id=context.run.video_id)
+        if outcome.result is PublicationResult.UPLOADED:
+            return StageOutcome(checkpoint=Checkpoint(
+                {"stage": self.stage.value, "youtube_video_id": outcome.youtube_video_id,
+                 "publication_id": outcome.publication.id if outcome.publication else None},
+                context.checkpoint_version))
+        if outcome.result is PublicationResult.IDLE:
+            raise StageExecutionFailed("no approved publication is pending for this video")
+        raise StageExecutionFailed(f"publication did not complete ({outcome.result.value}): {outcome.detail or 'no detail'}")
 
 
 def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: StartRender, run_render: RunRender,
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
-                         approvals: ApprovalRepository, clock: Callable[[], datetime] = _utc_now
+                         approvals: ApprovalRepository, publish: RunPublication | None = None,
+                         clock: Callable[[], datetime] = _utc_now
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     handlers: dict[ProductionStage, StageHandler] = {
@@ -425,12 +452,13 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
         ProductionStage.APPROVAL: ApprovalHandler(videos, approvals, RenderQaGate(videos, jobs, assets, clock)),
     }
     handlers[ProductionStage.RESEARCH] = UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON)
-    handlers[ProductionStage.PUBLISH] = UnavailableStageHandler(ProductionStage.PUBLISH, PUBLISH_REASON)
+    handlers[ProductionStage.PUBLISH] = (PublishHandler(publish) if publish is not None
+                                         else UnavailableStageHandler(ProductionStage.PUBLISH, PUBLISH_REASON))
     return handlers
 
 
-# Pipeline do coordenador: começa no roteiro (a pesquisa é pré-condição, não etapa automática) e
-# termina na aprovação (a publicação é fatia F, fora do coordenador).
+# Pipeline do coordenador: começa no roteiro (a pesquisa é pré-condição, não etapa automática).
+# F8: a publicação passa a ser a última etapa executável — somente depois da aprovação humana/QA.
 COORDINATOR_DAG = StageDag({
     ProductionStage.SCRIPT: (),
     ProductionStage.FACTCHECK: (ProductionStage.SCRIPT,),
@@ -439,6 +467,7 @@ COORDINATOR_DAG = StageDag({
     ProductionStage.RENDER: (ProductionStage.ASSETS,),
     ProductionStage.QA: (ProductionStage.RENDER,),
     ProductionStage.APPROVAL: (ProductionStage.QA,),
+    ProductionStage.PUBLISH: (ProductionStage.APPROVAL,),
 })
 
 
