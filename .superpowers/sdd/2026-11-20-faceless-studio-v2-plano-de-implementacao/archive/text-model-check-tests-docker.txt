@@ -1,0 +1,4 @@
+# docker run --rm --memory=1g -v $PWD:/work -w /work yfs-test:latest python3 -m pytest <focados> -q
+........................................................................ [ 71%]
+..................s.s........                                            [100%]
+99 passed, 2 skipped in 4.44s

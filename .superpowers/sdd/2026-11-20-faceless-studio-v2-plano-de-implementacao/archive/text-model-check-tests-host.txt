@@ -1,0 +1,44 @@
+# $ python3 -m pytest tests/test_text_adapters.py tests/test_alerts_p06.py -q
+/Users/rodrigomendes/.pyenv/versions/3.11.9/lib/python3.11/site-packages/pytest_asyncio/plugin.py:211: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...............F......                                                   [100%]
+=================================== FAILURES ===================================
+______________ test_each_studio_wires_its_own_bridge_observations ______________
+
+    def test_each_studio_wires_its_own_bridge_observations():
+>       from app.studio.composition import Settings, Studio
+
+tests/test_alerts_p06.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+renderer/app/studio/composition.py:49: in <module>
+    from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
+renderer/app/studio/adapters/render_plan_ffmpeg.py:38: in <module>
+    from ... import rich
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Modo "rich": áudio (narração Piper, trilha sintetizada e faixa de narração) e utilidades de texto.
+    
+    O alinhamento áudio↔vídeo e os parâmetros determinísticos da trilha **não** são recriados
+    aqui: vêm do domínio puro (``studio.domain.render`` para ``FPS``/``LEAD``/``TAIL``/
+    ``scene_length`` e ``studio.domain.render_plan_builder`` para ``DEFAULT_MUSIC_PARAMS``). A
+    direção adapter→domínio é a correta e é o que impede que os dois lados divirjam em
+    silêncio. Funções bloqueantes: chame com asyncio.to_thread.
+    
+    O vídeo (Ken Burns), a legenda queimada e a montagem final saíram daqui com o renderer
+    legado: agora são produzidos pelo executor do Render Plan
+    (``studio/adapters/render_plan_ffmpeg.py``), que consome deste módulo o áudio (narração e
+    trilha) e as fontes/``_wrap`` para compor os overlays de texto.
+    """
+    import os
+    import wave
+    from contextlib import contextmanager
+    
+>   import numpy as np
+E   ModuleNotFoundError: No module named 'numpy'
+
+renderer/app/rich.py:18: ModuleNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_alerts_p06.py::test_each_studio_wires_its_own_bridge_observations
+1 failed, 21 passed in 0.56s
