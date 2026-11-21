@@ -11,7 +11,8 @@ from typing import Protocol
 
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.render import Cue
-from ..domain.render_plan import AssetReference
+from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
+from ..domain.render_plan import AssetReference, RenderPlan
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
@@ -248,6 +249,29 @@ class RenderStorage(Protocol):
     def prune(self, project_id: str, video_id: str, keep: str) -> None:
         """Apaga os finais de renders anteriores, mantendo só `keep`."""
     def cleanup(self, work_dir: Path) -> None: ...
+
+
+class RenderPlanRepository(Protocol):
+    """Persistência versionada do Render Plan e do índice de cache (RP-027/RP-029).
+
+    Guarda o plano por revisão (identidade lógica) e, à parte, o artefato físico produzido por
+    nó (hash + localização) — as duas identidades não se confundem.
+    """
+
+    def save_plan(self, plan: RenderPlan) -> None:
+        """Grava o documento do plano na sua revisão (idempotente por `(plan_id, revision)`) e
+        registra os artefatos físicos referenciados no manifesto."""
+    def get_plan(self, plan_id: str, revision: int) -> RenderPlan | None: ...
+    def latest_plan(self, plan_id: str) -> RenderPlan | None:
+        """Revisão mais recente do plano lógico, ou None se ainda não há nenhuma."""
+    def revisions(self, plan_id: str) -> list[int]:
+        """Revisões persistidas, em ordem crescente."""
+    def record_entry(self, entry: CacheEntry) -> None:
+        """Registra (ou atualiza) o artefato físico produzido por um nó numa revisão."""
+    def entries(self, plan_id: str) -> dict[NodeId, CacheEntry]:
+        """Último artefato conhecido por nó lógico (para decidir acerto de cache)."""
+    def artifact(self, content_sha256: str, location: str) -> PlanArtifact | None:
+        """Registro físico por hash/codec/localização, sem depender da revisão do plano."""
 
 
 class ApprovalRepository(Protocol):
