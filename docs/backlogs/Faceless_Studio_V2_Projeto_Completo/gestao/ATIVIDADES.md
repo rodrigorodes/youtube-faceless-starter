@@ -23,11 +23,12 @@ Sem push/merge remoto (bloqueado pelo harness).
 | YT-01 | Identidade de publicação: schema `0035` + domínio (conta → grants → canais) | 56 testes focados | `2d7a471` |
 | VS-02b | Override de estilo por vídeo (`videos.style_id`, `set_video_style`, recusa estilo inexistente) | 47 testes focados | `d57a272` |
 | VS-03 | O estilo **aplica**: plano grava o snapshot do `VisualStyle` + `motion`/`music` do estilo | 133 testes | merge `475ae63` |
-| YT-01b | Repositórios da identidade YouTube (conta/grants/canais/vínculos) + 4 portas | 41 testes | merge `2 merge` |
+| YT-01b | Repositórios da identidade YouTube (conta/grants/canais/vínculos) + 4 portas | 41 testes | merge `473492c` |
+| UX-00 | Desenho de UX das configurações (IA, telas, estados vazios, referências) | doc | `docs/superpowers/specs/2026-11-21-backoffice-settings-ux-design.md` |
 
 ## Em execução (paralelo)
 
-**Nada em execução agora.** As duas fatias paralelas (VS-03, YT-01b) foram mescladas e verificadas. Próxima onda a disparar: VS-04 + YT-02.
+**Onda 2 (em execução):** VS-04 (caption/palette/voice do estilo) e YT-02 (canal referencia o destino do YouTube). Cada uma com Postgres dedicado (`integ-pg-a`/`integ-pg-b`).
 
 ## Na fila
 
