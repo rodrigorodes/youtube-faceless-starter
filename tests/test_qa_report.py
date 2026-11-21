@@ -30,6 +30,8 @@ from app.studio.domain.qa_report import (
     ReportForOtherRender,
     approve,
     assert_publishable,
+    blocking_evidence,
+    publishable_payload,
 )
 
 AT = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
@@ -637,6 +639,27 @@ def test_unknown_schema_version_is_rejected():
         QaReport.model_validate({**report().model_dump(mode="json"), "schema_version": SCHEMA_VERSION + 1})
     with pytest.raises(ValueError):
         load_versioned(QaReport, {**report().model_dump(mode="json"), "schema_version": 99})
+
+
+# --- leitura do relatório persistido (adoção RP-07b) -------------------------
+
+
+def test_publishable_payload_reads_the_persisted_shape_and_legacy_rows():
+    assert publishable_payload(report().model_dump(mode="json")) is True
+    blocked = report(findings=(finding(finding_id="f-audio", check_id="audio", severity="blocking", evidence="sem áudio"),))
+    assert publishable_payload(blocked.model_dump(mode="json")) is False
+    # compatibilidade com linhas gravadas ANTES da adoção (shape legado): não inventa identidade
+    assert publishable_payload({"schema_version": 1, "passed": True, "failures": [], "metrics": {}}) is True
+    assert publishable_payload({"schema_version": 1, "passed": False, "failures": ["x"]}) is False
+    assert publishable_payload(None) is False and publishable_payload({}) is False
+
+
+def test_blocking_evidence_translates_the_findings_for_display():
+    blocked = report(findings=(
+        finding(finding_id="f-audio", check_id="audio", severity="blocking", evidence="sem áudio"),
+        finding(finding_id="f-codec", check_id="codec", severity="warning", evidence="ffprobe: 4:2:0"),
+    ))
+    assert blocking_evidence(blocked) == ("sem áudio",)
 
 
 # --- arquitetura -------------------------------------------------------------

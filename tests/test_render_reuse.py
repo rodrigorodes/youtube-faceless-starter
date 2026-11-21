@@ -14,6 +14,7 @@ import math
 import struct
 import sys
 import wave
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image
@@ -25,6 +26,7 @@ from app.studio.application.render import RunRender, StartRender  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
     Asset, AssetKind, JobStatus, RenderJob, Scene, Video, VideoFormat, VideoStatus,
 )
+from app.studio.domain.qa_report import QaCoverage, QaReport  # noqa: E402
 from app.studio.domain.render import SIZE, make_cues, scene_length  # noqa: E402
 from app.studio.domain.render_cache import NodeId  # noqa: E402
 
@@ -161,7 +163,7 @@ class Jobs:
     def complete(self, job_id, asset, qa):
         self.qa = qa
         self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.SUCCEEDED, "output_asset_id": asset.id})
-        self.videos.status = S.AWAITING_APPROVAL if qa.passed else S.RENDERED
+        self.videos.status = S.AWAITING_APPROVAL if qa.is_publishable else S.RENDERED
         return True
 
 
@@ -204,13 +206,20 @@ class Voice:
         return self.seconds
 
 
-class Analyzer:
-    def __init__(self, seconds, scenes):
-        self.duration = scenes * scene_length(seconds)
+class Quality:
+    """Porta de QA falsa: devolve o relatório novo e publicável; mede a identidade entregue.
 
-    def analyze(self, path, narration=None):
-        return dict(duration_s=self.duration, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0,
-                    silence_ratio=0.2, black_ratio=0.0, narration_lufs=-18.0, narration_silence_ratio=0.1)
+    A execução real do QA (ffprobe/ebur128) é provada em ``test_render_quality_e2e``; aqui
+    o alvo é o reúso do executor, então o QA só precisa devolver a verdade persistível.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    def evaluate(self, plan, *, media_path, narration_path=None, descriptors=(), render_id, checksum):
+        self.calls.append({"render_id": render_id, "checksum": checksum, "media": media_path})
+        return QaReport(render_id=render_id, checksum=checksum, generated_at=datetime.now(timezone.utc),
+                        coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",))
 
 
 def world(tmp, texts=None):
@@ -232,7 +241,7 @@ def starter(w):
 def use_case(w, renderer, plans=None):
     return RunRender(w["videos"], w["scripts"], w["assets"], w["jobs"], w["files"],
                      voice_for=lambda project_id: w["voice"], renderer_for=lambda project_id: renderer,
-                     analyzer=Analyzer(w["voice"].seconds, len(w["scripts"].texts)), plans=plans)
+                     quality=Quality(), plans=plans)
 
 
 class SpecSpy:

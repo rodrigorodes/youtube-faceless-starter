@@ -70,6 +70,11 @@ class NoSound:
                         "-pix_fmt", "yuv420p", str(out_path)], check=True)
         return Path(out_path)
 
+    def qa_inputs(self, spec):
+        # O QA real mede o plano e resolve os assets: usa a mesma construção do renderer de plano.
+        from app.studio.adapters.render_plan_ffmpeg import PlanFfmpegRenderer
+        return PlanFfmpegRenderer().qa_inputs(spec)
+
 
 register("voice", "tone", ToneVoice)
 register("renderer", "nosound", NoSound)
@@ -170,14 +175,25 @@ def test_new_render_recovers_after_step_bookkeeping_outage(migrated, dsn, tmp_pa
         studio.shutdown()
 
 
+def qa_ok(qa):
+    """O relatório novo (F6) aprovado: cobertura verificada e nenhum achado."""
+    return qa is not None and qa["coverage"]["status"] == "verified" and qa.get("findings") == []
+
+
+def blocking_findings(qa):
+    return [f for f in qa.get("findings", []) if f.get("severity") == "blocking"]
+
+
 def test_full_render_short_produces_playable_files_and_moves_to_awaiting_approval(migrated, dsn, tmp_path):
     client, _ = make_client(dsn, tmp_path)
     vid = ready_video(client)
     r = client.post(f"/studio/videos/{vid}/render")
     assert r.status_code == 202 and r.json()["status"] in ("QUEUED", "RUNNING", "SUCCEEDED")
     got = client.get(f"/studio/videos/{vid}/render").json()
-    assert got["job"]["status"] == "SUCCEEDED" and got["job"]["output_asset_id"] and got["qa_report"]["passed"] is True, got
-    assert got["qa_report"]["metrics"]["width"] == 1080 and got["qa_report"]["metrics"]["height"] == 1920
+    assert got["job"]["status"] == "SUCCEEDED" and got["job"]["output_asset_id"] and qa_ok(got["qa_report"]), got
+    # o relatório é o do render: identidade real e vínculo com o job que o produziu
+    assert got["qa_report"]["render_id"] == got["job"]["id"] and len(got["qa_report"]["checksum"]) == 64
+    assert got["qa_report"]["checks_run"], got["qa_report"]
     assert status(client, vid) == "AWAITING_APPROVAL"
     mp4 = client.get(f"/studio/videos/{vid}/file")
     assert mp4.status_code == 200 and mp4.headers["content-type"] == "video/mp4" and b"ftyp" in mp4.content[:64]
@@ -192,7 +208,9 @@ def test_long_format_renders_landscape(migrated, dsn, tmp_path):
     vid = ready_video(client, fmt="long")
     client.post(f"/studio/videos/{vid}/render")
     got = client.get(f"/studio/videos/{vid}/render").json()
-    assert got["qa_report"]["passed"] is True and (got["qa_report"]["metrics"]["width"], got["qa_report"]["metrics"]["height"]) == (1920, 1080), got
+    assert qa_ok(got["qa_report"]), got
+    resolution = [f for f in got["qa_report"]["findings"] if f["check_id"] == "render.resolution"]
+    assert resolution == [] and got["qa_report"]["checks_run"], got
 
 
 def test_guards_and_errors(migrated, dsn, tmp_path):
@@ -225,11 +243,12 @@ def test_video_without_audio_fails_qa_stays_rendered_and_can_be_rendered_again(m
     vid = ready_video(client)
     client.post(f"/studio/videos/{vid}/render")
     got = client.get(f"/studio/videos/{vid}/render").json()
-    assert got["job"]["status"] == "SUCCEEDED" and got["qa_report"]["passed"] is False and any("audio" in f for f in got["qa_report"]["failures"]), got
+    assert got["job"]["status"] == "SUCCEEDED" and got["qa_report"]["coverage"]["status"] == "verified", got
+    assert any("audio" in f["evidence"] for f in blocking_findings(got["qa_report"])), got
     assert status(client, vid) == "RENDERED" and client.get(f"/studio/videos/{vid}/file").status_code == 200
     again, _ = make_client(dsn, tmp_path)
     assert again.post(f"/studio/videos/{vid}/render").status_code == 202
-    assert again.get(f"/studio/videos/{vid}/render").json()["qa_report"]["passed"] is True and status(again, vid) == "AWAITING_APPROVAL"
+    assert qa_ok(again.get(f"/studio/videos/{vid}/render").json()["qa_report"]) and status(again, vid) == "AWAITING_APPROVAL"
 
 
 def test_video_over_the_duration_limit_is_refused_before_rendering(migrated, dsn, tmp_path):

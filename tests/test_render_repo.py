@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,20 @@ from app.studio.adapters.postgres.media_repo import PostgresAssetRepository  # n
 from app.studio.adapters.postgres.render_repo import PostgresRenderJobRepository  # noqa: E402
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.application.ports import SceneDraft  # noqa: E402
-from app.studio.domain.contracts import Asset, AssetKind, JobStatus, QaReport, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.contracts import Asset, AssetKind, JobStatus, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 
 S = VideoStatus
+AT = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+
+
+def qa_report(passed=True, failures=(), checksum="d" * 64):
+    """Relatório de QA versionado (F6) para os jobs dos testes de repositório."""
+    findings = tuple(QaFinding(finding_id=f"f{index}", check_id="render.media_metrics", category="technical",
+                               severity="blocking", evidence=failure, suggested_action="Revisar o render.")
+                     for index, failure in enumerate(failures))
+    return QaReport(render_id="9" * 32, checksum=checksum, generated_at=AT,
+                    coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics",), findings=findings)
 
 
 def video_asset(key="d" * 64):
@@ -66,7 +78,7 @@ def test_complete_with_passing_qa_moves_to_awaiting_approval_and_stores_the_repo
     job, _ = env["jobs"].enqueue(v, "h" * 64)
     env["jobs"].start(job.id)
     asset = env["assets"].add(video_asset())
-    qa = QaReport(passed=True, metrics={"duration_s": 12.0, "integrated_lufs": -16.0})
+    qa = qa_report(True)
     assert env["jobs"].complete(job.id, asset, qa) is True
     done = env["jobs"].get(job.id)
     assert done.status == JobStatus.SUCCEEDED and done.output_asset_id == asset.id and status(env) == "AWAITING_APPROVAL"
@@ -78,11 +90,11 @@ def test_complete_with_failing_qa_stays_rendered_and_can_render_again(env):
     job, _ = env["jobs"].enqueue(v, "h" * 64)
     env["jobs"].start(job.id)
     asset = env["assets"].add(video_asset())
-    bad = QaReport(passed=False, failures=["audio is silent"], metrics={"integrated_lufs": None})
+    bad = qa_report(False, ["audio is silent"])
     assert env["jobs"].complete(job.id, asset, bad) is True and status(env) == "RENDERED"
     job2, _ = env["jobs"].enqueue(v, "j" * 64)
     env["jobs"].start(job2.id)
-    assert env["jobs"].complete(job2.id, asset, QaReport(passed=True)) is True and status(env) == "AWAITING_APPROVAL"
+    assert env["jobs"].complete(job2.id, asset, qa_report(True)) is True and status(env) == "AWAITING_APPROVAL"
 
 
 def test_complete_refuses_when_state_or_job_changed(env):
@@ -92,12 +104,12 @@ def test_complete_refuses_when_state_or_job_changed(env):
     asset = env["assets"].add(video_asset())
     env["conn"].execute("UPDATE studio.videos SET status='FAILED' WHERE id=%s", (v,))
     env["conn"].commit()
-    assert env["jobs"].complete(job.id, asset, QaReport(passed=True)) is False
+    assert env["jobs"].complete(job.id, asset, qa_report(True)) is False
     assert env["jobs"].get(job.id).status == JobStatus.RUNNING and status(env) == "FAILED"
     env["conn"].execute("UPDATE studio.videos SET status='ASSETS_READY' WHERE id=%s", (v,))
     env["jobs"].fail(job.id, "cancelado")
     env["conn"].commit()
-    assert env["jobs"].complete(job.id, asset, QaReport(passed=True)) is False and status(env) == "ASSETS_READY"
+    assert env["jobs"].complete(job.id, asset, qa_report(True)) is False and status(env) == "ASSETS_READY"
 
 
 def test_video_kind_is_accepted_by_the_database(env):
@@ -125,13 +137,13 @@ def test_latest_output_is_the_asset_of_the_newest_succeeded_job(env):
     job, _ = env["jobs"].enqueue(v, "h" * 64)
     env["jobs"].start(job.id)
     first = env["assets"].add(video_asset("1" * 64))
-    env["jobs"].complete(job.id, first, QaReport(passed=False, failures=["x"]))
+    env["jobs"].complete(job.id, first, qa_report(False, ["x"]))
     assert env["jobs"].latest_output(v).id == first.id
     job2, _ = env["jobs"].enqueue(v, "i" * 64)
     env["jobs"].start(job2.id)
     assert env["jobs"].latest_output(v).id == first.id  # render em andamento não troca o arquivo servido
     second = env["assets"].add(video_asset("2" * 64).model_copy(update={"id": "8" * 32}))
-    env["jobs"].complete(job2.id, second, QaReport(passed=True))
+    env["jobs"].complete(job2.id, second, qa_report(True))
     assert env["jobs"].latest_output(v).id == second.id
 
 

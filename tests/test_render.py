@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -6,10 +7,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.application.editorial import StateConflict, VideoNotFound  # noqa: E402
+from app.studio.application.ports import RenderQaInputs  # noqa: E402
 from app.studio.application.render import GetRender, GetRenderFile, RenderRefused, RunRender, StartRender  # noqa: E402
 from app.studio.application.use_cases import ServiceUnavailable  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
-    Asset, AssetKind, JobStatus, QaReport, RenderJob, Scene, Video, VideoFormat, VideoStatus,
+    Asset, AssetKind, JobStatus, RenderJob, Scene, Video, VideoFormat, VideoStatus,
+)
+from app.studio.domain.qa_report import (  # noqa: E402
+    BlockingFindings, QaCoverage, QaFinding, QaReport, RenderVersion, approve, blocking_evidence,
 )
 from app.studio.domain.render import MAX_SECONDS, scene_length  # noqa: E402
 
@@ -96,7 +101,7 @@ class Jobs:
         self.qa = qa
         self.output = asset
         self.jobs[job_id] = self.jobs[job_id].model_copy(update={"status": JobStatus.SUCCEEDED, "output_asset_id": asset.id})
-        self.videos.status = S.AWAITING_APPROVAL if qa.passed else S.RENDERED
+        self.videos.status = S.AWAITING_APPROVAL if qa.is_publishable else S.RENDERED
         return True
 
 
@@ -154,16 +159,28 @@ class Renderer:
         Path(out_path).write_bytes(b"mp4")
         return Path(out_path)
 
+    def qa_inputs(self, spec):
+        # O porteiro de QA destes testes é o double `Quality`: o plano não é inspecionado aqui.
+        return RenderQaInputs(plan=object(), descriptors=())
 
-class Analyzer:
-    def __init__(self, **over):
-        self.over = over
 
-    def analyze(self, path, narration=None):
-        self.narration_seen = narration
-        base = dict(duration_s=None, width=1080, height=1920, has_audio=True, integrated_lufs=-16.0, silence_ratio=0.2, black_ratio=0.0,
-                    narration_lufs=-18.0, narration_silence_ratio=0.1)
-        return {**base, **self.over}
+class Quality:
+    """Porta de QA falsa: registra o que o loop entrega e devolve um relatório novo da F6.
+
+    Prova a fiação do loop (identidade do render, caminho da mídia e da narração) sem medir
+    mídia — a medição real é provada em ``test_render_quality_e2e``.
+    """
+
+    def __init__(self, failures=()):
+        self.failures, self.calls = list(failures), []
+
+    def evaluate(self, plan, *, media_path, narration_path=None, descriptors=(), render_id, checksum):
+        self.calls.append({"media": media_path, "narration": narration_path, "render_id": render_id, "checksum": checksum})
+        findings = tuple(QaFinding(finding_id=f"f{index}", check_id="render.audio_stream", category="technical",
+                                   severity="blocking", evidence=failure, suggested_action="Revisar o render.")
+                         for index, failure in enumerate(self.failures))
+        return QaReport(render_id=render_id, checksum=checksum, generated_at=datetime.now(timezone.utc),
+                        coverage=QaCoverage(status="verified"), checks_run=("render.media_metrics", "render.audio_stream"), findings=findings)
 
 
 def world(tmp, status=S.ASSETS_READY, **kw):
@@ -175,15 +192,11 @@ def starter(w):
     return StartRender(w["videos"], w["scripts"], w["assets"], w["jobs"], enqueue=w["enq"].append)
 
 
-def runner(w, voice=None, renderer=None, analyzer=None):
+def runner(w, voice=None, renderer=None, quality=None):
     voice, renderer = voice or Voice(), renderer or Renderer()
-    analyzer = analyzer or Analyzer(duration_s=expected(voice.seconds, len(TEXTS)))
+    quality = quality or Quality()
     return RunRender(w["videos"], w["scripts"], w["assets"], w["jobs"], w["files"], voice_for=lambda p: voice, renderer_for=lambda p: renderer,
-                     analyzer=analyzer), voice, renderer
-
-
-def expected(seconds, n):
-    return n * scene_length(seconds)
+                     quality=quality), voice, renderer
 
 
 # ---------- start ----------
@@ -241,19 +254,23 @@ def test_run_success_passes_everything_to_renderer_and_advances(tmp_path):
     assert spec.scene_seconds == [scene_length(2.0)] * 3 and len(spec.speech_wavs) == 3 and spec.format == VideoFormat.short and spec.music is True
     assert spec.cues and all(c.end > c.start for c in spec.cues) and spec.cues[0].start >= spec.scene_seconds[0] * 0 + 0.3 - 1e-9
     assert spec.disclosure == "Ilustração gerada por IA"
-    assert w["jobs"].jobs[job.id].status == JobStatus.SUCCEEDED and w["videos"].status == S.AWAITING_APPROVAL and w["jobs"].qa.passed
+    assert w["jobs"].jobs[job.id].status == JobStatus.SUCCEEDED and w["videos"].status == S.AWAITING_APPROVAL and w["jobs"].qa.is_publishable
     assert w["files"].published[0][0] == b"mp4" and "-->" in w["files"].published[0][1] and w["files"].cleaned
     assert w["assets"].added[0].kind == AssetKind.video and w["assets"].added[0].path.endswith(f"final-{job.id}.mp4")
     assert w["files"].pruned and w["files"].pruned[-1] == w["assets"].added[0].path  # só o arquivo atual sobrevive
+    # a identidade que o QA gravou é a mesma que a publicação reutiliza (job + checksum do asset)
+    assert w["jobs"].qa.render_id == job.id and w["jobs"].qa.checksum == w["assets"].added[0].cache_key
 
 
 def test_qa_failure_keeps_video_rendered_with_the_report(tmp_path):
     w = world(tmp_path)
     job = starter(w).execute(V)
-    run, *_ = runner(w, analyzer=Analyzer(duration_s=expected(2.0, 3), integrated_lufs=None))
+    quality = Quality(failures=["audio is silent (integrated loudness None LUFS)"])
+    run, *_ = runner(w, quality=quality)
     run.execute(job.id)
     assert w["jobs"].jobs[job.id].status == JobStatus.SUCCEEDED and w["videos"].status == S.RENDERED
-    assert not w["jobs"].qa.passed and any("silent" in f for f in w["jobs"].qa.failures)
+    assert not w["jobs"].qa.is_publishable and any("silent" in f for f in blocking_evidence(w["jobs"].qa))
+    assert quality.calls[0]["media"].name == "final.mp4"
 
 
 def test_too_long_video_fails_before_rendering(tmp_path):
@@ -319,11 +336,12 @@ def test_get_render_returns_latest_job_and_qa(tmp_path):
 def test_silent_narration_fails_qa_even_if_the_mix_has_music(tmp_path):
     w = world(tmp_path)
     job = starter(w).execute(V)
-    analyzer = Analyzer(duration_s=expected(2.0, 3), narration_lufs=None)
-    run, *_ = runner(w, analyzer=analyzer)
+    quality = Quality(failures=["narration is silent (loudness None LUFS)"])
+    run, *_ = runner(w, quality=quality)
     run.execute(job.id)
-    assert not w["jobs"].qa.passed and any("narration" in f for f in w["jobs"].qa.failures) and w["videos"].status == S.RENDERED
-    assert analyzer.narration_seen is not None and analyzer.narration_seen.name == "narration.wav"
+    assert not w["jobs"].qa.is_publishable and any("narration" in f for f in blocking_evidence(w["jobs"].qa)) and w["videos"].status == S.RENDERED
+    # o loop mede a narração **isolada** (a trilha musical enche a mistura final)
+    assert quality.calls[0]["narration"] is not None and quality.calls[0]["narration"].name == "narration.wav"
 
 
 def test_run_never_raises_even_when_recording_the_failure_fails(tmp_path):
@@ -333,6 +351,29 @@ def test_run_never_raises_even_when_recording_the_failure_fails(tmp_path):
     run, *_ = runner(w, renderer=Renderer(fail=True))
     run.execute(job.id)  # não pode levantar (a exceção iria para um Future que ninguém lê)
     assert w["files"].cleaned
+
+
+def test_the_loop_report_is_what_the_gate_blocks_or_approves(tmp_path):
+    """Mutação pela raiz: o relatório que o gate da F6 vê é o que o loop persistiu.
+
+    Um render bom aprova; um render com defeito (achado ``blocking`` do loop) é bloqueado —
+    sem segunda medição e sem regenerar o relatório no gate.
+    """
+    good = world(tmp_path)
+    good_job = starter(good).execute(V)
+    run, *_ = runner(good, quality=Quality())
+    run.execute(good_job.id)
+    version = RenderVersion(render_id=good["jobs"].qa.render_id, checksum=good["jobs"].qa.checksum)
+    assert approve(report=good["jobs"].qa, latest=version, requested=version).checksum == version.checksum
+
+    bad = world(tmp_path)
+    bad_job = starter(bad).execute(V)
+    broken = Quality(failures=["audio is silent (integrated loudness None LUFS)"])
+    run_bad, *_ = runner(bad, quality=broken)
+    run_bad.execute(bad_job.id)
+    version_bad = RenderVersion(render_id=bad["jobs"].qa.render_id, checksum=bad["jobs"].qa.checksum)
+    with pytest.raises(BlockingFindings):
+        approve(report=bad["jobs"].qa, latest=version_bad, requested=version_bad)
 
 
 def test_run_does_not_raise_when_the_repository_is_down_at_the_start(tmp_path):
