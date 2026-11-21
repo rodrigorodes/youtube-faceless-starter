@@ -119,12 +119,12 @@ docker run --rm --network h-net -v "$PWD":/w -w /w \
 # 112 passed
 ```
 
-Suíte completa (mesmo runner, banco descartável):
+Suíte completa (mesmo runner, banco descartável), no estado commitado:
 
-- Ordenação sem pressão de memória: **1799 passed, 35 skipped, 2 failed** — as 2 são
-  `tests/test_secrets_hygiene.py` (ambientais, ver abaixo).
-- Numa passada sob pressão de memória do host (vários containers de outras fatias ativos) os testes
-  de render do ffmpeg foram **SIGKILL (9)** e 7 deles falharam; re-rodados isolados deram
+- **1801 passed, 35 skipped, 2 failed** — as 2 são `tests/test_secrets_hygiene.py` (ambientais, ver
+  abaixo). Os 100+ testes de orçamento rodaram (as duas variáveis DSN estavam definidas).
+- Numa passada anterior sob pressão de memória do host (vários containers de outras fatias ativos) os
+  testes de render do ffmpeg foram **SIGKILL (9)** e 7 deles falharam; re-rodados isolados deram
   `45 passed` (`tests/test_render_adapters.py`, `tests/test_render_api.py`, `tests/test_publish_api.py`).
   São OOM do ambiente, não regressão desta fatia (não toquei em nada de render).
 
