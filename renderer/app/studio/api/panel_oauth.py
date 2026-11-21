@@ -55,7 +55,7 @@ def _page_shell(nonce: str, body: str) -> str:
               Conclusão do retorno do Google ao Studio.
             </p>
           </div>
-          <span class="screen-no dim">F10 · Canais</span>
+          <span class="screen-no dim">Configuração · Canais</span>
         </div>
       </div>
       {body}

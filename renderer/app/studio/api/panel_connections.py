@@ -552,7 +552,7 @@ def render_connections(board: dict, profiles: list[ChannelProfile]) -> tuple[str
               vincular — errar de canal custa segundos para evitar e horas para consertar.
             </p>
           </div>
-          <span class="screen-no dim">YT-04b · Conexões</span>
+          <span class="screen-no dim">Configuração · Conexões</span>
         </div>
         <div class="conn-actions conn-note">
           <button class="btn btn-primary" type="button" data-connect>Conectar conta Google</button>

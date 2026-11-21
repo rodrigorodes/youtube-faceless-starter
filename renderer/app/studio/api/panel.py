@@ -1815,6 +1815,9 @@ h1 {
 .icon-inline { width: 16px; height: 16px; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -3px; margin-right: 0.4rem; }
 .btn .icon-inline { margin-right: 0.45rem; }
 .block-head h1 { margin: 1.25rem 0 0.35rem; }
+/* Telas de Configuração: cabeçalho em cartão e conteúdo respirando entre blocos. */
+.main-content > .card + * { margin-top: 1.25rem; }
+.main-content > .card ~ .card { margin-top: 1.25rem; }
 """
 
 

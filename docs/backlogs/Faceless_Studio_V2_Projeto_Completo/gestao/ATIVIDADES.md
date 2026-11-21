@@ -462,3 +462,14 @@ Pendente (fatias próprias): **UX-02** Configurações como área (`/configuraco
 - Ambiente local: `fastapi` do pyenv alinhado a `renderer/requirements.txt` (0.115.12) — o antigo
   (0.104) quebrava o `TestClient`. 21 falhas pré-existentes (idênticas com/sem estas mudanças:
   snapshot de contratos por versão local do pydantic, render_reuse etc.).
+
+## UX-04 — Tendências e telas de Configuração no visual novo (2026-11-21)
+
+- Tendências: emojis (🔥 🇧🇷 🇺🇸 🔄 ⚙️) trocados por ícones SVG decorativos (`aria-hidden`) como no protótipo;
+  copy em "pilares" ("Gerenciar pilares (N)", "+ Novo pilar", "Buscar agora"); `<h1>` com respiro
+  abaixo da barra superior; o JS de coleta restaura o botão por `innerHTML` (preserva o ícone).
+- Canais/Conexões/Estilos/OAuth: removido jargão interno visível ao usuário ("F10 ·", "VS-05a ·",
+  "YT-04b ·") — agora "Configuração · <seção>"; espaçamento entre o cartão de cabeçalho e o conteúdo.
+- Conferido no Chrome headless (claro e escuro). Testes de banco (pulados aqui) alinhados à nova copy.
+- Não feito (exige dado real/decisão do dono): filtro de período em Tendências; Desempenho com dados
+  reais (hoje começa vazio, sem percentual inventado); YT-05 (teste ao vivo com a conta Google).

@@ -495,7 +495,7 @@ def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
               Ação primária: <b>manter estilos reutilizáveis</b>. O estilo é compartilhado — separado do canal, para não virar cópia à mão.
             </p>
           </div>
-          <span class="screen-no dim">VS-05a · Estilos</span>
+          <span class="screen-no dim">Configuração · Estilos</span>
         </div>
       </div>
       {body}

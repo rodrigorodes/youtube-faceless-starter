@@ -731,7 +731,7 @@ def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
               Ação primária: <b>configurar canal</b>. A configuração vive no Studio, não em arquivo de ambiente.
             </p>
           </div>
-          <span class="screen-no dim">F10 · Canais</span>
+          <span class="screen-no dim">Configuração · Canais</span>
         </div>
       </div>
       <div class="card empty" id="canais-sem-canal">
@@ -801,7 +801,7 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
               Ação primária: <b>configurar canal</b>. A configuração vive no Studio, não em arquivo de ambiente.
             </p>
           </div>
-          <span class="screen-no dim">F10 · Canais</span>
+          <span class="screen-no dim">Configuração · Canais</span>
         </div>
       </div>
       {_channel_card(view)}
