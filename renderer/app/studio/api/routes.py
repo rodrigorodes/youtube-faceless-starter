@@ -57,6 +57,7 @@ from .preview import render_preview
 from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
 from .panel_styles import render_styles
+from .panel_connections import render_connections
 from .panel_oauth import render_oauth_callback
 from .panel_team import render_team
 from .panel_analytics import render_analytics
@@ -1818,6 +1819,23 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.styles_page is None:
                 raise HTTPException(503, "style services unavailable")
             return render_styles(uc.styles_page.execute())
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/conexoes", response_class=HTMLResponse)
+    def connections_page_html():
+        """YT-04b: a tela de Conexões (conta → canais) reusa os casos de uso da YT-04a.
+
+        A projeção é o próprio `list_connections` (mesma fonte do `GET /connections`) somado à
+        lista de canais do estúdio — que já existe (`list_channel_profiles`) — para o seletor de
+        vínculo. Nenhuma rota ou caso de uso novo: só a página.
+        """
+        def get_page(uc):
+            if uc.list_connections is None:
+                raise HTTPException(503, "connection services unavailable")
+            board = uc.list_connections.execute()
+            profiles = uc.list_channel_profiles.execute(True) if uc.list_channel_profiles else []
+            return render_connections(board, profiles)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

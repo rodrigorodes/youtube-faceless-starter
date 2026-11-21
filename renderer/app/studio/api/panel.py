@@ -75,6 +75,7 @@ _NAV_ICONS = {
     "equipe": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
     "analytics": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="14"></line></svg>',
     "estilos": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="13.5" cy="6.5" r="1.5"></circle><circle cx="17.5" cy="10.5" r="1.5"></circle><circle cx="8.5" cy="7.5" r="1.5"></circle><circle cx="6.5" cy="12.5" r="1.5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>',
+    "conexoes": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>',
 }
 
 # Nenhum destino morto nesta versão: "Configurações — em breve" virou a tela real de **Estilos**
@@ -117,6 +118,12 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
           <a class="nav-item{' active' if active == 'estilos' else ''}" href="/studio/panel/estilos"{' aria-current="page"' if active == 'estilos' else ''}>
             {_NAV_ICONS['estilos']}
             <span>Estilos</span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-item{' active' if active == 'conexoes' else ''}" href="/studio/panel/conexoes"{' aria-current="page"' if active == 'conexoes' else ''}>
+            {_NAV_ICONS['conexoes']}
+            <span>Conexões</span>
           </a>
         </li>
         <li>
