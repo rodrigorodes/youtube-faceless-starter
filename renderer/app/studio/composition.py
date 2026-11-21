@@ -175,25 +175,39 @@ def channel_guard_limits(videos, budgets):
     return limits_for
 
 
-def _style_for_project(project_id, channels, styles):
-    """VS-03/RP-016: o estilo **resolvido** do render é o do canal do projeto.
+def _active_style(styles, style_id):
+    """Carrega um estilo pelo id, tolerando id estranho e tratando o **arquivado** como ausente.
 
-    Resolve o caminho real: canal do projeto → ``style_id`` → ``VisualStyle`` → ``ResolvedStyle``
-    (snapshot versionado + motion/music). Sem canal, sem ``style_id`` ou estilo inexistente,
-    devolve None — o renderer usa o bundle neutro. Mesma tolerância do ``channel_guard_limits``:
-    um id estranho não derruba o render.
+    Defesa em profundidade da VS-05c: mesmo que um vínculo escape (canal/vídeo apontando para um
+    estilo arquivado), ele não dirige render nenhum — um estilo arquivado conta como se não houvesse
+    estilo, deixando o neutral (studio-default) ou o estilo do canal decidir.
+    """
+    if style_id is None:
+        return None
+    try:
+        style = styles.get(style_id)
+    except InvalidId:
+        return None
+    return None if style is None or style.archived else style
+
+
+def _style_for_video(video, channels, styles):
+    """VS-03/VS-05c: o estilo efetivo do render de um vídeo — precedência **vídeo > canal > neutro**.
+
+    Resolve o caminho real: canal do projeto → ``channel_profiles.style_id`` (estilo herdado) **e**
+    ``videos.style_id`` (override do vídeo, VS-02b) → ``VisualStyle`` → ``ResolvedStyle`` (snapshot
+    versionado + motion/music/caption/palette). O override do vídeo tem precedência sobre o do canal;
+    sem override, vale o do canal e, sem nenhum dos dois, devolve None — o renderer usa o bundle
+    neutro. Estilo arquivado conta como ausente nos dois lados. Mesma tolerância do
+    ``channel_guard_limits``: um id estranho não derruba o render.
     """
     try:
-        profile = channels.get_by_project(project_id)
+        profile = channels.get_by_project(video.project_id)
     except InvalidId:
-        return None
-    if profile is None or profile.style_id is None:
-        return None
-    try:
-        style = styles.get(profile.style_id)
-    except InvalidId:
-        return None
-    return resolve_style(profile, style)
+        profile = None
+    channel_style = _active_style(styles, profile.style_id if profile is not None else None)
+    video_style = _active_style(styles, video.style_id)
+    return resolve_style(profile, channel_style, override=video_style)
 
 
 def build_google_oauth(settings: "Settings",
@@ -480,7 +494,7 @@ class Studio:
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
                          paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
-                         style_for=lambda project_id: _style_for_project(project_id, channel_repo, style_repo))
+                         style_for=lambda video: _style_for_video(video, channel_repo, style_repo))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)

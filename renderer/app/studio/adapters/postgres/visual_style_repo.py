@@ -22,6 +22,7 @@ from ...domain.visual_style import (
     UPDATABLE_FIELDS,
     DuplicateVisualStyle,
     VisualStyle,
+    VisualStyleArchive,
     VisualStyleVersionConflict,
     validate_version,
 )
@@ -95,12 +96,16 @@ class PostgresVisualStyleRepository(_Base):
             )
             return {row[0]: int(row[1]) for row in cur.fetchall()}
 
-    def archive(self, style_id: str) -> VisualStyle | None:
-        """Arquiva (soft delete): marca `archived = true` e grava uma nova revisão.
+    def archive(self, style_id: str) -> VisualStyleArchive | None:
+        """Arquiva (soft delete) e **limpa os vínculos**, tudo na mesma transação (VS-05c).
 
-        Não apaga linha nenhuma — o estilo some da lista padrão, mas continua rastreável e os
-        canais que apontavam para ele passam a resolver o padrão do estúdio. Idempotente: um
-        estilo já arquivado é devolvido como está, sem bumpar versão de novo.
+        Marca `archived = true`, grava uma nova revisão e zera `channel_profiles.style_id` e
+        `videos.style_id` que apontavam para este estilo — o canal volta ao padrão do estúdio e o
+        vídeo volta a herdar do canal. Não apaga linha nenhuma: o estilo continua rastreável.
+
+        Devolve o estilo arquivado e quantos vínculos foram limpos (rowcount real dos UPDATE).
+        Idempotente: um estilo já arquivado é devolvido como está, sem bumpar versão de novo — mas
+        a limpeza roda de novo, para um vínculo reinserido à mão não escapar.
         """
         sid = check_id(style_id)
         with _translated(), self._connect() as conn:
@@ -111,7 +116,8 @@ class PostgresVisualStyleRepository(_Base):
                     return None
                 current = _style(row)
                 if current.archived:
-                    return current
+                    cleared = self._clear_links(cur, sid)
+                    return VisualStyleArchive(style=current, cleared_links=cleared)
                 cur.execute(
                     f"""UPDATE studio.visual_styles SET archived = true, version = version + 1, updated_at = now()
                         WHERE id = %s RETURNING {_COLS}""",
@@ -119,7 +125,21 @@ class PostgresVisualStyleRepository(_Base):
                 )
                 new_row = cur.fetchone()
                 self._insert_revision(cur, _style(new_row))
-                return _style(new_row)
+                cleared = self._clear_links(cur, sid)
+                return VisualStyleArchive(style=_style(new_row), cleared_links=cleared)
+
+    @staticmethod
+    def _clear_links(cur, style_id: str) -> int:
+        """Zera os vínculos (canal + vídeo) que apontavam para o estilo, na transação corrente.
+
+        Devolve a soma dos rowcount — a contagem **medida** da limpeza. Não bumpar a versão do canal
+        aqui é intencional: quem limpou foi a biblioteca, não uma edição do canal; a otimização de
+        versão do perfil continua sendo do operador.
+        """
+        cur.execute("UPDATE studio.channel_profiles SET style_id = NULL WHERE style_id = %s", (style_id,))
+        cleared = cur.rowcount
+        cur.execute("UPDATE studio.videos SET style_id = NULL WHERE style_id = %s", (style_id,))
+        return cleared + cur.rowcount
 
     def update(self, style_id: str, expected_version: int, changes: dict[str, Any]) -> VisualStyle | None:
         sid = check_id(style_id)

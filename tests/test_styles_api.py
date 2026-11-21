@@ -86,6 +86,22 @@ def test_style_archive_is_soft_delete(api):
     assert again.status_code == 201, again.text
 
 
+def test_archive_reports_and_clears_the_links(api):
+    from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepository
+
+    client = api["client"]
+    style_id = client.post("/studio/styles", json={"name": "Usado"}, headers=WORKER_HEADER).json()["id"]
+    project = api["videos"].create_project("Canal Z", niche="", language="pt-BR")
+    created = client.post(f"/studio/projects/{project.id}/channels",
+                          json={"name": "Z", "style_id": style_id}, headers=WORKER_HEADER)
+    assert created.status_code == 201, created.text
+    archived = client.post(f"/studio/styles/{style_id}/archive", headers=WORKER_HEADER)
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived"] is True and archived.json()["links_cleared"] == 1
+    channels = PostgresChannelProfileRepository(api["connect"])
+    assert channels.get(created.json()["id"]).style_id is None  # o canal soltou o estilo
+
+
 def test_style_not_found_is_404(api):
     client = api["client"]
     missing = "a" * 32

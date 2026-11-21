@@ -15,6 +15,7 @@ from ..domain.ids import check_id
 from ..domain.visual_style import (
     UPDATABLE_FIELDS,
     VisualStyle,
+    VisualStyleArchive,
     VisualStyleFieldInvalid,
     validate_version,
 )
@@ -61,10 +62,17 @@ class UpdateVisualStyle:
 
 
 class ArchiveVisualStyle:
+    """Arquiva (soft delete) e devolve quantos vínculos foram limpos (VS-05c).
+
+    O estilo arquivado some da lista padrão e libera o nome; na mesma transação os canais e vídeos
+    que o usavam passam a ``NULL`` (canal ao padrão do estúdio, vídeo a herdar do canal). O
+    ``cleared_links`` do resultado é a medição real da limpeza.
+    """
+
     def __init__(self, repo: VisualStyleRepository):
         self.repo = repo
 
-    def execute(self, style_id: str) -> VisualStyle | None:
+    def execute(self, style_id: str) -> VisualStyleArchive | None:
         return self.repo.archive(check_id(style_id))
 
 
