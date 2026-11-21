@@ -253,10 +253,12 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 3. **F6 — editor visual e QA editorial** (player/timeline, narração por formulário, QA editorial):
    a fatia F6 entregou severidade e aprovação presa a `render_id`; faltam o editor e o QA editorial.
 
-**Veredito final do `main` (após Render Plan RP-00..07, ligações L1/L2 e limpeza do legado):**
-**2403 passed, 0 failed, 35 skipped** (132 arquivos, 8 partições sequenciais, `rc=0` em todas)
+**Veredito final do `main` (Render Plan RP-00..07, ligações L1/L2, limpeza do legado
+e as correções achadas rodando o app):**
+**2427 passed, 0 failed, 35 skipped** (135 arquivos, 8 partições sequenciais, `rc=0` em todas)
 com Postgres real e as duas DSNs. Os 35 skips são de plataforma (Node.js ausente) — as ~100
 provas de orçamento **rodaram**. O gate de higiene passa (`scan` → exit 0) e
+`export_contracts --check` → exit 0 dentro do container.
 `export_contracts --check` → exit 0 dentro do container.
 `export_contracts --check` → exit 0 dentro do container.
 
@@ -300,6 +302,12 @@ Render Plan persistiu em produção: `render_plans=1`, `plan_artifacts=15`, `ren
 **Observações de ergonomia (não corrigidas):** bridge do OpenCode não é supervisionado (`/health` fica 200
 com ele morto); `fact-check` exige corpo e devolve 200 sem avançar; não há `DELETE /videos`;
 o QA novo **não persiste métricas numéricas** (lufs/ratios/dimensões) que o antigo guardava.
+
+
+**O render NÃO depende de provedor externo (medido):** o executor não tem cliente HTTP (0 ocorrências),
+a suíte de render passa com `--network none` (91 passed) e um fluxo inteiro rodou com `text=demo` +
+`image=placeholder`: ledger com `demo`/`placeholder` custo 0, **0** requisições ao bridge, cache do plano
+idêntico (narration 4 · visual 4 · music 1 · concat 1 · final 1), render `SUCCEEDED` em 36,9 s, QA `verified`.
 
 ## Padrão novo é o único — legado removido (decisão do usuário, 2026-11-21)
 
