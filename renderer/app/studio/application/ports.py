@@ -485,6 +485,13 @@ class TrendRepository(Protocol):
     def upsert(self, project_id: str, items: list[TrendItem]) -> int: ...
     def list(self, project_id: str | None, since: datetime) -> list[TrendRecord]: ...
     def last_collected_at(self, project_id: str | None) -> datetime | None: ...
+    def find_by_topic_key(self, project_id: str, topic_key: str) -> TrendRecord | None:
+        """A tendência do canal cujo `topic_key` **já normalizado** casa com o tema dado.
+
+        A normalização (caixa, espaços, pontuação) é regra de domínio em Python; a chave chega
+        pronta e o casamento é exato no banco — nunca se normaliza em SQL. Sem correspondência,
+        devolve ``None``. É a porta que liga o tema de um vídeo ao vídeo base da tendência."""
+        ...
 
 
 class CategoryRepository(Protocol):

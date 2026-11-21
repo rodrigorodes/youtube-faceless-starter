@@ -15,6 +15,23 @@ from .errors import InvalidInput
 from .ports import CategoryRepository, LatestRun, PanelRepository, PubInfo, SourceInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
 
 
+def evidence_video_url(evidence: Iterable[dict]) -> str | None:
+    """URL do vídeo base a partir da evidência da tendência — uma só verdade.
+
+    É a URL da primeira evidência (`evidence[0]["url"]`), exatamente o que o cartão de tendência
+    já renderizava como "▶️ Assistir no YouTube". Aplicação e cartão leem daqui para não haver
+    duas extrações divergindo.
+    """
+    items = list(evidence)
+    if not items:
+        return None
+    first = items[0]
+    if not isinstance(first, dict):
+        return None
+    url = first.get("url")
+    return url if isinstance(url, str) and url else None
+
+
 class CostKind(str, Enum):
     """Rótulo de custo exibido ao operador. Espelha `usage_ledger.cost_confirmation_kind`."""
 
@@ -208,6 +225,10 @@ class VideoDetailView:
     publication: PubInfo | None
     sources: list[SourceInfo] = field(default_factory=list)
     latest_run: LatestRun | None = None
+    # PROD-04 (achado 3): o vídeo base da tendência de mesmo `topic_key`, resolvido pela
+    # aplicação. Sem correspondência, fica `None` (o campo de URL sai vazio, como hoje).
+    base_video_url: str | None = None
+    base_video_source_name: str | None = None
 
 
 class BuildPanel:
@@ -381,7 +402,7 @@ class BuildPanel:
 
                     if r.evidence:
                         ev = r.evidence[0]
-                        video_url = ev.get("url")
+                        video_url = evidence_video_url(r.evidence)
                         if video_url:
                             try:
                                 parsed = urllib.parse.urlparse(video_url)
@@ -462,6 +483,16 @@ class BuildPanel:
         )
         c_text = cost_summary_text(cost_breakdown(usage_rows))
 
+        # PROD-04 (achado 3): a procedência do vídeo base sai do `topic_key` do tema do vídeo
+        # casado com a tendência do canal. Sem a porta de tendências não há resolução.
+        base_video_url = None
+        base_video_source_name = None
+        if self.trends is not None:
+            trend = self.trends.find_by_topic_key(d.video.project_id, topic_key(d.video.topic))
+            if trend is not None:
+                base_video_url = evidence_video_url(trend.evidence)
+                base_video_source_name = trend.source_name
+
         return VideoDetailView(
             video=d.video,
             stage=st,
@@ -472,4 +503,6 @@ class BuildPanel:
             publication=d.publication,
             sources=d.sources,
             latest_run=d.latest_run,
+            base_video_url=base_video_url,
+            base_video_source_name=base_video_source_name,
         )

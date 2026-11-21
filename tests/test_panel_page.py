@@ -1,4 +1,5 @@
 import base64
+import json
 import re
 import sys
 import uuid
@@ -1120,6 +1121,50 @@ def test_video_detail_page_lists_registered_sources(client_env):
     assert r.status_code == 200
     assert "amsterdam-dance-event.nl/en/about" in r.text
     assert "caractere" in r.text
+
+
+# ---------- PROD-04 (achado 3): o vídeo base da tendência chega à página (Postgres) ----------
+
+
+def test_video_detail_page_prefills_the_base_video_url_from_the_matching_trend(client_env):
+    """Um vídeo cujo tema casa com uma `trend_topics` (mesmo `topic_key`) traz a URL preenchida."""
+    from app.studio.domain.panel import topic_key
+
+    client, videos, conn, p_id = (client_env["client"], client_env["videos"],
+                                  client_env["conn"], client_env["project_id"])
+    topic = "Tema Com Base"
+    v = videos.create_video(p_id, topic, VideoFormat.short)
+    now = datetime.now(timezone.utc)
+    base_url = "https://youtube.com/watch?v=BASEVIDEO01"
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (%s, %s, %s, %s, 'YouTube Brasil (Em Alta)',
+                  'https://www.youtube.com/feed/trending', %s, %s, %s, 'views', 1000, %s::jsonb)
+        """,
+        (uuid.uuid4().hex, p_id, topic, topic_key(topic), now, now - timedelta(days=7), now,
+         json.dumps([{"url": base_url}])),
+    )
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert f'value="{base_url}"' in r.text
+    assert "vídeo base" in r.text
+
+
+def test_video_detail_page_leaves_the_source_url_empty_without_a_matching_trend(client_env):
+    """Sem tendência correspondente, o campo continua vazio (como hoje)."""
+    client, videos = client_env["client"], client_env["videos"]
+    v = videos.create_video(client_env["project_id"], "Tema Sem Base Alguma", VideoFormat.short)
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "vídeo base" not in r.text
+    match = re.search(r'<input[^>]*id="source-url"[^>]*>', r.text)
+    assert match is not None and "value=" not in match.group(0)
 
 
 # ---------- IA-01: Início, Produção e Tendências como telas separadas ----------

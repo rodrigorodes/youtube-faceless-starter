@@ -2533,7 +2533,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             <div id="create-video-feedback" class="form-feedback"></div>
           </div>
         </form>
-        <p class="note">A produção começa no modo assistido; a aprovação do roteiro e do preview acontece no vídeo.</p>
+        <p class="note">Ao criar, o vídeo abre para você <strong>pesquisar as fontes</strong>; a produção só começa quando você clicar em «Iniciar produção», já com a fonte registrada.</p>
     """
 
     hero_html = f"""
@@ -2671,32 +2671,11 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             if (btn) btn.disabled = false;
             return;
           }}
-          // O vídeo foi criado; iniciar a produção aqui (mesmo caminho do assistente de Novo vídeo).
-          // TODO(fatia IA das telas): unificar este fluxo duplicado com o assistente de Novo vídeo.
-          const key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
-          feedback.textContent = 'Iniciando a produção...';
-          const started = await fetch('/studio/videos/' + encodeURIComponent(data.id) + '/production-runs', {{
-            method: 'POST',
-            headers: {{ 'Content-Type': 'application/json', 'Idempotency-Key': key }},
-            body: JSON.stringify({{}})
-          }});
-          const run = await started.json().catch(() => ({{}}));
-          if (started.ok && run.run_id) {{
-            feedback.textContent = 'Produção iniciada. Abrindo a execução...';
-            location.href = '/studio/panel/videos/' + encodeURIComponent(data.id) +
-              '/production-runs/' + encodeURIComponent(run.run_id);
-            return;
-          }}
-          // Vídeo criado, produção não iniciou: motivo real do servidor + saída (link para o vídeo).
-          const why = typeof run.detail === 'string' ? run.detail : 'resposta inválida do servidor';
-          feedback.textContent = '';
-          const msg = document.createElement('span');
-          msg.textContent = 'O vídeo foi criado, mas a produção não iniciou: ' + why + ' ';
-          const link = document.createElement('a');
-          link.href = '/studio/panel/videos/' + encodeURIComponent(data.id);
-          link.textContent = 'Abrir o vídeo para tentar novamente';
-          feedback.append(msg, link);
-          if (btn) btn.disabled = false;
+          // PROD-04 (achado 4): o fluxo aprovado é Produzir vídeo → Pesquisar fontes → Roteiro.
+          // A produção **não** começa aqui: sem fonte, a 1ª etapa do DAG (script) falharia na hora
+          // (SourceRefused). O vídeo abre na página onde vivem Fontes e «Iniciar produção».
+          feedback.textContent = 'Vídeo criado. Abrindo para você pesquisar as fontes...';
+          location.href = '/studio/panel/videos/' + encodeURIComponent(data.id);
         }} catch (err) {{
           feedback.textContent = 'Falha de rede: ' + err.message;
           if (btn) btn.disabled = false;
@@ -3230,7 +3209,13 @@ _RUN_STATE_LABELS = {
 
 
 def _video_sources_card(view: VideoDetailView) -> str:
-    """Cartão Fontes: lista o que existe e registra fonte nova (texto colado ou busca na URL)."""
+    """Cartão Fontes: lista o que existe e registra fonte nova (texto colado ou busca na URL).
+
+    PROD-04 (achado 3): quando o tema do vídeo casa com uma tendência do canal, o campo de URL
+    já vem preenchido com o **vídeo base** — o humano só precisa colar o texto. Nada é
+    registrado aqui: criar a fonte exige texto (sem texto, a busca pela URL é recusada pela
+    allowlist de nicho e fonte sem texto não é evidência).
+    """
     v = view.video
     if view.sources:
         items = "".join(
@@ -3242,10 +3227,23 @@ def _video_sources_card(view: VideoDetailView) -> str:
     else:
         count_html = ""
         list_html = '<p class="empty" style="margin:8px 0 0">Nenhuma fonte registrada ainda.</p>'
+
+    if view.base_video_url:
+        url_value = f' value="{e(view.base_video_url)}"'
+        origin = (f' · {e(view.base_video_source_name)}' if view.base_video_source_name else "")
+        base_html = (
+            '<p class="dim" style="font-size:12.5px;margin:6px 0 0">vídeo base: '
+            f'<a href="{e(view.base_video_url)}" target="_blank" rel="noopener noreferrer">{e(view.base_video_url)}</a>'
+            f'{origin}</p>'
+        )
+    else:
+        url_value = ""
+        base_html = ""
     return f"""
       <div class="card" id="video-fontes">
         <h2>Fontes</h2>
         <p class="dim" style="font-size:12.5px;margin:4px 0 0">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
+        {base_html}
         {count_html}
         {list_html}
         <form id="video-sources-form" data-video-id="{e(v.id)}" style="margin-top:12px">
@@ -3253,7 +3251,7 @@ def _video_sources_card(view: VideoDetailView) -> str:
             <label for="source-url">URL da fonte <span aria-hidden="true">*</span></label>
             <input type="url" id="source-url" name="url" class="input" required
                    data-error="source-url-error" placeholder="https://exemplo.com/noticia"
-                   aria-describedby="source-rule">
+                   aria-describedby="source-rule"{url_value}>
             <span class="error-msg" id="source-url-error"><span role="img" aria-label="Erro">&#9888;</span> Informe a URL da fonte.</span>
           </div>
           <div class="field" style="margin-top:10px">
@@ -3275,11 +3273,35 @@ def _video_sources_card(view: VideoDetailView) -> str:
     """
 
 
+# PROD-04 (achado 5): um run em estado terminal não impede uma produção nova — a API aceita
+# `create_run` sem guarda de run ativo. Num run **vivo** (RUNNING/WAITING_HUMAN) a produção nova
+# não cabe: o caminho é continuar/retomar pela execução.
+_TERMINAL_RUN_STATES = ("FAILED", "CANCELLED", "SUCCEEDED")
+
+
+def _new_production_button(video_id: str, *, primary: bool) -> str:
+    cls = "btn btn-primary" if primary else "btn"
+    return (
+        f'<button class="{cls}" type="button" id="btn-new-production" '
+        f'data-video-id="{e(video_id)}">Iniciar nova produção</button>'
+    )
+
+
+_START_OVER_HINT = (
+    '<p class="dim" style="font-size:12.5px;margin:0.6rem 0 0">'
+    '«Iniciar nova produção» recomeça do zero: cria um novo run e reprograma as etapas. '
+    'Não é o retry desta execução.</p>'
+)
+
+
 def _video_run_card(view: VideoDetailView) -> str:
     """Iniciar/retomar a produção a partir do vídeo, sempre com o motivo real do servidor.
 
-    Sem run: "Iniciar produção". Run em falha: mostra a etapa e o motivo e oferece "Tentar novamente".
-    Em qualquer outro estado não há botão inerte: explica por que a nova tentativa não cabe.
+    Sem run: "Iniciar produção". Run em falha: mostra a etapa e o motivo e oferece "Tentar
+    novamente" **e** "Iniciar nova produção" (run novo, não o retry da etapa). Run termina
+    (SUCCEEDED/CANCELLED) também oferece "Iniciar nova produção". Com run vivo
+    (RUNNING/WAITING_HUMAN) não há produção nova: o caminho é continuar pela execução — e a
+    própria tela explica por quê, sem botão inerte.
     """
     v = view.video
     run = view.latest_run
@@ -3312,9 +3334,25 @@ def _video_run_card(view: VideoDetailView) -> str:
             <div class="spread" style="margin-top:1rem">
               <button class="btn btn-primary" type="button" id="btn-retry-production"
                       data-video-id="{e(v.id)}" data-run-id="{e(run.run_id)}">Tentar novamente</button>
+              {_new_production_button(v.id, primary=False)}
               <a class="btn" href="{exec_url}">Abrir execução</a>
               {feedback}
             </div>
+            {_START_OVER_HINT}
+          </div>
+        """
+    if run.state in ("SUCCEEDED", "CANCELLED"):
+        state_label = _RUN_STATE_LABELS.get(run.state, run.state)
+        return f"""
+          <div class="card" id="video-producao">
+            <h2>Produção</h2>
+            <p class="muted" style="margin:0.5rem 0 0">A execução atual terminou: <strong>{e(state_label)}</strong>.</p>
+            <div class="spread" style="margin-top:1rem">
+              {_new_production_button(v.id, primary=True)}
+              <a class="btn" href="{exec_url}">Abrir execução</a>
+              {feedback}
+            </div>
+            {_START_OVER_HINT}
           </div>
         """
     state_label = _RUN_STATE_LABELS.get(run.state, run.state)
@@ -3698,11 +3736,12 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
       }});
     }}
 
-    // Produção a partir do vídeo: iniciar (sem run) ou retomar (run em falha). Sem botão inerte:
-    // quando o estado não permite, a própria página não oferece o botão.
+    // Produção a partir do vídeo: iniciar (sem run), iniciar nova produção (run terminal) ou
+    // retomar (run em falha). Cada clique gera uma Idempotency-Key nova — uma produção nova é um
+    // run novo, nunca o retry da etapa. Sem botão inerte: quando o estado não permite, a própria
+    // página não oferece o botão.
     const runFeedback = document.getElementById('video-run-feedback');
-    const startBtn = document.getElementById('btn-start-production');
-    if (startBtn) {{
+    document.querySelectorAll('#btn-start-production, #btn-new-production').forEach((startBtn) => {{
       startBtn.addEventListener('click', async () => {{
         const videoId = startBtn.getAttribute('data-video-id') || '';
         startBtn.disabled = true;
@@ -3729,7 +3768,7 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
           startBtn.disabled = false;
         }}
       }});
-    }}
+    }});
     const retryProductionBtn = document.getElementById('btn-retry-production');
     if (retryProductionBtn) {{
       retryProductionBtn.addEventListener('click', async () => {{
