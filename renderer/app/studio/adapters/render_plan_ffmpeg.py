@@ -366,6 +366,7 @@ class PlanFfmpegRenderer:
                 narration=row.narration,
                 speech_seconds=max(0.0, float(length) - LEAD - TAIL),
                 label=row.label,
+                voice_id=spec.voice_id,
             ))
         manifest = list(manifest_by_id.values())
         return build_render_plan(

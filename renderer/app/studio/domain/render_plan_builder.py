@@ -84,6 +84,10 @@ class StoryboardScene:
     duração da cena é derivada dela com ``scene_length`` (lead/tail + quadros inteiros),
     exatamente como o renderer legado faz. ``speech_seconds == 0`` representa uma cena
     silenciosa: sem cue de narração, sem legenda, com shot de duração ``scene_length(0)``.
+
+    ``voice_id`` identifica a voz (nome+modelo) que sintetiza a fala. Ele entra nos ``params``
+    da fonte de voz gerada para que o fingerprint da narração (RP-06c) invalide quando a voz
+    muda, mesmo com o texto idêntico — sem ele, trocar a voz reusaria um WAV de outra voz.
     """
 
     scene_id: str
@@ -92,6 +96,7 @@ class StoryboardScene:
     speech_seconds: float
     label: str = ""
     paid_operation_key: str | None = None
+    voice_id: str = ""
 
 
 def style_snapshot_for_channel(profile: ChannelProfile) -> StyleSnapshot:
@@ -248,7 +253,8 @@ def build_render_plan(
                 )
             )
             generated.append(
-                GeneratedAudioSource(source_id=voice_id, kind="voice", duration_ticks=speech_ticks)
+                GeneratedAudioSource(source_id=voice_id, kind="voice", duration_ticks=speech_ticks,
+                                     params={"voice": scene.voice_id} if scene.voice_id else {})
             )
             subtitles.extend(_subtitle_cues(scene, offset_s, speech, tps))
 

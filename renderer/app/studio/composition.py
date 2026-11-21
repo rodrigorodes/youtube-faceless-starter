@@ -432,7 +432,7 @@ class Studio:
             pass
         run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), analyzer=self._analyzer, steps=steps,
-                         paid=paid_guard)
+                         paid=paid_guard, plans=PostgresRenderPlanRepository(connect))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)

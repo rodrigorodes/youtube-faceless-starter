@@ -1,23 +1,50 @@
 """Casos de uso de renderização: enfileirar (idempotente), executar (voz → vídeo → QA → publicar) e consultar."""
 import hashlib
 import json
+import shutil
 import uuid
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 
 from ..domain.contracts import Asset, AssetKind, QaReport, RenderJob, UsageEntry, VideoStatus
-from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, evaluate_qa, make_cues, scene_length, to_srt
+from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, evaluate_qa, make_cues, scene_length, split_chunks, to_srt
+from ..domain.render_cache import NodeId, narration_fingerprint
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
-from .ports import (AssetRepository, QaAnalyzer, RenderJobRepository, Renderer, RenderSpec, RenderStorage, ScriptRepository,
-                    VideoRepository, Voice)
+from .ports import (AssetRepository, QaAnalyzer, RenderJobRepository, RenderPlanRepository, Renderer, RenderSpec,
+                    RenderStorage, ScriptRepository, VideoRepository, Voice)
 
 
 class RenderRefused(ValueError):
     """O vídeo não pode ser renderizado (ex.: passaria do limite de duração do formato)."""
+
+
+def _voice_identity(voice: Voice) -> str:
+    """Identidade da voz que muda o áudio: nome + modelo (entra no fingerprint da narração, RP-06c)."""
+    model = getattr(voice, "model", "") or ""
+    return f"{voice.name}:{model}" if model else str(voice.name)
+
+
+def _sha256_file(path: Path) -> str:
+    """sha256 do conteúdo físico de um artefato — a identidade que o índice de cache guarda."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _wav_seconds(path: Path) -> float:
+    """Duração **real** de um WAV, medida do arquivo — nunca uma estimativa."""
+    with wave.open(str(path), "rb") as handle:
+        rate = handle.getframerate()
+        frames = handle.getnframes()
+    return frames / rate if rate else 0.0
 
 
 def _voice_settlement(voice: Voice, text: str, seconds: float):
@@ -70,10 +97,15 @@ class StartRender:
 class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  files: RenderStorage, voice_for: Callable[[str], Voice], renderer_for: Callable[[str], Renderer], analyzer: QaAnalyzer,
-                 steps=None, paid: PaidOperationGuard | None = None):
+                 steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
+                 narration_reuse: bool = True):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.analyzer = voice_for, renderer_for, analyzer
         self.steps, self.paid = steps, paid
+        # RP-06c: o índice de cache do plano (fingerprint da entrada da narração) permite pular o
+        # TTS de uma cena inalterada. Sem repositório (unidade), o comportamento é o de antes.
+        self.plans = plans
+        self.narration_reuse = narration_reuse
 
     def execute(self, job_id: str) -> None:
         """Roda um job. Nunca levanta (a exceção iria para um Future que ninguém lê): qualquer falha vira job FAILED
@@ -117,11 +149,45 @@ class RunRender:
         except Exception:
             pass
 
+    def _cached_narration(self, scene, voice_id: str, entries: dict) -> Path | None:
+        """WAV de narração reusável: fingerprint da **entrada** igual e artefato físico íntegro.
+
+        A entrada da cena (texto falado + identidade da voz) é comparada com o fingerprint do nó
+        ``narration`` registrado pela revisão anterior — uma decisão tomada **antes** de sintetizar
+        (RP-06c). Qualquer dúvida (sem registro, fingerprint diferente, arquivo ausente, hash
+        divergente, erro de leitura) cai fora do reúso: sintetizar é sempre seguro.
+        """
+        if not entries:
+            return None
+        fingerprint = narration_fingerprint(
+            " ".join(split_chunks(scene.narration)), f"voice:{scene.id}", {"voice": voice_id} if voice_id else None)
+        entry = entries.get(NodeId("narration", scene.id))
+        if entry is None or entry.fingerprint != fingerprint:
+            return None
+        path = Path(entry.artifact_uri)
+        try:
+            if not path.is_file() or _sha256_file(path) != entry.artifact_sha256:
+                return None
+        except OSError:
+            return None
+        return path
+
     def _render(self, job: RenderJob, video, pairs, work) -> None:
         voice, renderer = self.voice_for(video.project_id), self.renderer_for(video.project_id)
+        voice_id = _voice_identity(voice)
+        # Uma consulta ao índice por render (não uma por cena): o reúso da narração inteira.
+        entries = self.plans.entries(f"plan:{video.id}") if (self.plans is not None and self.narration_reuse) else {}
         wavs, seconds = [], []
         for scene, _ in pairs:
             wav = work / f"speech_{scene.idx:03d}.wav"
+            cached = self._cached_narration(scene, voice_id, entries)
+            if cached is not None:
+                # Narração em cache (texto/voz inalterados) e WAV íntegro: reusa e **pula o TTS**.
+                # A duração é **medida do próprio WAV reusado** — nunca estimada.
+                shutil.copyfile(cached, wav)
+                wavs.append(wav)
+                seconds.append(_wav_seconds(wav))
+                continue
             if self.paid is None:
                 seconds.append(voice.speak(scene.narration, wav))
             else:
@@ -147,7 +213,7 @@ class RunRender:
         stock = any(a.provider == "stock" for _, a in pairs)
         spec = RenderSpec(scenes=[s for s, _ in pairs], images=[self.files.image_path(a.path) for _, a in pairs], speech_wavs=wavs,
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
-                          disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA")
+                          disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id)
         mp4 = renderer.render(spec, work / "final.mp4")
         metrics = self.analyzer.analyze(mp4, narration=work / NARRATION_FILE)
         qa = evaluate_qa({**metrics, "expected_s": round(total, 3)}, video.format)
