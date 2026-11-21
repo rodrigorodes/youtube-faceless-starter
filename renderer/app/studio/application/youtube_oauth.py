@@ -11,7 +11,7 @@ from dataclasses import replace
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
-from ..domain.ids import check_id
+from ..domain.ids import InvalidId, check_id
 from ..domain.youtube_channel import OAuthStatus, YouTubeChannel
 from ..domain.youtube_oauth import (
     DEFAULT_SCOPES,
@@ -39,6 +39,26 @@ from .youtube_channels import (
 
 CONSENT_TTL = timedelta(minutes=10)
 DEFAULT_REDIRECT_URI = "http://localhost:8000/studio/oauth/callback"
+_STATE_SEPARATOR = "."  # separa o projeto do nonce aleatório no `state` (não é segredo)
+
+
+def consent_project_id(state: object) -> str | None:
+    """Projeto codificado no `state` do consentimento, ou None se o `state` não for reconhecido.
+
+    O Google devolve `?code=...&state=...` ao `redirect_uri`, que não carrega o projeto. O `state`
+    já é emitido e comparado pelo `BeginConsent`/`CompleteConsent`; embutir o id (32 hex, público)
+    permite que a página de callback saiba para qual projeto chamar o `POST .../callback` sem
+    abrir a validação de `redirect_uri` do Google. O nonce aleatório continua intacto.
+    """
+    if not isinstance(state, str):
+        return None
+    prefix, separator, _ = state.partition(_STATE_SEPARATOR)
+    if not separator:
+        return None
+    try:
+        return check_id(prefix)
+    except InvalidId:
+        return None
 
 
 class ConsentStateInvalid(OAuthError):
@@ -112,7 +132,7 @@ class BeginConsent:
         p_id = check_id(project_id)
         scope = youtube_scope(p_id)
         verifier, challenge = pkce_pair()
-        state = _secrets.token_urlsafe(32)
+        state = f"{p_id}{_STATE_SEPARATOR}{_secrets.token_urlsafe(32)}"
         expires_at = self.clock() + CONSENT_TTL
         url = self.oauth.authorization_url(self.redirect_uri, self.scopes, state, challenge)
         _safe(lambda: self.secrets.set(scope, OAUTH_STATE, state))

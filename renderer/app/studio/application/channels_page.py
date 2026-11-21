@@ -28,6 +28,10 @@ from .youtube_channels import GetYouTubeChannel
 
 __all__ = ["ChannelsPageView", "BuildChannelsPage", "ProjectListPort"]
 
+# Motivo real quando o servidor não tem app OAuth do Google configurado. A tela usa o texto no
+# controle desabilitado; nunca diz que o fluxo "não está implementado" (ele existe desde a F8).
+OAUTH_UNAVAILABLE_REASON = "OAuth do YouTube não configurado no servidor (falta o client secret do Google)"
+
 
 class ProjectListPort(Protocol):
     """Lista (id, nome) dos canais/projetos cadastrados. Leitura apenas."""
@@ -49,6 +53,12 @@ class ChannelsPageView:
     youtube: dict[str, object] | None = None
     public_config: dict[str, str] = field(default_factory=dict)
     providers_error: str | None = None
+    # O fluxo OAuth existe (F8) mas só pode ser iniciado se o servidor tiver o app do Google.
+    # `oauth_available=False` desabilita o controle **com o motivo real**, nunca negando o fluxo.
+    oauth_available: bool = False
+    oauth_unavailable_reason: str | None = None
+    oauth_authorize_path: str | None = None
+    oauth_revoke_path: str | None = None
 
     @property
     def cost_summary(self) -> CostSummary | None:
@@ -60,7 +70,9 @@ class BuildChannelsPage:
 
     def __init__(self, project_list: ProjectListPort, videos, get_profile: GetChannelProfile,
                  providers: ProviderService, budget: GetChannelBudget,
-                 youtube: GetYouTubeChannel, config: GetPublicProjectConfig):
+                 youtube: GetYouTubeChannel, config: GetPublicProjectConfig, *,
+                 oauth_available: bool = False,
+                 oauth_unavailable_reason: str | None = None):
         self.project_list = project_list
         self.videos = videos
         self.get_profile = get_profile
@@ -68,6 +80,10 @@ class BuildChannelsPage:
         self.budget = budget
         self.youtube = youtube
         self.config = config
+        # Fonte de verdade do wiring: o mesmo flag que decide se `begin_youtube_oauth` existe.
+        # Sem app OAuth montado, o botão não pode prometer um consentimento que daria 503.
+        self.oauth_available = oauth_available
+        self.oauth_unavailable_reason = oauth_unavailable_reason
 
     def execute(self, project_id: str | None = None) -> ChannelsPageView:
         projects = tuple(self.project_list.projects())
@@ -92,6 +108,13 @@ class BuildChannelsPage:
                                "o catálogo fica indisponível até a configuração ser corrigida")
         budget = self.budget.execute(project.id)
         routes, failures = self._routing(project.id, budget.limits.economic_profile, cards)
+        authorize_path = revoke_path = None
+        oauth_reason = None
+        if self.oauth_available:
+            authorize_path = f"/studio/projects/{project.id}/youtube-oauth/authorize"
+            revoke_path = f"/studio/projects/{project.id}/youtube-oauth/revoke"
+        else:
+            oauth_reason = self.oauth_unavailable_reason or OAUTH_UNAVAILABLE_REASON
         return ChannelsPageView(
             projects=projects,
             project=project,
@@ -103,6 +126,10 @@ class BuildChannelsPage:
             youtube=self.youtube.execute(project.id),
             public_config=dict(self.config.execute(project.id)["config"]),
             providers_error=providers_error,
+            oauth_available=self.oauth_available,
+            oauth_unavailable_reason=oauth_reason,
+            oauth_authorize_path=authorize_path,
+            oauth_revoke_path=revoke_path,
         )
 
     def _routing(self, project_id: str, economic_profile, cards: Sequence[ProviderCard]):

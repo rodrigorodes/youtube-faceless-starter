@@ -11,7 +11,7 @@ from app.studio.application.youtube_channels import (  # noqa: E402
     ACCESS_TOKEN, REFRESH_TOKEN, GetYouTubeChannel,
 )
 from app.studio.application.youtube_oauth import (  # noqa: E402
-    BeginConsent, CompleteConsent, EnsureAccessToken, RevokeConsent,
+    BeginConsent, CompleteConsent, EnsureAccessToken, RevokeConsent, consent_project_id,
 )
 from app.studio.domain.youtube_channel import YouTubeChannel  # noqa: E402
 from app.studio.domain.youtube_oauth import (  # noqa: E402
@@ -217,6 +217,22 @@ def test_revoke_calls_google_deletes_tokens_and_reports_revoked():
     assert result["oauth_status"] == "REVOKED" and result["connected"] is False
     revoke.execute(PID)  # idempotente, sem tokens
     assert oauth.revoked == [REFRESH]
+
+
+def test_begin_consent_state_encodes_the_project_for_the_callback_page():
+    """O `state` carrega o projeto (32 hex) para o callback saber para onde postar; o resto é nonce."""
+    secrets = Secrets()
+    begin, *_ = services(secrets=secrets)
+    state = begin.execute(PID)["state"]
+    assert state.startswith(PID + ".")
+    # o nonce continua aleatório e longo: o `state` não virou o projeto
+    assert len(state) > len(PID) + 1
+    assert consent_project_id(state) == PID
+    assert consent_project_id("not-a-state-at-all") is None
+    assert consent_project_id("") is None
+    assert consent_project_id(PID) is None          # sem separador não é reconhecido
+    assert consent_project_id(None) is None
+    assert consent_project_id("f" * 32 + ".nonce") == "f" * 32
 
 
 def test_channel_status_comes_from_the_vault_not_the_typed_row():
