@@ -39,13 +39,15 @@ Sem push/merge remoto (bloqueado pelo harness).
 
 ## Em execução (paralelo)
 
-**Nada em execução.** Todas as fatias do plano foram mescladas e verificadas por mim antes do merge. Restam o **veredito completo da suíte** (rodando em 8 partições) e a **limpeza dos Postgres extras**.
+**VS-06 (em execução):** voz com **precedência única** — decisão do dono, **Opção A**:
+estilo > projeto > default, com `PIPER_VOICE` rebaixado a fallback de deployment/teste. Resolve a
+"duas verdades" (o que sintetiza vs. o que o ledger/cache registram). Postgres dedicado próprio.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| — | (vazio — plano concluído; falta só o veredito da suíte e a limpeza dos Postgres extras) | — |
+| — | (vazio) | — |
 
 ## Bloqueadas
 
@@ -55,9 +57,9 @@ Sem push/merge remoto (bloqueado pelo harness).
 
 ## Itens abertos conhecidos (registrados, não escondidos)
 
-- **Voz — "duas verdades"**: o estilo carrega `voice`, mas a precedência ainda não foi resolvida
-  (`estilo.voice.model` vs `STUDIO_VOICE`/config do projeto vs `PIPER_VOICE`). Recomendação no
-  relatório da VS-04; decisão pendente do dono.
+- **Voz — "duas verdades"**: **DECIDIDA pelo dono: Opção A** — estilo > projeto > default, com
+  `PIPER_VOICE` rebaixado a fallback de deployment/teste, e o **mesmo** valor para síntese e para o
+  ledger/cache. Em execução na **VS-06**.
 - **Cache do render × estilo**: o fingerprint do nó visual **não** inclui `style_snapshot` nem a
   geometria/cor do overlay — mudar só `caption.font_size`/`palette` **não invalida** o cache
   (gap pré-existente, documentado na VS-04).
