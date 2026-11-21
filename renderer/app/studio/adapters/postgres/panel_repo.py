@@ -4,8 +4,10 @@ from datetime import datetime
 from psycopg.rows import dict_row
 
 from ...application.ports import (
+    LatestRun,
     PanelRepository,
     PubInfo,
+    SourceInfo,
     StepInfo,
     UsageInfo,
     VideoDetail,
@@ -130,6 +132,31 @@ class PostgresPanelRepository(_Base):
             """, (v_id,))
             usage_rows = cur.fetchall()
 
+            # 4. Fontes registradas (sem o texto: a página só lista URL e tamanho)
+            cur.execute("""
+                SELECT id, url, length(text) AS chars
+                FROM studio.source_snapshots
+                WHERE video_id = %s
+                ORDER BY fetched_at, id
+            """, (v_id,))
+            source_rows = cur.fetchall()
+
+            # 5. Execução de produção mais recente + a etapa que falhou (motivo real do servidor)
+            cur.execute("""
+                SELECT pr.run_id, pr.state, fs.stage_id AS failed_stage, fs.error AS failure_reason
+                FROM studio.production_runs pr
+                LEFT JOIN LATERAL (
+                    SELECT stage_id, error FROM studio.stage_executions se
+                    WHERE se.run_id = pr.run_id AND se.state = 'FAILED'
+                    ORDER BY se.updated_at DESC, se.stage_id
+                    LIMIT 1
+                ) fs ON true
+                WHERE pr.video_id = %s
+                ORDER BY pr.created_at DESC, pr.run_id DESC
+                LIMIT 1
+            """, (v_id,))
+            run_row = cur.fetchone()
+
         costs = [(u["provider"], u["model"], float(u["cost_usd"]), u["cost_confirmation_kind"]) for u in usage_rows]
         video_row = VideoRow(
             id=vr["id"],
@@ -179,12 +206,29 @@ class PostgresPanelRepository(_Base):
                 error=vr["pub_error"],
             )
 
+        sources = [
+            SourceInfo(id=s["id"], url=s["url"], chars=int(s["chars"]))
+            for s in source_rows
+        ]
+
+        latest_run = None
+        if run_row is not None:
+            reason = run_row["failure_reason"]
+            latest_run = LatestRun(
+                run_id=run_row["run_id"],
+                state=run_row["state"],
+                failed_stage=run_row["failed_stage"],
+                failure_reason=reason[:500] if reason else None,
+            )
+
         return VideoDetail(
             video=video_row,
             steps=steps,
             usage=usage,
             render_error=vr["render_error"],
             publication=pub,
+            sources=sources,
+            latest_run=latest_run,
         )
 
     def month_usage(self) -> list[tuple[str, str, float, str | None]]:

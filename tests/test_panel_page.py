@@ -1046,3 +1046,50 @@ def test_panel_page_matches_approved_mockup_shell(client_env):
     for step in ("Roteiro", "Fontes", "Fact-check", "Cenas", "Voz", "Render", "QA", "Publicação"):
         assert step in visible
     assert "Não há percentual" in visible
+
+
+# ---------- PROD-01: cartão de fontes e iniciar/retomar na página do vídeo ----------
+
+
+def test_video_detail_page_has_sources_card_and_start_control(client_env):
+    client, videos, p_id = client_env["client"], client_env["videos"], client_env["project_id"]
+    v = videos.create_video(p_id, "Vídeo sem run", VideoFormat.short)
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert 'id="video-fontes"' in r.text
+    assert 'id="source-url"' in r.text and 'id="source-text"' in r.text
+    assert 'id="btn-start-production"' in r.text
+    assert 'id="btn-retry-production"' not in r.text
+
+
+def test_video_detail_page_shows_the_real_failure_reason_and_retry(client_env):
+    client, videos, conn = client_env["client"], client_env["videos"], client_env["conn"]
+    p_id = client_env["project_id"]
+    v = videos.create_video(p_id, "Vídeo com run falho", VideoFormat.short)
+    run_id = "c" * 32
+    conn.execute("INSERT INTO studio.production_runs(run_id, video_id, idempotency_key, state, reason) "
+                 "VALUES (%s, %s, 'req-panel-failed-1', 'FAILED', 'roteiro falhou')", (run_id, v.id))
+    conn.execute("INSERT INTO studio.stage_executions(run_id, stage_id, state, attempt, error) "
+                 "VALUES (%s, 'script', 'FAILED', 1, %s)",
+                 (run_id, "no sources with checkable claims: add sources first"))
+    conn.commit()
+
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert 'id="btn-retry-production"' in r.text
+    assert 'id="btn-start-production"' not in r.text
+    assert "no sources with checkable claims: add sources first" in r.text
+
+
+def test_video_detail_page_lists_registered_sources(client_env):
+    client, videos, p_id = client_env["client"], client_env["videos"], client_env["project_id"]
+    v = videos.create_video(p_id, "Vídeo com fonte", VideoFormat.short)
+    added = client.post(f"/studio/videos/{v.id}/sources",
+                        json={"url": "https://amsterdam-dance-event.nl/en/about",
+                              "text": "Amsterdam Dance Event reúne mais de 3.600 artistas."},
+                        headers={**AUTH_HEADER, "Origin": "http://testserver"})
+    assert added.status_code == 201
+    r = client.get(f"/studio/panel/videos/{v.id}", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "amsterdam-dance-event.nl/en/about" in r.text
+    assert "caractere" in r.text

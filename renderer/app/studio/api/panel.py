@@ -1723,6 +1723,11 @@ details.advanced { background: #0e1524; }
 .ok { color: var(--ok); }
 .bad { color: var(--bad); }
 .hint { font-weight: 400; font-size: 0.78rem; opacity: 0.8; }
+.field label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; }
+.error-msg { display: none; margin-top: 0.35rem; font-size: 0.8rem; color: var(--bad); }
+/* O erro visual e o aria-invalid acompanham :user-invalid: só depois da interação/erro, nunca no load. */
+:is(input, textarea, select):user-invalid { border-color: var(--bad); }
+:is(input, textarea, select):user-invalid + .error-msg { display: block; }
 .btn-danger {
   background: var(--bad-bg);
   color: var(--bad);
@@ -2519,13 +2524,44 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             body: JSON.stringify({{ project_id, topic, format }})
           }});
           const data = await res.json().catch(() => ({{}}));
-          if (res.ok) {{
-            feedback.textContent = 'Vídeo criado com sucesso! Atualizando...';
-            setTimeout(() => location.reload(), 800);
-          }} else {{
-            feedback.textContent = 'Erro ao criar: ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+          if (!res.ok || !data.id) {{
+            const why = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            feedback.textContent = '';
+            const msg = document.createElement('span');
+            msg.textContent = 'Erro ao criar: ' + why + ' ';
+            const link = document.createElement('a');
+            link.href = '#videos-section';
+            link.textContent = 'Ver meus vídeos';
+            feedback.append(msg, link);
             if (btn) btn.disabled = false;
+            return;
           }}
+          // O vídeo foi criado; iniciar a produção aqui (mesmo caminho do assistente de Novo vídeo).
+          // TODO(fatia IA das telas): unificar este fluxo duplicado com o assistente de Novo vídeo.
+          const key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+          feedback.textContent = 'Iniciando a produção...';
+          const started = await fetch('/studio/videos/' + encodeURIComponent(data.id) + '/production-runs', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json', 'Idempotency-Key': key }},
+            body: JSON.stringify({{}})
+          }});
+          const run = await started.json().catch(() => ({{}}));
+          if (started.ok && run.run_id) {{
+            feedback.textContent = 'Produção iniciada. Abrindo a execução...';
+            location.href = '/studio/panel/videos/' + encodeURIComponent(data.id) +
+              '/production-runs/' + encodeURIComponent(run.run_id);
+            return;
+          }}
+          // Vídeo criado, produção não iniciou: motivo real do servidor + saída (link para o vídeo).
+          const why = typeof run.detail === 'string' ? run.detail : 'resposta inválida do servidor';
+          feedback.textContent = '';
+          const msg = document.createElement('span');
+          msg.textContent = 'O vídeo foi criado, mas a produção não iniciou: ' + why + ' ';
+          const link = document.createElement('a');
+          link.href = '/studio/panel/videos/' + encodeURIComponent(data.id);
+          link.textContent = 'Abrir o vídeo para tentar novamente';
+          feedback.append(msg, link);
+          if (btn) btn.disabled = false;
         }} catch (err) {{
           feedback.textContent = 'Falha de rede: ' + err.message;
           if (btn) btn.disabled = false;
@@ -3016,6 +3052,132 @@ def _video_style_card(style_view) -> str:
     """
 
 
+# Rótulos das etapas de produção e dos estados do run: a página do vídeo mostra o motivo real
+# sem reimplementar a execução (que vive em panel_production).
+_PRODUCTION_STAGE_LABELS = {
+    "research": "Fontes",
+    "script": "Roteiro",
+    "factcheck": "Fact-check",
+    "storyboard": "Cenas",
+    "assets": "Voz e imagens",
+    "render": "Render",
+    "qa": "QA",
+    "approval": "Aprovação",
+    "publish": "Publicação",
+}
+_RUN_STATE_LABELS = {
+    "CREATED": "Criada (aguardando início)",
+    "RUNNING": "Em execução",
+    "WAITING_HUMAN": "Aguardando você",
+    "PAUSED": "Pausada",
+    "FAILED": "Falhou",
+    "CANCELLED": "Cancelada",
+    "SUCCEEDED": "Concluída",
+}
+
+
+def _video_sources_card(view: VideoDetailView) -> str:
+    """Cartão Fontes: lista o que existe e registra fonte nova (texto colado ou busca na URL)."""
+    v = view.video
+    if view.sources:
+        items = "".join(
+            f'<li><code>{e(s.url)}</code> — {s.chars} caractere{"" if s.chars == 1 else "s"}</li>'
+            for s in view.sources
+        )
+        count_html = f'<p class="dim" style="font-size:12.5px;margin:6px 0 0">{len(view.sources)} fonte(s) registrada(s).</p>'
+        list_html = f'<ul aria-label="Fontes registradas" style="margin:8px 0 0;padding-left:1.1rem">{items}</ul>'
+    else:
+        count_html = ""
+        list_html = '<p class="empty" style="margin:8px 0 0">Nenhuma fonte registrada ainda.</p>'
+    return f"""
+      <div class="card" id="video-fontes">
+        <h2>Fontes</h2>
+        <p class="dim" style="font-size:12.5px;margin:4px 0 0">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
+        {count_html}
+        {list_html}
+        <form id="video-sources-form" data-video-id="{e(v.id)}" style="margin-top:12px">
+          <div class="field">
+            <label for="source-url">URL da fonte <span aria-hidden="true">*</span></label>
+            <input type="url" id="source-url" name="url" class="input" required
+                   data-error="source-url-error" placeholder="https://exemplo.com/noticia"
+                   aria-describedby="source-rule">
+            <span class="error-msg" id="source-url-error"><span role="img" aria-label="Erro">&#9888;</span> Informe a URL da fonte.</span>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label for="source-text">Texto da fonte (opcional)</label>
+            <textarea id="source-text" name="text" class="input" rows="5"
+                      placeholder="Cole o conteúdo da página quando o site bloquear a leitura"></textarea>
+          </div>
+          <p class="hint" id="source-rule" style="margin-top:8px">
+            Com texto: o texto colado é a fonte e a URL é só referência.
+            Sem texto: o servidor busca a URL, que precisa estar na lista permitida (STUDIO_SOURCE_ALLOWLIST);
+            se a busca for recusada, a mensagem do servidor aparece aqui.
+          </p>
+          <div class="spread" style="margin-top:1rem">
+            <button class="btn btn-primary" type="submit" id="btn-add-source">Adicionar fonte</button>
+            <div id="video-sources-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+          </div>
+        </form>
+      </div>
+    """
+
+
+def _video_run_card(view: VideoDetailView) -> str:
+    """Iniciar/retomar a produção a partir do vídeo, sempre com o motivo real do servidor.
+
+    Sem run: "Iniciar produção". Run em falha: mostra a etapa e o motivo e oferece "Tentar novamente".
+    Em qualquer outro estado não há botão inerte: explica por que a nova tentativa não cabe.
+    """
+    v = view.video
+    run = view.latest_run
+    feedback = '<div id="video-run-feedback" class="form-feedback" role="status" aria-live="polite"></div>'
+    if run is None:
+        return f"""
+          <div class="card" id="video-producao">
+            <h2>Produção</h2>
+            <p class="dim" style="font-size:12.5px;margin:4px 0 0">Nenhuma produção iniciada para este vídeo.</p>
+            <div class="spread" style="margin-top:1rem">
+              <button class="btn btn-primary" type="button" id="btn-start-production"
+                      data-video-id="{e(v.id)}">Iniciar produção</button>
+              {feedback}
+            </div>
+          </div>
+        """
+    exec_url = f'/studio/panel/videos/{e(v.id)}/production-runs/{e(run.run_id)}'
+    if run.state == "FAILED":
+        stage_label = _PRODUCTION_STAGE_LABELS.get(run.failed_stage, run.failed_stage or "etapa desconhecida")
+        if run.failure_reason:
+            reason_html = f'<p class="muted" style="margin:0.5rem 0 0">Motivo: <strong>{e(run.failure_reason)}</strong></p>'
+        else:
+            reason_html = '<p class="muted" style="margin:0.5rem 0 0">O motivo não foi registrado; abra a execução para ver o detalhe.</p>'
+        return f"""
+          <div class="card" id="video-producao">
+            <span class="state s-fail" data-state="action"><span class="state-icon" aria-hidden="true">!</span> <span>Ação necessária</span></span>
+            <h2 style="margin-top:0.6rem">A produção parou</h2>
+            <p class="muted" style="margin:0.5rem 0 0">Parou na etapa <strong>{e(stage_label)}</strong>.</p>
+            {reason_html}
+            <div class="spread" style="margin-top:1rem">
+              <button class="btn btn-primary" type="button" id="btn-retry-production"
+                      data-video-id="{e(v.id)}" data-run-id="{e(run.run_id)}">Tentar novamente</button>
+              <a class="btn" href="{exec_url}">Abrir execução</a>
+              {feedback}
+            </div>
+          </div>
+        """
+    state_label = _RUN_STATE_LABELS.get(run.state, run.state)
+    return f"""
+      <div class="card" id="video-producao">
+        <h2>Produção</h2>
+        <p class="muted" style="margin:0.5rem 0 0">Execução atual: <strong>{e(state_label)}</strong>.</p>
+        <p class="dim" style="font-size:12.5px;margin:4px 0 0">Nova tentativa só é válida quando a execução está em falha; aqui o caminho é continuar pela execução.</p>
+        <div class="spread" style="margin-top:1rem">
+          <a class="btn btn-primary" href="{exec_url}">Abrir execução</a>
+          {feedback}
+        </div>
+      </div>
+    """
+
+
 def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     v = view.video
@@ -3186,6 +3348,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         '</div>'
     )
     style_card_html = _video_style_card(style_view)
+    sources_card_html = _video_sources_card(view)
+    run_card_html = _video_run_card(view)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -3224,6 +3388,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
             {failure_html}
             {publication_summary_html}
           </div>
+          {run_card_html}
+          {sources_card_html}
           {style_card_html}
         </div>
 
@@ -3338,6 +3504,135 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         }}
       }});
     }}
+
+    // Fontes: registra a fonte e recarrega para a lista refletir o servidor. Com texto, o texto é
+    // a fonte; sem texto, o servidor busca a URL (e devolve o motivo real se recusar).
+    const sourcesForm = document.getElementById('video-sources-form');
+    if (sourcesForm) {{
+      sourcesForm.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const feedback = document.getElementById('video-sources-feedback');
+        const button = document.getElementById('btn-add-source');
+        const videoId = sourcesForm.getAttribute('data-video-id') || '';
+        const urlInput = document.getElementById('source-url');
+        const textInput = document.getElementById('source-text');
+        const url = urlInput ? urlInput.value.trim() : '';
+        const text = textInput ? textInput.value : '';
+        if (!url) {{ feedback.textContent = 'Informe a URL da fonte.'; return; }}
+        if (button) button.disabled = true;
+        feedback.textContent = 'Registrando a fonte...';
+        try {{
+          const payload = {{ url: url }};
+          if (text.trim()) payload.text = text;
+          const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/sources', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify(payload)
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            feedback.textContent = 'Fonte registrada. Atualizando...';
+            setTimeout(() => location.reload(), 600);
+          }} else {{
+            feedback.textContent = 'Não foi possível registrar a fonte: '
+              + (typeof data.detail === 'string' ? data.detail : 'verifique a URL e tente novamente.');
+            if (button) button.disabled = false;
+          }}
+        }} catch (error) {{
+          feedback.textContent = 'Falha de rede ao registrar a fonte. Tente novamente.';
+          if (button) button.disabled = false;
+        }}
+      }});
+    }}
+
+    // Produção a partir do vídeo: iniciar (sem run) ou retomar (run em falha). Sem botão inerte:
+    // quando o estado não permite, a própria página não oferece o botão.
+    const runFeedback = document.getElementById('video-run-feedback');
+    const startBtn = document.getElementById('btn-start-production');
+    if (startBtn) {{
+      startBtn.addEventListener('click', async () => {{
+        const videoId = startBtn.getAttribute('data-video-id') || '';
+        startBtn.disabled = true;
+        if (runFeedback) runFeedback.textContent = 'Iniciando a produção...';
+        try {{
+          const key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+          const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/production-runs', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json', 'Idempotency-Key': key }},
+            body: JSON.stringify({{}})
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok && data.run_id) {{
+            if (runFeedback) runFeedback.textContent = 'Produção iniciada. Abrindo a execução...';
+            location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) +
+              '/production-runs/' + encodeURIComponent(data.run_id);
+          }} else {{
+            if (runFeedback) runFeedback.textContent = 'Não foi possível iniciar: '
+              + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
+            startBtn.disabled = false;
+          }}
+        }} catch (error) {{
+          if (runFeedback) runFeedback.textContent = 'Falha de rede ao iniciar a produção. Tente novamente.';
+          startBtn.disabled = false;
+        }}
+      }});
+    }}
+    const retryProductionBtn = document.getElementById('btn-retry-production');
+    if (retryProductionBtn) {{
+      retryProductionBtn.addEventListener('click', async () => {{
+        const videoId = retryProductionBtn.getAttribute('data-video-id') || '';
+        const runId = retryProductionBtn.getAttribute('data-run-id') || '';
+        retryProductionBtn.disabled = true;
+        if (runFeedback) runFeedback.textContent = 'Retomando a produção...';
+        try {{
+          const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) +
+            '/production-runs/' + encodeURIComponent(runId) + '/retry', {{ method: 'POST' }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            if (runFeedback) runFeedback.textContent = 'Produção retomada. Abrindo a execução...';
+            location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) +
+              '/production-runs/' + encodeURIComponent(runId);
+          }} else {{
+            if (runFeedback) runFeedback.textContent = 'Não foi possível retomar: '
+              + (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite nova tentativa.');
+            retryProductionBtn.disabled = false;
+          }}
+        }} catch (error) {{
+          if (runFeedback) runFeedback.textContent = 'Falha de rede ao retomar a produção. Tente novamente.';
+          retryProductionBtn.disabled = false;
+        }}
+      }});
+    }}
+
+    // Sincroniza aria-invalid com o estado visual :user-invalid (Baseline): o erro só aparece
+    // depois da interação; o ARIA acompanha no mesmo instante e o campo referencia a mensagem.
+    const flagged = new WeakSet();
+    const linkError = (el, shown) => {{
+      const errorId = el.dataset ? el.dataset.error : null;
+      if (!errorId) return;
+      const ids = (el.getAttribute('aria-describedby') || '').split(/\\s+/).filter((id) => id && id !== errorId);
+      if (shown) ids.push(errorId);
+      if (ids.length) el.setAttribute('aria-describedby', ids.join(' '));
+      else el.removeAttribute('aria-describedby');
+    }};
+    const syncAria = (el) => {{
+      if (!el.matches || !el.matches('input, select, textarea')) return;
+      const invalid = el.matches(':user-invalid');
+      if (invalid) {{
+        el.setAttribute('aria-invalid', 'true');
+        linkError(el, true);
+        flagged.add(el);
+      }} else if (flagged.has(el) || el.getAttribute('aria-invalid') !== 'true') {{
+        el.setAttribute('aria-invalid', 'false');
+        linkError(el, false);
+        flagged.delete(el);
+      }}
+    }};
+    document.querySelectorAll('input, select, textarea').forEach((el) => syncAria(el));
+    document.addEventListener('blur', (ev) => syncAria(ev.target), true);
+    document.addEventListener('input', (ev) => {{ if (ev.target.hasAttribute && ev.target.hasAttribute('aria-invalid')) syncAria(ev.target); }});
+    document.addEventListener('change', (ev) => syncAria(ev.target), true);
+    document.addEventListener('invalid', (ev) => syncAria(ev.target), true);
   </script>
 </body>
 </html>"""

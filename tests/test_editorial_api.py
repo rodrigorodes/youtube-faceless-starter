@@ -103,6 +103,35 @@ def test_source_errors(client):
     assert client.post(f"/studio/videos/{'A' * 32}/sources", json={"url": REF, "text": "x"}).status_code == 422
 
 
+def test_sources_round_trip_lists_url_and_size_without_the_text(client):
+    vid = new_video(client)
+    add_text_source(client, vid)
+    r = client.get(f"/studio/videos/{vid}/sources")
+    assert r.status_code == 200
+    items = r.json()
+    assert len(items) == 1
+    assert items[0]["url"] == REF
+    assert items[0]["chars"] == len(SOURCE.strip())
+    assert "text" not in items[0]  # o conteúdo da fonte nunca sai no corpo
+
+
+def test_text_source_bypasses_the_allowlist_while_fetching_the_url_is_refused(client):
+    """Documenta a saída legítima: colar o texto dispensa a allowlist; buscar a URL, não."""
+    vid = new_video(client)
+    outside = "https://fora-da-lista.example/noticia"
+    # Sem texto, o servidor busca a URL e recusa host fora da allowlist com a mensagem real.
+    refused = client.post(f"/studio/videos/{vid}/sources", json={"url": outside})
+    assert refused.status_code == 422 and "allowlist" in refused.json()["detail"]
+    # Com o texto colado, o mesmo host é a fonte legítima; a URL é só referência.
+    ok = client.post(f"/studio/videos/{vid}/sources", json={"url": outside, "text": SOURCE})
+    assert ok.status_code == 201 and ok.json()["chars"] == len(SOURCE.strip())
+    assert client.get(f"/studio/videos/{vid}/sources").json()[0]["url"] == outside
+
+
+def test_list_sources_unknown_video_is_404(client):
+    assert client.get(f"/studio/videos/{'0' * 32}/sources").status_code == 404
+
+
 def test_script_needs_sources_then_generates_and_is_readable(client):
     vid = new_video(client)
     assert client.post(f"/studio/videos/{vid}/script", json={}).status_code == 422

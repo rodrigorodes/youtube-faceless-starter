@@ -12,7 +12,7 @@ from ..domain.contracts import VideoFormat
 from ..domain.panel import Stage, classify, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
-from .ports import CategoryRepository, PanelRepository, PubInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
+from .ports import CategoryRepository, LatestRun, PanelRepository, PubInfo, SourceInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
 
 
 class CostKind(str, Enum):
@@ -206,6 +206,8 @@ class VideoDetailView:
     usage: list[UsageInfo]
     render_error: str | None
     publication: PubInfo | None
+    sources: list[SourceInfo] = field(default_factory=list)
+    latest_run: LatestRun | None = None
 
 
 class BuildPanel:
@@ -468,4 +470,6 @@ class BuildPanel:
             usage=d.usage,
             render_error=d.render_error,
             publication=d.publication,
+            sources=d.sources,
+            latest_run=d.latest_run,
         )
