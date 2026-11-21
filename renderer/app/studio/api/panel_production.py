@@ -384,7 +384,7 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#novo-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=side_card)}
+    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=side_card, channels_href="/studio/canais")}
     <main class="main-content" id="novo-main">
       <div class="card">
         <div class="spread">
@@ -657,7 +657,7 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#exec-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=shell.budget_side_card(view.month))}
+    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=shell.budget_side_card(view.month), channels_href="/studio/canais")}
     <main class="main-content" id="exec-main">
       <div class="card">
         <div class="spread">

@@ -40,6 +40,7 @@ from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_script, render_video
+from .panel_channels import render_channels
 from .panel_production import (
     STAGE_LABELS,
     ExecutionView,
@@ -926,6 +927,15 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             detail = uc.panel.detail(check_id(video_id))
             return render_video(detail)
         page, headers = run(get_detail_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/canais", response_class=HTMLResponse)
+    def channels_page_html(project_id: str | None = None):
+        def get_page(uc):
+            if uc.channels_page is None:
+                raise HTTPException(503, "channel services unavailable")
+            return render_channels(uc.channels_page.execute(check_id(project_id) if project_id else None))
+        page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/videos/{video_id}/render", response_model=RenderStatusOut)

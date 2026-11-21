@@ -71,6 +71,7 @@ _NAV_ICONS = {
     "producao": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="4"></rect><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>',
     "tendencias": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>',
     "videos": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>',
+    "canais": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="14" rx="2"></rect><line x1="8" y1="22" x2="16" y2="22"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>',
 }
 _NAV_UNAVAILABLE = (
     ("Canais", "em breve", '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="14" rx="2"></rect><line x1="8" y1="22" x2="16" y2="22"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>'),
@@ -80,18 +81,23 @@ _NAV_UNAVAILABLE = (
 )
 
 
-def build_sidebar_nav(*, active: str = "inicio", base_href: str = "") -> str:
+def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
+                      channels_href: str | None = None) -> str:
     """Navegação principal em dois grupos (G1), reutilizada por todas as páginas do painel.
 
     `active` marca o único item atual; `base_href` prefixa as âncoras quando a página aberta não
     contém as seções (as telas novas voltam ao painel em vez de apontar para âncora inexistente).
+    `channels_href` promove "Canais" de indisponível a link real, para as páginas que já entregam
+    a tela de Canais (F10); sem ele, o item continua não focável como nas versões anteriores.
     """
-    links = (
+    links = [
         ("inicio", "Início", f"{base_href}#inicio-section"),
         ("producao", "Produção", f"{base_href}#producao-section"),
         ("tendencias", "Tendências", f"{base_href}#trending-section"),
         ("videos", "Vídeos", f"{base_href}#videos-section"),
-    )
+    ]
+    if channels_href:
+        links.append(("canais", "Canais", channels_href))
     items = []
     for key, label, href in links:
         current = ' aria-current="page"' if key == active else ""
@@ -105,6 +111,8 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "") -> str:
           </li>""")
     unavailable = []
     for label, tag, icon in _NAV_UNAVAILABLE:
+        if channels_href and label == "Canais":
+            continue
         unavailable.append(f"""
           <li>
             <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
@@ -140,7 +148,8 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "") -> str:
     """
 
 
-def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_html: str) -> str:
+def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_html: str,
+                   channels_href: str | None = None) -> str:
     """Casca lateral completa (marca + navegação em grupos + card de orçamento + aviso)."""
     return f"""<aside class="sidebar" aria-label="Barra lateral">
       <div class="brand">
@@ -150,7 +159,7 @@ def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_htm
           <div class="brand-sub">YouTube Automation</div>
         </div>
       </div>
-      {build_sidebar_nav(active=active, base_href=base_href)}
+      {build_sidebar_nav(active=active, base_href=base_href, channels_href=channels_href)}
       {side_card_html}
       <p class="mock-note">Dados reais do Studio. Sem conteúdo ilustrativo.</p>
     </aside>"""
@@ -2357,7 +2366,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#inicio-section">Ir para o conteúdo</a>
   <div class="app-layout">
-    {render_sidebar(active="inicio", side_card_html=side_card_html)}
+    {render_sidebar(active="inicio", side_card_html=side_card_html, channels_href="/studio/canais")}
 
     <main class="main-content">
       <header class="topbar">

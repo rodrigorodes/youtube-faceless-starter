@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
     from .script_view import BuildScriptView
+    from .channels_page import BuildChannelsPage
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -97,6 +98,8 @@ class UseCases:
     associate_youtube_channel: AssociateYouTubeChannel | None = None
     disconnect_youtube_channel: DisconnectYouTubeChannel | None = None
     get_project_config: GetPublicProjectConfig | None = None
+    # F10 (UI): projeção da tela de Canais consumindo os casos de uso acima
+    channels_page: "BuildChannelsPage | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -122,10 +125,12 @@ class UseCases:
                   get_youtube_channel: GetYouTubeChannel | None = None,
                   associate_youtube_channel: AssociateYouTubeChannel | None = None,
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
-                  get_project_config: GetPublicProjectConfig | None = None) -> "UseCases":
+                  get_project_config: GetPublicProjectConfig | None = None,
+                  channels_page: "BuildChannelsPage | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
-                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config)
+                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
+                   channels_page)
