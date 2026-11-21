@@ -15,6 +15,13 @@ from pydantic import BaseModel, Field, field_validator
 from ..application.config import ProviderNotFound
 from ..application.budget import (BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition,
                                   OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation)
+from ..domain.channel import (ChannelDurationInvalid, ChannelFieldInvalid, ChannelLockTimeout, ChannelNameInvalid,
+                              ChannelProjectNotFound, ChannelVersionConflict, ChannelVersionInvalid,
+                              DuplicateChannelProfile)
+from ..domain.channel_budget import BudgetLimitInvalid
+from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailable, ProviderKind,
+                               ProviderSpecInvalid)
+from ..domain.youtube_channel import YouTubeChannelInvalid
 from ..application.analytics import DailyMetric
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.longform import ScriptApprovalRefused, ScriptVersionStale
@@ -344,6 +351,215 @@ class ProductionRunViewOut(BaseModel):
     events: list[ProductionEventOut]
 
 
+# -- canais/providers/budget (F10-03..07) -----------------------------------
+
+
+class ChannelProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    strategy: str = Field(default="", max_length=500)
+    language: str = Field(default="pt-BR", max_length=20)
+    audience: str = Field(default="", max_length=500)
+    pillars: list[str] = Field(default_factory=list, max_length=20)
+    narrative: str = Field(default="", max_length=4000)
+    target_duration_s: int = Field(default=60, ge=1, le=36000)
+    visual_identity: str = Field(default="", max_length=2000)
+    voice: str = Field(default="", max_length=200)
+    audio: str = Field(default="", max_length=200)
+    thumbnail: str = Field(default="", max_length=2000)
+    cta: str = Field(default="", max_length=500)
+    archived: bool = False
+
+
+class ChannelUpdateIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    changes: dict[str, object]
+
+
+class ChannelProfileOut(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    strategy: str
+    language: str
+    audience: str
+    pillars: list[str]
+    narrative: str
+    target_duration_s: int
+    visual_identity: str
+    voice: str
+    audio: str
+    thumbnail: str
+    cta: str
+    version: int
+    archived: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProviderCostOut(BaseModel):
+    kind: str
+    amount_usd: str | None
+    label: str
+    note: str
+
+
+class ProviderCardOut(BaseModel):
+    kind: str
+    spec: str
+    name: str
+    model: str
+    capabilities: list[str]
+    cost: ProviderCostOut
+    rate_limit_per_min: int | None
+    quality: int
+    availability: str
+    reason: str | None = None
+
+
+class ProviderTestIn(BaseModel):
+    kind: ProviderKind
+    spec: str | None = Field(default=None, max_length=200)
+
+
+class ConnectionTestOut(BaseModel):
+    kind: str
+    spec: str
+    name: str
+    available: bool
+    checked: bool
+    reason: str | None = None
+
+
+class RouteIn(BaseModel):
+    kind: ProviderKind
+    profile: EconomicProfile = EconomicProfile.BALANCED
+    max_cost_usd: str | None = None
+
+
+class RoutingOut(BaseModel):
+    kind: str
+    profile: str
+    primary: ProviderCardOut
+    fallbacks: list[ProviderCardOut]
+    reason: str
+
+
+class BudgetIn(BaseModel):
+    hard_monthly_usd: str
+    soft_monthly_usd: str
+    hard_video_usd: str
+    soft_video_usd: str
+    economic_profile: EconomicProfile = EconomicProfile.BALANCED
+
+
+class BudgetLimitsOut(BaseModel):
+    project_id: str
+    hard_monthly_usd: str
+    soft_monthly_usd: str
+    hard_video_usd: str
+    soft_video_usd: str
+    economic_profile: str
+
+
+class BudgetDecisionOut(BaseModel):
+    scope: str
+    kind: str
+    spent_usd: str
+    projected_usd: str
+    soft_usd: str
+    hard_usd: str
+    message: str
+
+
+class CostSummaryOut(BaseModel):
+    real_usd: str
+    estimate_usd: str
+    spent_usd: str
+    free_calls: int
+    unknown_calls: int
+    unattributed_calls: int
+    has_usage: bool
+    labels: dict[str, str]
+
+
+class BudgetOut(BaseModel):
+    configured: bool
+    limits: BudgetLimitsOut
+    summary: CostSummaryOut
+    monthly: BudgetDecisionOut
+    video: BudgetDecisionOut
+
+
+class YouTubeChannelIn(BaseModel):
+    channel_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(default="", max_length=200)
+    scopes: list[str] = Field(default_factory=list)
+    access_token: str | None = Field(default=None, max_length=4000)
+    refresh_token: str | None = Field(default=None, max_length=4000)
+    token_expires_at: datetime | None = None
+
+
+class YouTubeChannelOut(BaseModel):
+    project_id: str
+    channel_id: str | None = None
+    title: str
+    scopes: list[str]
+    oauth_status: str
+    connected: bool
+    token_expires_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProjectConfigOut(BaseModel):
+    project_id: str
+    config: dict[str, str]
+
+
+def _channel_out(profile) -> dict:
+    return {"id": profile.id, "project_id": profile.project_id, "name": profile.name,
+            "strategy": profile.strategy, "language": profile.language, "audience": profile.audience,
+            "pillars": list(profile.pillars), "narrative": profile.narrative,
+            "target_duration_s": profile.target_duration_s, "visual_identity": profile.visual_identity,
+            "voice": profile.voice, "audio": profile.audio, "thumbnail": profile.thumbnail, "cta": profile.cta,
+            "version": profile.version, "archived": profile.archived,
+            "created_at": profile.created_at, "updated_at": profile.updated_at}
+
+
+def _card_out(card) -> dict:
+    return {"kind": card.kind.value, "spec": card.spec, "name": card.name, "model": card.model,
+            "capabilities": list(card.capabilities),
+            "cost": {"kind": card.cost.kind.value,
+                     "amount_usd": None if card.cost.amount_usd is None else str(card.cost.amount_usd),
+                     "label": card.cost.label, "note": card.cost.note},
+            "rate_limit_per_min": card.rate_limit_per_min, "quality": card.quality,
+            "availability": card.availability.value, "reason": card.reason}
+
+
+def _limits_out(limits) -> dict:
+    return {"project_id": limits.project_id, "hard_monthly_usd": f"{limits.hard_monthly_usd:.2f}",
+            "soft_monthly_usd": f"{limits.soft_monthly_usd:.2f}", "hard_video_usd": f"{limits.hard_video_usd:.2f}",
+            "soft_video_usd": f"{limits.soft_video_usd:.2f}", "economic_profile": limits.economic_profile.value}
+
+
+def _decision_out(decision) -> dict:
+    return {"scope": decision.scope, "kind": decision.kind.value, "spent_usd": f"{decision.spent_usd:.2f}",
+            "projected_usd": f"{decision.projected_usd:.2f}", "soft_usd": f"{decision.soft_usd:.2f}",
+            "hard_usd": f"{decision.hard_usd:.2f}", "message": decision.message}
+
+
+def _summary_out(summary) -> dict:
+    return {"real_usd": f"{summary.real_usd:.2f}", "estimate_usd": f"{summary.estimate_usd:.2f}",
+            "spent_usd": f"{summary.spent_usd:.2f}", "free_calls": summary.free_calls,
+            "unknown_calls": summary.unknown_calls, "unattributed_calls": summary.unattributed_calls,
+            "has_usage": summary.has_usage, "labels": summary.labels()}
+
+
+def _budget_out(view) -> dict:
+    return {"configured": view.configured, "limits": _limits_out(view.limits),
+            "summary": _summary_out(view.summary), "monthly": _decision_out(view.monthly),
+            "video": _decision_out(view.video)}
+
+
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
     router = APIRouter(prefix="/studio", tags=["studio"], dependencies=[Depends(_browser_guard), Depends(_authenticate)])
 
@@ -425,13 +641,28 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, str(exc)) from exc
         except RunNotFound as exc:
             raise HTTPException(404, "production run not found") from exc
+        # -- canais/providers/budget (F10-03..07) --
+        except ChannelProjectNotFound as exc:
+            raise HTTPException(404, "project not found") from exc
+        except (DuplicateChannelProfile, ChannelVersionConflict, ChannelLockTimeout) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (ChannelNameInvalid, ChannelFieldInvalid, ChannelDurationInvalid, ChannelVersionInvalid) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ProviderSpecInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except NoProviderAvailable as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except BudgetLimitInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except YouTubeChannelInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     def editorial(uc: UseCases):
         if uc.editorial is None:
             raise HTTPException(503, "editorial services unavailable")
         return uc.editorial
 
-    @router.post("/projects", status_code=201, response_model=Project)
+    @router.post("/projects", status_code=201, response_model=Project, response_model_exclude={"config"})
     def create_project(body: ProjectIn):
         return run(lambda uc: uc.create_project.execute(body.name, body.niche, body.language))
 
@@ -944,5 +1175,118 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return render_execution(view)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
+
+    # -- canais: CRUD de perfil (F10-01/F10-02) -------------------------------
+
+    def _need(uc, attr: str, message: str):
+        service = getattr(uc, attr, None)
+        if service is None:
+            raise HTTPException(503, message)
+        return service
+
+    @router.post("/projects/{project_id}/channels", status_code=201, response_model=ChannelProfileOut)
+    def create_channel(project_id: str, body: ChannelProfileIn):
+        def go(uc):
+            options = body.model_dump()
+            name = options.pop("name")
+            return _channel_out(_need(uc, "create_channel_profile", "channel services unavailable").execute(
+                check_id(project_id), name, **options))
+        return run(go)
+
+    @router.get("/projects/{project_id}/channels", response_model=ChannelProfileOut)
+    def get_channel(project_id: str):
+        def go(uc):
+            profile = _need(uc, "get_channel_profile", "channel services unavailable").execute(check_id(project_id))
+            if profile is None:
+                raise HTTPException(404, "channel profile not found")
+            return _channel_out(profile)
+        return run(go)
+
+    @router.get("/channels", response_model=list[ChannelProfileOut])
+    def list_channels(include_archived: bool = False):
+        return run(lambda uc: [_channel_out(p) for p in _need(
+            uc, "list_channel_profiles", "channel services unavailable").execute(include_archived)])
+
+    @router.patch("/channels/{profile_id}", response_model=ChannelProfileOut)
+    def update_channel(profile_id: str, body: ChannelUpdateIn):
+        def go(uc):
+            profile = _need(uc, "update_channel_profile", "channel services unavailable").execute(
+                check_id(profile_id), body.changes, body.expected_version)
+            if profile is None:
+                raise HTTPException(404, "channel profile not found")
+            return _channel_out(profile)
+        return run(go)
+
+    # -- providers (F10-03/F10-04) -------------------------------------------
+
+    @router.get("/projects/{project_id}/providers", response_model=list[ProviderCardOut])
+    def list_providers(project_id: str, kind: ProviderKind | None = None):
+        return run(lambda uc: [_card_out(c) for c in _need(
+            uc, "providers", "provider services unavailable").list(check_id(project_id), kind)])
+
+    @router.post("/projects/{project_id}/providers/test", response_model=ConnectionTestOut)
+    def test_provider(project_id: str, body: ProviderTestIn):
+        def go(uc):
+            result = _need(uc, "providers", "provider services unavailable").test_connection(
+                check_id(project_id), body.kind, body.spec)
+            return {"kind": result.kind.value, "spec": result.spec, "name": result.name,
+                    "available": result.available, "checked": result.checked, "reason": result.reason}
+        return run(go)
+
+    @router.post("/projects/{project_id}/providers/route", response_model=RoutingOut)
+    def route_provider_endpoint(project_id: str, body: RouteIn):
+        def go(uc):
+            decision = _need(uc, "providers", "provider services unavailable").route(
+                check_id(project_id), body.kind, body.profile, body.max_cost_usd)
+            return {"kind": decision.kind.value, "profile": decision.profile.value,
+                    "primary": _card_out(decision.primary),
+                    "fallbacks": [_card_out(c) for c in decision.fallbacks], "reason": decision.reason}
+        return run(go)
+
+    # -- budget por canal (F10-05) -------------------------------------------
+
+    @router.get("/projects/{project_id}/budget", response_model=BudgetOut)
+    def get_channel_budget(project_id: str):
+        return run(lambda uc: _budget_out(_need(
+            uc, "get_channel_budget", "budget services unavailable").execute(check_id(project_id))))
+
+    @router.put("/projects/{project_id}/budget", response_model=BudgetOut)
+    def put_channel_budget(project_id: str, body: BudgetIn):
+        def go(uc):
+            p_id = check_id(project_id)
+            _need(uc, "set_channel_budget", "budget services unavailable").execute(
+                p_id, hard_monthly_usd=body.hard_monthly_usd, soft_monthly_usd=body.soft_monthly_usd,
+                hard_video_usd=body.hard_video_usd, soft_video_usd=body.soft_video_usd,
+                economic_profile=body.economic_profile)
+            return _budget_out(_need(uc, "get_channel_budget", "budget services unavailable").execute(p_id))
+        return run(go)
+
+    # -- canal YouTube e status OAuth (F10-06) -------------------------------
+
+    @router.get("/projects/{project_id}/youtube-channel", response_model=YouTubeChannelOut)
+    def get_youtube_channel(project_id: str):
+        return run(lambda uc: _need(uc, "get_youtube_channel", "youtube services unavailable").execute(
+            check_id(project_id)))
+
+    @router.put("/projects/{project_id}/youtube-channel", response_model=YouTubeChannelOut)
+    def put_youtube_channel(project_id: str, body: YouTubeChannelIn):
+        def go(uc):
+            return _need(uc, "associate_youtube_channel", "youtube services unavailable").execute(
+                check_id(project_id), channel_id=body.channel_id, title=body.title, scopes=body.scopes,
+                access_token=body.access_token, refresh_token=body.refresh_token,
+                token_expires_at=body.token_expires_at)
+        return run(go)
+
+    @router.delete("/projects/{project_id}/youtube-channel")
+    def delete_youtube_channel(project_id: str):
+        return run(lambda uc: {"deleted": _need(
+            uc, "disconnect_youtube_channel", "youtube services unavailable").execute(check_id(project_id))})
+
+    # -- configuração pública do projeto (F10-07) ----------------------------
+
+    @router.get("/projects/{project_id}/config", response_model=ProjectConfigOut)
+    def get_project_config(project_id: str):
+        return run(lambda uc: _need(uc, "get_project_config", "config services unavailable").execute(
+            check_id(project_id)))
 
     return router

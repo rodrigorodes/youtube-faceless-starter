@@ -280,14 +280,24 @@ class PaidOperationGuard:
     ambígua mantém a reserva e exige reconciliação; sucesso só encerra com custo confirmado.
     """
 
-    def __init__(self, repo: PaidOperationRepository, monthly_limit_usd: Decimal, video_limit_usd: Decimal):
+    def __init__(self, repo: PaidOperationRepository, monthly_limit_usd: Decimal, video_limit_usd: Decimal,
+                 *, limits_for=None):
         self.repo = repo
         self.monthly_limit_usd = _require_amount(monthly_limit_usd, "monthly limit")
         self.video_limit_usd = _require_amount(video_limit_usd, "video limit")
+        # `limits_for(video_id)` devolve (teto mensal, teto por vídeo) do canal, ou None para usar
+        # os padrões da composição. É assim que o limite hard definido por canal chega ao guard.
+        self.limits_for = limits_for
 
     def reserve(self, key: str, video_id: str | None, estimate_usd: Decimal) -> BeginResult:
         estimate_usd = _require_amount(estimate_usd, "estimate")
-        result = self.repo.begin(key, video_id, estimate_usd, self.monthly_limit_usd, self.video_limit_usd)
+        monthly, video = self.monthly_limit_usd, self.video_limit_usd
+        if self.limits_for is not None:
+            override = self.limits_for(video_id)
+            if override is not None:
+                monthly = _require_amount(override[0], "monthly limit")
+                video = _require_amount(override[1], "video limit")
+        result = self.repo.begin(key, video_id, estimate_usd, monthly, video)
         if result is BeginResult.CREATED:
             return result
         if result is BeginResult.DENIED:

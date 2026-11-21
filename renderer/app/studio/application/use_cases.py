@@ -14,6 +14,10 @@ from .analytics import Analytics
 from .observability import Resume
 from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .channel_budget import GetChannelBudget, SetChannelBudget
+from .providers import ProviderService
+from .secrets import GetPublicProjectConfig
+from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
@@ -85,6 +89,14 @@ class UseCases:
     list_channel_profiles: ListChannelProfiles | None = None
     production: "Production | None" = None
     script_view: "BuildScriptView | None" = None
+    # F10-03..07 (backend/HTTP de canais e providers)
+    providers: ProviderService | None = None
+    get_channel_budget: GetChannelBudget | None = None
+    set_channel_budget: SetChannelBudget | None = None
+    get_youtube_channel: GetYouTubeChannel | None = None
+    associate_youtube_channel: AssociateYouTubeChannel | None = None
+    disconnect_youtube_channel: DisconnectYouTubeChannel | None = None
+    get_project_config: GetPublicProjectConfig | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -103,9 +115,17 @@ class UseCases:
                   update_channel_profile: UpdateChannelProfile | None = None,
                   list_channel_profiles: ListChannelProfiles | None = None,
                   production: "Production | None" = None,
-                  script_view: "BuildScriptView | None" = None) -> "UseCases":
+                  script_view: "BuildScriptView | None" = None,
+                  providers: ProviderService | None = None,
+                  get_channel_budget: GetChannelBudget | None = None,
+                  set_channel_budget: SetChannelBudget | None = None,
+                  get_youtube_channel: GetYouTubeChannel | None = None,
+                  associate_youtube_channel: AssociateYouTubeChannel | None = None,
+                  disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
+                  get_project_config: GetPublicProjectConfig | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
-                   list_channel_profiles, production, script_view)
+list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
+                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config)

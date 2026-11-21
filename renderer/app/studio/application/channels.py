@@ -29,7 +29,7 @@ class CreateChannelProfile:
         p_id = check_id(project_id)
         unknown = set(options) - set(CREATABLE_FIELDS)
         if unknown:
-            raise ValueError(f"unknown channel profile fields: {sorted(unknown)}")
+            raise ChannelFieldInvalid(f"unknown channel profile fields: {sorted(unknown)}")
         if self.videos_repo is not None and self.videos_repo.get_project(p_id) is None:
             raise ProjectNotFound(p_id)
         return self.repo.create(p_id, name, **options)
@@ -66,5 +66,5 @@ class UpdateChannelProfile:
         version = validate_version(expected_version)
         unknown = set(changes) - set(UPDATABLE_FIELDS)
         if unknown:
-            raise ValueError(f"unknown channel profile fields: {sorted(unknown)}")
+            raise ChannelFieldInvalid(f"unknown channel profile fields: {sorted(unknown)}")
         return self.repo.update(p_id, version, dict(changes))
