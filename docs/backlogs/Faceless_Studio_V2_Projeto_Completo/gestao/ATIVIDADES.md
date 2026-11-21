@@ -35,16 +35,17 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-05b | Seletor de estilo no canal (Aparência) + override no vídeo + `PATCH /videos/{id}/style` | 485 testes (integração) | merge `6df1762` |
 | VS-05c | **Correções**: override do vídeo chega ao render (precedência vídeo > canal > neutro); `archive` limpa os vínculos + docstring corrigida | 211 testes | merge `08508ab` |
 | YT-04b | Página **Conexões** no painel (conta → canais → confirmar → revogar) + menu | 378 testes (integração) | merge `42f73ca` |
+| RF-01 | Reframe de vocabulário: "projeto" → "canal" na interface (16 textos; 5 mantidos por serem identificador/comentário) + teste-guarda | 202 testes | merge `ec8bda2` |
 
 ## Em execução (paralelo)
 
-**RF-01 (em execução — última fatia):** reframe de vocabulário "projeto" → "canal" na interface (o canal é a unidade; 21 ocorrências na UI). Postgres dedicado `integ-pg-a`.
+**Nada em execução.** Todas as fatias do plano foram mescladas e verificadas por mim antes do merge. Restam o **veredito completo da suíte** (rodando em 8 partições) e a **limpeza dos Postgres extras**.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| — | **Veredito completo da suíte** (partições) + limpeza dos Postgres extras (`integ-pg-a/b/orch`) | RF-01 |
+| — | (vazio — plano concluído; falta só o veredito da suíte e a limpeza dos Postgres extras) | — |
 
 ## Bloqueadas
 
@@ -112,4 +113,15 @@ exige banco (é pulado sem `STUDIO_TEST_DSN`). **Consequência prática: toda mi
 regerar os dois** (`python scripts/export_schema.py --dsn "$STUDIO_TEST_DSN" --build`), senão a
 suíte acusa divergência. O gerador só lê; não altera dados.
 
+## Verificações que eu fiz por conta própria (não aceitei de relatório)
 
+- **RF-01 — teste-guarda não é vazio**: injetei `<p>Projeto</p>` na navegação do painel e o guard
+  falhou (**8 failed**); revertida a sonda, o teste passa. Um assert que não pode falhar não vale nada.
+- **RF-01 — acidente de caminho relativo**: a fatia relatou ter editado, por engano, o worktree da
+  sessão pai. Conferi **os dois worktrees**: `faceless-v2-impl` e `main` estão **limpos** — o engano
+  foi revertido e nada vazou.
+- **VS-05b — duas promessas falsas**: o override do vídeo não chegava ao render (`render.py:220`
+  chamava `style_for(video.project_id)`) e a docstring do `archive` mentia (não limpava vínculos).
+  Ambos confirmados no código e corrigidos na VS-05c.
+- **Alarme falso — scanner de segredos**: falhou uma vez por eu tê-lo rodado com arquivo em conflito
+  (`composition.py` nos stages 1/2/3); o guard recusa rodar assim, por projeto. Não era vazamento.
