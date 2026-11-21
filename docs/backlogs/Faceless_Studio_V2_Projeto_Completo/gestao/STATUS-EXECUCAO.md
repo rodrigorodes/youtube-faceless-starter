@@ -125,9 +125,12 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 
 ## F8 — Publicação YouTube resiliente, OAuth e agenda (P0)
 
-**🔓 autorizado pelo usuário em 2026-11-20** — fatia **F8** em andamento, incluindo **F8-07**
-(reabilitar o workflow automático) e a **publicação real**, com a confirmação extra da regra de UX.
-O n8n só volta **depois** dos testes de falha/concorrência. **Nada foi publicado até agora.**
+**✅ mesclada no `main` em 2026-11-20** (`be07d53`) — inclui a **publicação real**:
+OAuth do canal **Rodrigo Mendes** (`youtube.readonly` + `youtube.upload`), upload **`private`** de vídeo
+sintético confirmado por `videos.list`, refresh ok (269 ms). `videos.delete` **bloqueado por escopo**
+(HTTP 403 `insufficientPermissions`) — vídeo órfão `acE29V_YkP4` a remover à mão. **F8-07 (n8n) segue
+`"active": false`**: usa o `claim` legado, que não exige `publication_intent`/gate de QA; condições de
+reabilitação em `workflows/README-publish-approval.md`. Suíte focada F8: **340 passed, 1 skipped**.
 
 O gate de QA **passa a ser ligado à publicação** nesta fatia (era a limitação registrada em F6).
 
@@ -272,9 +275,9 @@ Nem toda pendência é card novo: algumas são costura entre fatias que fecharam
 
 | # | Pendência | Origem | O que falta |
 |---|---|---|---|
-| L1 | **"Reautorizar" na tela de Canais está desabilitado** | tela de Canais (F10 UI) foi construída quando **não havia OAuth real** | a **F8** entrega o fluxo de consentimento; depois disso o controle tem backend e o motivo do `aria-disabled` deixa de valer |
-| L2 | **Mutações de Equipe não expostas na rota** | F11 — a rota exibe só a leitura | as mutações existem no serviço, mas só podem ser expostas **com ator autenticado** (F11-02: sessão/OIDC). Hoje a tela diz isso. |
-| L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | o protótipo abre Início com `aria-current` em "Vídeos" (alias); se um dia houver tela própria, revisar |
+| L1 | **"Reautorizar" na tela de Canais** | tela de Canais (F10 UI) nasceu sem OAuth real | **em andamento** (fatia `feat/l1-reauth`): a F8 entregou o fluxo e o controle passa a chamar `POST /youtube-oauth/authorize` |
+| L2 | **Mutações de Equipe não expostas na rota** | F11 — a rota exibe só a leitura | **em andamento** (fatia `feat/ligacoes`): o ator **já existe** via Basic auth (`STUDIO_BROWSER_USER`, `routes.py:93`), então **não** depende de OIDC; RBAC do domínio aplicado de verdade |
+| L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | resolvido em `80d7f4f`; a fatia `feat/ligacoes` só confirma |
 
 ---
 
