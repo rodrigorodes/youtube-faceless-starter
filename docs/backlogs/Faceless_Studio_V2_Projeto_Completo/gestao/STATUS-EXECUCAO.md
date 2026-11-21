@@ -31,9 +31,9 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 |---|---|---|
 | F1-01 `ProductionRun`/`StageExecution`/outbox + migrations | ✅ | slice D, `3a7bb8d` + `0018_production_runs.sql` |
 | F1-02 DAG de estágios e contratos I/O | ✅ | slice D (validação topológica, testes de ciclo) |
-| F1-03 `ProductionCoordinator` + executor port | ❌ | fatia **D2** (não iniciada) |
-| F1-04 `POST production-runs` + status + eventos | ❌ | fatia D2 |
-| F1-05 handlers de todas as etapas | ❌ | fatia D2 |
+| F1-03 `ProductionCoordinator` + executor port | ✅ | fatia **D2** `241be24` (`application/production.py:497`) |
+| F1-04 `POST production-runs` + status + eventos | ✅ | fatia D2 `3419f04` — `/videos/{id}/production-runs` (202) + status/pause/cancel |
+| F1-05 handlers de todas as etapas | ✅ | fatia D2 — `build_stage_handlers` (`production.py:439`): script, fact-check, storyboard, assets, render, QA, approval, publish |
 | F1-06 idempotency key, CAS, lease, heartbeat, fencing, checkpoint, replay | ✅ | slice D (verificado com 10 corridas; chave ASCII canônica com CHECK) |
 | F1-07 pausa humana persistida | ◐ | `WAITING_HUMAN` sem lease existe e é testado; falta o fluxo ponta-a-ponta |
 | F1-08 retry seletivo, cancelamento, DLQ, auditoria | ◐ | revogação de estágios em D; DLQ/cancelamento não |
@@ -52,7 +52,7 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 | F2-06 lista `Vídeos` por estado + filtros | ◐ | G1 entregou lista; filtros `precisa de mim`/`em andamento` não completos |
 | F2-07 mover IDs/traces/model usage para avançado | ✅ | G1 (`<details>` fechado) |
 | F2-08 acessibilidade, responsividade, E2E com operador | ◐ | G1: responsivo + a11y estática; **sem validação em navegador/leitor de tela** |
-| — *rótulos de custo real/estimado* | 🔄 | G1b em andamento (dado existe; `panel_repo.month_usage` não buscava a coluna) |
+| — *rótulos de custo real/estimado* | ✅ | G1b — `panel_repo.month_usage` passou a buscar a coluna |
 
 ## F3 — Tendências → research → fontes verificáveis (P0)
 
@@ -95,7 +95,7 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 | F5-08 auditoria de licença/proveniência | ❌ | `VisualBeat` **não** verifica licença (documentado) |
 | F5-09 perfis `economy`/`balanced`/`premium` | ❌ | — |
 | — *RP-00 baseline* | ✅ | fatia 1, `17886db` |
-| — *RP-01 contrato canônico* | 🔄 | fatia 2 em andamento |
+| — *RP-01 contrato canônico* | ✅ | fatia 2 — `89f45fc`, `c73f7fb`, `3b3e123`, `c466d4a` |
 
 ## F6 — Editor visual, preview e QA (P1)
 
@@ -109,7 +109,7 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 | F6-06 severidade `blocking`/`warning`/`info` | ✅ | slice F6 (`aae03ad`, `4065888`, `9332f47`) |
 | F6-07 aprovação exige `render_id`/checksum | ✅ | slice F6 |
 | F6-08 regressão visual e de mídia | ❌ | — |
-| — *gate de QA ligado à publicação* | ❌ | limitação registrada: o gate **não** está ligado ao fluxo de publicação |
+| — *gate de QA ligado à publicação* | ✅ | **F8** — a publicação exige `publication_intent` + gate de QA (era a limitação registrada no F6) |
 
 ## F7 — Thumbnails, títulos, SEO e experimentos (P1)
 
@@ -138,23 +138,23 @@ O gate de QA **passa a ser ligado à publicação** nesta fatia (era a limitaç�
 
 | Card | Status | Evidência / o que falta |
 |---|---|---|
-| F9-01 conectar dados às versões | ❌ | — |
-| F9-02 coletar métricas autorizadas | ❌ | fatia **I** — **autorizada**; tela de Analytics aprovada |
-| F9-03 dashboard por canal/vídeo/pilar | ❌ | fatia I — tela aprovada (`produto/tela-analytics.html`) |
+| F9-01 conectar dados às versões | ◐ | fatia I — roteiro tem FK composta real; briefing/embalagem não persistidos viram `MissingVersionLink` explícito |
+| F9-02 coletar métricas autorizadas | ✅ | fatia I — `/studio/analytics/collect` respeita o escopo; sem publicação/id remoto responde `collected=false` **sem chamar a API** |
+| F9-03 dashboard por canal/vídeo/pilar | ✅ | fatia I — tela aprovada; CTR/retenção por vídeo ou **indisponível explícito** (nunca 0 nem estimativa) |
 | F9-04 insights com evidência e confiança | ✅ | `cbda7df`, `96edd7a` |
-| F9-05 recomendar temas/formatos | ❌ | fatia I — recomendações **não** reconfiguram nada sozinhas |
-| F9-06 histórico de experimentos | ❌ | — |
+| F9-05 recomendar temas/formatos | ✅ | fatia I — gera com 3+ vídeos comparáveis; **não** reconfigura nada sozinho |
+| F9-06 histórico de experimentos | ✅ | fatia I — append-only; A/B de plataforma travado em `false` (a API de Analytics do YouTube não expõe) |
 
 ## F10 — Gerenciamento de canais, estratégias e providers (P1)
 
 | Card | Status | Evidência / o que falta |
 |---|---|---|
-| F10-01 CRUD de canais/projetos, pilares | ◐ | fatia **H** `35c4947` completou o **HTTP**; **falta a UI** (fatia **H-UI**, aprovada) |
+| F10-01 CRUD de canais/projetos, pilares | ✅ | fatia H `35c4947` (HTTP) + **H-UI** `1d76711` (tela de Canais aprovada) |
 | F10-02 `ChannelProfile` versionado | ✅ | `6b9128c`, `c175a2a`, `bb0d108`, `78667e3` |
 | F10-03 providers com capabilities | ✅ | fatia H — `GET/POST .../providers[/test]`; `AVAILABLE` só com implementação validada, senão `UNAVAILABLE` **com motivo** |
 | F10-04 profiles econômicos e roteamento | ✅ | fatia H — `ECONOMY`/`BALANCED`/`PREMIUM` + `route_provider` com fallback controlado |
 | F10-05 budget por canal, limites hard/soft | ✅ | fatia H — `BudgetLimits` com hard/soft **distintos**, ligados ao guard (`limits_for`) |
-| F10-06 associar canal YouTube + status OAuth | ◐ | fatia H — associação e status derivado; **OAuth real (troca/refresh) não implementado** |
+| F10-06 associar canal YouTube + status OAuth | ✅ | fatia H (associação/status) + **F8** (OAuth real: troca/refresh/revogação); a tela liga em **L1** |
 | F10-07 secrets em vault, não no `Project.config` | ✅ | fatia H — `FileSecretStore` (0700/0600) + `sanitize_project_config`; teste prova a ausência do segredo |
 
 ## F11 — Preparação SaaS, multiusuário e BYOK (P2)
@@ -166,7 +166,7 @@ Escopo: membros, papéis (`owner`/`editor`/`reviewer`/`viewer`), tenants, chaves
 
 | Card | Status | Evidência / o que falta |
 |---|---|---|
-| F11-01…09 | ❌ | fatia **F11** autorizada; escopo acima |
+| F11-01…09 | ◐ | fatia **F11** `508d024` (tenancy, papéis, BYOK, tela de Equipe). **Fora** (sem contrato confirmado): F11-06..09 — billing, deploy/backups, termos, escala. As mutações de Equipe são expostas na fatia `ligacoes` (**L2**) |
 
 ---
 
@@ -181,7 +181,7 @@ fases (RP-00…RP-07).
 | RP-00 baseline e compatibilidade | ✅ | fatia 1, `17886db` (RP-001/002 + proposta RP-004) |
 | RP-01 contrato canônico | ✅ | fatia 2 — `89f45fc`, `c73f7fb`, `3b3e123`, `c466d4a` |
 | RP-02 timeline e sincronização | ✅ | fatia 3 — `eadb938`, `5e1e0ed`, `ad2f8b2` |
-| RP-03 builder | ❌ | **fatia 4** — próxima; depende de C (✅) |
+| RP-03 builder | ✅ | `0982a08`/`1bead3f` — builder + compilador puro (`domain/render_plan_builder.py`, `application/render_compiler.py`) |
 | RP-04 asset resolver | ✅ | `9e6387b` — porta `AssetResolver`, manifesto com `content_sha256` próprio (C1), validação multi-asset |
 | RP-05 FFmpeg adapter | ❌ | fatia 6 — **a medição real de vídeo (ffprobe) fica aqui** |
 | RP-06 regeneração seletiva | ❌ | fatia 7 (depende de D2, ✅) |
@@ -233,25 +233,25 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 | Fase | Feito | Parcial | Pendente/Adiado |
 |---|---|---|---|
 | F0 | 1 | 4 | 2 |
-| F1 | 6 | 3 | 0 |
-| F2 | 6 | 2 | 0 |
+| F1 | 7 | 3 | 0 |
+| F2 | 7 | 2 | 0 |
 | F3 | 2 | 1 | 5 |
 | F4 | 9 | 0 | 0 |
-| F5 | 1 (+RP-00/01/02/04) | 2 | 6 |
-| F6 | 2 | 1 | 5 |
+| F5 | 3 (+RP-00/01/02/04) | 2 | 6 |
+| F6 | 3 | 1 | 5 |
 | F7 | 2 | 2 | 3 |
-| F8 | 0 | 0 | 8 (1 bloqueado) |
-| F9 | 1 | 0 | 5 |
-| F10 | 5 | 2 | 0 |
-| F11 | 0 | 0 | 9 (autorizados) |
+| F8 | 8 (F8-07 desativado por design) | 0 | 0 |
+| F9 | 5 | 1 | 0 |
+| F10 | 7 | 0 | 0 |
+| F11 | 0 | 5 | 4 |
 
 **As três maiores lacunas, em ordem de impacto:**
-1. **F8 — Publicação YouTube** (8 cards, P0): nenhum iniciado, e é P0. Sem ela não há loop real
-   (publicar → medir → aprender) nem o analytics da fatia **I** tem dado de onde coletar.
+1. **F5 / RP-05 — motor audiovisual real** (beats múltiplos, FFmpeg + ffprobe): é onde a medição
+   real de vídeo acontece; hoje o `AssetResolver` valida vídeo por metadado **declarado**, não medido.
 2. **F3 — research e fontes verificáveis** (5 de 8 pendentes): o roteiro long-form já existe (fatia E),
    mas sem fonte verificável ele não cumpre o "sem invenção" do gate de fact-check.
-3. **F5 / RP-05 — motor audiovisual real** (beats múltiplos, FFmpeg): RP-05 é onde a medição real de
-   vídeo acontece; hoje o `AssetResolver` valida vídeo por metadado **declarado**, não medido.
+3. **F6 — editor visual e QA editorial** (player/timeline, narração por formulário, QA editorial):
+   a fatia F6 entregou severidade e aprovação presa a `render_id`; faltam o editor e o QA editorial.
 
 **Veredito do `main` após as fatias A…I, G, E, H, F11, RP-03 e F8:** **2310 passed, 0 failed, 35 skipped**
 (122 arquivos, 8 partições sequenciais, `rc=0` em todas) com Postgres real e as duas DSNs. Os 35 skips
