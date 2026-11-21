@@ -10,7 +10,8 @@ Sem push e sem merge. Só caminhos exatos; nenhum `git add -A`.
 - `a2b42a8` `feat(ui): tela de Canais consumindo providers, perfil, budget e OAuth da fatia H (F10)`
 - `597536f` `test(ui): contrato de UX, honestidade de estado e casca da tela de Canais (F10)`
 - `d4f9fbc` `fix(ui): texto do estado antes do ícone na tela de Canais (contrato R1)`
-- `docs(h-ui): relatório da tela de Canais e divergências do mockup` (este arquivo)
+- `5fe6df2` `docs(h-ui): relatório da tela de Canais e divergências do mockup`
+- `50a831a` `refactor(ui): Canais deixa de ser item indisponível e vira link na casca (revista do relatório)`
 
 ## O que foi entregue
 
@@ -35,10 +36,10 @@ Tela nova em `GET /studio/canais?project_id=…` (HTML, CSP+nonce, `no-store`), 
   aparece — o backend não devolve o valor.
 - **Config sanitizada** — `GET /config` (lista branca) dentro do `<details class="advanced">` fechado,
   junto de IDs/versão/expiração/uso não atribuído.
-- **Casca** — `render_sidebar(..., channels_href="/studio/canais")` promove “Canais” de indisponível a
-  link real (item atual com `aria-current="page"`); “Analytics/Equipe/Configurações” seguem `<span
-  aria-disabled tabindex="-1">` (não focáveis). O painel e as telas de produção passaram a apontar para
-  a tela de Canais, porque ela existe agora.
+- **Casca** — “Canais” deixou de ser item indisponível e passou a **link real** em toda a casca
+  (`render_sidebar(..., channels_href="/studio/canais")`, default); o item atual fica com
+  `aria-current="page"`. “Analytics/Equipe/Configurações” seguem `<span aria-disabled tabindex="-1">`
+  (não focáveis). Painel e telas de produção passaram a apontar para a tela de Canais.
 
 Arquivos: `application/channels_page.py` (projeção pura sobre os casos de uso da H),
 `api/panel_channels.py` (renderer), `api/routes.py` (rota), `application/use_cases.py` +
