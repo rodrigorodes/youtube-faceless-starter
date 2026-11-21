@@ -86,7 +86,37 @@ def test_panel_home_satisfies_the_ux_contract():
 
 
 def test_video_detail_satisfies_the_ux_contract():
-    assert_ux_contract(_detail_view(_row("v1", "Tópico real")), page="painel/vídeo")
+    html = _detail_view(_row("v1", "Tópico real"))
+    assert_ux_contract(html, page="painel/vídeo")
+    # A página tem a casca aprovada: o contrato não pode ser satisfeito de forma vacuosa
+    # (R2 só morde quando a nav principal existe).
+    assert _nav_items(html), "painel/vídeo: contrato passou sem a navegação principal"
+
+
+def test_video_detail_uses_the_shell_and_videos_has_a_real_destination():
+    """O detalhe usa a casca aprovada e "Vídeos" volta à sidebar com destino real."""
+    html = _detail_view(_row("v1", "Tópico real"))
+    items = _nav_items(html)
+    labels = [_visible_text(item) for item in items]
+
+    for expected in ("Início", "Produção", "Tendências", "Vídeos"):
+        assert any(expected in label for label in labels), f"painel/vídeo: '{expected}' fora da casca"
+
+    videos = next(item for item in items if "Vídeos" in _visible_text(item))
+    # Destino real: a lista vive no painel; nada de link morto.
+    assert 'href="/studio/panel#videos-section"' in videos, videos
+
+    active = [item for item in items if 'aria-current="page"' in item]
+    assert len(active) == 1, f"painel/vídeo: {len(active)} itens ativos na casca"
+    assert "Vídeos" in _visible_text(active[0])
+
+    # A casca não duplica o <h1> da página.
+    assert html.count("<h1") == 1
+
+    # A navegação interna do vídeo coexiste como secundária — cada <nav> com rótulo próprio.
+    labels = re.findall(r'<nav[^>]*aria-label="([^"]+)"', html)
+    assert "Principal" in labels
+    assert len(labels) == len(set(labels)), f"painel/vídeo: aria-label de <nav> repetido: {labels}"
 
 
 # HTML mínimo que satisfaz as checagens estruturais, para as sondas isolarem UMA regra.
