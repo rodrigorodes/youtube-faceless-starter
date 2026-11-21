@@ -81,8 +81,16 @@ def test_main_zero_when_required_present_and_never_prints_secret(tmp_path, capsy
 
 
 def test_bridge_token_required_only_with_opencode_provider(tmp_path):
-    (tmp_path / ".env").write_text(f"POSTGRES_PASSWORD=a\nN8N_ENCRYPTION_KEY=b\nAI_PROVIDER=opencode\n")
+    (tmp_path / ".env").write_text(
+        "POSTGRES_PASSWORD=a\nN8N_ENCRYPTION_KEY=b\nSTUDIO_TEXT=opencode:openai/gpt-6-luna\n")
     assert doctor.main(root=tmp_path, network=False) == 1
+
+
+def test_opencode_bridge_is_detected_from_the_studio_ports():
+    assert doctor.uses_opencode_bridge({"STUDIO_IMAGE": "opencode:openrouter/x:free"})
+    assert doctor.uses_opencode_bridge({"STUDIO_TEXT": "opencode:openai/gpt-6-luna"})
+    assert not doctor.uses_opencode_bridge({"STUDIO_IMAGE": "placeholder", "STUDIO_TEXT": "demo"})
+    assert not doctor.uses_opencode_bridge({})
 
 
 def test_placeholders_from_env_example_are_not_ok(tmp_path, capsys):

@@ -44,15 +44,8 @@ services:
     environment:
       OUTPUT_DIR: /data/output
       JOB_DIR: /data/jobs
-      AI_PROVIDER: ${AI_PROVIDER:-auto}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      VERTEX_PROJECT: ${VERTEX_PROJECT:-}
-      VERTEX_LOCATION: ${VERTEX_LOCATION:-global}
-      VERTEX_MODEL: ${VERTEX_MODEL:-gemini-2.5-flash}
       OPENCODE_BRIDGE_URL: ${OPENCODE_BRIDGE_URL:-http://host.docker.internal:8787}
       OPENCODE_BRIDGE_TOKEN: ${OPENCODE_BRIDGE_TOKEN:-}
-      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-opencode}
       STUDIO_DATABASE_URL: postgresql://${POSTGRES_USER:-n8n}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-n8n}
       STUDIO_ALLOWED_HOSTS: ${STUDIO_ALLOWED_HOSTS:-localhost,127.0.0.1,renderer}
       STUDIO_BROWSER_USER: ${STUDIO_BROWSER_USER:-}
@@ -63,6 +56,7 @@ services:
       STUDIO_IMAGE: ${STUDIO_IMAGE:-}
       STUDIO_VOICE: ${STUDIO_VOICE:-}
       STUDIO_RENDERER: ${STUDIO_RENDERER:-}
+      PIPER_VOICE: ${PIPER_VOICE:-}
       RENDER_CONCURRENCY: ${RENDER_CONCURRENCY:-}
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       STUDIO_PAID_IMAGE_USD: ${STUDIO_PAID_IMAGE_USD:-}
@@ -78,6 +72,10 @@ services:
     volumes:
       - ./storage:/data
       - ./credentials:/app/credentials:ro
+      # Voz alternativa do Piper: monte o .onnx + .onnx.json em /opt/voices e aponte
+      # PIPER_VOICE (ou use STUDIO_VOICE=piper:<nome> para uma voz já em /opt/voices).
+      # Veja docs/04-variaveis-de-ambiente.md.
+      # - ./voices:/opt/voices:ro
     depends_on:
       postgres:
         condition: service_healthy
