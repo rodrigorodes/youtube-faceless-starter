@@ -138,6 +138,24 @@ def test_team_page_never_mixes_organizations():
     assert "openai" not in visible
 
 
+def test_populated_team_page_exposes_the_mutations_and_declares_what_is_missing():
+    view = BuildTeamView(_populated_repo(), lambda: NOW).execute()
+    html = render_team(view)[0]
+    assert_ux_contract(html, page="equipe/acoes")
+    visible = _text(html)
+    # As mutações existem e são disparáveis pela tela (o servidor aplica o RBAC).
+    assert 'data-team-form="member"' in html
+    assert 'data-team-form="key"' in html
+    assert 'data-member-action="role"' in html
+    assert 'data-key-action="revoke"' in html
+    assert "<script nonce=" in html
+    # Não afirma mais que falta o ator autenticado.
+    assert "exige ator autenticado" not in html
+    # Declara o que continua indisponível, com motivo.
+    for missing in ("SSO/OIDC", "e-mail de convite", "cobrança"):
+        assert missing in visible, missing
+
+
 def test_route_serves_the_team_page_from_real_data(conn, dsn, tmp_path):
     pytest.importorskip("psycopg")
     pytest.importorskip("fastapi")

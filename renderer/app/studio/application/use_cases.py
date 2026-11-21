@@ -23,6 +23,8 @@ from .providers import ProviderService
 from .secrets import GetPublicProjectConfig
 from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
 from .youtube_oauth import (BeginConsent, CompleteConsent, RefreshYouTubeChannel, RevokeConsent)
+from .saas import (ChangeMemberRole, InviteMember, RegisterByokKey, RemoveMember, ResolveActor,
+                   RevokeByokKey, RotateByokKey)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
@@ -105,8 +107,7 @@ class UseCases:
     get_project_config: GetPublicProjectConfig | None = None
     # F10 (UI): projeção da tela de Canais consumindo os casos de uso acima
     channels_page: "BuildChannelsPage | None" = None
-    # F11: leitura da tela de Equipe (tenancy/BYOK). As mutações existem no serviço, mas a rota
-    # só as expõe quando houver ator autenticado (F11-02).
+    # F11: leitura da tela de Equipe (tenancy/BYOK).
     team_view: "BuildTeamView | None" = None
     # F9 (analytics e loop de aprendizado)
     analytics_repo: AnalyticsRepository | None = None
@@ -119,6 +120,14 @@ class UseCases:
     complete_youtube_oauth: CompleteConsent | None = None
     refresh_youtube_channel: RefreshYouTubeChannel | None = None
     revoke_youtube_channel: RevokeConsent | None = None
+    # L2: mutações de Equipe. O ator é o operador autenticado do painel, resolvido no vínculo dele.
+    resolve_actor: ResolveActor | None = None
+    invite_member: InviteMember | None = None
+    change_member_role: ChangeMemberRole | None = None
+    remove_member: RemoveMember | None = None
+    register_byok_key: RegisterByokKey | None = None
+    rotate_byok_key: RotateByokKey | None = None
+    revoke_byok_key: RevokeByokKey | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -155,7 +164,14 @@ class UseCases:
                   begin_youtube_oauth: BeginConsent | None = None,
                   complete_youtube_oauth: CompleteConsent | None = None,
                   refresh_youtube_channel: RefreshYouTubeChannel | None = None,
-                  revoke_youtube_channel: RevokeConsent | None = None) -> "UseCases":
+                  revoke_youtube_channel: RevokeConsent | None = None,
+                  resolve_actor: ResolveActor | None = None,
+                  invite_member: InviteMember | None = None,
+                  change_member_role: ChangeMemberRole | None = None,
+                  remove_member: RemoveMember | None = None,
+                  register_byok_key: RegisterByokKey | None = None,
+                  rotate_byok_key: RotateByokKey | None = None,
+                  revoke_byok_key: RevokeByokKey | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -166,4 +182,6 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    team_view,
                    analytics_repo, analytics_dashboard, analytics_collection, analytics_decide,
                    analytics_register_experiment,
-                   begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel)
+                   begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel,
+                   resolve_actor, invite_member, change_member_role, remove_member,
+                   register_byok_key, rotate_byok_key, revoke_byok_key)

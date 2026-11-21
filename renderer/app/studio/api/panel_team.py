@@ -4,9 +4,13 @@ Entra pela casca aprovada (`api/panel.render_sidebar`). Renderiza **somente** da
 Studio ou estado vazio explícito: nenhum nome, e-mail, organização ou custo ilustrativo do
 mockup embarca. O valor da chave nunca é renderizado — a visão já chega só com a máscara.
 
-A tela é de leitura: as ações de gerir acesso exigem um ator autenticado (F11-02) e aparecem
-como indisponíveis, com o motivo em texto e sem entrar na ordem de foco. Não há barra de progresso
-(nada aqui é linear) e os IDs/fingerprints ficam no `<details>` fechado.
+As mutações (membro, papel, BYOK) são expostas pelos endpoints JSON em `api/routes.py`
+(`/studio/panel/equipe/...`) e executadas por esta tela. O ator é o **operador autenticado do
+painel**; a autorização é o RBAC do domínio (papel do vínculo ativo na organização). A tela
+declara o que ainda não existe — login por SSO/OIDC (F11-02), envio de e-mail de convite,
+cobrança/créditos e isolamento de runtime por tenant — em vez de fingir. Sem organização, os
+controles ficam indisponíveis (não há o que gerir). Não há barra de progresso (nada aqui é
+linear) e os IDs/fingerprints ficam no `<details>` fechado.
 """
 from __future__ import annotations
 
@@ -51,8 +55,17 @@ TEAM_CSS = """
   color: var(--text-muted); background: var(--input-bg); border: 1px solid var(--border-soft);
   border-radius: 6px; padding: 0.05rem 0.35rem;
 }
-.team-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.team-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
 .team-actions .btn[disabled] { opacity: 0.65; cursor: not-allowed; }
+.team-add { position: relative; }
+.team-add summary { cursor: pointer; list-style: none; }
+.team-add summary::-webkit-details-marker { display: none; }
+.team-add-form {
+  display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin-top: 0.6rem;
+  padding: 0.7rem; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-raised);
+}
+.team-add-form .field { min-width: 10rem; }
+.role-select { width: auto; }
 .team-empty { color: var(--text-muted); }
 .team-fact { margin: 0.35rem 0; }
 .team-fact b { color: var(--text); }
@@ -60,6 +73,87 @@ TEAM_CSS = """
   .team-member, .team-key { grid-template-columns: minmax(0, 1fr); }
   .team-actions .btn { width: 100%; }
 }
+"""
+
+TEAM_JS = """
+    function teamFeedback(name) { return document.querySelector('[data-feedback="' + name + '"]'); }
+
+    async function teamSend(url, options, feedbackName) {
+      const box = teamFeedback(feedbackName);
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          if (box) box.textContent = 'Ação concluída. Atualizando...';
+          setTimeout(() => window.location.reload(), 500);
+          return;
+        }
+        if (response.status === 403) {
+          if (box) box.textContent = 'Seu papel na organização não autoriza esta ação.';
+        } else {
+          const detail = (data && typeof data.detail === 'string') ? data.detail : 'confira os campos.';
+          if (box) box.textContent = 'Não foi possível concluir: ' + detail;
+        }
+      } catch (error) {
+        if (box) box.textContent = 'Falha de rede. Tente novamente.';
+      }
+    }
+
+    document.querySelectorAll('form.team-add-form').forEach((form) => {
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const org = form.getAttribute('data-organization-id');
+        const keyAction = form.getAttribute('data-key-action');
+        if (keyAction === 'rotate') {
+          const keyId = form.getAttribute('data-key-id');
+          const value = form.querySelector('[name="value"]').value;
+          await teamSend('/studio/panel/equipe/keys/' + encodeURIComponent(keyId) + '/rotate',
+            { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ organization_id: org, value: value }) }, 'keys');
+          return;
+        }
+        if (form.getAttribute('data-team-form') === 'member') {
+          const email = form.querySelector('[name="email"]').value.trim();
+          const role = form.querySelector('[name="role"]').value;
+          await teamSend('/studio/panel/equipe/members',
+            { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ organization_id: org, email: email, role: role }) }, 'members');
+          return;
+        }
+        const provider = form.querySelector('[name="provider"]').value.trim();
+        const value = form.querySelector('[name="value"]').value;
+        await teamSend('/studio/panel/equipe/keys',
+          { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ organization_id: org, provider: provider, value: value }) }, 'keys');
+      });
+    });
+
+    document.querySelectorAll('[data-member-action]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const row = button.closest('[data-membership-id]');
+        const membershipId = row.getAttribute('data-membership-id');
+        const form = document.querySelector('form.team-add-form[data-team-form="member"]');
+        const org = form ? form.getAttribute('data-organization-id') : '';
+        if (button.getAttribute('data-member-action') === 'role') {
+          const role = row.querySelector('.role-select').value;
+          await teamSend('/studio/panel/equipe/members/' + encodeURIComponent(membershipId),
+            { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ organization_id: org, role: role }) }, 'members');
+        } else {
+          await teamSend('/studio/panel/equipe/members/' + encodeURIComponent(membershipId)
+            + '?organization_id=' + encodeURIComponent(org), { method: 'DELETE' }, 'members');
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-key-action="revoke"]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const keyId = button.getAttribute('data-key-id');
+        const org = button.getAttribute('data-organization-id');
+        await teamSend('/studio/panel/equipe/keys/' + encodeURIComponent(keyId)
+          + '?organization_id=' + encodeURIComponent(org), { method: 'DELETE' }, 'keys');
+      });
+    });
 """
 
 
@@ -112,8 +206,8 @@ def _org_card(view: TeamView) -> str:
       <section class="card" aria-labelledby="h-org">
         <h2 id="h-org">Organização e isolamento</h2>
         <p class="dim" style="margin:0.35rem 0 0.6rem">Um tenant isola registros, storage, jobs,
-          custos e logs. O filtro por organização existe no repositório; a sessão que o alimenta
-          (F11-02) ainda não existe.</p>
+          custos e logs. O filtro por organização existe no repositório e é alimentado pelo vínculo
+          do operador autenticado; o login por SSO/OIDC (F11-02) ainda não é a fonte de identidade.</p>
         <div class="kv"><span>Organização</span><span>{e(view.organization.name)}</span></div>
         <div class="kv"><span>Workspace</span><span>{e(workspace)}</span></div>
         <div class="kv"><span>Isolamento aplicado em runtime</span><span>não — mono-usuário</span></div>
@@ -124,15 +218,28 @@ def _org_card(view: TeamView) -> str:
 def _members_card(view: TeamView) -> str:
     if view.organization is None:
         rows = f'<p class="team-empty">{_selo("idle", "○", "Nenhum membro sem organização")}</p>'
-    elif not view.members:
-        rows = f'<p class="team-empty">{_selo("idle", "○", "Nenhum membro cadastrado")}</p>'
+        controls = (
+            '<div class="team-actions">'
+            '<button class="btn btn-sm" type="button" disabled '
+            'title="Indisponível: sem organização cadastrada não há membro para gerir.">Adicionar membro</button>'
+            '</div>'
+        )
+        footer = (
+            '<p class="fine">Sem organização não há membro, papel ou vínculo para gerir. O ator é o operador '
+            'autenticado do painel; o login por SSO/OIDC (F11-02) ainda não é a fonte de identidade.</p>'
+        )
     else:
+        org_id = view.organization.id
         items = []
         for member in view.members:
             initial = (member.display_name or member.email)[:1].upper()
             role = member.role.value
+            options = "".join(
+                f'<option value="{e(r.value)}"{" selected" if r is member.role else ""}>{e(r.value)}</option>'
+                for r in Role
+            )
             items.append(f"""
-          <div class="team-member">
+          <div class="team-member" data-membership-id="{e(member.membership_id)}">
             <div class="team-person">
               <span class="team-avatar" aria-hidden="true">{e(initial)}</span>
               <div>
@@ -140,14 +247,33 @@ def _members_card(view: TeamView) -> str:
                 <div class="team-sub">{e(member.email)}</div>
               </div>
             </div>
-            <span class="role-badge {e(role)}">{e(role)}</span>
+            <label class="sr-only" for="papel-{e(member.membership_id)}">Papel de {e(member.display_name)}</label>
+            <select class="input role-select" id="papel-{e(member.membership_id)}">{options}</select>
             {_member_status(member)}
             <div class="team-actions">
-              <button class="btn btn-sm" type="button" aria-disabled="true" disabled
-                title="Indisponível: exige ator autenticado (F11-02).">Gerir</button>
+              <button class="btn btn-sm" type="button" data-member-action="role">Salvar papel</button>
+              <button class="btn btn-sm btn-ghost" type="button" data-member-action="remove">Remover</button>
             </div>
           </div>""")
-        rows = "".join(items)
+        rows = "".join(items) if items else f'<p class="team-empty">{_selo("idle", "○", "Nenhum membro cadastrado")}</p>'
+        role_options = "".join(f'<option value="{e(r.value)}">{e(r.value)}</option>' for r in Role)
+        controls = (
+            '<div class="team-actions">'
+            '<details class="team-add"><summary class="btn btn-sm">Adicionar membro</summary>'
+            f'<form class="team-add-form" data-team-form="member" data-organization-id="{e(org_id)}">'
+            '<div class="field"><label for="novo-membro-email">E-mail</label>'
+            '<input class="input" type="email" id="novo-membro-email" name="email" maxlength="320" required></div>'
+            '<div class="field"><label for="novo-membro-papel">Papel</label>'
+            f'<select class="input" id="novo-membro-papel" name="role">{role_options}</select></div>'
+            '<button class="btn btn-primary btn-sm" type="submit">Criar vínculo</button>'
+            '</form></details>'
+            '</div>'
+        )
+        footer = (
+            '<p class="fine">A ação cria o vínculo como <b>convite pendente</b>; o e-mail de convite ainda '
+            '<b>não é enviado</b>. A autorização é o papel do operador autenticado no domínio — um vínculo '
+            '<i>viewer</i> recebe 403.</p>'
+        )
 
     return f"""
       <section class="card" aria-labelledby="h-membros">
@@ -157,14 +283,11 @@ def _members_card(view: TeamView) -> str:
             <p class="dim" style="margin:0.3rem 0 0">Papéis por organização. Nome e e-mail são
               dado real do cadastro.</p>
           </div>
-          <div class="team-actions">
-            <button class="btn btn-sm" type="button" aria-disabled="true" disabled
-              title="Indisponível: exige ator autenticado (F11-02).">Convidar</button>
-          </div>
+          {controls}
         </div>
         {rows}
-        <p class="fine">Gerir acesso está indisponível nesta versão: sem sessão de usuário
-          (F11-02), o Studio não sabe quem é o owner que autoriza a ação.</p>
+        <div class="form-feedback" data-feedback="members" role="status" aria-live="polite"></div>
+        {footer}
       </section>"""
 
 
@@ -186,17 +309,42 @@ def _roles_card(view: TeamView) -> str:
 def _keys_card(view: TeamView) -> str:
     if view.organization is None:
         body = f'<p class="team-empty">{_selo("idle", "○", "Nenhuma chave sem organização")}</p>'
-    elif not view.keys:
-        body = (f'<p class="team-empty">{_selo("idle", "○", "Nenhuma chave BYOK cadastrada")}</p>'
-                '<p class="fine">O Studio usa as credenciais do ambiente até uma chave do tenant ser '
-                'cadastrada. Nenhum valor de chave é exibido depois de salvo.</p>')
+        controls = (
+            '<div class="team-actions">'
+            '<button class="btn btn-sm" type="button" disabled '
+            'title="Indisponível: sem organização cadastrada não há chave para gerir.">Adicionar chave</button>'
+            '</div>'
+        )
+        footer = (
+            '<p class="fine">Sem organização não há chave BYOK para gerir. Nenhum valor de chave é '
+            'exibido depois de salvo.</p>'
+        )
     else:
-        items = []
-        for key in view.keys:
-            rotation = (f"rotacionada {_age(view.now, key.rotated_at)}"
-                        if key.rotated_at else "nunca rotacionada")
-            items.append(f"""
-          <div class="team-key">
+        org_id = view.organization.id
+        controls = (
+            '<div class="team-actions">'
+            '<details class="team-add"><summary class="btn btn-sm">Adicionar chave</summary>'
+            f'<form class="team-add-form" data-team-form="key" data-organization-id="{e(org_id)}">'
+            '<div class="field"><label for="nova-chave-provider">Provider</label>'
+            '<input class="input" type="text" id="nova-chave-provider" name="provider" maxlength="64" '
+            'placeholder="ex.: elevenlabs" required></div>'
+            '<div class="field"><label for="nova-chave-valor">Valor da chave</label>'
+            '<input class="input" type="password" id="nova-chave-valor" name="value" autocomplete="off" required></div>'
+            '<button class="btn btn-primary btn-sm" type="submit">Guardar no cofre</button>'
+            '</form></details>'
+            '</div>'
+        )
+        if not view.keys:
+            body = (f'<p class="team-empty">{_selo("idle", "○", "Nenhuma chave BYOK cadastrada")}</p>'
+                    '<p class="fine">O Studio usa as credenciais do ambiente até uma chave do tenant ser '
+                    'cadastrada. Nenhum valor de chave é exibido depois de salvo.</p>')
+        else:
+            items = []
+            for key in view.keys:
+                rotation = (f"rotacionada {_age(view.now, key.rotated_at)}"
+                            if key.rotated_at else "nunca rotacionada")
+                items.append(f"""
+          <div class="team-key" data-key-id="{e(key.id)}">
             <div>
               <div class="team-name">{e(key.provider)}</div>
               <div class="team-sub">Máscara <span class="mask">{e(key.mask)}</span> ·
@@ -205,11 +353,24 @@ def _keys_card(view: TeamView) -> str:
             <span class="team-sub">{e(_usage_text(key.usage))}</span>
             {_key_status(key)}
             <div class="team-actions">
-              <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true" disabled
-                title="Indisponível: exige ator autenticado (F11-02).">Revogar…</button>
+              <details class="team-add"><summary class="btn btn-sm btn-ghost">Rotacionar…</summary>
+                <form class="team-add-form" data-key-action="rotate" data-organization-id="{e(org_id)}"
+                      data-key-id="{e(key.id)}">
+                  <div class="field"><label for="rot-{e(key.id)}">Novo valor da chave</label>
+                  <input class="input" type="password" id="rot-{e(key.id)}" name="value"
+                         autocomplete="off" required></div>
+                  <button class="btn btn-primary btn-sm" type="submit">Trocar valor</button>
+                </form></details>
+              <button class="btn btn-sm btn-ghost" type="button" data-key-action="revoke"
+                data-organization-id="{e(org_id)}" data-key-id="{e(key.id)}">Revogar</button>
             </div>
           </div>""")
-        body = "".join(items)
+            body = "".join(items)
+        footer = (
+            '<p class="fine">Máscara, status e consumo atribuído aparecem; o valor da chave nunca. '
+            'Registrar, rotacionar e revogar são auditados com o ator (operador autenticado) no backend. '
+            'Criptografia at-rest é a permissão do cofre (0700/0600); não há KMS/envelope.</p>'
+        )
     return f"""
       <section class="card" aria-labelledby="h-chaves">
         <div class="spread">
@@ -218,15 +379,11 @@ def _keys_card(view: TeamView) -> str:
             <p class="dim" style="margin:0.3rem 0 0">Credencial própria do cliente, por tenant e
               provider. Só a máscara aparece; o valor fica no cofre com permissão restrita.</p>
           </div>
-          <div class="team-actions">
-            <button class="btn btn-sm" type="button" aria-disabled="true" disabled
-              title="Indisponível: exige ator autenticado (F11-02).">Adicionar chave</button>
-          </div>
+          {controls}
         </div>
         {body}
-        <p class="fine">Máscara, status e consumo atribuído aparecem; o valor da chave nunca.
-          Rotação e revogação são auditadas por tenant no backend, mas a tela não dispara a ação
-          sem sessão.</p>
+        <div class="form-feedback" data-feedback="keys" role="status" aria-live="polite"></div>
+        {footer}
       </section>"""
 
 
@@ -309,8 +466,9 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
         <div class="spread">
           <div>
             <h1 id="equipe-heading">Equipe</h1>
-            <p class="page-goal">Ação primária: <b>gerir acesso</b>. O caminho de organização,
-              papel e BYOK está implantado no banco; a aplicação em runtime ainda é mono-usuário.</p>
+            <p class="page-goal">Ação primária: <b>gerir acesso</b>. Membros, papéis e BYOK são
+              executados pela rota, autorizados pelo papel do operador autenticado; o isolamento de
+              runtime por tenant segue mono-usuário.</p>
           </div>
           {organization_state}
         </div>
@@ -327,7 +485,7 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
 
     <aside class="rail" aria-label="Resumo">
       <section class="card" aria-labelledby="h-indisp-equipe">
-        <h2 id="h-indisp-equipe">Por que as ações estão indisponíveis</h2>
+        <h2 id="h-indisp-equipe">O que ainda está indisponível</h2>
         <p class="muted" style="margin:0">{e(view.actions_note)}</p>
       </section>
       <section class="card" aria-labelledby="h-fronteira">
@@ -338,12 +496,14 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
       </section>
       <section class="card" aria-labelledby="h-correcao">
         <h2 id="h-correcao">Estado desta tela</h2>
-        <p class="muted" style="margin:0">O F11 estava adiado e foi liberado em 2026-11-20: o
-          modelo de dados existe. O que ainda falta é a sessão/OIDC que autoriza as ações; até
-          lá, a tela mostra o estado real e não finge executar gestão de acesso.</p>
+        <p class="muted" style="margin:0">O F11 foi liberado em 2026-11-20 e as mutações passaram a
+          ser executadas pela rota: o ator é o operador autenticado e o papel do vínculo aplica o
+          RBAC. O que falta é a fonte de identidade por SSO/OIDC (F11-02), o envio do e-mail de
+          convite, a cobrança e o isolamento de runtime por tenant — declarados, não fingidos.</p>
       </section>
     </aside>
   </div>
+  <script nonce="{nonce}">{TEAM_JS}</script>
 </body>
 </html>"""
     return page, shell._headers(nonce)

@@ -19,6 +19,7 @@ from ...domain.saas import (
     DuplicateMembership,
     DuplicateProviderKey,
     KeyAuditAction,
+    MembershipAuditAction,
     MembershipStatus,
     OrganizationNotFound,
     Role,
@@ -156,6 +157,15 @@ class PostgresSaasRepository(_Base):
         with _translated(), self._connect() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM studio.memberships WHERE id = %s AND organization_id = %s", (mid, org))
             return cur.rowcount == 1
+
+    def audit_membership(self, organization_id: str, membership_id: str, actor_user_id: str | None,
+                         action: MembershipAuditAction, role: Role | None = None) -> None:
+        org, mid = check_id(organization_id), check_id(membership_id)
+        with _translated(), self._connect() as conn, conn.cursor() as cur:
+            cur.execute("INSERT INTO studio.membership_audit(organization_id, membership_id, "
+                        "actor_user_id, action, role) VALUES (%s, %s, %s, %s, %s)",
+                        (org, mid, check_id(actor_user_id) if actor_user_id else None,
+                         MembershipAuditAction(action).value, Role(role).value if role is not None else None))
 
     # --- BYOK ------------------------------------------------------------
     def keys(self, organization_id: str) -> list[ByokKey]:

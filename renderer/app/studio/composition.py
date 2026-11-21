@@ -58,7 +58,8 @@ from .application.analytics_collection import CollectMetrics
 from .application.analytics_dashboard import BuildAnalyticsDashboard
 from .application.analytics_learning import DecideRecommendation, RegisterExperiment
 from .application.panel import BuildPanel
-from .application.saas import BuildTeamView
+from .application.saas import (BuildTeamView, ChangeMemberRole, InviteMember, RegisterByokKey,
+                                RemoveMember, ResolveActor, RevokeByokKey, RotateByokKey)
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
@@ -464,7 +465,9 @@ class Studio:
         analytics_register_experiment = RegisterExperiment(analytics_learning_repo)
         panel_repo = PostgresPanelRepository(connect)
         panel = BuildPanel(panel_repo, s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
-        team_view = BuildTeamView(PostgresSaasRepository(connect), lambda: datetime.now(timezone.utc))
+        saas_repo = PostgresSaasRepository(connect)
+        saas_clock = lambda: datetime.now(timezone.utc)
+        team_view = BuildTeamView(saas_repo, saas_clock)
         script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
         providers_service = ProviderService(repo, self.environ, implementations, probes)
         channel_budget = GetChannelBudget(
@@ -503,7 +506,14 @@ production=production, script_view=script_view,
                                   analytics_decide=analytics_decide,
                                   analytics_register_experiment=analytics_register_experiment,
                                   begin_youtube_oauth=begin_oauth, complete_youtube_oauth=complete_oauth,
-                                  refresh_youtube_channel=refresh_channel, revoke_youtube_channel=revoke_channel)
+                                  refresh_youtube_channel=refresh_channel, revoke_youtube_channel=revoke_channel,
+                                  resolve_actor=ResolveActor(saas_repo),
+                                  invite_member=InviteMember(saas_repo, saas_clock),
+                                  change_member_role=ChangeMemberRole(saas_repo),
+                                  remove_member=RemoveMember(saas_repo),
+                                  register_byok_key=RegisterByokKey(saas_repo, secret_store, saas_clock),
+                                  rotate_byok_key=RotateByokKey(saas_repo, secret_store, saas_clock),
+                                  revoke_byok_key=RevokeByokKey(saas_repo, secret_store, saas_clock))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

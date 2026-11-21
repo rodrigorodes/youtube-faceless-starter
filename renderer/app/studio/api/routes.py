@@ -71,7 +71,10 @@ from ..domain.insight import MetricWindow
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
 from ..domain.ids import InvalidId, check_id
-from ..domain.saas import OrganizationNotFound
+from ..domain.saas import (AuthorizationDenied, ByokStatus, DuplicateMembership, DuplicateProviderKey,
+                           KeyInvalid, KeyNotFound, KeyRevoked, LastOwnerRequired, MembershipInvalid,
+                           MembershipNotFound, MembershipStatus, OrganizationNotFound, Role, SaasError,
+                           UnknownRole)
 from ..domain.states import InvalidTransition
 
 
@@ -645,6 +648,63 @@ def _analytics_period(days: int):
         return AnalyticsPeriod(days=days, end_at=datetime.now(timezone.utc))
     except ValidationError:
         raise HTTPException(422, "days must be 7, 28 or 90") from None
+class TeamMemberIn(BaseModel):
+    organization_id: str = Field(min_length=32, max_length=32)
+    email: str = Field(min_length=3, max_length=320)
+    role: Role
+    display_name: str | None = Field(default=None, max_length=120)
+
+
+class TeamMemberRoleIn(BaseModel):
+    organization_id: str = Field(min_length=32, max_length=32)
+    role: Role
+
+
+class ByokKeyIn(BaseModel):
+    # `value` sem mínimo/máximo: a validação é do domínio (`validate_byok_value`), que nunca ecoa
+    # o valor numa mensagem de erro — evita a chave reaparecer no corpo de um 422.
+    organization_id: str = Field(min_length=32, max_length=32)
+    provider: str = Field(min_length=1, max_length=64)
+    value: str
+
+
+class ByokRotateIn(BaseModel):
+    organization_id: str = Field(min_length=32, max_length=32)
+    value: str
+
+
+class MemberOut(BaseModel):
+    membership_id: str
+    organization_id: str
+    user_id: str
+    display_name: str
+    email: str
+    role: Role
+    status: MembershipStatus
+
+
+class KeyOut(BaseModel):
+    id: str
+    organization_id: str
+    provider: str
+    mask: str
+    fingerprint: str
+    status: ByokStatus
+    created_at: datetime | None = None
+    rotated_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+def _member_out(member) -> MemberOut:
+    return MemberOut(membership_id=member.membership_id, organization_id=member.organization_id,
+                     user_id=member.user_id, display_name=member.display_name, email=member.email,
+                     role=member.role, status=member.status)
+
+
+def _key_out(key) -> KeyOut:
+    return KeyOut(id=key.id, organization_id=key.organization_id, provider=key.provider, mask=key.mask,
+                  fingerprint=key.fingerprint, status=key.status, created_at=key.created_at,
+                  rotated_at=key.rotated_at, revoked_at=key.revoked_at)
 
 
 def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[], bool]) -> APIRouter:
@@ -760,6 +820,17 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         except BudgetLimitInvalid as exc:
             raise HTTPException(422, str(exc)) from exc
         except YouTubeChannelInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
+        # -- equipe/BYOK (L2) -- ordem importa: subclasses antes da base --
+        except AuthorizationDenied as exc:
+            raise HTTPException(403, "operation not permitted for this membership") from exc
+        except (DuplicateMembership, DuplicateProviderKey, LastOwnerRequired) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (MembershipNotFound, KeyNotFound) as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except KeyRevoked as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (MembershipInvalid, KeyInvalid, UnknownRole, SaasError) as exc:
             raise HTTPException(422, str(exc)) from exc
 
     def editorial(uc: UseCases):
@@ -1033,6 +1104,83 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return render_team(view, month=month)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
+
+    # -- L2: mutações de Equipe. O ator é o operador autenticado do painel (Basic auth), resolvido
+    # no vínculo dele com a organização; o papel do vínculo aplica o RBAC do domínio. Nenhuma
+    # resposta devolve valor de chave — só máscara, impressão e metadados. --
+    def _team_services(uc: UseCases, *names: str):
+        for name in names:
+            if getattr(uc, name) is None:
+                raise HTTPException(503, "team services unavailable")
+        if uc.resolve_actor is None:
+            raise HTTPException(503, "team services unavailable")
+
+    def _team_actor(uc: UseCases, organization_id: str):
+        return uc.resolve_actor.execute(organization_id=organization_id,
+                                        principal=os.getenv("STUDIO_BROWSER_USER", "").strip())
+
+    @router.post("/panel/equipe/members", status_code=201, response_model=MemberOut)
+    def invite_team_member(body: TeamMemberIn):
+        def go(uc):
+            _team_services(uc, "invite_member")
+            actor = _team_actor(uc, body.organization_id)
+            member = uc.invite_member.execute(actor_role=actor.role, organization_id=body.organization_id,
+                                              email=body.email, role=body.role, display_name=body.display_name,
+                                              actor_user_id=actor.user_id)
+            return _member_out(member)
+        return run(go)
+
+    @router.patch("/panel/equipe/members/{membership_id}", response_model=MemberOut)
+    def change_team_member_role(membership_id: str, body: TeamMemberRoleIn):
+        def go(uc):
+            _team_services(uc, "change_member_role")
+            actor = _team_actor(uc, body.organization_id)
+            member = uc.change_member_role.execute(actor_role=actor.role, organization_id=body.organization_id,
+                                                   membership_id=membership_id, role=body.role,
+                                                   actor_user_id=actor.user_id)
+            return _member_out(member)
+        return run(go)
+
+    @router.delete("/panel/equipe/members/{membership_id}", response_model=MemberOut)
+    def remove_team_member(membership_id: str, organization_id: str):
+        def go(uc):
+            _team_services(uc, "remove_member")
+            actor = _team_actor(uc, organization_id)
+            member = uc.remove_member.execute(actor_role=actor.role, organization_id=organization_id,
+                                              membership_id=membership_id, actor_user_id=actor.user_id)
+            return _member_out(member)
+        return run(go)
+
+    @router.post("/panel/equipe/keys", status_code=201, response_model=KeyOut)
+    def register_team_key(body: ByokKeyIn):
+        def go(uc):
+            _team_services(uc, "register_byok_key")
+            actor = _team_actor(uc, body.organization_id)
+            key = uc.register_byok_key.execute(actor_role=actor.role, organization_id=body.organization_id,
+                                               provider=body.provider, value=body.value,
+                                               actor_user_id=actor.user_id)
+            return _key_out(key)
+        return run(go)
+
+    @router.post("/panel/equipe/keys/{key_id}/rotate", response_model=KeyOut)
+    def rotate_team_key(key_id: str, body: ByokRotateIn):
+        def go(uc):
+            _team_services(uc, "rotate_byok_key")
+            actor = _team_actor(uc, body.organization_id)
+            key = uc.rotate_byok_key.execute(actor_role=actor.role, organization_id=body.organization_id,
+                                             key_id=key_id, value=body.value, actor_user_id=actor.user_id)
+            return _key_out(key)
+        return run(go)
+
+    @router.delete("/panel/equipe/keys/{key_id}", response_model=KeyOut)
+    def revoke_team_key(key_id: str, organization_id: str):
+        def go(uc):
+            _team_services(uc, "revoke_byok_key")
+            actor = _team_actor(uc, organization_id)
+            key = uc.revoke_byok_key.execute(actor_role=actor.role, organization_id=organization_id,
+                                             key_id=key_id, actor_user_id=actor.user_id)
+            return _key_out(key)
+        return run(go)
 
     @router.get("/panel/videos/{video_id}", response_class=HTMLResponse)
     def panel_video_detail_html(video_id: str):

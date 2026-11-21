@@ -602,11 +602,12 @@ class MemberRecord:
 
 
 class SaasRepository(Protocol):
-    """Tenancy e BYOK (F11-01/04). Toda leitura/escrita recebe o `organization_id` do ator.
+    """Tenancy e BYOK (F11-01/04 / L2). Toda leitura/escrita recebe o `organization_id` do ator.
 
     A fronteira de tenant é aplicada pelo filtro obrigatório por organização: um recurso de outra
-    organização simplesmente não é encontrado. O runtime atual ainda não deriva o tenant de uma
-    sessão (F11-02), então a tela é de leitura; o caminho está modelado aqui e no schema.
+    organização simplesmente não é encontrado. O runtime deriva o tenant do vínculo do operador
+    autenticado (o login por SSO/OIDC ainda não é a fonte de identidade); as mutações de equipe
+    são expostas pela rota e auditam o ator. O schema modela o caminho de tenancy dos registros.
     """
 
     def organizations(self) -> list[tuple[str, str]]: ...
@@ -623,6 +624,8 @@ class SaasRepository(Protocol):
                           role: "Role", status: "MembershipStatus") -> None: ...
     def update_membership_role(self, organization_id: str, membership_id: str, role: "Role") -> bool: ...
     def delete_membership(self, organization_id: str, membership_id: str) -> bool: ...
+    def audit_membership(self, organization_id: str, membership_id: str, actor_user_id: str | None,
+                         action: "MembershipAuditAction", role: "Role | None" = None) -> None: ...
 
     def keys(self, organization_id: str) -> list["ByokKey"]: ...
     def key(self, organization_id: str, key_id: str) -> "ByokKey" | None: ...

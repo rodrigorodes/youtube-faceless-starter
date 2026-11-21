@@ -231,6 +231,14 @@ class KeyAuditAction(str, Enum):
     USED = "used"
 
 
+class MembershipAuditAction(str, Enum):
+    """Ação administrativa sobre um vínculo; registra quem a executou (auditoria)."""
+
+    INVITED = "invited"
+    ROLE_CHANGED = "role_changed"
+    REMOVED = "removed"
+
+
 @dataclass(frozen=True)
 class ByokKey:
     """Metadados da chave: o valor vive só no SecretStore, nunca neste registro."""
