@@ -1,21 +1,20 @@
-"""Montagem do modo "rich": imagens (Ken Burns), narração (Piper), trilha original sintetizada e legendas.
+"""Modo "rich": áudio (narração Piper, trilha sintetizada e faixa de narração) e utilidades de texto.
 
 Sem dependência do restante do app. Funções bloqueantes: chame com asyncio.to_thread.
+
+O vídeo (Ken Burns), a legenda queimada e a montagem final saíram daqui com o renderer
+legado: agora são produzidos pelo executor do Render Plan
+(``studio/adapters/render_plan_ffmpeg.py``), que consome deste módulo o áudio (narração e
+trilha) e as fontes/``_wrap`` para compor os overlays de texto.
 """
-import io
 import math
 import os
-import subprocess
 import wave
-from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-W, H = 1080, 1920
 FPS = 25
 LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
-FADE = 0.25
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 MUSIC_SR = 44100
@@ -125,23 +124,7 @@ def synth_music(seconds, path, bpm=122):
         wav.writeframes((mix * 32767).astype("<i2").tobytes())
 
 
-# ---------- imagem ----------
-
-def cover_image(data, dst):
-    """Recorta/escala a imagem recebida para 1080x1920 (cobrindo o quadro)."""
-    img = Image.open(io.BytesIO(data)).convert("RGB")
-    ImageOps.fit(img, (W, H), method=Image.LANCZOS, centering=(0.5, 0.5)).save(dst)
-
-
-def placeholder_image(index, dst):
-    """Fundo em degradê (sem rede), usado só com IMAGE_PROVIDER=placeholder."""
-    img = Image.new("RGB", (W, H))
-    px = ImageDraw.Draw(img)
-    for y in range(H):
-        ratio = y / H
-        px.line([(0, y), (W, y)], fill=(int(20 + 60 * ratio), int(10 + 20 * ratio + index * 6), int(60 + 90 * (1 - ratio))))
-    img.save(dst)
-
+# ---------- layout de texto ----------
 
 def _wrap(draw, text, font, max_width):
     lines, current = [], ""
@@ -155,71 +138,3 @@ def _wrap(draw, text, font, max_width):
     if current:
         lines.append(current)
     return lines
-
-
-def make_overlay(label, caption, dst, disclosure="Ilustração gerada por IA"):
-    """PNG transparente com selo do dia, legenda e aviso de imagem sintética (respeita as margens da UI dos Shorts)."""
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    small = ImageFont.truetype(FONT, 30)
-    draw.text((60, 96), disclosure, font=small, fill=(255, 255, 255, 190))
-    if label:
-        badge = ImageFont.truetype(FONT_BOLD, 46)
-        box = draw.textbbox((0, 0), label, font=badge)
-        bw, bh = box[2] - box[0], box[3] - box[1]
-        draw.rounded_rectangle((60, 160, 60 + bw + 56, 160 + bh + 40), radius=26, fill=(255, 0, 140, 235))
-        draw.text((60 + 28, 160 + 14), label, font=badge, fill="white")
-    if caption:
-        font = ImageFont.truetype(FONT_BOLD, 58)
-        lines = _wrap(draw, caption, font, W - 200)[:5]
-        line_h = 78
-        height = len(lines) * line_h + 64
-        bottom = 1560
-        top = bottom - height
-        draw.rounded_rectangle((50, top, W - 50, bottom), radius=36, fill=(0, 0, 0, 165))
-        y = top + 32
-        for line in lines:
-            draw.text((102, y + 2), line, font=font, fill=(0, 0, 0, 200))
-            draw.text((100, y), line, font=font, fill="white")
-            y += line_h
-    img.save(dst)
-
-
-# ---------- vídeo ----------
-
-def _run(cmd, timeout=300):
-    subprocess.run(cmd, check=True, timeout=timeout, capture_output=True)
-
-
-def render_scene(bg_png, overlay_png, seconds, index, out_mp4):
-    """Cena com Ken Burns (zoom in/out e pan alternados), legenda e fades."""
-    frames = int(round(seconds * FPS))
-    mode = index % 4
-    if mode == 0:
-        zoom, x = f"1+0.10*on/{frames}", "iw/2-(iw/zoom/2)"
-    elif mode == 1:
-        zoom, x = f"1.10-0.10*on/{frames}", "iw/2-(iw/zoom/2)"
-    elif mode == 2:
-        zoom, x = "1.12", f"(iw-iw/zoom)*on/{frames}"
-    else:
-        zoom, x = "1.12", f"(iw-iw/zoom)*(1-on/{frames})"
-    fade_out = max(0.0, seconds - FADE)
-    graph = (f"[0:v]scale=1620:2880:flags=lanczos,zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},format=yuv420p[bg];"
-             f"[bg][1:v]overlay=0:0:format=auto,fade=t=in:st=0:d={FADE},fade=t=out:st={fade_out:.3f}:d={FADE}[v]")
-    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(bg_png), "-i", str(overlay_png),
-          "-filter_complex", graph, "-map", "[v]", "-frames:v", str(frames), "-r", str(FPS),
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", str(out_mp4)])
-
-
-def assemble(scene_mp4s, narration_wav, music_wav, concat_txt, output):
-    """Concatena as cenas e mixa narração + trilha (ducking sob a voz) com normalização de volume."""
-    Path(concat_txt).write_text("".join(f"file '{Path(p).as_posix()}'\n" for p in scene_mp4s), encoding="utf-8")
-    silent = Path(concat_txt).with_name("video_only.mp4")
-    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt), "-c", "copy", str(silent)])
-    mix = ("[1:a]aresample=44100,pan=stereo|c0=c0|c1=c0,asplit=2[nar][nsc];"
-           "[2:a]volume=0.40,pan=stereo|c0=c0|c1=c0[mus];"
-           "[mus][nsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
-           "[duck][nar]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
-    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(silent), "-i", str(narration_wav), "-i", str(music_wav),
-          "-filter_complex", mix, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-          "-shortest", "-movflags", "+faststart", str(output)])
