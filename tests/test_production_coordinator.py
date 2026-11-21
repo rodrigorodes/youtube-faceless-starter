@@ -348,3 +348,84 @@ def test_worker_reports_lost_when_the_fence_rejects_the_completion():
     step = coordinator.step(run.run_id, owner="w")
     assert step.result is WorkerStepResult.LOST
     assert handler.calls == 1
+
+
+# -- PROD-03: recuperação de boot ---------------------------------------------
+
+
+def test_list_in_flight_returns_only_active_runs_with_their_stages(db):
+    """A leitura de boot traz os runs em voo com as etapas numa chamada; terminais ficam de fora."""
+    repo, conn = db
+    run_id = repo.create_run("e" * 32, VIDEO, "key-in-flight").run.run_id
+
+    in_flight = repo.list_in_flight()
+    assert [run.run_id for run, _ in in_flight] == [run_id]
+    assert len(in_flight[0][1]) == len(COORDINATOR_DAG.stages)  # todas as etapas, sem N+1
+
+    conn.execute("UPDATE studio.production_runs SET state = 'SUCCEEDED' WHERE run_id = %s", (run_id,))
+    conn.commit()
+    assert repo.list_in_flight() == ()
+
+
+def test_boot_recovery_redrives_a_running_run_left_without_any_lease(db):
+    """A prova do deploy: um run RUNNING sem lease (thread morta) **avança** após a recuperação.
+
+    Sem varredor, o run ficava parado para sempre; com a porta + a regra + o submit, a etapa sai
+    de PENDING e o run volta a andar. Handlers-stub: sem rede.
+    """
+    repo, conn = db
+    coordinator = _coordinator(db)
+    worker = ProductionWorker(coordinator, owner="w")
+    submitted = []
+
+    def submit(run_id):
+        submitted.append(run_id)
+        worker.work(run_id)
+
+    service = Production(coordinator=coordinator, worker=worker, submit=submit, in_flight=repo)
+    run_id = service.start(VIDEO, "run-key-boot").run.run_id  # INTERACTIVE: pausa após o roteiro
+    assert _stages(conn, run_id)["script"] == StageState.SUCCEEDED.value
+
+    # Simula o restart no meio: o run segue RUNNING e nenhuma etapa tem lease (a thread morreu).
+    conn.execute("UPDATE studio.production_runs SET state = 'RUNNING' WHERE run_id = %s", (run_id,))
+    conn.execute("UPDATE studio.stage_executions SET state = 'PENDING', lease_owner = NULL, "
+                 "lease_expires_at = NULL WHERE run_id = %s", (run_id,))
+    conn.commit()
+    assert _stages(conn, run_id)["script"] == StageState.PENDING.value
+    submitted.clear()
+
+    recovered = service.recover_in_flight()
+
+    assert recovered == (run_id,)
+    assert submitted == [run_id]
+    # A etapa saiu de PENDING: o run não ficou mais abandonado.
+    assert _stages(conn, run_id)["script"] == StageState.SUCCEEDED.value
+    assert _run_state(conn, run_id) == RunState.WAITING_HUMAN.value
+
+
+def test_boot_recovery_is_idempotent_and_skips_a_run_with_a_live_lease(db):
+    """Rodar a recuperação duas vezes não faz mal; run com lease vivo não é re-dirigido."""
+    repo, conn = db
+    coordinator = _coordinator(db)
+    worker = ProductionWorker(coordinator, owner="w")
+    submitted = []
+    service = Production(coordinator=coordinator, worker=worker,
+                         submit=lambda run_id: (submitted.append(run_id), worker.work(run_id)),
+                         in_flight=repo)
+    run_id = service.start(VIDEO, "run-key-idem").run.run_id  # WAITING_HUMAN (sem lease vivo)
+
+    # Um WAITING_HUMAN não entra na leitura de em voo (a porta só traz CREATED/RUNNING).
+    assert repo.list_in_flight() == ()
+
+    # Deixa-o RUNNING com lease vivo: nem a regra nem o submit o tocam.
+    conn.execute("UPDATE studio.production_runs SET state = 'RUNNING' WHERE run_id = %s", (run_id,))
+    conn.execute("UPDATE studio.stage_executions SET state = 'RUNNING', lease_owner = 'alive', "
+                 "lease_expires_at = statement_timestamp() + interval '5 minutes' "
+                 "WHERE run_id = %s AND stage_id = 'factcheck'", (run_id,))
+    conn.commit()
+    submitted.clear()
+
+    assert service.recover_in_flight() == ()
+    assert submitted == []
+    assert service.recover_in_flight() == ()  # idempotente
+    assert submitted == []

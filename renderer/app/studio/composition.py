@@ -428,6 +428,18 @@ class Studio:
         """Não espera render em andamento (o SIGTERM não pode travar por minutos); o job fica para o reaper/próxima subida."""
         self._executor.shutdown(wait=False, cancel_futures=True)
 
+    def recover_in_flight(self) -> tuple[str, ...]:
+        """Religa no boot os runs de produção em voo que ficaram órfãos (PROD-03).
+
+        Sem banco (ou sem a fiação de produção) é no-op e devolve vazio: a subida degrada como
+        hoje. Chamado pelo `lifespan` em thread, depois da migração; o serviço re-dirige cada órfão
+        pelo mesmo `submit` do `start`.
+        """
+        cases = self.use_cases()
+        if cases is None or cases.production is None:
+            return ()
+        return cases.production.recover_in_flight()
+
     @property
     def quality_evaluator(self):
         """Porta de QA do render (RP-030) montada na raiz de composição.
@@ -597,7 +609,8 @@ class Studio:
         coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget)
         worker = ProductionWorker(coordinator)
         production = Production(coordinator=coordinator, worker=worker,
-                                submit=lambda run_id: self._executor.submit(worker.work, run_id))
+                                submit=lambda run_id: self._executor.submit(worker.work, run_id),
+                                in_flight=run_repo)
         analytics_learning_repo = PostgresAnalyticsLearningRepository(connect)
         analytics_dashboard = BuildAnalyticsDashboard(analytics_learning_repo)
         analytics_collection = CollectMetrics(

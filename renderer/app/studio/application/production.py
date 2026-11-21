@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -59,6 +59,7 @@ from .publication_execution import PublicationResult, RunPublication
 from .ports import (
     ApprovalRepository,
     AssetRepository,
+    ProductionRunInFlightReader,
     ProductionRunRepository,
     ProductionRunStageReader,
     RenderJobRepository,
@@ -487,6 +488,31 @@ def has_live_lease(stages: Sequence[StageExecution], now: datetime) -> bool:
     return False
 
 
+def orphan_in_flight(
+    in_flight: Iterable[tuple[ProductionRun, Sequence[StageExecution]]], now: datetime,
+) -> tuple[str, ...]:
+    """Run ids **órfãos** entre os runs em voo: os que o boot deve re-dirigir.
+
+    Regra pura (sem I/O, `now` é parâmetro): um run é órfão quando nada o dirige agora.
+
+    - `CREATED`: nunca passou pelo `submit` (a fila estava indisponível no `start`), então é
+      recuperável por definição — o worker o levará a `RUNNING` ao reivindicar a primeira etapa.
+    - `RUNNING`: só é órfão se **nenhuma** etapa tem lease vivo (`has_live_lease`). Com lease vivo
+      o dono ainda pode escrever e re-dirigir criaria worker ocioso/duplicado: fica de fora.
+    - Qualquer outro estado (`FAILED`/`SUCCEEDED`/`CANCELLED`/`WAITING_HUMAN`/`PAUSED`) nunca entra,
+      ainda que a leitura os traga: recuperar não é retomar nem retentar.
+
+    Devolve os ids na ordem de `in_flight` (ordem estável da porta), sem duplicar.
+    """
+    orphans: list[str] = []
+    for run, stages in in_flight:
+        if run.state is RunState.CREATED:
+            orphans.append(run.run_id)
+        elif run.state is RunState.RUNNING and not has_live_lease(stages, now):
+            orphans.append(run.run_id)
+    return tuple(orphans)
+
+
 # ---------------------------------------------------------------------------
 # Coordenador e worker
 # ---------------------------------------------------------------------------
@@ -714,11 +740,16 @@ class ProductionWorker:
 
 @dataclass(frozen=True)
 class Production:
-    """Serviço de produção exposto à API: coordenador, worker e o gatilho de execução."""
+    """Serviço de produção exposto à API: coordenador, worker e o gatilho de execução.
+
+    `in_flight` é a porta de leitura dos runs em voo usada só na recuperação de boot (PROD-03);
+    sem ela (ou com fila indisponível) a recuperação é no-op — o app sobe de qualquer forma.
+    """
 
     coordinator: ProductionCoordinator
     worker: ProductionWorker
     submit: Callable[[str], None] | None = None
+    in_flight: ProductionRunInFlightReader | None = None
 
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None) -> RunCreation:
@@ -749,6 +780,24 @@ class Production:
         if transition.result is RunTransitionResult.APPLIED:
             self._enqueue(run_id)
         return transition
+
+    def recover_in_flight(self, *, now: datetime | None = None) -> tuple[str, ...]:
+        """Religa no boot os runs em voo que ficaram órfãos (sem lease vivo) e devolve seus ids.
+
+        Lê os runs em voo pela porta (`list_in_flight`), filtra os órfãos pela regra pura
+        `orphan_in_flight` e usa o **mesmo** `submit` do `start` para cada um — nenhum caminho novo
+        de execução. Idempotente: o `step` reivindica etapa com lease/fencing, então repetir o
+        re-drive não executa a mesma etapa duas vezes (o perdedor recebe `BUSY`/`LOST`).
+        Sem porta (ou com a fila indisponível) é no-op; falha de um `submit` não impede os outros
+        nem propaga (`_enqueue`). Não escreve estado: só relança o worker.
+        """
+        if self.in_flight is None:
+            return ()
+        moment = now or datetime.now(timezone.utc)
+        orphans = orphan_in_flight(self.in_flight.list_in_flight(), moment)
+        for run_id in orphans:
+            self._enqueue(run_id)
+        return orphans
 
     def _orphan_running(self, run_id: str) -> RunTransition | None:
         """Re-drive de um `RUNNING` sem lease vivo: devolve APPLIED sem escrever estado.

@@ -778,6 +778,18 @@ class ProductionRunStageReader(Protocol):
         """Etapas do run na ordem estável do DAG (topológica); vazio se o run não existe."""
 
 
+class ProductionRunInFlightReader(Protocol):
+    """Leitura dos runs em voo do deployment para a recuperação de boot (PROD-03).
+
+    Em voo são só `CREATED` e `RUNNING` (estados terminais nunca aparecem). Cada run vem com as
+    suas etapas na mesma chamada: a subida não pode pagar N+1 para decidir o que re-dirigir.
+    Porta de leitura separada da porta de escrita; o mesmo objeto do repositório satisfaz as duas.
+    """
+
+    def list_in_flight(self) -> tuple[tuple[ProductionRun, tuple[StageExecution, ...]], ...]:
+        """Runs em voo com suas etapas, em ordem estável (mais antigos primeiro)."""
+
+
 @dataclass(frozen=True)
 class MemberRecord:
     """Membro com dados de usuário (join leitura). Sem valor de segredo."""

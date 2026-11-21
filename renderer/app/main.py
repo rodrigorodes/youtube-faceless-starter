@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -6,12 +7,23 @@ from fastapi import FastAPI, HTTPException
 from .studio.api.routes import make_router
 from .studio.composition import Settings, Studio
 
+logger = logging.getLogger("studio.boot")
+
 studio = Studio(Settings.from_env())  # estado de domínio (Postgres); sem banco o app sobe e /health indica indisponível
 
 
 @asynccontextmanager
 async def lifespan(_app):
     await asyncio.to_thread(studio.use_cases)  # migra o schema studio; falha não derruba o app
+    try:
+        # Depois da migração: re-dirige os runs de produção em voo que ficaram órfãos (PROD-03),
+        # como um deploy/queda no meio de uma produção. Em thread para não bloquear a subida.
+        recovered = await asyncio.to_thread(studio.recover_in_flight)
+        if recovered:
+            logger.warning("production: %d run(s) em voo orfao(s) re-dirigido(s) no boot",
+                           len(recovered))
+    except Exception:  # banco indisponível/erro na varredura nunca derruba a subida (no-op)
+        logger.warning("production: recuperacao de runs em voo indisponivel no boot", exc_info=True)
     yield
     await asyncio.to_thread(studio.shutdown)
 
