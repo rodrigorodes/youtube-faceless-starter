@@ -14,6 +14,9 @@ from app.studio.domain.contracts import (  # noqa: E402
     VideoFormat, VideoStatus,
 )
 from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
+from app.studio.domain.channel import ChannelProfile  # noqa: E402
+from app.studio.domain.youtube_channel import OAuthStatus  # noqa: E402
+from app.studio.domain.youtube_identity import ChannelAuthorization  # noqa: E402
 from app.studio.domain.publication_policy import PublicationIntentEvidence, idempotency_key  # noqa: E402
 from app.studio.domain.youtube_oauth import OAuthReconnectRequired, OAuthTransientError  # noqa: E402
 
@@ -22,6 +25,8 @@ OUT, PUB = "d" * 32, "e" * 32
 CK = "f" * 64
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 YT = "oNQ2KN37sfQ"
+TARGET = "UCtarget123"   # destino configurado do canal do estúdio (YT-02)
+OTHER = "UCother123"     # canal a que um token divergente pertence (YT-03)
 
 
 def qa_report(passed=True):
@@ -189,8 +194,32 @@ class Tokens:
         return AccessToken("ya29.SYNTHETIC_access", self.channel_id)
 
 
+class Channels:
+    """Repositório de canal: o projeto → destino do YouTube (None = sem destino)."""
+
+    def __init__(self, target=None):
+        self.target = target
+
+    def get_by_project(self, project_id):
+        if self.target is None:
+            return None
+        return ChannelProfile(id="c" * 32, project_id=project_id, name="Canal", youtube_channel_id=self.target)
+
+
+class Authorizations:
+    def __init__(self, *values):
+        self.values = list(values)
+
+    def authorizations_for_channel(self, youtube_channel_id):
+        return list(self.values)
+
+
+def authorization(channel_id=TARGET, status=OAuthStatus.CONNECTED):
+    return ChannelAuthorization(grant_id="1" * 32, youtube_channel_id=channel_id, status=status)
+
+
 def use(tmp_path, *, videos=None, intents=None, approvals=None, pubs=None, uploads=None, tokens=None, retry=None,
-        exists=True, policy=None):
+        exists=True, policy=None, channels=None, authorizations=None):
     videos = videos or Videos()
     intents = intents if intents is not None else Intents()
     approvals = approvals or Approvals()
@@ -198,7 +227,8 @@ def use(tmp_path, *, videos=None, intents=None, approvals=None, pubs=None, uploa
     uploads = uploads or Uploads()
     tokens = tokens or Tokens()
     run = RunPublication(videos, Scripts(), Assets(), Jobs(), Snaps(), approvals, intents, pubs, Files(tmp_path, exists),
-                         uploads, tokens, clock=lambda: NOW, retry_policy=policy)
+                         uploads, tokens, clock=lambda: NOW, retry_policy=policy,
+                         channels=channels, authorizations=authorizations)
     return run, pubs, uploads, tokens
 
 
@@ -337,6 +367,50 @@ def test_retry_claims_are_preferred_over_new_publications(tmp_path):
     run, pubs, uploads, _ = use(tmp_path, pubs=pubs)
     assert run.execute().result is PublicationResult.UPLOADED
     assert pubs.calls[0] == ("claim_retry",) and uploads.uploads[0][0].upload_uri == retry_pub.upload_uri
+
+
+# -- YT-03: gate de identidade (destino do canal × canal do token) -----------------------------
+
+
+def test_a_configured_target_with_a_matching_token_uploads(tmp_path):
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(authorization()),
+                                tokens=Tokens(channel_id=TARGET))
+    result = run.execute()
+    assert result.result is PublicationResult.UPLOADED
+    assert len(uploads.uploads) == 1 and pubs.uploaded == YT
+
+
+def test_a_token_from_another_channel_is_blocked_before_any_upload(tmp_path):
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(authorization()),
+                                tokens=Tokens(channel_id=OTHER))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED
+    assert OTHER in result.detail and TARGET in result.detail
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT") and uploads.uploads == []  # uploader nunca chamado
+
+
+def test_a_target_without_a_connected_authorization_is_blocked(tmp_path):
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(),
+                                tokens=Tokens(channel_id=TARGET))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and TARGET in result.detail
+    assert uploads.uploads == [] and pubs.calls[-1][0] == "dead_letter"
+
+
+def test_an_unknown_token_channel_is_blocked_when_a_target_is_configured(tmp_path):
+    run, _, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(authorization()),
+                             tokens=Tokens(channel_id=None))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and "unknown" in result.detail and uploads.uploads == []
+
+
+def test_a_channel_without_a_target_preserves_the_current_behavior(tmp_path):
+    # PR -> sem destino: não bloqueia, mesmo com token de outro canal ou sem repositórios (default).
+    run, _, uploads, _ = use(tmp_path, channels=Channels(None), authorizations=Authorizations(authorization()),
+                             tokens=Tokens(channel_id=OTHER))
+    assert run.execute().result is PublicationResult.UPLOADED and len(uploads.uploads) == 1
+    legacy, _, legacy_uploads, _ = use(tmp_path)  # construção antiga, sem repositórios
+    assert legacy.execute().result is PublicationResult.UPLOADED and len(legacy_uploads.uploads) == 1
 
 
 def _unknown_pub(upload_uri="https://www.googleapis.com/upload/youtube/v3/videos?upload_id=x"):

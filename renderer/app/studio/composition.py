@@ -36,6 +36,7 @@ from .adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
 from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
 from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
+from .adapters.postgres.youtube_identity_repo import PostgresChannelAuthorizationRepository
 from .adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
 from .adapters.secret_store import FileSecretStore
 from .adapters.token_env import EnvRefreshTokenProvider
@@ -481,7 +482,11 @@ class Studio:
             begin_oauth = complete_oauth = refresh_channel = revoke_channel = None
             tokens = MissingTokenProvider()
         uploader = GoogleYouTubeUploader()
-        publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens)
+        # YT-03: o gate de identidade compara o canal do token com o destino do canal do projeto,
+        # resolvendo a autorização validada (channel_authorizations). Wiring só aqui.
+        publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens,
+                                 channels=channel_repo,
+                                 authorizations=PostgresChannelAuthorizationRepository(connect))
         reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
             approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),

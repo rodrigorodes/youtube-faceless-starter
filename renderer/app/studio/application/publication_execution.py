@@ -14,6 +14,8 @@ from enum import Enum
 from pathlib import Path
 
 from ..domain.contracts import Publication, PublicationStatus, VideoStatus
+from ..domain.channel import verify_publication_authorization
+from ..domain.ids import InvalidId
 from ..domain.publish import build_description, default_title, youtube_insert_body
 from ..domain.publication_policy import (
     FailureClass,
@@ -33,6 +35,8 @@ from .ports import (
     AccessToken,
     ApprovalRepository,
     AssetRepository,
+    ChannelAuthorizationRepository,
+    ChannelProfileRepository,
     PublicationIntentRepository,
     PublicationQueueRepository,
     RenderJobRepository,
@@ -108,10 +112,16 @@ class RunPublication:
                  jobs: RenderJobRepository, snaps: SnapshotRepository, approvals: ApprovalRepository,
                  intents: PublicationIntentRepository, pubs: PublicationQueueRepository, files: RenderStorage,
                  uploads: YouTubeUploader, tokens: TokenProvider, *, clock: Callable[[], datetime] = _utc_now,
-                 retry_policy: RetryPolicy | None = None):
+                 retry_policy: RetryPolicy | None = None,
+                 channels: ChannelProfileRepository | None = None,
+                 authorizations: ChannelAuthorizationRepository | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.snaps = videos, scripts, assets, jobs, snaps
         self.approvals, self.intents, self.pubs, self.files = approvals, intents, pubs, files
         self.uploads, self.tokens = uploads, tokens
+        # YT-03: com destino configurado, a publicação exige a autorização do canal. Sem estes
+        # repositórios (default None, ex.: construção antiga/testes), a publicação não é bloqueada:
+        # é o mesmo caminho de hoje, em que nenhum canal do estúdio tem destino no banco.
+        self.channels, self.authorizations = channels, authorizations
         self.clock = clock
         self.policy = retry_policy or RetryPolicy()
 
@@ -178,6 +188,30 @@ class RunPublication:
 
     # -- execução ----------------------------------------------------------
 
+    def _authorization_gate(self, pub: Publication, project_id: str,
+                            token_channel_id: str | None) -> PublicationRun | None:
+        """YT-03: verifica que a autorização resolve para o canal esperado — antes de qualquer upload.
+
+        Sem destino configurado no canal do projeto (o estado de hoje: nenhum canal com destino no
+        banco) ou sem os repositórios de canal/autorizações, devolve `None`: a publicação segue o
+        caminho antigo **sem bloqueio**, preservando a operação. Com destino, a ausência de
+        autorização vigente, a divergência de canal ou a incerteza sobre o canal do token bloqueiam
+        via `_blocked` — nenhum `uploads.upload` acontece nesse caminho.
+        """
+        if self.channels is None or self.authorizations is None:
+            return None
+        try:
+            channel = self.channels.get_by_project(project_id)
+        except InvalidId:
+            return None
+        if channel is None or channel.youtube_channel_id is None:
+            return None
+        authorizations = self.authorizations.authorizations_for_channel(channel.youtube_channel_id)
+        verdict = verify_publication_authorization(channel, authorizations, token_channel_id=token_channel_id)
+        if verdict.allowed:
+            return None
+        return self._blocked(pub, verdict.reason)
+
     def execute(self, lease_seconds: int = 1800, max_attempts: int | None = None,
                 video_id: str | None = None) -> PublicationRun:
         max_attempts = max_attempts or self.policy.max_attempts
@@ -196,6 +230,9 @@ class RunPublication:
             return self._retry(pub, f"OAuth refresh failed ({exc})", FailureClass.TRANSIENT)
         except OAuthError as exc:
             return self._blocked(pub, f"the YouTube channel credentials are unusable ({exc})")
+        blocked = self._authorization_gate(pub, project_id, access_token.youtube_channel_id)
+        if blocked is not None:
+            return blocked
         try:
             result = self.uploads.upload(request, access_token.token)
         except Exception as exc:  # adaptador quebrado não pode derrubar o worker nem marcar sucesso
