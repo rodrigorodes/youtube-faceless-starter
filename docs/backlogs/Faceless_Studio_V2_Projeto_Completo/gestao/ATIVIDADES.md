@@ -161,6 +161,68 @@ ele verifica fidelidade à fonte, **não** se a fonte é verdadeira ou faz senti
 **Custo:** 7 chamadas de modelo no total (1 `text` + 6 `image`), todas com `cost_usd = 0.000000`.
 O run ficou **parado no gate humano** — não publica nada sozinho.
 
+## Proposta de UX "V3" (2026-11-21) — analisada, **não decidida**
+
+Peça analisada: `docs/backlogs/ux/faceless-studio-v3-mockup.html` (48 KB, **não versionada**), um mockup
+interativo de arquivo único: 7 páginas (`home · create · library · ideas · analytics · settings ·
+editor`), roteamento por hash, dados em memória e toasts.
+
+### É um **redesenho de IA e de linguagem**, não uma spec — e contradiz 4 decisões já aprovadas
+
+| Decisão aprovada (V2 / implementada) | O V3 propõe |
+| --- | --- |
+| A unidade é o **canal**; "projeto" saiu do vocabulário (RF-01) | volta **"project"**: "3 projects", "Project created", "Open project", "NEW PROJECT" |
+| **Produção** é destino próprio (pedido do dono, IA-01) | **desaparece** como tela: vira *checklist* dentro do **Editor** |
+| **Vídeos** é bloco dentro do Início (protótipo aprovado) | vira página própria: **Library**, com busca e filtros |
+| Tendências com **evidências, região, frescor, origem, vídeo base** | **"Ideas"** com apenas tag/título/descrição/**momentum** ("Rising topic") |
+| Interface em **pt-BR** | *chrome* em **inglês** ("Home", "Create", "Library", "Settings", "Continue creating") com corpo em português |
+| Etapa do vídeo **classificada**, sem percentual | **percentuais** ("Editing · 72%") e barra de progresso |
+| Estilos/Conexões/Canais/Equipe como telas | tudo fundido em **Settings** (5 abas: Identity, Channels, Connections, Workspace, Advanced) |
+
+### O que o V3 faz **melhor** (adotar)
+
+- **Home leve**: um campo + escolha de formato (o nosso Início ainda carrega várias seções).
+- **Create em 3 passos com revisão** e um *aside* "channel preset" que **torna visível o que é herdado**
+  (idioma, voz, captions, música) — casa exatamente com o nosso modelo estilo/voz.
+- **Library com busca e filtros**: hoje não temos (a lista vive dentro do Início).
+- **Settings com aba "Advanced"** para diagnóstico: é o que o UX-00 já pedia (config fora do caminho).
+- **Editor** como workspace do vídeo (player + cenas + checklist + detalhes) — unificar as nossas duas
+  páginas (vídeo + execução) é defensável; o player tem lastro real (`GET /videos/{id}/file`).
+
+### Bloqueios técnicos medidos (não copiar como está)
+
+- **CSP**: **52** `onclick=` inline e 1 `onkeydown=` — o nosso painel serve
+  `script-src 'nonce-…'` **sem** `'unsafe-inline'`, então **nada disso executa**. Toda a interação
+  precisa virar listener com nonce.
+- **Navegação**: **0** `<a href>` e **0** `aria-current` (nav por `<button>` + classe) e **0**
+  `hashchange` → voltar/avançar do navegador **não funciona**. O guia do projeto (`navbar`) manda links
+  e `aria-current="page"`.
+- **Rótulos**: **8** controles (2 `input`, 5 `select`, 1 `textarea`) e **1** `<label for>`; ficam sem
+  rótulo `channel`, `homeTopic`, `period`, `searchLibrary` (só `placeholder`).
+- **Formato/estilo por `<button>` + classe**: sem `radiogroup` (o guia pede `<input type="radio">` para
+  2–5 opções exclusivas).
+- **Steps sem `aria-current="step"`**; **Settings sem semântica de tablist** (`aria-selected`/
+  `role="tabpanel"` ausentes) e marcando seleção **só por cor**.
+- **Contraste abaixo de 4.5**: `.nav-caption` **4.02**, `.hint` do hero **3.72**, `.chart-labels`
+  **4.01** (medidos).
+- **Sem `prefers-reduced-motion`** (0 ocorrências) com `@keyframes` na troca de página — o nosso painel
+  já respeita; e **sem `forced-colors`** (o indicador de página ativa sumiria no modo de alto contraste
+  — nisso o nosso painel também não trata, registro dos dois lados).
+- **Tema claro incompleto**: `.preview-box`, `.video-player`, thumbs e `.chartbar` têm gradiente escuro
+  fixo e não são adaptados por `body.light`.
+- **Dados inventados**: `128.4K`, `+18.6%`, `72%`, `08:42`, rankings — rotulados como demo, mas o painel
+  não pode inventar medição.
+- **Escaping parcial** no JS: `escapeHTML` protege só o título do cartão de projeto; `p.label`,
+  `p.duration` e os campos do cartão de ideia saem crus.
+
+### Recomendação
+
+Adotar a **linguagem visual** e a forma **Home · Create · Library · Settings · Editor**, sobre as
+**rotas de servidor** que a IA-01 acabou de entregar (nada de SPA de arquivo único); manter as quatro
+decisões aprovadas (canal, Produção, evidência nas tendências, pt-BR) e **revisitar deliberadamente**
+duas: *Vídeos como página (Library)* e *unificar vídeo+execução no Editor*. Não copiar a camada de
+interação. **Nada foi implementado** — é decisão do dono.
+
 ## Bloqueadas
 
 | ID | Atividade | Bloqueio |
