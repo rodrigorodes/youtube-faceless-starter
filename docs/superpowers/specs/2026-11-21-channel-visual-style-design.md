@@ -41,29 +41,44 @@ E não existe **nenhuma** engine de estilo: nenhuma superfície configura aparê
    pode apontar outro estilo sem mudar o canal).
 4. **Começar extensível e simples**: poucos parâmetros de verdade, mais um mecanismo de
    extensão (`extra`) que permite crescer conforme o uso, sem migração.
+5. **O canal é a unidade de trabalho do produtor** (achado de produto). O produtor de vídeo
+   pensa em **canal** — público, nicho, cara, voz, destino — não em "projeto". "Projeto" e
+   "canal" hoje **duplicam** a mesma coisa (`projects.name`/`niche`/`language` ×
+   `channel_profiles.name`/`strategy`/`audience`/`pillars`/`visual_identity`/`voice`), e o
+   produtor não sabe onde põe o quê.
+6. **A conexão do YouTube é por canal** (não por "conta" do produtor): o token é do canal,
+   e mesmo brand channels de uma mesma conta Google tipicamente exigem consentimento
+   próprio. Manter por canal evita o risco de dois canais publicando na mesma conta.
+7. **A biblioteca de estilos é compartilhada** (o ponto de "reutilizável"): um estilo é
+   definido uma vez e vários canais apontam para ele. Logo a biblioteca mora **acima** do
+   canal (nível do estúdio/organização). Hoje o app é single-tenant, então na prática é
+   **um pool só**, pronto para ganhar `organization_id` quando a multi-tenancy ligar.
 
 ## 3. Modelo
 
 ### 3.1 Hierarquia
 
 ```
-Organização (existe no schema, vazia — o app roda single-tenant)
- └── Projeto            ← fronteira real (projects.organization_id existe)
-      ├── VisualStyle  ← NOVO: a biblioteca de estilos do projeto
-      │     • id, project_id, name, version, archived, created_at, updated_at
-      │     • params (jsonb)  — os parâmetros de aparência
-      │     • versionado por snapshot (mesmo padrão de channel_profile_revisions)
-      │
-      ├── Canal (ChannelProfile)   ← ganha 1 campo: style_id → VisualStyle
-      │
-      └── Vídeo                    ← herda o estilo do canal; pode sobrepor
+Estúdio (organização — existe no schema, vazia; o app roda single-tenant)
+ ├── VisualStyle   ← NOVO: a biblioteca **compartilhada** de estilos (uma por estúdio)
+ │     • id, organization_id, name, params (jsonb), version, archived, timestamps
+ │     • versionado por snapshot (mesmo padrão de channel_profile_revisions)
+ │
+ └── Canal (ChannelProfile)   ← ganha 1 campo: style_id → VisualStyle
+      ├── conexão YouTube (por canal)
+      └── Vídeo               ← herda o estilo do canal; pode sobrepor
             • style_snapshot no plano = (style_id, version) do estilo efetivo
 ```
 
-**Por que o projeto é o nível da biblioteca:** o app opera single-tenant hoje (Basic auth
-= um operador; `users`/`organizations`/`workspaces`/`memberships` existem e têm 0 linhas).
-O `projects` é o container real e já tem `organization_id` — se a org virar real, a
-biblioteca sobe um nível sem quebrar nada.
+**Por que a biblioteca é do estúdio:** o sentido de "reutilizável" é compartilhar. Se a
+biblioteca ficasse dentro do canal, um estilo não serviria a outro canal — e o produtor
+recopiaria, que é exatamente o problema que queremos evitar. Hoje (single-tenant) há um
+pool só; `organization_id` já deixa a coluna pronta.
+
+**O canal é a unidade (Etapa 1 do produto):** o produtor cria canais, cada um com a sua
+identidade, o seu estilo e a sua conexão do YouTube. "Projeto" deixa de ser um conceito
+separado — some a duplicação. Não requer mudança de constraint (hoje já é 1 canal por
+projeto); é reframe + juntar a identidade duplicada.
 
 ### 3.2 Parâmetros v1
 

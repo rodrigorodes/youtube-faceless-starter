@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache"]
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles"]
     assert migrate(conn) == []
 
 
@@ -34,7 +34,7 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
@@ -47,7 +47,8 @@ def test_creates_all_tables(conn):
               "users", "memberships", "byok_keys", "byok_key_audit", "metric_observations",
               "analytics_experiments", "analytics_experiment_variants",
               "analytics_recommendation_decisions", "publication_intents", "membership_audit",
-              "render_plans", "plan_artifacts", "render_cache_entries"):
+              "render_plans", "plan_artifacts", "render_cache_entries",
+               "visual_styles", "visual_style_revisions"):
         assert table_exists(conn, t), t
 
 

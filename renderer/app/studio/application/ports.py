@@ -473,6 +473,20 @@ class ChannelProfileRepository(Protocol):
         """Atualiza de forma otimista: None se o perfil não existe; `ChannelVersionConflict` se a versão divergiu."""
 
 
+class VisualStyleRepository(Protocol):
+    """Biblioteca de estilos visuais (compartilhada). Versionada por snapshot (VS-01).
+
+    Um estilo é definido uma vez e vários canais apontam para ele; por isso a biblioteca não
+    pertence ao canal. `update` é otimista: devolve None se o estilo não existe e levanta
+    `VisualStyleVersionConflict` se a versão divergiu de outra atualização.
+    """
+
+    def create(self, name: str, **options: object) -> "VisualStyle": ...
+    def get(self, style_id: str) -> "VisualStyle | None": ...
+    def list(self, include_archived: bool = False) -> "list[VisualStyle]": ...
+    def update(self, style_id: str, expected_version: int, changes: dict[str, object]) -> "VisualStyle | None": ...
+
+
 class ChannelBudgetRepository(Protocol):
     def get(self, project_id: str) -> "BudgetLimits | None": ...
     def upsert(self, limits: "BudgetLimits") -> "BudgetLimits": ...
