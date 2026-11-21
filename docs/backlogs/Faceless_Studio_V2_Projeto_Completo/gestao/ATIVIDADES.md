@@ -30,17 +30,18 @@ Sem push/merge remoto (bloqueado pelo harness).
 | DOC-01 | **Modelo de dados + DDL** gerados (`docs/22-modelo-de-dados.md`, `docs/schema/studio.sql`) com teste de snapshot | 28 testes | `scripts/export_schema.py` |
 | YT-03 | A publicação **bloqueia** quando o token não resolve para o canal esperado (a regra do desenho) | 153 testes | merge `145c786` |
 
+| VS-05a | Biblioteca de Estilos: API `/styles`, tela `/panel/estilos`, menu; contagem de uso medida | 438 testes (integração) | merge `759fe71` |
+
 ## Em execução (paralelo)
 
-**Onda 3 (em execução):** VS-05a (biblioteca de Estilos: API + página + menu). Postgres dedicado `integ-pg-a`. YT-03 já mesclada.
+**Onda 4 (em execução):** VS-05b (seletor de estilo no canal + override no vídeo) e YT-04a (serviço + API de Conexões: conectar conta → canais → vincular → revogar; **sem** painel). Postgres dedicados `integ-pg-a`/`integ-pg-b`.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **VS-05b** | UX: seletor de estilo **no canal** + override **no vídeo** | VS-05a |
-| **YT-04** | UX de Conexões: conectar conta, escolher/validar canal, revogar (reconexão isolada) | YT-03 |
-| **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05b, YT-04 |
+| **YT-04b** | UX: página **Conexões** + item de menu (conectar → escolher canal → confirmar → revogar) | YT-04a |
+| **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05b, YT-04b |
 
 ## Bloqueadas
 
