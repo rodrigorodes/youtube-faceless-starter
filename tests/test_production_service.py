@@ -16,6 +16,7 @@ from app.studio.application.production import (  # noqa: E402
     ProductionMode,
     ProductionProjection,
     has_live_lease,
+    orphan_in_flight,
 )
 from app.studio.domain.production_run import (  # noqa: E402
     ProductionRun,
@@ -32,8 +33,8 @@ VIDEO = "b" * 32
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 
 
-def _run(state=RunState.WAITING_HUMAN) -> ProductionRun:
-    return ProductionRun(run_id=RUN, video_id=VIDEO, idempotency_key="req-1", state=state)
+def _run(state=RunState.WAITING_HUMAN, run_id=RUN) -> ProductionRun:
+    return ProductionRun(run_id=run_id, video_id=VIDEO, idempotency_key="req-1", state=state)
 
 
 def _running(stage, *, expires):
@@ -175,3 +176,107 @@ def test_has_live_lease_boundary_and_future():
     assert has_live_lease([_running("script", expires=NOW + timedelta(seconds=1))], NOW) is True
     assert has_live_lease([_pending("script"), _running("factcheck", expires=NOW + timedelta(minutes=1))],
                           NOW) is True
+
+
+# -- regra pura da recuperação de boot (PROD-03) -----------------------------
+
+
+def test_orphan_in_flight_skips_a_running_run_whose_lease_is_alive():
+    """Lease vivo: o dono ainda pode escrever, então re-dirigir criaria worker duplicado."""
+    run = _run(RunState.RUNNING)
+    assert orphan_in_flight([(run, [_running("script", expires=NOW + timedelta(minutes=5))])], NOW) == ()
+
+
+def test_orphan_in_flight_takes_a_running_run_with_an_expired_or_boundary_lease():
+    run = _run(RunState.RUNNING)
+    assert orphan_in_flight([(run, [_running("script", expires=NOW - timedelta(seconds=1))])], NOW) == (RUN,)
+    # limite: exatamente agora o lease já não vale mais (mesma semântica de has_live_lease).
+    assert orphan_in_flight([(run, [_running("script", expires=NOW)])], NOW) == (RUN,)
+
+
+def test_orphan_in_flight_takes_a_running_run_without_any_lease():
+    assert orphan_in_flight([(_run(RunState.RUNNING), [_pending("script")])], NOW) == (RUN,)
+
+
+def test_orphan_in_flight_takes_created_and_never_terminal_states():
+    """`CREATED` (fila indisponível no start) entra; terminais nunca, mesmo se a leitura os trouxer."""
+    in_flight = [
+        (_run(RunState.FAILED, "c" * 32), [_pending("script")]),
+        (_run(RunState.SUCCEEDED, "d" * 32), [_pending("script")]),
+        (_run(RunState.CANCELLED, "e" * 32), [_pending("script")]),
+        (_run(RunState.CREATED, "f" * 32), [_pending("script")]),
+    ]
+    assert orphan_in_flight(in_flight, NOW) == ("f" * 32,)
+
+
+def test_orphan_in_flight_keeps_only_orphans_and_preserves_the_port_order():
+    live = _run(RunState.RUNNING, "a" * 32)
+    pending_run = _run(RunState.RUNNING, "b" * 32)
+    created = _run(RunState.CREATED, "c" * 32)
+    in_flight = [
+        (live, [_running("script", expires=NOW + timedelta(minutes=1))]),
+        (pending_run, [_pending("script"), _pending("factcheck")]),
+        (created, [_pending("script")]),
+    ]
+    assert orphan_in_flight(in_flight, NOW) == ("b" * 32, "c" * 32)
+
+
+# -- serviço: re-drive dos órfãos no boot ------------------------------------
+
+
+class _Reader:
+    """Dublê da porta `ProductionRunInFlightReader` (PROD-03); registra se foi lida."""
+
+    def __init__(self, in_flight):
+        self._in_flight = tuple(in_flight)
+        self.calls = 0
+
+    def list_in_flight(self):
+        self.calls += 1
+        return self._in_flight
+
+
+def _recovery_service(in_flight, submit):
+    coordinator = _Coordinator(transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING)))
+    return Production(coordinator=coordinator, worker=None, submit=submit, in_flight=_Reader(in_flight))
+
+
+def test_recover_in_flight_submits_only_the_orphans_and_reports_them():
+    live = _run(RunState.RUNNING, "a" * 32)
+    orphan = _run(RunState.RUNNING, "b" * 32)
+    created = _run(RunState.CREATED, "c" * 32)
+    in_flight = [
+        (live, [_running("script", expires=NOW + timedelta(minutes=5))]),
+        (orphan, [_pending("script")]),
+        (created, [_pending("script")]),
+        (_run(RunState.FAILED, "d" * 32), [_pending("script")]),
+    ]
+    submitted = []
+    service = _recovery_service(in_flight, submitted.append)
+    recovered = service.recover_in_flight(now=NOW)
+    assert recovered == ("b" * 32, "c" * 32)
+    assert submitted == ["b" * 32, "c" * 32]
+
+
+def test_recover_in_flight_isolates_a_failing_submit_and_never_propagates():
+    """Um `submit` quebrado não impede os outros nem derruba o boot."""
+    def submit(run_id):
+        submitted.append(run_id)
+        if run_id == "b" * 32:
+            raise RuntimeError("fila caiu")
+
+    submitted = []
+    service = _recovery_service(
+        [(_run(RunState.CREATED, "b" * 32), [_pending("script")]),
+         (_run(RunState.CREATED, "c" * 32), [_pending("script")])],
+        submit)
+    recovered = service.recover_in_flight(now=NOW)
+    assert submitted == ["b" * 32, "c" * 32]  # tentou o segundo apesar da falha do primeiro
+    assert recovered == ("b" * 32, "c" * 32)
+
+
+def test_recover_in_flight_is_a_noop_without_the_reader():
+    service = Production(coordinator=_Coordinator(
+        transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING))),
+        worker=None, submit=lambda run_id: None)
+    assert service.recover_in_flight() == ()

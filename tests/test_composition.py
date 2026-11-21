@@ -31,6 +31,12 @@ def test_failed_init_backs_off_instead_of_retrying_every_call(tmp_path, monkeypa
     assert len(calls) == 1
 
 
+def test_recover_in_flight_is_a_noop_without_a_database(tmp_path):
+    """PROD-03: sem banco a recuperação de boot degrada em silêncio, nunca derruba a subida."""
+    studio = Studio(Settings(database_url=DEAD, storage_root=tmp_path))
+    assert studio.recover_in_flight() == ()
+
+
 def test_ping_is_cached_for_a_few_seconds(conn, dsn, tmp_path, monkeypatch):
     from app.studio.adapters.postgres.db import migrate
     migrate(conn)

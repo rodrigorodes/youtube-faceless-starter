@@ -33,3 +33,55 @@ def test_legacy_videos_route_is_replaced_by_410():
     assert LEGACY_MESSAGE in client.get("/videos").json()["detail"]
     nested = client.get("/videos/abc/file")
     assert nested.status_code == 410 and LEGACY_MESSAGE in nested.json()["detail"]
+
+
+# -- PROD-03: o lifespan re-dirige runs em voo órfãos, sem derrubar a subida --
+
+
+class _FakeStudio:
+    """Dublê do `Studio` para exercitar o lifespan sem banco."""
+
+    def __init__(self, *, recovered=(), error=None):
+        self.recovered, self.error = tuple(recovered), error
+        self.recover_calls = 0
+        self.use_cases_calls = 0
+
+    def use_cases(self):
+        self.use_cases_calls += 1
+        return None  # migração/no-op: o boot segue
+
+    def recover_in_flight(self):
+        self.recover_calls += 1
+        if self.error is not None:
+            raise self.error
+        return self.recovered
+
+    def shutdown(self):
+        pass
+
+    def ping(self):
+        return True
+
+
+def _boot_with(monkeypatch, fake):
+    import app.main as main
+    monkeypatch.setattr(main, "studio", fake)
+    with TestClient(main.app) as client:
+        assert client.get("/health").status_code == 200
+    return fake
+
+
+def test_lifespan_redrives_orphan_runs_on_boot(monkeypatch):
+    fake = _boot_with(monkeypatch, _FakeStudio(recovered=("a" * 32,)))
+    assert fake.recover_calls == 1  # a recuperação é chamada depois da migração
+
+
+def test_lifespan_recovery_is_a_noop_without_in_flight_runs(monkeypatch):
+    fake = _boot_with(monkeypatch, _FakeStudio())
+    assert fake.recover_calls == 1  # chamada, mas nada a re-dirigir: não quebra
+
+
+def test_lifespan_startup_survives_a_failing_recovery(monkeypatch):
+    """Banco indisponível/erro na varredura: o app sobe de qualquer forma."""
+    fake = _boot_with(monkeypatch, _FakeStudio(error=RuntimeError("banco caiu")))
+    assert fake.recover_calls == 1

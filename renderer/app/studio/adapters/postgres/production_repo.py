@@ -210,6 +210,30 @@ class PostgresProductionRunRepository:
             rows = _all(conn, f"SELECT {_STAGE_COLS} FROM studio.stage_executions WHERE run_id = %s", (run_id,))
         return tuple(sorted((_stage(row) for row in rows), key=lambda stage: order[stage.stage_id]))
 
+    def list_in_flight(self) -> tuple[tuple[ProductionRun, tuple[StageExecution, ...]], ...]:
+        """Runs em voo (`CREATED`/`RUNNING`) do deployment com suas etapas (PROD-03).
+
+        Duas leituras no total (runs e etapas de todos eles), nunca N+1: a recuperação de boot
+        precisa das etapas para decidir se há lease vivo. Ordem estável: mais antigos primeiro,
+        desempatando por `run_id`; as etapas seguem a ordem topológica do DAG.
+        """
+        order = {stage: index for index, stage in enumerate(self._dag.topological_order())}
+        with _translated(), _production_errors(), self._connect() as conn:
+            runs = _all(conn, f"SELECT {_RUN_COLS} FROM studio.production_runs "
+                              f"WHERE state = ANY(%s) ORDER BY created_at, run_id",
+                        ([state.value for state in _ACTIVE_RUN_STATES],))
+            if not runs:
+                return ()
+            stages = _all(conn, f"SELECT {_STAGE_COLS} FROM studio.stage_executions WHERE run_id = ANY(%s)",
+                          ([row["run_id"] for row in runs],))
+        by_run: dict[str, list[StageExecution]] = {row["run_id"]: [] for row in runs}
+        for row in stages:
+            by_run[row["run_id"]].append(_stage(row))
+        return tuple(
+            (_run(row), tuple(sorted(by_run[row["run_id"]], key=lambda stage: order[stage.stage_id])))
+            for row in runs
+        )
+
     # -- etapas: claim, heartbeat, conclusão e falha -----------------------
 
     def claim_stage(self, run_id: str, stage_id: ProductionStage, owner: str,
