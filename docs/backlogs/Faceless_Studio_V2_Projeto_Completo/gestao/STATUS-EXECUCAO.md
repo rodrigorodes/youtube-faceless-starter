@@ -184,8 +184,8 @@ fases (RP-00…RP-07).
 | RP-03 builder | ✅ | `0982a08`/`1bead3f` — builder + compilador puro (`domain/render_plan_builder.py`, `application/render_compiler.py`) |
 | RP-04 asset resolver | ✅ | `9e6387b` — porta `AssetResolver`, manifesto com `content_sha256` próprio (C1), validação multi-asset |
 | RP-05 FFmpeg (executor) + remoção do legado | ✅ | `a60a78c` executor (`adapters/render_plan_ffmpeg.py`, publicação atômica) + `0bde80c` **removeu** `adapters/render_ffmpeg.py` após paridade medida (duração Δ0,04 s; LUFS −15,3; silêncio/preto 0,0; `passed=True`) |
-| RP-06 regeneração seletiva | ❌ | fatia 7 (depende de D2, ✅) |
-| RP-07 QA e rollout | ❌ | fatia 8 |
+| RP-06 regeneração seletiva | ✅ | `73387a0`/`bf9307e`/`b43f26e` — grafo por conteúdo (não por posição), cache e plano versionado (**0032**). **Gap declarado:** o executor ainda re-renderiza tudo — a ligação do reúso ao executor é fatia seguinte |
+| RP-07 QA e rollout | ✅ | `05c8d8b`/`22d8f52`/`3e6dd35` — `QualityEvaluator` determinístico (multimodal **declarado fora**), benchmark rotulado (24,15 s/min **Real**, 0 falhas) e kill-switch. **Declarado fora:** adoção do avaliador dentro do `RunRender` |
 
 Design aprovado para seguir: `docs/superpowers/specs/2026-11-20-render-plan-foundation-design.md`
 (com as decisões R1–R7 e as correções C1–C4 vindas da baseline).
