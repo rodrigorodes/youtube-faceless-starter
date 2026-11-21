@@ -425,7 +425,7 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html_doc, re.S)
     assert nav is not None, "prévia sem a navegação principal da casca"
     labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Equipe", "Configurações"):
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Estilos", "Equipe"):
         assert expected in labels, f"prévia: '{expected}' fora da casca"
     assert 'href="/studio/panel#trending-section"' in nav.group(1)
     assert 'href="/studio/panel#videos-section"' in nav.group(1)

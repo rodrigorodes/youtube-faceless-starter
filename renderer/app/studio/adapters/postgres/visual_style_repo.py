@@ -82,6 +82,45 @@ class PostgresVisualStyleRepository(_Base):
             )
             return [_style(row) for row in cur.fetchall()]
 
+    def usage_counts(self) -> dict[str, int]:
+        """Quantos canais usam cada estilo, medido de verdade (nunca estimado).
+
+        Só conta canal com `style_id` preenchido; canal sem estilo não aparece no mapa. A
+        contagem é o que a lista da biblioteca mostra ao lado de cada estilo.
+        """
+        with _translated(), self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT style_id, count(*) FROM studio.channel_profiles "
+                "WHERE style_id IS NOT NULL GROUP BY style_id"
+            )
+            return {row[0]: int(row[1]) for row in cur.fetchall()}
+
+    def archive(self, style_id: str) -> VisualStyle | None:
+        """Arquiva (soft delete): marca `archived = true` e grava uma nova revisão.
+
+        Não apaga linha nenhuma — o estilo some da lista padrão, mas continua rastreável e os
+        canais que apontavam para ele passam a resolver o padrão do estúdio. Idempotente: um
+        estilo já arquivado é devolvido como está, sem bumpar versão de novo.
+        """
+        sid = check_id(style_id)
+        with _translated(), self._connect() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(f"SELECT {_COLS} FROM studio.visual_styles WHERE id = %s FOR UPDATE", (sid,))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                current = _style(row)
+                if current.archived:
+                    return current
+                cur.execute(
+                    f"""UPDATE studio.visual_styles SET archived = true, version = version + 1, updated_at = now()
+                        WHERE id = %s RETURNING {_COLS}""",
+                    (sid,),
+                )
+                new_row = cur.fetchone()
+                self._insert_revision(cur, _style(new_row))
+                return _style(new_row)
+
     def update(self, style_id: str, expected_version: int, changes: dict[str, Any]) -> VisualStyle | None:
         sid = check_id(style_id)
         version = validate_version(expected_version)

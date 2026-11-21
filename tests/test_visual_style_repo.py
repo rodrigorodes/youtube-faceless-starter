@@ -7,7 +7,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 psycopg = pytest.importorskip("psycopg")
+from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepository  # noqa: E402
 from app.studio.adapters.postgres.db import migrate  # noqa: E402
+from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.adapters.postgres.visual_style_repo import PostgresVisualStyleRepository  # noqa: E402
 from app.studio.domain.visual_style import (  # noqa: E402
     DuplicateVisualStyle,
@@ -86,3 +88,40 @@ def test_params_are_validated_by_the_domain_on_write(styles):
 def test_create_rejects_unknown_option_fields(styles):
     with pytest.raises(ValueError, match="unknown visual style fields"):
         styles["repo"].create("X", colour="#fff")
+
+
+def test_usage_counts_counts_only_channels_that_point_to_a_style(styles):
+    repo = styles["repo"]
+    connect = lambda: psycopg.connect(styles["dsn"])
+    videos = PostgresVideoRepository(connect)
+    channels = PostgresChannelProfileRepository(connect)
+    style = repo.create("Cinemático")
+    other = repo.create("Vlog")
+    a = videos.create_project("Canal A", niche="", language="pt-BR")
+    b = videos.create_project("Canal B", niche="", language="pt-BR")
+    c = videos.create_project("Canal C", niche="", language="pt-BR")
+    channels.create(a.id, "A", style_id=style.id)
+    channels.create(b.id, "B", style_id=style.id)
+    channels.create(c.id, "C")  # sem estilo: não conta
+    assert repo.usage_counts() == {style.id: 2}  # só a contagem medida
+    assert other.id not in repo.usage_counts()
+
+
+def test_archive_soft_deletes_frees_the_name_and_is_idempotent(styles):
+    repo = styles["repo"]
+    style = repo.create("Duplicado")
+    archived = repo.archive(style.id)
+    assert archived.archived is True and archived.version == 2
+    assert repo.get(style.id).archived is True  # a linha continua no banco
+    assert [s.id for s in repo.list()] == []  # some da lista padrão, sem apagar
+    again = repo.archive(style.id)  # idempotente: não bumpa de novo
+    assert again.version == 2 and again.archived is True
+    freed = repo.create("Duplicado")  # o nome ativo é liberado para reúso
+    assert freed.id != style.id
+    versions = _rows(styles["dsn"], "select version from studio.visual_style_revisions "
+                                     "where style_id=%s order by version", (style.id,))
+    assert versions == [(1,), (2,)]
+
+
+def test_archive_of_an_unknown_style_returns_none(styles):
+    assert styles["repo"].archive("b" * 32) is None

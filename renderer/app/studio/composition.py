@@ -68,6 +68,9 @@ from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .application.channels_page import BuildChannelsPage
+from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
+                                 UpdateVisualStyle, VisualStyleUsage)
+from .application.styles_page import BuildStylesPage
 from .application.channel_budget import GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
 from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -543,6 +546,8 @@ class Studio:
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
                                           providers_service, channel_budget, youtube_channel, project_config,
                                           oauth_available=oauth_client is not None)
+        # VS-05a: a biblioteca de estilos é a projeção da tela de Estilos (lista + uso medido).
+        styles_page = BuildStylesPage(style_repo)
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
                                   panel=panel, ingest_trends=ingest_trends, trends_repo=trend_repo,
@@ -579,7 +584,14 @@ production=production, script_view=script_view,
                                   register_byok_key=RegisterByokKey(saas_repo, secret_store, saas_clock),
                                   rotate_byok_key=RotateByokKey(saas_repo, secret_store, saas_clock),
                                   revoke_byok_key=RevokeByokKey(saas_repo, secret_store, saas_clock),
-                                  plan_regeneration=plan_regeneration)
+                                  plan_regeneration=plan_regeneration,
+                                  create_visual_style=CreateVisualStyle(style_repo),
+                                  get_visual_style=GetVisualStyle(style_repo),
+                                  list_visual_styles=ListVisualStyles(style_repo),
+                                  update_visual_style=UpdateVisualStyle(style_repo),
+                                  archive_visual_style=ArchiveVisualStyle(style_repo),
+                                  visual_style_usage=VisualStyleUsage(style_repo),
+                                  styles_page=styles_page)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

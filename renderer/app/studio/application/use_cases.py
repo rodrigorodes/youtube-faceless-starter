@@ -19,6 +19,8 @@ from .analytics_ports import AnalyticsRepository
 from .observability import Resume
 from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
+                     UpdateVisualStyle, VisualStyleUsage)
 from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -31,6 +33,7 @@ if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que
     from .production import Production
     from .script_view import BuildScriptView
     from .channels_page import BuildChannelsPage
+    from .styles_page import BuildStylesPage
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -132,6 +135,14 @@ class UseCases:
     revoke_byok_key: RevokeByokKey | None = None
     # RP-06: regeneração seletiva (grafo de dependências + cache) da tela Editor (fatia posterior).
     plan_regeneration: PlanRegeneration | None = None
+    # VS-05a (UI): a biblioteca de estilos (lista + criar + editar + arquivar + uso medido).
+    create_visual_style: CreateVisualStyle | None = None
+    get_visual_style: GetVisualStyle | None = None
+    list_visual_styles: ListVisualStyles | None = None
+    update_visual_style: UpdateVisualStyle | None = None
+    archive_visual_style: ArchiveVisualStyle | None = None
+    visual_style_usage: VisualStyleUsage | None = None
+    styles_page: "BuildStylesPage | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -177,7 +188,14 @@ class UseCases:
                   register_byok_key: RegisterByokKey | None = None,
                   rotate_byok_key: RotateByokKey | None = None,
                   revoke_byok_key: RevokeByokKey | None = None,
-                  plan_regeneration: PlanRegeneration | None = None) -> "UseCases":
+                  plan_regeneration: PlanRegeneration | None = None,
+                  create_visual_style: CreateVisualStyle | None = None,
+                  get_visual_style: GetVisualStyle | None = None,
+                  list_visual_styles: ListVisualStyles | None = None,
+                  update_visual_style: UpdateVisualStyle | None = None,
+                  archive_visual_style: ArchiveVisualStyle | None = None,
+                  visual_style_usage: VisualStyleUsage | None = None,
+                  styles_page: "BuildStylesPage | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -191,4 +209,6 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    analytics_register_experiment,
                    begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel,
                    resolve_actor, invite_member, change_member_role, remove_member,
-                   register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration)
+                   register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
+                   create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
+                   archive_visual_style, visual_style_usage, styles_page)
