@@ -13,6 +13,7 @@ __pycache__/
 backups/*
 !backups/.gitkeep
 storage/cache/
+storage/render-cache/
 storage/projects/
 client_secret*.json
 credentials/
