@@ -1790,7 +1790,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
         <form id="create-video-form" class="new-video-form">
           <div class="form-grid-2">
             <div>
-              <label for="new-video-project">Projeto</label>
+              <label for="new-video-project">Canal</label>
               <select id="new-video-project" name="project_id" required>
                 {project_options}
               </select>
@@ -2144,13 +2144,13 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       <div class="modal-overlay" id="project-modal" role="dialog" aria-modal="true" aria-labelledby="modal-project-title">
         <div class="modal-content" style="max-width: 500px;">
           <div class="modal-header">
-            <div class="modal-title" id="modal-project-title">Novo Projeto / Canal</div>
+            <div class="modal-title" id="modal-project-title">Novo Canal</div>
             <button type="button" class="modal-close" id="btn-close-project-modal" aria-label="Fechar">&times;</button>
           </div>
           <div class="modal-body">
             <form id="form-project" style="display: flex; flex-direction: column; gap: 0.85rem;">
               <div>
-                <label for="project-name">Nome do Projeto / Canal <span style="color: var(--primary);">*</span></label>
+                <label for="project-name">Nome do Canal <span style="color: var(--primary);">*</span></label>
                 <input type="text" id="project-name" name="name" minlength="1" maxlength="120" placeholder="Ex: Canal de Curiosidades" required>
               </div>
               <div>
@@ -2166,7 +2166,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
                 </select>
               </div>
               <div class="form-actions" style="margin-top: 0.5rem;">
-                <button type="submit" class="btn btn-primary" id="btn-save-project">Cadastrar Projeto</button>
+                <button type="submit" class="btn btn-primary" id="btn-save-project">Cadastrar Canal</button>
                 <button type="button" class="btn btn-compact" id="btn-cancel-project">Cancelar</button>
                 <div id="project-form-feedback" class="form-feedback"></div>
               </div>
@@ -2362,7 +2362,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             <input type="text" id="topic" name="topic" class="new-video-topic input" minlength="3" maxlength="300" placeholder="Ex: ADE Lineup 2026 Revelado" required>
           </div>
           <div>
-            <label class="sr-only" for="new-video-project">Projeto</label>
+            <label class="sr-only" for="new-video-project">Canal</label>
             <select id="new-video-project" name="project_id" class="input" style="width: auto;" required>
               {project_options}
             </select>
@@ -2408,7 +2408,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       <details class="advanced" id="advanced-diagnostics">
         <summary class="advanced-summary">Avançado — diagnóstico (IDs, traces, uso de modelos)</summary>
         <div class="advanced-body">
-          <p>Projeto: <code>{e(current_project_id) or "não selecionado"}</code></p>
+          <p>Canal: <code>{e(current_project_id) or "não selecionado"}</code></p>
           <p>Visão gerada em {view.generated_at.strftime("%d/%m/%Y %H:%M")}.</p>
           <p>Identificadores técnicos apenas. Logs e traces por vídeo ficam no detalhe do vídeo, na mesma seção avançada.</p>
         </div>
@@ -2438,7 +2438,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             <select id="global-project-select" class="form-select-compact">
               {global_project_options}
             </select>
-            <button type="button" class="btn btn-compact" id="btn-open-project-modal">+ Novo Projeto</button>
+            <button type="button" class="btn btn-compact" id="btn-open-project-modal">+ Novo Canal</button>
           </div>
           <div class="filter-bar">
             <span style="padding-left: 0.4rem; color: var(--text-muted);">Período:</span>
@@ -2777,7 +2777,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 
         if (!name) return;
         if (btnSaveProject) btnSaveProject.disabled = true;
-        if (projectFeedback) projectFeedback.textContent = 'Cadastrando projeto...';
+        if (projectFeedback) projectFeedback.textContent = 'Cadastrando canal...';
 
         try {{
           const res = await fetch('/studio/projects', {{
@@ -2787,7 +2787,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
           }});
           const data = await res.json().catch(() => ({{}}));
           if (res.ok && data.id) {{
-            if (projectFeedback) projectFeedback.textContent = 'Projeto criado com sucesso! Redirecionando...';
+            if (projectFeedback) projectFeedback.textContent = 'Canal criado com sucesso! Redirecionando...';
             const urlParams = new URLSearchParams(window.location.search);
             const days = urlParams.get('days') || '{days}';
             window.location.href = '/studio/panel?project_id=' + encodeURIComponent(data.id) + '&days=' + encodeURIComponent(days);
@@ -2880,7 +2880,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
             if (catFeedback) catFeedback.textContent = 'Pilar salvo com sucesso! Atualizando...';
             setTimeout(() => location.reload(), 600);
           }} else if (res.status === 409) {{
-            if (catFeedback) catFeedback.textContent = 'Já existe um pilar com este nome no projeto.';
+            if (catFeedback) catFeedback.textContent = 'Já existe um pilar com este nome no canal.';
             if (btnSaveCat) btnSaveCat.disabled = false;
           }} else {{
             const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
