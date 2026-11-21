@@ -125,8 +125,12 @@ select option:checked {
   color: #ffffff !important;
 }
 @supports (appearance: base-select) {
-  select, .field select, .campo select, select.input {
+  select, .field select, .campo select, select.input, select.canal-select {
     appearance: base-select;
+    background-image: none !important;
+  }
+  select::picker-icon {
+    color: var(--muted, #a19cad);
   }
   select::picker(select) {
     background-color: var(--panel2, #1a1a22);
