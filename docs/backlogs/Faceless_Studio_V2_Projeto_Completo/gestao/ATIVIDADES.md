@@ -1,7 +1,7 @@
 # Quadro de atividades — Estilos de canal + Identidade de publicação
 
 **Atualizado:** 2026-11-21
-**Base:** `main` @ `2d7a471`
+**Base:** `main` @ `f848a57`
 **Regra de trabalho:** cada fatia em worktree isolada, branch própria, merge no `main` só depois de
 teste verde + arquitetura limpa + árvore limpa. Nada removido sem prova de morte. Sem `git add -A`.
 Sem push/merge remoto (bloqueado pelo harness).
@@ -25,21 +25,21 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-03 | O estilo **aplica**: plano grava o snapshot do `VisualStyle` + `motion`/`music` do estilo | 133 testes | merge `475ae63` |
 | YT-01b | Repositórios da identidade YouTube (conta/grants/canais/vínculos) + 4 portas | 41 testes | merge `473492c` |
 | UX-00 | Desenho de UX das configurações (IA, telas, estados vazios, referências) | doc | `docs/superpowers/specs/2026-11-21-backoffice-settings-ux-design.md` |
+| VS-04 | `caption`/`palette` do estilo **aplicados** no overlay (`caption_layout`/`overlay_colors`); `voice` carregada, precedência só reportada | 107 testes | merge `28cb4e5` |
+| YT-02 | O canal referencia o **destino** no YouTube (`channel_profiles.youtube_channel_id`, migração `0037`) + resolvedor puro | 134 testes | merge `f848a57` |
+| DOC-01 | **Modelo de dados + DDL** gerados (`docs/22-modelo-de-dados.md`, `docs/schema/studio.sql`) com teste de snapshot | 28 testes | `scripts/export_schema.py` |
 
 ## Em execução (paralelo)
 
-**Onda 2 (em execução):** VS-04 (caption/palette/voice do estilo) e YT-02 (canal referencia o destino do YouTube). Cada uma com Postgres dedicado (`integ-pg-a`/`integ-pg-b`).
+**Onda 3 (em execução):** VS-05a (biblioteca de Estilos: API + página + menu) e YT-03 (a publicação **bloqueia** quando o token não resolve para o canal esperado). Cada uma com Postgres dedicado (`integ-pg-a`/`integ-pg-b`).
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **VS-04** | `caption`/`palette`/`voice` do estilo aplicados no renderer (tira o hardcode; resolve a "duas verdades" da voz) | VS-03 |
-| **YT-02** | O canal referencia o canal de publicação; a publicação resolve a autorização **pelo canal**, não pelo projeto | YT-01b |
-| **YT-03** | **A regra**: verifica que a autorização resolve para o canal esperado; **bloqueia** a divergência | YT-02 |
-| **VS-05** | UX: superfície de Estilos + seletor no canal + override no vídeo | VS-03, VS-04, VS-02b |
-| **YT-04** | UX: conectar conta, escolher/validar canal, revogar (reconexão isolada) | YT-03 |
-| **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05, YT-04 |
+| **VS-05b** | UX: seletor de estilo **no canal** + override **no vídeo** | VS-05a |
+| **YT-04** | UX de Conexões: conectar conta, escolher/validar canal, revogar (reconexão isolada) | YT-03 |
+| **RF-01** | Reframe de produto: "projeto" → "canal" na UX (o canal é a unidade) | VS-05b, YT-04 |
 
 ## Bloqueadas
 
@@ -66,4 +66,19 @@ compartilhado produz falhas **fantasma** — que não são bug de código.
 **Regra:** cada fatia em execução paralela usa o **seu** Postgres. Há quatro no ar:
 `integ-pg` (compartilhado), `integ-pg-orch` (orquestrador), `integ-pg-a`, `integ-pg-b` (agentes).
 Antes de mesclar qualquer fatia, o orquestrador **re-verifica serialmente** numa base só dele.
+
+## Modelo de dados e DDL — como se mantêm honestos
+
+`scripts/export_schema.py` gera dois artefatos versionados:
+
+| Artefato | O que é | Como é obtido |
+| --- | --- | --- |
+| `docs/schema/studio.sql` | DDL consolidado do schema `studio` | as **migrações concatenadas verbatim**, em ordem de aplicação (é o próprio SQL que cria o schema) |
+| `docs/22-modelo-de-dados.md` | diagrama ER (Mermaid) + colunas/chaves/índices + histórico | **introspecção do banco real** após aplicar as migrações (não leitura de texto) |
+
+`tests/test_schema_docs.py` prende os dois ao código: o DDL é conferido **offline**, o modelo
+exige banco (é pulado sem `STUDIO_TEST_DSN`). **Consequência prática: toda migração nova obriga a
+regerar os dois** (`python scripts/export_schema.py --dsn "$STUDIO_TEST_DSN" --build`), senão a
+suíte acusa divergência. O gerador só lê; não altera dados.
+
 
