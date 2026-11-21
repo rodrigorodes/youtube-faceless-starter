@@ -24,11 +24,12 @@ TEXTS = ["Primeira narração do vídeo curto.", "Segunda narração, um pouco m
 
 
 class Videos:
-    def __init__(self, status=S.ASSETS_READY, fmt=VideoFormat.short):
-        self.status, self.fmt, self.exists = status, fmt, True
+    def __init__(self, status=S.ASSETS_READY, fmt=VideoFormat.short, style_id=None):
+        self.status, self.fmt, self.exists, self.style_id = status, fmt, True, style_id
 
     def get_video(self, video_id):
-        return Video(id=V, project_id=P, topic="ADE 2026", format=self.fmt, status=self.status) if self.exists else None
+        return Video(id=V, project_id=P, topic="ADE 2026", format=self.fmt, status=self.status,
+                     style_id=self.style_id) if self.exists else None
 
 
 class Scripts:
@@ -248,14 +249,17 @@ def test_run_carries_the_resolved_style_into_the_render_spec(tmp_path):
     from app.studio.domain.render_plan import StyleSnapshot
     from app.studio.domain.visual_style import ResolvedStyle
     w = world(tmp_path)
+    w["videos"].style_id = "d" * 32  # override do vídeo (VS-02b): precisa chegar ao resolvedor
     job = starter(w).execute(V)
     run, _, renderer = runner(w)
     seen = []
     style = ResolvedStyle(snapshot=StyleSnapshot(style_id="canal-1", version=7),
                           motion=("zoom_in", "zoom_out"), music={"bpm": 90})
-    run.style_for = lambda project_id: seen.append(project_id) or style
+    # VS-05c: o resolvedor recebe o **vídeo** (não só o project_id) — é assim que o override chega.
+    run.style_for = lambda video: seen.append(video) or style
     run.execute(job.id)
-    assert seen == [P] and renderer.specs[0].style == style
+    assert [v.style_id for v in seen] == ["d" * 32] and seen[0].project_id == P
+    assert renderer.specs[0].style == style
 
 
 def test_run_without_a_style_resolver_leaves_the_spec_style_unset(tmp_path):

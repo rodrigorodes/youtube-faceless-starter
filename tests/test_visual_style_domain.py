@@ -167,3 +167,19 @@ def test_resolve_style_override_wins_over_the_channel_style():
     resolved = resolve_style(None, channel, override=override)
     assert resolved.snapshot == StyleSnapshot(style_id=override.id, version=5)
     assert resolved.motion == ("pan_left",) and resolved.music == {"bpm": 60}
+
+
+def test_resolve_style_treats_an_archived_style_as_absent():
+    # VS-05c: um estilo arquivado nunca dirige um render. O override arquivado cai no canal; o
+    # estilo de canal arquivado cai no neutro (None). Ambos arquivados → None.
+    channel = style(params={"motion": ["zoom_in"]})
+    archived_override = VisualStyle(id="b" * 32, name="Arquivado", archived=True,
+                                    params={"motion": ["pan_left"]})
+    falls_back = resolve_style(None, channel, override=archived_override)
+    assert falls_back is not None and falls_back.snapshot.style_id == channel.id
+    assert falls_back.motion == ("zoom_in",)
+
+    archived_channel = VisualStyle(id="c" * 32, name="Canal arquivado", archived=True,
+                                   params={"motion": ["pan_left"]})
+    assert resolve_style(None, archived_channel) is None
+    assert resolve_style(None, archived_channel, override=archived_override) is None

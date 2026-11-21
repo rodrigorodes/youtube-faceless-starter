@@ -245,6 +245,19 @@ class VisualStyle:
 
 
 @dataclass(frozen=True)
+class VisualStyleArchive:
+    """Resultado do arquivamento de um estilo (VS-05c): o estilo e a limpeza **medida** dos vínculos.
+
+    ``cleared_links`` é a soma real (rowcount dos UPDATE) dos canais (``channel_profiles.style_id``)
+    e vídeos (``videos.style_id``) que apontavam para o estilo e voltaram a NULL — o canal ao padrão
+    do estúdio, o vídeo a herdar do canal. Nunca estimado: é o que o banco de fato limpou.
+    """
+
+    style: VisualStyle
+    cleared_links: int
+
+
+@dataclass(frozen=True)
 class ResolvedStyle:
     """Estilo **resolvido** para o render: a referência versionada **e** os parâmetros aplicáveis.
 
@@ -305,9 +318,14 @@ def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
     parâmetro já fica pronto mesmo que a chamada ainda não use override. ``profile`` entra
     para manter a resolução ancorada no canal (o snapshot sai do estilo efetivo, não do
     perfil) e é o ponto natural de precedências futuras por canal.
+
+    Defesa em profundidade (VS-05c): um estilo **arquivado** nunca dirige um render. A resolução
+    o trata como ausente — um override arquivado cai no estilo do canal e um estilo de canal
+    arquivado cai no neutro. Só assim um vínculo que escape (canal/vídeo apontando para um estilo
+    arquivado) não volta a valer no render.
     """
-    chosen = override if override is not None else style
-    if chosen is None:
+    chosen = override if (override is not None and not override.archived) else style
+    if chosen is None or chosen.archived:
         return None
     params = chosen.params
     return ResolvedStyle(

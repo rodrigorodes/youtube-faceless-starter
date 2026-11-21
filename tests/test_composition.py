@@ -141,11 +141,16 @@ def test_settings_read_the_oauth_file_path_from_env():
     assert settings.google_oauth_redirect_uri == "http://localhost:8000/cb"
 
 
-# -- VS-03: o estilo do canal é resolvido de verdade (fakes, sem banco) --
+# -- VS-03/VS-05c: o estilo do render é resolvido de verdade (fakes, sem banco) --
 
 
 class _Profile:
     def __init__(self, project_id, style_id):
+        self.project_id, self.style_id = project_id, style_id
+
+
+class _Video:
+    def __init__(self, project_id, style_id=None):
         self.project_id, self.style_id = project_id, style_id
 
 
@@ -161,37 +166,75 @@ class _Channels:
 
 
 class _Styles:
-    def __init__(self, style=None):
-        self.style = style
+    def __init__(self, *styles):
+        self.by_id = {style.id: style for style in styles if style is not None}
 
     def get(self, style_id):
-        return self.style if style_id == (self.style.id if self.style else None) else None
+        return self.by_id.get(style_id)
 
 
-def test_style_for_project_resolves_the_channel_visual_style():
-    from app.studio.composition import _style_for_project
+P, CHANNEL_STYLE, VIDEO_STYLE = "b" * 32, "a" * 32, "c" * 32
+
+
+def test_style_for_video_resolves_the_channel_style_when_the_video_has_no_override():
+    from app.studio.composition import _style_for_video
     from app.studio.domain.visual_style import VisualStyle
 
-    style_id = "a" * 32
-    visual = VisualStyle(id=style_id, name="Cinemático",
-                         params={"motion": ["zoom_in", "pan_right"], "music": {"bpm": 90}})
-    resolved = _style_for_project("b" * 32, _Channels(_Profile("b" * 32, style_id)), _Styles(visual))
+    channel_style = VisualStyle(id=CHANNEL_STYLE, name="Cinemático",
+                                params={"motion": ["zoom_in", "pan_right"], "music": {"bpm": 90}})
+    resolved = _style_for_video(_Video(P), _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(channel_style))
     assert resolved is not None
-    assert resolved.snapshot.style_id == style_id and resolved.snapshot.version == 1
+    assert resolved.snapshot.style_id == CHANNEL_STYLE and resolved.snapshot.version == 1
     assert resolved.motion == ("zoom_in", "pan_right") and resolved.music == {"bpm": 90}
 
 
-def test_style_for_project_is_none_without_channel_or_style():
-    from app.studio.composition import _style_for_project
+def test_style_for_video_lets_the_override_win_over_the_channel():
+    from app.studio.composition import _style_for_video
     from app.studio.domain.visual_style import VisualStyle
 
-    style_id = "a" * 32
-    visual = VisualStyle(id=style_id, name="Cinemático")
-    # sem canal
-    assert _style_for_project("b" * 32, _Channels(None), _Styles(visual)) is None
-    # canal sem style_id
-    assert _style_for_project("b" * 32, _Channels(_Profile("b" * 32, None)), _Styles(visual)) is None
-    # style_id aponta para um estilo inexistente
-    assert _style_for_project("b" * 32, _Channels(_Profile("b" * 32, style_id)), _Styles(None)) is None
-    # id inválido não derruba a composição (mesma tolerância do channel_guard_limits)
-    assert _style_for_project("not-a-hex-id", _Channels(raises=True), _Styles(visual)) is None
+    channel_style = VisualStyle(id=CHANNEL_STYLE, name="Canal", params={"motion": ["zoom_in"]})
+    video_style = VisualStyle(id=VIDEO_STYLE, name="Do vídeo", params={"motion": ["pan_left"], "music": {"bpm": 60}})
+    video = _Video(P, style_id=VIDEO_STYLE)  # override do vídeo (VS-05b)
+    resolved = _style_for_video(video, _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(channel_style, video_style))
+    assert resolved is not None
+    assert resolved.snapshot.style_id == VIDEO_STYLE  # o vídeo sobrepõe o canal
+    assert resolved.motion == ("pan_left",) and resolved.music == {"bpm": 60}
+
+
+def test_style_for_video_is_none_without_channel_and_video_style():
+    from app.studio.composition import _style_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    styles = _Styles(VisualStyle(id=CHANNEL_STYLE, name="Canal"), VisualStyle(id=VIDEO_STYLE, name="Do vídeo"))
+    # sem canal e sem estilo de vídeo (o caso comum hoje) → bundle neutro
+    assert _style_for_video(_Video(P), _Channels(None), styles) is None
+    # canal sem style_id e vídeo sem override
+    assert _style_for_video(_Video(P), _Channels(_Profile(P, None)), styles) is None
+
+
+def test_style_for_video_tolerates_a_broken_link_without_breaking_the_render():
+    from app.studio.composition import _style_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    channel_style = VisualStyle(id=CHANNEL_STYLE, name="Canal")
+    # id inválido no canal não derruba (mesma tolerância do channel_guard_limits)
+    assert _style_for_video(_Video(P), _Channels(raises=True), _Styles(channel_style)) is None
+    # canal apontando para um estilo inexistente e vídeo sem override → None
+    assert _style_for_video(_Video(P), _Channels(_Profile(P, "f" * 32)), _Styles(channel_style)) is None
+    # override do vídeo inexistente cai no estilo do canal (nunca derruba)
+    fallback = _style_for_video(_Video(P, style_id="f" * 32), _Channels(_Profile(P, CHANNEL_STYLE)), _Styles(channel_style))
+    assert fallback is not None and fallback.snapshot.style_id == CHANNEL_STYLE
+
+
+def test_style_for_video_treats_an_archived_style_as_absent():
+    from app.studio.composition import _style_for_video
+    from app.studio.domain.visual_style import VisualStyle
+
+    channel_style = VisualStyle(id=CHANNEL_STYLE, name="Canal")
+    archived = VisualStyle(id=VIDEO_STYLE, name="Arquivado", archived=True)
+    styles = _Styles(channel_style, archived)
+    # canal apontando para um estilo arquivado → neutro (defesa em profundidade do VS-05c)
+    assert _style_for_video(_Video(P), _Channels(_Profile(P, VIDEO_STYLE)), styles) is None
+    # override arquivado cai no estilo do canal, não dirige o render
+    resolved = _style_for_video(_Video(P, style_id=VIDEO_STYLE), _Channels(_Profile(P, CHANNEL_STYLE)), styles)
+    assert resolved is not None and resolved.snapshot.style_id == CHANNEL_STYLE

@@ -479,6 +479,8 @@ class VisualStyleOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     channels_using: int = 0
+    # VS-05c: só a resposta do arquivamento preenche; mede os vínculos de canal/vídeo soltos.
+    links_cleared: int = 0
 
 
 class ProviderCostOut(BaseModel):
@@ -1801,10 +1803,13 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/styles/{style_id}/archive", response_model=VisualStyleOut)
     def archive_style(style_id: str):
         def go(uc):
-            style = _need(uc, "archive_visual_style", "style services unavailable").execute(style_id)
-            if style is None:
+            result = _need(uc, "archive_visual_style", "style services unavailable").execute(style_id)
+            if result is None:
                 raise VisualStyleNotFound(f"visual style {style_id!r} does not exist")
-            return _style_out(style)
+            out = _style_out(result.style)
+            # VS-05c: quantos vínculos de canal/vídeo foram soltos ao arquivar — medição real.
+            out["links_cleared"] = result.cleared_links
+            return out
         return run(go)
 
     @router.get("/panel/estilos", response_class=HTMLResponse)

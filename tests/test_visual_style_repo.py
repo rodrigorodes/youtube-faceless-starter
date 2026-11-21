@@ -11,6 +11,7 @@ from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepo
 from app.studio.adapters.postgres.db import migrate  # noqa: E402
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.adapters.postgres.visual_style_repo import PostgresVisualStyleRepository  # noqa: E402
+from app.studio.domain.contracts import VideoFormat  # noqa: E402
 from app.studio.domain.visual_style import (  # noqa: E402
     DuplicateVisualStyle,
     VisualStyleParamsInvalid,
@@ -111,16 +112,67 @@ def test_archive_soft_deletes_frees_the_name_and_is_idempotent(styles):
     repo = styles["repo"]
     style = repo.create("Duplicado")
     archived = repo.archive(style.id)
-    assert archived.archived is True and archived.version == 2
+    assert archived.style.archived is True and archived.style.version == 2
     assert repo.get(style.id).archived is True  # a linha continua no banco
     assert [s.id for s in repo.list()] == []  # some da lista padrão, sem apagar
     again = repo.archive(style.id)  # idempotente: não bumpa de novo
-    assert again.version == 2 and again.archived is True
+    assert again.style.version == 2 and again.style.archived is True
     freed = repo.create("Duplicado")  # o nome ativo é liberado para reúso
     assert freed.id != style.id
     versions = _rows(styles["dsn"], "select version from studio.visual_style_revisions "
                                      "where style_id=%s order by version", (style.id,))
     assert versions == [(1,), (2,)]
+
+
+def test_archive_clears_the_channel_and_video_links_atomically_and_counts_them(styles):
+    repo = styles["repo"]
+    connect = lambda: psycopg.connect(styles["dsn"])
+    videos = PostgresVideoRepository(connect)
+    channels = PostgresChannelProfileRepository(connect)
+    style = repo.create("Cinemático")
+    other = repo.create("Outro")
+    a = videos.create_project("Canal A", niche="", language="pt-BR")
+    b = videos.create_project("Canal B", niche="", language="pt-BR")
+    channel_a = channels.create(a.id, "A", style_id=style.id)
+    channel_b = channels.create(b.id, "B", style_id=style.id)
+    video = videos.create_video(a.id, "ADE 2026", VideoFormat.short)
+    videos.set_video_style(video.id, style.id)  # override do vídeo apontando para o estilo
+    untouched = videos.create_video(b.id, "ADE 2026", VideoFormat.short)
+    videos.set_video_style(untouched.id, other.id)  # outro estilo não pode ser tocado
+
+    result = repo.archive(style.id)  # arquiva e limpa na mesma transação (VS-05c)
+    assert result.style.archived is True and result.cleared_links == 3  # 2 canais + 1 vídeo
+    assert channels.get(channel_a.id).style_id is None  # canal volta ao padrão do estúdio
+    assert channels.get(channel_b.id).style_id is None
+    assert videos.get_video(video.id).style_id is None  # vídeo volta a herdar do canal
+    assert videos.get_video(untouched.id).style_id == other.id  # o outro estilo segue intacto
+    # Idempotente: nada aponta mais, então não limpa nada e não bumpa a versão de novo.
+    again = repo.archive(style.id)
+    assert again.cleared_links == 0 and again.style.version == 2
+
+
+def test_an_archived_style_never_drives_a_render_even_if_a_link_is_reinserted(styles):
+    from app.studio.composition import _style_for_video
+
+    repo = styles["repo"]
+    connect = lambda: psycopg.connect(styles["dsn"])
+    videos = PostgresVideoRepository(connect)
+    channels = PostgresChannelProfileRepository(connect)
+    style = repo.create("Cinemático", params={"motion": ["zoom_in"]})
+    project = videos.create_project("Canal A", niche="", language="pt-BR")
+    channels.create(project.id, "A", style_id=style.id)
+    video = videos.create_video(project.id, "ADE 2026", VideoFormat.short)
+    repo.archive(style.id)  # limpa os vínculos no arquivamento
+
+    # Simula um escape da limpeza: alguém reinsere os vínculos à mão.
+    with psycopg.connect(styles["dsn"]) as c, c.cursor() as cur:
+        cur.execute("update studio.channel_profiles set style_id=%s where project_id=%s", (style.id, project.id))
+        cur.execute("update studio.videos set style_id=%s where id=%s", (style.id, video.id))
+
+    # A resolução (defesa em profundidade) trata o arquivado como ausente: nada dirige o render.
+    fetched = videos.get_video(video.id)
+    assert fetched.style_id == style.id and channels.get_by_project(project.id).style_id == style.id
+    assert _style_for_video(fetched, channels, repo) is None
 
 
 def test_archive_of_an_unknown_style_returns_none(styles):

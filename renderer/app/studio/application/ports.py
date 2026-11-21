@@ -490,10 +490,14 @@ class VisualStyleRepository(Protocol):
     def get(self, style_id: str) -> "VisualStyle | None": ...
     def list(self, include_archived: bool = False) -> "list[VisualStyle]": ...
     def update(self, style_id: str, expected_version: int, changes: dict[str, object]) -> "VisualStyle | None": ...
-    def archive(self, style_id: str) -> "VisualStyle | None":
+    def archive(self, style_id: str) -> "VisualStyleArchive | None":
         """Arquiva (soft delete) sem apagar linhas: None se o estilo não existe.
 
-        Idempotente: um estilo já arquivado volta como está. O nome ativo é liberado para reúso.
+        Na **mesma transação**, limpa os vínculos que apontavam para ele: ``channel_profiles.style_id``
+        e ``videos.style_id`` viram NULL (o canal volta ao padrão do estúdio; o vídeo volta a herdar
+        do canal). Devolve o estilo arquivado e quantos vínculos foram limpos — a contagem é medida
+        (rowcount do UPDATE), nunca estimada. Idempotente: um estilo já arquivado volta como está
+        (sem bumpar versão) e a limpeza roda de novo (defesa contra um vínculo reinserido à mão).
         """
     def usage_counts(self) -> "dict[str, int]":
         """Quantos canais usam cada estilo (`style_id` → contagem), medido no banco."""
