@@ -24,11 +24,11 @@ SAFE_TOKENS = {b"test-worker-token", b"test-browser-password", b"your_client_sec
                b"refresh_token", b"body.refresh_token", b"1//refresh-secret"}
 ALLOWED_FILES = {".env.example", ".gitignore", ".gitattributes", "README.md",
                  "requirements-dev.txt", "docker-compose.yml",
-                 "docker-compose.test.yml", "docker-compose.vertex.yml",
+                 "docker-compose.test.yml",
                  "renderer/Dockerfile", "renderer/requirements.txt",
                  "scripts/backup.py", "scripts/export_contracts.py", "tests/test_backup.py",
-                 "examples/ade-2026-publish.json", "examples/ade-2026-rich-publish.json",
-                 "examples/rich-smoke.json", "workflows/03-publish-approved.json",
+                 "examples/ade-2026-publish.json",
+                 "workflows/03-publish-approved.json",
                  "workflows/04-analytics-daily.json", "workflows/05-trends-daily.json"}
 BLOCKED_DIRS = {".git", "credentials", "backups", "storage", "__pycache__", ".pytest_cache"}
 KEEP_FILES = {"backups/.gitkeep", "storage/jobs/.gitkeep", "storage/output/.gitkeep"}

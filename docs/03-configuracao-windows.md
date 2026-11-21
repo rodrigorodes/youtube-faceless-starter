@@ -44,7 +44,7 @@ New-Secret 32   # use para N8N_ENCRYPTION_KEY
 ```
 Abra o `.env` (`notepad .env`) e cole **valores diferentes** nas duas variáveis. Salve como UTF-8 sem formatação extra. Não compartilhe o arquivo.
 
-Opcional: `GEMINI_API_KEY` para o roteiro vir do Gemini. Veja [04-variaveis-de-ambiente](04-variaveis-de-ambiente.md).
+O roteiro é gerado pelo provider de texto do Studio (`STUDIO_TEXT`); com `opencode`, deixe o bridge do OpenCode rodando. Veja [04-variaveis-de-ambiente](04-variaveis-de-ambiente.md) e [07-openai-luna-oauth](07-openai-luna-oauth.md).
 
 ## 3. Subir
 
@@ -54,27 +54,17 @@ docker compose ps
 ```
 O primeiro build baixa imagens e pacotes (alguns minutos). Esperado: `postgres` *healthy*, `n8n` e `renderer` *running*.
 
-Teste do renderer (sem n8n):
+Teste do renderer:
 ```powershell
 Invoke-RestMethod http://localhost:8000/health
-powershell -ExecutionPolicy Bypass -File .\scripts\test-create.ps1
 ```
-> Se `.\scripts\test-create.ps1` for bloqueado por *execution policy*, use o comando acima (vale só para essa execução) ou `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+O fluxo antigo de criação por `POST /videos` foi removido (a rota responde **410 Gone**). Crie e gerencie vídeos pelo painel do Studio em <http://localhost:8000/studio/panel> (veja [18-painel](18-painel.md)).
 
-O retorno traz `video_url`; abra no navegador. O arquivo também fica em `storage\output\`.
-
-## 4. Configurar o n8n
+## 4. Configurar o n8n (opcional)
 
 1. Abra <http://localhost:5678> e crie a conta de proprietário (local).
-2. **Import from File** → `workflows\01-create-short.json`.
-3. Clique em **Listen for test event** no nó Webhook e, em outro PowerShell:
-   ```powershell
-   $body = @{topic="Como sera a IA em 2030?";duration_seconds=20;style="documentary"} | ConvertTo-Json
-   Invoke-RestMethod -Uri 'http://localhost:5678/webhook-test/faceless-create' -Method Post -ContentType 'application/json' -Body $body
-   ```
-4. Para usar `/webhook/faceless-create`, ative o workflow (toggle *Active*).
-
-Como o fluxo funciona por dentro: [01-como-o-workflow-executa](01-como-o-workflow-executa.md).
+2. O fluxo de criação não depende mais do n8n: crie os vídeos pelo painel do Studio em <http://localhost:8000/studio/panel>.
+3. Os workflows seguros de publicação, analytics e tendências (`workflows/03-publish-approved.json`, `04-analytics-daily.json`, `05-trends-daily.json`) podem ser importados com a credencial `studio_worker`; veja [17-studio-auth](17-studio-auth.md).
 
 ### Particularidades do PowerShell
 - **`curl` no Windows PowerShell 5.1 é um alias de `Invoke-WebRequest`**, não o curl real. Use `Invoke-RestMethod` (como acima) ou `curl.exe` explicitamente.
@@ -84,7 +74,6 @@ Como o fluxo funciona por dentro: [01-como-o-workflow-executa](01-como-o-workflo
     -Body ([Text.Encoding]::UTF8.GetBytes($body))
   ```
   No PowerShell 7 isso não costuma ser necessário.
-- Para rodar o `.sh` (`scripts/test-create.sh`) no Windows, use WSL ou Git Bash. Se o repositório for clonado com `core.autocrlf=true`, o `.sh` pode vir com CRLF e falhar; o `.gitattributes` deste repositório força LF para `.sh`.
 
 ## 5. Parar, reiniciar, limpar
 
