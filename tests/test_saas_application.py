@@ -23,6 +23,7 @@ from app.studio.application.saas import (  # noqa: E402
     RecordKeyUse,
     RegisterByokKey,
     RemoveMember,
+    ResolveActor,
     RevokeByokKey,
     RotateByokKey,
 )
@@ -38,6 +39,7 @@ from app.studio.domain.saas import (  # noqa: E402
     LastOwnerRequired,
     MembershipInvalid,
     MembershipStatus,
+    MembershipAuditAction,
     OrganizationNotFound,
     Role,
     mask_secret,
@@ -78,6 +80,7 @@ class FakeRepo:
         self.member_rows = {}  # membership_id -> MemberRecord
         self.key_rows = {}   # key_id -> ByokKey
         self.audit = []
+        self.member_audit = []
         self._counter = 0
         self._usage: dict[str, list] = {}
 
@@ -134,6 +137,9 @@ class FakeRepo:
             return False
         del self.member_rows[membership_id]
         return True
+
+    def audit_membership(self, org_id, membership_id, actor_user_id, action, role=None):
+        self.member_audit.append((org_id, membership_id, actor_user_id, action, role))
 
     # chaves
     def keys(self, org_id):
@@ -436,3 +442,63 @@ def test_cost_breakdown_used_by_view_never_turns_absence_into_zero():
     breakdown = cost_breakdown([])
     assert breakdown == CostBreakdown()
     assert breakdown.calls == 0
+
+
+def test_resolve_actor_maps_the_panel_principal_to_its_membership_role():
+    repo = FakeRepo()
+    repo._usage = {}
+    seed_owner(repo)  # owner@example.test · owner · active
+    resolve = ResolveActor(repo)
+
+    owner = resolve.execute(organization_id=ORG, principal="Owner@Example.Test ")
+    assert owner.role is Role.OWNER
+    assert owner.user_id == "1" * 32
+    assert owner.email == "owner@example.test"
+    # Aceita o id do usuário também.
+    assert resolve.execute(organization_id=ORG, principal="1" * 32).role is Role.OWNER
+
+
+def test_resolve_actor_denies_unknown_principal_and_cross_tenant():
+    repo = FakeRepo()
+    repo._usage = {}
+    seed_owner(repo)
+    repo.insert_user("3" * 32, "b@example.test", "Pessoa B")
+    repo.insert_membership("4" * 32, OTHER_ORG, "3" * 32, Role.OWNER, MembershipStatus.ACTIVE)
+    resolve = ResolveActor(repo)
+
+    for principal in ("", "  ", "ninguem@example.test", "3" * 32):
+        with pytest.raises(AuthorizationDenied):
+            resolve.execute(organization_id=ORG, principal=principal)
+
+
+def test_resolve_actor_refuses_an_invited_but_not_active_membership():
+    repo = FakeRepo()
+    repo._usage = {}
+    repo.insert_user("1" * 32, "owner@example.test", "Owner Real")
+    repo.insert_membership("2" * 32, ORG, "1" * 32, Role.OWNER, MembershipStatus.INVITED)
+    with pytest.raises(AuthorizationDenied):
+        ResolveActor(repo).execute(organization_id=ORG, principal="owner@example.test")
+
+
+def test_member_mutations_record_the_actor_in_the_audit():
+    repo = FakeRepo()
+    repo._usage = {}
+    seed_owner(repo)
+    actor = "1" * 32
+
+    created = InviteMember(repo, lambda: NOW).execute(
+        actor_role=Role.OWNER, organization_id=ORG, email="nova@example.test",
+        role=Role.EDITOR, actor_user_id=actor)
+    assert repo.member_audit[-1] == (ORG, created.membership_id, actor,
+                                     MembershipAuditAction.INVITED, Role.EDITOR)
+
+    ChangeMemberRole(repo).execute(actor_role=Role.OWNER, organization_id=ORG,
+                                   membership_id=created.membership_id, role=Role.VIEWER,
+                                   actor_user_id=actor)
+    assert repo.member_audit[-1] == (ORG, created.membership_id, actor,
+                                     MembershipAuditAction.ROLE_CHANGED, Role.VIEWER)
+
+    RemoveMember(repo).execute(actor_role=Role.OWNER, organization_id=ORG,
+                               membership_id=created.membership_id, actor_user_id=actor)
+    assert repo.member_audit[-1] == (ORG, created.membership_id, actor,
+                                     MembershipAuditAction.REMOVED, Role.VIEWER)

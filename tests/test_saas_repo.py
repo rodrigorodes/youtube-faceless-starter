@@ -20,6 +20,7 @@ from app.studio.domain.saas import (  # noqa: E402
     DuplicateMembership,
     DuplicateProviderKey,
     KeyAuditAction,
+    MembershipAuditAction,
     MembershipStatus,
     Role,
     new_byok_key,
@@ -180,6 +181,19 @@ def test_rotation_updates_metadata_and_keeps_id(conn, repo):
     assert updated.fingerprint == "f" * 64
     assert repo.update_key_rotation(ORG_B, key.id, "…••••3456", "f" * 64, "openai_rotated", NOW) is False
     assert RAW not in repr(updated)
+
+
+def test_membership_audit_records_the_actor_and_survives_removal(conn, repo):
+    seed_org(conn)
+    seed_member(conn)
+    repo.audit_membership(ORG, MEMBERSHIP, USER, MembershipAuditAction.ROLE_CHANGED, Role.EDITOR)
+    row = conn.execute("SELECT actor_user_id, action, role FROM studio.membership_audit "
+                       "WHERE membership_id = %s", (MEMBERSHIP,)).fetchone()
+    assert row == (USER, "role_changed", "editor")
+    # O vínculo pode ser removido; a auditoria permanece (membership_id não tem FK).
+    assert repo.delete_membership(ORG, MEMBERSHIP) is True
+    assert conn.execute("SELECT count(*) FROM studio.membership_audit WHERE membership_id = %s",
+                        (MEMBERSHIP,)).fetchone()[0] == 1
 
 
 def test_usage_aggregation_only_counts_rows_attributed_to_the_tenant_and_member(conn, repo):
