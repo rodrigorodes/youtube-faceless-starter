@@ -1,7 +1,9 @@
 # Status de execução — F0–F11 e Render Plan
 
 **Data:** 2026-11-20
-**Base:** branch `faceless-v2-impl` (`d4db3cd`) + `main` local mesclado (`761e9e9`).
+**Base:** `main` local com todas as fatias mescladas (`f909695`): F0, A, C, D, D2, F3-07, F4-duração,
+F5-domínio, ContentBrief, F9-04, F7, F6, G1, G1b, RP-00..RP-02, RP-04, e as fatias **G** (wizard +
+execução), **E** (long-form + roteiro), **H** (canais/providers/budget/segredos) e o protótipo UX.
 **Método:** cada linha abaixo foi cruzada com commit e/ou revisão independente. Onde a evidência
 é uma medição, o número está citado. **O `gestao/BACKLOG-MESTRE.md` marca "A fazer" em todos os 95
 cards** — ele nunca foi atualizado; esta é a leitura real.
@@ -43,10 +45,10 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 | Card | Status | Evidência / o que falta |
 |---|---|---|
 | F2-01 mapa de navegação, wireframes, estados vazios | ✅ | `produto/mockup-proposta.html` **aprovado** + `JORNADA-E-TELAS.md` |
-| F2-02 wizard `Novo vídeo` | ❌ | — |
-| F2-03 botão `Produzir vídeo` → Coordinator | ❌ | depende de D2 |
-| F2-04 página de execução (stepper, próxima ação, custo) | ◐ | G1 `3d3d567` entregou o **shell** com stepper; sem run real por trás |
-| F2-05 ações pausar/continuar/cancelar/revisar | ❌ | depende de D2 |
+| F2-02 wizard `Novo vídeo` | ✅ | fatia **G** `a217365` (`api/panel_production.py`); Tema/Canal/Formato reais, resto desabilitado **com motivo em texto** |
+| F2-03 botão `Produzir vídeo` → Coordinator | ✅ | fatia G — cria o vídeo e chama o coordinator D2 com `Idempotency-Key` |
+| F2-04 página de execução (stepper, próxima ação, custo) | ✅ | fatia G `a217365` — stepper real por run, "etapa N de M" **sem barra/percentual**, custo rotulado |
+| F2-05 ações pausar/continuar/cancelar/revisar | ✅ | fatia G — ações condicionadas ao estado (retry só em `FAILED`) |
 | F2-06 lista `Vídeos` por estado + filtros | ◐ | G1 entregou lista; filtros `precisa de mim`/`em andamento` não completos |
 | F2-07 mover IDs/traces/model usage para avançado | ✅ | G1 (`<details>` fechado) |
 | F2-08 acessibilidade, responsividade, E2E com operador | ◐ | G1: responsivo + a11y estática; **sem validação em navegador/leitor de tela** |
@@ -70,14 +72,14 @@ Legenda: **✅ feito** (com evidência) · **◐ parcial** (contrato/domínio fe
 | Card | Status | Evidência / o que falta |
 |---|---|---|
 | F4-01 expandir briefing | ✅ | ContentBrief + fatia F4-01 |
-| F4-02 prompt short vs long (estrutura por blocos) | ❌ | — |
-| F4-03 estimativa palavras/minuto e duração por cena | ◐ | `235da17`, `67041f9`; **sem calibração TTS real** |
-| F4-04 roteiro em duas passagens | ❌ | fatia **E** |
-| F4-05 validar continuidade/redundância/claims | ◐ | gate de fact-check existe; continuidade não |
-| F4-06 versionar scripts + aprovação por hash | ❌ | fatia E |
-| F4-07 tela de editar/regerar cenas | ❌ | — |
-| F4-08 edição invalida só downstream | ❌ | — |
-| F4-09 teste de roteiro ~480 s | ❌ | — |
+| F4-02 prompt short vs long (estrutura por blocos) | ✅ | fatia **E** `cc24b23`/`159a212` (`build_prompt_for_format`) |
+| F4-03 estimativa palavras/minuto e duração por cena | ◐ | fatia E `estimate_text_durations`; **calibração TTS real continua pendente** |
+| F4-04 roteiro em duas passagens | ✅ | fatia E `159a212` — plano de capítulos → cenas com citações |
+| F4-05 validar continuidade/redundância/claims | ✅ | fatia E — reusa `facts.check_narration`; estrutura, continuidade, redundância e invenção |
+| F4-06 versionar scripts + aprovação por hash | ✅ | fatia E `c7de848` — aprovação presa a `(versão, hash)`; editar cria versão nova e invalida |
+| F4-07 tela de editar/regerar cenas | ✅ | fatia E `7d9e841` — tela de Roteiro aprovada; edição só em `IDEA`/`SCRIPTED` |
+| F4-08 edição invalida só downstream | ✅ | fatia E — grafo de dependências no domínio + efeitos persistidos |
+| F4-09 teste de roteiro ~480 s | ✅ | fatia E — 3 temas/estilos, determinístico/offline |
 
 ## F5 — Motor audiovisual, mídia e montagem dinâmica (P1)
 
@@ -131,27 +133,34 @@ Todos **❌ pendente** (fatia **F**, não iniciada). F8-07 (`reabilitar workflow
 | Card | Status | Evidência / o que falta |
 |---|---|---|
 | F9-01 conectar dados às versões | ❌ | — |
-| F9-02 coletar métricas autorizadas | ❌ | fatia **I** |
-| F9-03 dashboard por canal/vídeo/pilar | ❌ | fatia I |
+| F9-02 coletar métricas autorizadas | ❌ | fatia **I** — **autorizada**; tela de Analytics aprovada |
+| F9-03 dashboard por canal/vídeo/pilar | ❌ | fatia I — tela aprovada (`produto/tela-analytics.html`) |
 | F9-04 insights com evidência e confiança | ✅ | `cbda7df`, `96edd7a` |
-| F9-05 recomendar temas/formatos | ❌ | — |
+| F9-05 recomendar temas/formatos | ❌ | fatia I — recomendações **não** reconfiguram nada sozinhas |
 | F9-06 histórico de experimentos | ❌ | — |
 
 ## F10 — Gerenciamento de canais, estratégias e providers (P1)
 
 | Card | Status | Evidência / o que falta |
 |---|---|---|
-| F10-01 CRUD de canais/projetos, pilares | ◐ | slice C: domínio + persistência + serviço; **falta HTTP e UI** (fatia H) |
+| F10-01 CRUD de canais/projetos, pilares | ◐ | fatia **H** `35c4947` completou o **HTTP**; **falta a UI** (fatia **H-UI**, aprovada) |
 | F10-02 `ChannelProfile` versionado | ✅ | `6b9128c`, `c175a2a`, `bb0d108`, `78667e3` |
-| F10-03 tela de providers com capabilities | ❌ | — |
-| F10-04 profiles econômicos e roteamento | ❌ | — |
-| F10-05 budget por canal, limites hard/soft | ◐ | guard existe (fatia A); **limites vêm do chamador, não são hard**; UI não |
-| F10-06 associar canal YouTube + status OAuth | ❌ | — |
-| F10-07 secrets em vault, não no `Project.config` | ❌ | — |
+| F10-03 providers com capabilities | ✅ | fatia H — `GET/POST .../providers[/test]`; `AVAILABLE` só com implementação validada, senão `UNAVAILABLE` **com motivo** |
+| F10-04 profiles econômicos e roteamento | ✅ | fatia H — `ECONOMY`/`BALANCED`/`PREMIUM` + `route_provider` com fallback controlado |
+| F10-05 budget por canal, limites hard/soft | ✅ | fatia H — `BudgetLimits` com hard/soft **distintos**, ligados ao guard (`limits_for`) |
+| F10-06 associar canal YouTube + status OAuth | ◐ | fatia H — associação e status derivado; **OAuth real (troca/refresh) não implementado** |
+| F10-07 secrets em vault, não no `Project.config` | ✅ | fatia H — `FileSecretStore` (0700/0600) + `sanitize_project_config`; teste prova a ausência do segredo |
 
 ## F11 — Preparação SaaS, multiusuário e BYOK (P2)
 
-Todos **🚫 adiados** — decisão registrada (MVP single-tenant multi-canal).
+**🔓 desadiada por decisão do usuário em 2026-11-20** — a fatia **F11** está autorizada (9 cards).
+
+Escopo: membros, papéis (`owner`/`editor`/`reviewer`/`viewer`), tenants, chaves BYOK
+(**máscara, nunca o valor**) e consumo. Tela de Equipe aprovada (`produto/tela-equipe.html`).
+
+| Card | Status | Evidência / o que falta |
+|---|---|---|
+| F11-01…09 | ❌ | fatia **F11** autorizada; escopo acima |
 
 ---
 
@@ -164,12 +173,12 @@ fases (RP-00…RP-07).
 | Fase RP | Status | Evidência |
 |---|---|---|
 | RP-00 baseline e compatibilidade | ✅ | fatia 1, `17886db` (RP-001/002 + proposta RP-004) |
-| RP-01 contrato canônico | 🔄 | fatia 2 em andamento (RP-005…RP-009) |
-| RP-02 timeline e sincronização | ❌ | fatia 3 |
-| RP-03 builder | ❌ | fatia 4 (depende de C) |
-| RP-04 asset resolver | ❌ | fatia 5 |
-| RP-05 FFmpeg adapter | ❌ | fatia 6 |
-| RP-06 regeneração seletiva | ❌ | fatia 7 (depende de D2) |
+| RP-01 contrato canônico | ✅ | fatia 2 — `89f45fc`, `c73f7fb`, `3b3e123`, `c466d4a` |
+| RP-02 timeline e sincronização | ✅ | fatia 3 — `eadb938`, `5e1e0ed`, `ad2f8b2` |
+| RP-03 builder | ❌ | **fatia 4** — próxima; depende de C (✅) |
+| RP-04 asset resolver | ✅ | `9e6387b` — porta `AssetResolver`, manifesto com `content_sha256` próprio (C1), validação multi-asset |
+| RP-05 FFmpeg adapter | ❌ | fatia 6 — **a medição real de vídeo (ffprobe) fica aqui** |
+| RP-06 regeneração seletiva | ❌ | fatia 7 (depende de D2, ✅) |
 | RP-07 QA e rollout | ❌ | fatia 8 |
 
 Design aprovado para seguir: `docs/superpowers/specs/2026-11-20-render-plan-foundation-design.md`
@@ -187,10 +196,16 @@ viewport + media query, um único `<h1>`, sem barra de progresso afirmando linea
 **nenhum texto ilustrativo do mockup vazando** para o produto. Cada regra tem sonda própria que
 prova que a checagem morde.
 
-## Aprovações do usuário (fonte de verdade de design)| Data | Artefato | Escopo da aprovação |
+## Aprovações do usuário (fonte de verdade de design)
+
+| Data | Artefato | Escopo da aprovação |
 |---|---|---|
 | 2026-11-20 | `produto/mockup-proposta.html` | linguagem visual do painel (slice G1) |
 | 2026-11-20 | `produto/` (todos os mockups) | **toda a pasta**: 8 telas da jornada em `mockup-telas.html` + PNGs (`tela-*.png`, desktop e mobile) + `JORNADA-E-TELAS.md`. Passa a ser a referência visual de **todas** as fatias de UI (G, H e as telas seguintes) |
+| 2026-11-20 | `produto/tela-canais.html` (+PNG) | **tela de Canais aprovada** — deixa de ser `em breve`; **destrava a UI da fatia H** |
+| 2026-11-20 | `produto/tela-analytics.html` (+PNG) | **tela de Analytics aprovada** — libera a fatia **I** (F9-02/03/05) |
+| 2026-11-20 | `produto/tela-equipe.html` (+PNG) | **tela de Equipe aprovada** — libera a fatia **F11** |
+| 2026-11-20 | decisão de escopo | **F11 (SaaS/multiusuário/BYOK) desadiada** — o usuário reverteu o adiamento; os 9 cards estão autorizados |
 
 **Consequência prática:** qualquer fatia de UI daqui para frente implementa o que está aprovado
 em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **dado real** ou
@@ -201,23 +216,27 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 | Fase | Feito | Parcial | Pendente/Adiado |
 |---|---|---|---|
 | F0 | 1 | 4 | 2 |
-| F1 | 3 | 3 | 3 |
-| F2 | 2 | 4 | 2 |
+| F1 | 6 | 3 | 0 |
+| F2 | 6 | 2 | 0 |
 | F3 | 2 | 1 | 5 |
-| F4 | 1 | 2 | 6 |
-| F5 | 1 (+RP-00) | 2 | 6 |
+| F4 | 8 | 1 | 0 |
+| F5 | 1 (+RP-00/01/02/04) | 2 | 6 |
 | F6 | 2 | 1 | 5 |
 | F7 | 2 | 2 | 3 |
 | F8 | 0 | 0 | 8 (1 bloqueado) |
 | F9 | 1 | 0 | 5 |
-| F10 | 1 | 2 | 4 |
-| F11 | 0 | 0 | 9 (adiados) |
+| F10 | 5 | 2 | 0 |
+| F11 | 0 | 0 | 9 (autorizados) |
 
 **As três maiores lacunas, em ordem de impacto:**
-1. **D2 — ProductionCoordinator** (F1-03/04/05, F2-03/05, F5-07, F8): sem ele não há fluxo
-   ponta-a-ponta pelo painel, nem publicação. É o maior destravador.
-2. **F8 — Publicação YouTube** (8 cards, P0): nenhum iniciado, e é P0.
-3. **F3/F4 — research e roteiro long-form** (11 cards pendentes): o "conteúdo de 8 minutos" do
-   Marco M2/`M3` depende disso.
+1. **F8 — Publicação YouTube** (8 cards, P0): nenhum iniciado, e é P0. Sem ela não há loop real
+   (publicar → medir → aprender) nem o analytics da fatia **I** tem dado de onde coletar.
+2. **F3 — research e fontes verificáveis** (5 de 8 pendentes): o roteiro long-form já existe (fatia E),
+   mas sem fonte verificável ele não cumpre o "sem invenção" do gate de fact-check.
+3. **F5 / RP-05 — motor audiovisual real** (beats múltiplos, FFmpeg): RP-05 é onde a medição real de
+   vídeo acontece; hoje o `AssetResolver` valida vídeo por metadado **declarado**, não medido.
+
+**Baseline:** `main` local com 1924 passed, 35 skipped, 0 failed (o gate de higiene voltou a passar
+após `7f248cd`, que corrigiu falsos positivos do scanner em código de canal/segredos).
 
 **Nada aqui foi publicado.** `main` local tem tudo; o remoto não foi tocado (sem push).
