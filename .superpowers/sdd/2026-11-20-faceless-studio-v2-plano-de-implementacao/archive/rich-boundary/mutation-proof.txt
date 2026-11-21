@@ -1,0 +1,14 @@
+# Copia descartavel: cp -R $MAIN/renderer $TMP/renderer   (rich.py intocado)
+
+## ANTES (dominio: FPS=25, LEAD=0.30)
+rich.FPS = 25 | rich.LEAD = 0.3 | rich.scene_length(1.23) = 2.04
+
+## mutacao 1: FPS 25 -> 30 SOMENTE em $TMP/renderer/app/studio/domain/render.py
+8:FPS = 30
+rich.FPS = 30 | rich.LEAD = 0.3 | rich.scene_length(1.23) = 2.033333333333333
+
+## mutacao 2: LEAD 0.30 -> 0.10 SOMENTE no dominio (FPS ja em 30)
+10:LEAD, TAIL = 0.10, 0.50  # silêncio antes/depois de cada fala (s)
+rich.FPS = 30 | rich.LEAD = 0.1 | rich.scene_length(1.23) = 1.8333333333333333
+
+# Revert: copia descartavel removida (arvore real nunca foi tocada)

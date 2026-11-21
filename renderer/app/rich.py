@@ -1,21 +1,26 @@
 """Modo "rich": áudio (narração Piper, trilha sintetizada e faixa de narração) e utilidades de texto.
 
-Sem dependência do restante do app. Funções bloqueantes: chame com asyncio.to_thread.
+O alinhamento áudio↔vídeo e os parâmetros determinísticos da trilha **não** são recriados
+aqui: vêm do domínio puro (``studio.domain.render`` para ``FPS``/``LEAD``/``TAIL``/
+``scene_length`` e ``studio.domain.render_plan_builder`` para ``DEFAULT_MUSIC_PARAMS``). A
+direção adapter→domínio é a correta e é o que impede que os dois lados divirjam em
+silêncio. Funções bloqueantes: chame com asyncio.to_thread.
 
 O vídeo (Ken Burns), a legenda queimada e a montagem final saíram daqui com o renderer
 legado: agora são produzidos pelo executor do Render Plan
 (``studio/adapters/render_plan_ffmpeg.py``), que consome deste módulo o áudio (narração e
 trilha) e as fontes/``_wrap`` para compor os overlays de texto.
 """
-import math
 import os
 import wave
 from contextlib import contextmanager
 
 import numpy as np
 
-FPS = 25
-LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
+# Fonte canônica do tempo de cena (reexportados para os consumidores deste módulo).
+from .studio.domain.render import FPS, LEAD, TAIL, scene_length  # noqa: F401
+from .studio.domain.render_plan_builder import DEFAULT_MUSIC_PARAMS
+
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 MUSIC_SR = 44100
@@ -65,11 +70,6 @@ def wav_duration(path):
         return wav.getnframes() / wav.getframerate()
 
 
-def scene_length(speech_seconds):
-    """Duração da cena em quadros inteiros, para áudio e vídeo ficarem alinhados."""
-    return math.ceil((LEAD + speech_seconds + TAIL) * FPS) / FPS
-
-
 def build_narration_track(speech_wavs, out_path):
     """Junta as falas com silêncio de lead/tail. Devolve as durações (s) de cada cena."""
     lengths, rate, chunks = [], None, []
@@ -92,12 +92,17 @@ def build_narration_track(speech_wavs, out_path):
     return lengths
 
 
-def synth_music(seconds, path, bpm=122):
-    """Loop eletrônico original (house/minimal) gerado por síntese. Sem samples nem músicas de terceiros."""
+def synth_music(seconds, path, bpm=DEFAULT_MUSIC_PARAMS["bpm"], seed=DEFAULT_MUSIC_PARAMS["seed"]):
+    """Loop eletrônico original (house/minimal) gerado por síntese. Sem samples nem músicas de terceiros.
+
+    ``bpm``/``seed`` são os mesmos parâmetros determinísticos que o Render Plan carrega em
+    ``GeneratedAudioSource.params`` (``DEFAULT_MUSIC_PARAMS``): quem executa tem de honrar o
+    que o plano documenta, senão o áudio diverge do fingerprint que o cache usa.
+    """
     sr = MUSIC_SR
     n = int(seconds * sr)
     out = np.zeros(n)
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(seed)
     beat = 60.0 / bpm
 
     def put(sig, start):

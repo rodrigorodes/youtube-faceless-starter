@@ -1,0 +1,20 @@
+arquivos de teste: 132  |  grupos: 8  |  por grupo: 17
+--- grupo 1/8  (17 arquivos, host disponivel 6030MB) ---
+    rc=0  370 passed, 1 warning in 52.03s
+--- grupo 2/8  (17 arquivos, host disponivel 6155MB) ---
+    rc=0  199 passed, 1 warning in 53.40s
+--- grupo 3/8  (17 arquivos, host disponivel 5721MB) ---
+    rc=0  382 passed, 1 warning in 32.87s
+--- grupo 4/8  (17 arquivos, host disponivel 6300MB) ---
+    rc=0  418 passed, 1 skipped, 1 warning in 60.92s (0:01:00)
+--- grupo 5/8  (17 arquivos, host disponivel 6204MB) ---
+    rc=0  386 passed, 1 warning in 112.27s (0:01:52)
+--- grupo 6/8  (17 arquivos, host disponivel 5896MB) ---
+    rc=0  269 passed, 1 warning in 64.63s (0:01:04)
+--- grupo 7/8  (17 arquivos, host disponivel 6176MB) ---
+    rc=0  210 passed, 1 warning in 36.03s
+--- grupo 8/8  (13 arquivos, host disponivel 5832MB) ---
+    rc=0  169 passed, 34 skipped, 1 warning in 36.34s
+
+=========== TOTAL: 2403 passed, 0 failed, 35 skipped ===========
+grupos verdes: 8/8 ; grupos com falha: nenhum

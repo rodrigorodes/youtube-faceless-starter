@@ -1,0 +1,7 @@
+# Comando: grep -rnE '^\s*(FPS|LEAD|TAIL)\s*(,|:|=)' --include=*.py . | grep -v .superpowers
+./renderer/app/studio/domain/render.py:8:FPS = 25
+./renderer/app/studio/domain/render.py:10:LEAD, TAIL = 0.30, 0.50  # silêncio antes/depois de cada fala (s)
+./tests/test_render_domain.py:10:    FPS, LEAD, MAX_SECONDS, TAIL, Cue, evaluate_qa, make_cues, scene_length, split_chunks, to_srt, to_srt_time,
+
+# Comando: grep -rnE '^\s*def scene_length' --include=*.py . | grep -v .superpowers
+./renderer/app/studio/domain/render.py:20:def scene_length(speech_seconds: float) -> float:

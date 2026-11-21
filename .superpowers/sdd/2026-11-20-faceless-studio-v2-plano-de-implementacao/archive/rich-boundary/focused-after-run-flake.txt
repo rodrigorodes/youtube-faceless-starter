@@ -1,0 +1,8 @@
+# FOCUSED AFTER (estado feat/rich-boundary): tests/test_rich.py test_render_plan_executor.py test_render_adapters.py test_render.py test_tts_calibration.py test_narration_duration.py test_architecture.py
+....................................................................F... [ 74%]
+.........................                                                [100%]
+=================================== FAILURES ===================================
+/Users/rodrigomendes/.local/share/opencode/worktree/39a258/rich-boundary/tests/test_tts_calibration.py:154: assert 2.8096145124716543 == 4.0 ± 1.0e+00
+=========================== short test summary info ============================
+FAILED tests/test_tts_calibration.py::test_punctuation_adds_the_measured_pause_time
+1 failed, 96 passed in 53.87s
