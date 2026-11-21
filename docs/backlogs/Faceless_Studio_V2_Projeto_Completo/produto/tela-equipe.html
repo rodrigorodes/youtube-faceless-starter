@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Faceless Studio V2 — Equipe</title>
+<link rel="stylesheet" href="prototipo.css">
+</head>
+<body>
+
+<div class="shell">
+<section class="screen" id="equipe">
+  <header class="top">
+    <div>
+      <h2 class="title" tabindex="-1">Equipe (SaaS)</h2>
+      <p class="goal">Ação primária: <b>gerir acesso</b>. Multiusuário, tenants e BYOK são F11 (P2) e estão <b>adiados</b>; esta tela é o modelo proposto, não algo instalado.</p>
+    </div>
+    <span class="screen-no">Tela 12 de 12 · dados ilustrativos</span>
+  </header>
+
+  <div class="app3">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">FS</div>
+        <div><div class="brand-name">Faceless Studio V2</div><div class="brand-sub">YouTube Automation</div></div></div>
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul>
+          <li><a href="#inicio"><span class="ico" aria-hidden="true">⌂</span> Início</a></li>
+          <li><a href="#tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
+          <li><a href="#novo"><span class="ico" aria-hidden="true">＋</span> Novo vídeo</a></li>
+          <li><a href="#producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+          <li><a href="#pesquisa"><span class="ico" aria-hidden="true">◔</span> Pesquisa</a></li>
+          <li><a href="#roteiro"><span class="ico" aria-hidden="true">≡</span> Roteiro</a></li>
+          <li><a href="#editor"><span class="ico" aria-hidden="true">✂</span> Editor</a></li>
+          <li><a href="#preview"><span class="ico" aria-hidden="true">▷</span> Preview e QA</a></li>
+          <li><a href="#publicacao"><span class="ico" aria-hidden="true">⇪</span> Publicação</a></li>
+        </ul>
+        <p class="nav-label" style="margin-top:16px">Aprendizado e gestão</p>
+        <ul>
+          <li><a href="#analytics"><span class="ico" aria-hidden="true">▦</span> Analytics</a></li>
+          <li><a href="#canais"><span class="ico" aria-hidden="true">◎</span> Canais <span class="tag">nova</span></a></li>
+          <li><a href="#equipe" aria-current="page"><span class="ico" aria-hidden="true">☰</span> Equipe <span class="tag">SaaS · adiada</span></a></li>
+          <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">⚙</span> Configurações <em>em breve</em></span></li>
+        </ul>
+      </nav>
+      <div class="side-card"><h3>Orçamento do mês</h3><p>Real US$ 0,07 · Estimado US$ 0,05 · Sem custo 3 chamadas · Desconhecido 1</p></div>
+      <p class="mock-flag">Mockup de proposta · dados ilustrativos</p>
+    </aside>
+
+    <main>
+      <div class="card empty">
+        <div class="spread">
+          <div>
+            <span class="state s-fail"><span class="glyph" aria-hidden="true">✕</span> Adiada · F11 (P2)</span>
+            <h3 style="margin:10px 0 0">Ainda não implementado</h3>
+            <p class="muted" style="margin:6px 0 0;font-size:13px">
+              Hoje o Studio é <b>mono-usuário</b>: não há organização, papéis nem BYOK. Esta tela antecipa o modelo do F11, que só entra depois do MVP estável. Sem plano de preços nosso.
+            </p>
+          </div>
+          <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Modelo proposto</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="spread">
+          <div><h3>Membros</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Papéis por organização. Nomes e e-mails ilustrativos.</p></div>
+          <button class="btn btn-sm" type="button" aria-disabled="true">Convidar</button>
+        </div>
+
+        <div class="list" style="margin-top:14px">
+          <div class="item item-4">
+            <div class="person"><span class="avatar" aria-hidden="true">A</span>
+              <div><div class="item-title">Ana Ribeiro</div><div class="item-sub">ana@exemplo.com.br</div></div></div>
+            <span class="role owner">owner</span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+            <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+          </div>
+
+          <div class="item item-4">
+            <div class="person"><span class="avatar" aria-hidden="true">B</span>
+              <div><div class="item-title">Bruno Salles</div><div class="item-sub">bruno@exemplo.com.br</div></div></div>
+            <span class="role editor">editor</span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+            <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+          </div>
+
+          <div class="item item-4">
+            <div class="person"><span class="avatar" aria-hidden="true">C</span>
+              <div><div class="item-title">Carla Nunes</div><div class="item-sub">carla@exemplo.com.br</div></div></div>
+            <span class="role reviewer">reviewer</span>
+            <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Convite pendente</span>
+            <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+          </div>
+
+          <div class="item item-4">
+            <div class="person"><span class="avatar" aria-hidden="true">D</span>
+              <div><div class="item-title">Diego Prado</div><div class="item-sub">diego@exemplo.com.br</div></div></div>
+            <span class="role viewer">viewer</span>
+            <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Somente leitura</span>
+            <button class="btn btn-sm btn-ghost" type="button" aria-disabled="true">Gerir</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Papéis</h3>
+        <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Quatro papéis canônicos (F11-02). Papel é permissão de acesso, não plano comercial.</p>
+        <div class="list">
+          <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+            <span class="role owner">owner</span>
+            <div class="item-sub">Administra organização, membros, chaves e orçamento. Único papel que altera papéis.</div>
+          </div>
+          <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+            <span class="role editor">editor</span>
+            <div class="item-sub">Cria e edita vídeos, canais e configuração de provider. Não gerencia membros nem chaves.</div>
+          </div>
+          <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+            <span class="role reviewer">reviewer</span>
+            <div class="item-sub">Aprova roteiro e preview e recusa. Não publica nem edita configuração.</div>
+          </div>
+          <div class="item" style="grid-template-columns:auto minmax(0,1fr)">
+            <span class="role viewer">viewer</span>
+            <div class="item-sub">Só leitura: acompanha estado, custos e relatórios.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Organização e isolamento</h3>
+        <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Um tenant isola registros, storage, jobs e custos. Nada atravessa a fronteira.</p>
+        <div class="kv"><span>Organização</span><span>Estúdio Exemplo Ltda</span></div>
+        <div class="kv"><span>Workspace</span><span>Produção</span></div>
+        <div class="kv"><span>Isolamento</span><span>registros · storage · jobs · custos · logs</span></div>
+        <div class="kv"><span>Teste de vazamento entre tenants</span><span>previsto no F11-03</span></div>
+      </div>
+
+      <div class="card">
+        <div class="spread">
+          <div><h3>Chaves BYOK</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Credencial própria do cliente, por tenant e provider. O valor nunca é exibido depois de salvo — só a máscara.</p></div>
+          <button class="btn btn-sm" type="button" aria-disabled="true">Adicionar chave</button>
+        </div>
+
+        <div class="list" style="margin-top:14px">
+          <div class="item item-4">
+            <div><div class="item-title">OpenAI</div>
+              <div class="item-sub">Máscara <span class="mask">sk-…••••7f2a</span> · criada há 12 d · última rotação há 12 d</div></div>
+            <span class="cost"><b>Consumo</b> US$ 3,10 (ilustrativo)</span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativa</span>
+            <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="revoke">Revogar…</button>
+          </div>
+
+          <div class="item item-4">
+            <div><div class="item-title">ElevenLabs</div>
+              <div class="item-sub">Máscara <span class="mask">xi-…••••9d01</span> · rotacionada há 3 d</div></div>
+            <span class="cost"><b>Consumo</b> US$ 0,84 (ilustrativo)</span>
+            <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Rotacionada</span>
+            <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="revoke">Revogar…</button>
+          </div>
+
+          <div class="item item-4">
+            <div><div class="item-title">Provider de imagem externo</div>
+              <div class="item-sub">Sem chave registrada</div></div>
+            <span class="cost">Consumo <b>desconhecido</b></span>
+            <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Não configurado</span>
+            <button class="btn btn-sm" type="button" aria-disabled="true">Adicionar chave</button>
+          </div>
+        </div>
+        <p class="fine">Máscara, status e consumo atribuído aparecem; o <b>valor</b> da chave nunca. Rotação e revogação são auditadas por tenant.</p>
+      </div>
+
+      <div class="card">
+        <h3>Consumo por tenant</h3>
+        <p class="dim" style="margin:6px 0 12px;font-size:12.5px">Medição de uso por tenant e provider. Números ilustrativos; não há tabela de preços aqui.</p>
+        <div class="kv"><span>Tenant “Estúdio Exemplo Ltda” — custo real</span><span>US$ 3,94 (ilustrativo)</span></div>
+        <div class="kv"><span>— custo desconhecido</span><span>1 registro</span></div>
+        <div class="kv"><span>— chaves ativas</span><span>2</span></div>
+      </div>
+    </main>
+
+    <aside class="rail">
+      <div class="card"><h3>Fora de escopo hoje</h3>
+        <p class="fine" style="margin:0">Não existe login, organização, papel, tenant nem BYOK no produto atual. Tudo nesta tela é <b>modelo proposto</b> para o F11, adiado para depois do MVP.</p>
+      </div>
+      <div class="card"><h3>Por que adiar</h3>
+        <p class="fine" style="margin:0">F11-03 exige testes de isolamento contra vazamento entre tenants antes de qualquer uso hospedado. Sem isso, abrir multiusuário é risco.</p>
+      </div>
+      <div class="card"><h3>Sem preços</h3>
+        <p class="fine" style="margin:0">Nenhum plano, crédito ou preço nosso é afirmado. Papel é permissão; consumo é medição, não cobrança.</p>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="revoke" aria-labelledby="revoke-t">
+    <h3 id="revoke-t">Revogar esta chave BYOK?</h3>
+    <p>As tarefas que usam este provider param até você cadastrar outra chave. A ação é auditada e não pode ser desfeita; o valor salvo não é exibido em nenhum momento.</p>
+    <form method="dialog" class="row">
+      <button class="btn" value="cancel" autofocus>Cancelar</button>
+      <button class="btn btn-primary" value="ok">Revogar chave</button>
+    </form>
+  </dialog>
+</section>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Faceless Studio V2 — Canais</title>
+<link rel="stylesheet" href="prototipo.css">
+</head>
+<body>
+
+<div class="shell">
+<section class="screen" id="canais">
+  <header class="top">
+    <div>
+      <h2 class="title" tabindex="-1">Canais</h2>
+      <p class="goal">Ação primária: <b>configurar canal</b>. Hoje a configuração vive no <code>.env</code>/código; esta tela é a proposta (F10) que destrava a UI da fatia H.</p>
+    </div>
+    <span class="screen-no">Tela 11 de 12 · dados ilustrativos</span>
+  </header>
+
+  <div class="app3">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">FS</div>
+        <div><div class="brand-name">Faceless Studio V2</div><div class="brand-sub">YouTube Automation</div></div></div>
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul>
+          <li><a href="#inicio"><span class="ico" aria-hidden="true">⌂</span> Início</a></li>
+          <li><a href="#tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
+          <li><a href="#novo"><span class="ico" aria-hidden="true">＋</span> Novo vídeo</a></li>
+          <li><a href="#producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+          <li><a href="#pesquisa"><span class="ico" aria-hidden="true">◔</span> Pesquisa</a></li>
+          <li><a href="#roteiro"><span class="ico" aria-hidden="true">≡</span> Roteiro</a></li>
+          <li><a href="#editor"><span class="ico" aria-hidden="true">✂</span> Editor</a></li>
+          <li><a href="#preview"><span class="ico" aria-hidden="true">▷</span> Preview e QA</a></li>
+          <li><a href="#publicacao"><span class="ico" aria-hidden="true">⇪</span> Publicação</a></li>
+        </ul>
+        <p class="nav-label" style="margin-top:16px">Aprendizado e gestão</p>
+        <ul>
+          <li><a href="#analytics"><span class="ico" aria-hidden="true">▦</span> Analytics</a></li>
+          <li><a href="#canais" aria-current="page"><span class="ico" aria-hidden="true">◎</span> Canais <span class="tag">nova</span></a></li>
+          <li><a href="#equipe"><span class="ico" aria-hidden="true">☰</span> Equipe <span class="tag">SaaS · adiada</span></a></li>
+          <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">⚙</span> Configurações <em>em breve</em></span></li>
+        </ul>
+      </nav>
+      <div class="side-card"><h3>Orçamento do mês</h3><p>Real US$ 0,07 · Estimado US$ 0,05 · Sem custo 3 chamadas · Desconhecido 1</p></div>
+      <p class="mock-flag">Mockup de proposta · dados ilustrativos</p>
+    </aside>
+
+    <main>
+      <div class="card">
+        <div class="spread">
+          <div><h3>Finanças Descomplicadas</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Canal ativo · perfil versionado <code>channel_v3</code></p></div>
+          <button class="btn btn-sm" type="button">Adicionar canal</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Estratégia e identidade</h3>
+        <p class="dim" style="margin:6px 0 14px;font-size:12.5px">Define o que o Studio produz por padrão neste canal. Alterar aqui cria uma nova versão do perfil.</p>
+        <div class="grid-2">
+          <div class="field"><label for="nicho">Nicho</label>
+            <input class="input" id="nicho" value="Finanças pessoais explicadas sem jargão"></div>
+          <div class="field"><label for="estrategia">Estratégia</label>
+            <select class="input" id="estrategia"><option>Educação long-form (8–12 min)</option><option>Shorts de descoberta</option></select></div>
+          <div class="field"><label for="idioma">Idioma</label>
+            <select class="input" id="idioma"><option>Português (Brasil)</option><option>Inglês (EUA)</option></select></div>
+          <div class="field"><label for="publico">Público</label>
+            <input class="input" id="publico" value="Adultos curiosos, sem formação técnica"></div>
+          <div class="field" style="grid-column:1/-1"><label for="pilares">Pilares editoriais</label>
+            <input class="input" id="pilares" value="Como funciona o dinheiro · Notícias de IA · Ferramentas do dia a dia"></div>
+          <div class="field"><label for="identidade">Identidade visual</label>
+            <input class="input" id="identidade" value="Paleta grafite+violeta · tipografia sans geométrica">
+            <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span></div>
+          <div class="field"><label for="voz">Voz padrão</label>
+            <select class="input" id="voz"><option>pt-BR · Piper “faber-medium” (local)</option></select>
+            <span class="hint">Voz local: sem custo por chamada.</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="spread">
+          <div><h3>Providers por tarefa</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Cada tarefa aponta para um provider com capability, custo estimado, rate limit e disponibilidade.</p></div>
+          <button class="btn btn-sm" type="button">Reordenar fallback</button>
+        </div>
+
+        <div class="list" style="margin-top:14px">
+          <div class="item item-4">
+            <div><div class="item-title">Roteiro · OpenAI <code>gpt-5-mini</code></div>
+              <div class="item-sub">Capability: texto longo · rate limit 500 rpm · disponibilidade: <b>disponível</b></div></div>
+            <span class="cost"><b>Estimado</b> US$ 0,02 / 1k tokens</span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+            <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+          </div>
+
+          <div class="item item-4">
+            <div><div class="item-title">Imagens · Stock local (Pexels)</div>
+              <div class="item-sub">Capability: imagem estática · rate limit 200/h · disponibilidade: <b>disponível</b></div></div>
+            <span class="cost"><b>Sem custo</b></span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+            <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+          </div>
+
+          <div class="item item-4">
+            <div><div class="item-title">Voz · Piper <code>pt-BR-faber-medium</code></div>
+              <div class="item-sub">Capability: TTS local · sem rate limit de rede · disponibilidade: <b>disponível</b></div></div>
+            <span class="cost"><b>Sem custo</b> (local)</span>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> OK</span>
+            <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+          </div>
+
+          <div class="item item-4">
+            <div><div class="item-title">Imagem generativa · provider externo</div>
+              <div class="item-sub">Capability: imagem por prompt · não configurado · sem credencial</div></div>
+            <span class="cost">Custo <b>desconhecido</b></span>
+            <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Indisponível</span>
+            <button class="btn btn-sm btn-ghost" type="button">Testar conexão</button>
+          </div>
+        </div>
+        <p class="fine">Custo <b>estimado</b> não é preço cobrado, e custo <b>desconhecido</b> não é tratado como zero. Disponibilidade reflete o estado real do adapter (<code>working</code>/<code>experimental</code>/<code>disabled</code>).</p>
+      </div>
+
+      <div class="card">
+        <h3>Orçamento do canal</h3>
+        <p class="dim" style="margin:6px 0 14px;font-size:12.5px">Limites por mês (valores ilustrativos). O consumo real, estimado e desconhecido nunca são somados num número só.</p>
+        <div class="grid-2">
+          <div class="field"><label for="soft">Limite soft</label>
+            <input class="input" id="soft" value="US$ 5,00">
+            <span class="hint">Ao atingir, o Studio <b>pausa</b> e pede sua decisão.</span></div>
+          <div class="field"><label for="hard">Limite hard</label>
+            <input class="input" id="hard" value="US$ 12,00">
+            <span class="hint">Ao atingir, o Studio <b>para sozinho</b>. Não ultrapassa.</span></div>
+        </div>
+        <div class="kv" style="margin-top:14px"><span>Consumido no mês — real confirmado</span><span>US$ 0,07</span></div>
+        <div class="kv"><span>Consumido no mês — estimado</span><span>US$ 0,05</span></div>
+        <div class="kv"><span>Chamadas sem custo</span><span>3</span></div>
+        <div class="kv"><span>Chamadas com custo desconhecido</span><span>1</span></div>
+      </div>
+
+      <div class="card">
+        <div class="spread">
+          <div><h3>Canal do YouTube</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Associação e status do OAuth. O segredo nunca é exibido — só o estado e os escopos.</p></div>
+          <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Conectado</span>
+        </div>
+
+        <div class="list" style="margin-top:14px">
+          <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+            <div><div class="item-title">Finanças Descomplicadas</div>
+              <div class="item-sub">Canal associado · escopos: <code>youtube.upload</code>, <code>yt-analytics.readonly</code></div></div>
+            <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Ativo</span>
+          </div>
+          <div class="item" style="grid-template-columns:minmax(0,1fr) auto">
+            <div><div class="item-title">Credencial (OAuth)</div>
+              <div class="item-sub">Refresh token no <b>vault</b> · <span class="mask">•••• •••• •••• 7f2a</span> · expira em 51 min · renovação automática</div></div>
+            <button class="btn btn-sm btn-ghost" type="button" command="show-modal" commandfor="reauth">Reautorizar</button>
+          </div>
+        </div>
+        <p class="fine">Só o <b>status</b> e a máscara aparecem; o valor do token e o client secret ficam no secret store e nunca voltam para o browser (F10-06/F10-07).</p>
+      </div>
+    </main>
+
+    <aside class="rail">
+      <div class="card"><h3>Versionamento</h3>
+        <p class="fine" style="margin:0">Cada alteração cria uma versão do <code>ChannelProfile</code>, auditável. Nada de editar <code>.env</code> nem trocar código para mudar estratégia, providers ou orçamento.</p>
+      </div>
+      <div class="card"><h3>Segredos</h3>
+        <p class="fine" style="margin:0">Credenciais vivem em vault/secret store, <b>não</b> no <code>Project.config</code> devolvido ao browser. A UI mostra apenas máscara e status.</p>
+      </div>
+      <div class="card"><h3>Estado</h3>
+        <div class="kv"><span>F10 Canais</span><span class="state s-act" style="padding:2px 8px">proposta</span></div>
+        <p class="fine">Tela marcada <em>em breve</em> nos mockups anteriores; existe aqui para destravar a UI da fatia H.</p>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="reauth" aria-labelledby="reauth-t">
+    <h3 id="reauth-t">Reautorizar o canal?</h3>
+    <p>Você será levado ao consentimento do Google para reconceder <code>youtube.upload</code> e <code>yt-analytics.readonly</code>. Nenhuma produção em andamento é afetada.</p>
+    <form method="dialog" class="row">
+      <button class="btn" value="cancel" autofocus>Cancelar</button>
+      <button class="btn btn-primary" value="ok">Ir para o consentimento</button>
+    </form>
+  </dialog>
+</section>
+</div>
+
+</body>
+</html>

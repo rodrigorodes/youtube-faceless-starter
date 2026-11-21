@@ -4,7 +4,7 @@ Sem dependências externas; todo texto é escapado e a CSP é protegida por nonc
 import html
 import secrets
 
-from ..application.panel import CostKind, PanelView, VideoDetailView, cost_kind
+from ..application.panel import CostBreakdown, CostKind, MonthCost, PanelView, VideoDetailView, cost_kind
 from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage
 
@@ -46,6 +46,130 @@ def _state_badge(stage: Stage, count: int | None = None) -> str:
 def _cost_html(text: str) -> str:
     """Renderiza um custo já rotulado (Real/Estimado/Sem custo/Desconhecido)."""
     return f'<span class="cost-origin">{e(text)}</span>'
+
+
+def cost_breakdown_rows(breakdown: CostBreakdown) -> str:
+    """Quatro linhas rotuladas de custo (Real/Estimado/Sem custo/Desconhecido).
+
+    Ausência de uso vira "nenhum" — nunca `US$ 0,00`; desconhecido nunca é somado ao real.
+    """
+    rows = [
+        ("Real", f"US$ {breakdown.real_usd:.2f}".replace(".", ",") if breakdown.real_calls else "nenhum"),
+        ("Estimado", f"US$ {breakdown.estimate_usd:.2f}".replace(".", ",") if breakdown.estimate_calls else "nenhum"),
+        ("Sem custo", f"{breakdown.free_calls} chamada(s)" if breakdown.free_calls else "nenhum"),
+        ("Desconhecido", f"{breakdown.unknown_calls} chamada(s)" if breakdown.unknown_calls else "nenhum"),
+    ]
+    return "".join(
+        f'<div class="kv"><span>{e(label)}</span><span>{e(value)}</span></div>'
+        for label, value in rows
+    )
+
+
+_NAV_ICONS = {
+    "inicio": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>',
+    "producao": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="4"></rect><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>',
+    "tendencias": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>',
+    "videos": '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>',
+}
+_NAV_UNAVAILABLE = (
+    ("Canais", "em breve", '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="14" rx="2"></rect><line x1="8" y1="22" x2="16" y2="22"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>'),
+    ("Analytics", "em breve", '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="14"></line></svg>'),
+    ("Equipe", "SaaS", '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>'),
+    ("Configurações", "em breve", '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'),
+)
+
+
+def build_sidebar_nav(*, active: str = "inicio", base_href: str = "") -> str:
+    """Navegação principal em dois grupos (G1), reutilizada por todas as páginas do painel.
+
+    `active` marca o único item atual; `base_href` prefixa as âncoras quando a página aberta não
+    contém as seções (as telas novas voltam ao painel em vez de apontar para âncora inexistente).
+    """
+    links = (
+        ("inicio", "Início", f"{base_href}#inicio-section"),
+        ("producao", "Produção", f"{base_href}#producao-section"),
+        ("tendencias", "Tendências", f"{base_href}#trending-section"),
+        ("videos", "Vídeos", f"{base_href}#videos-section"),
+    )
+    items = []
+    for key, label, href in links:
+        current = ' aria-current="page"' if key == active else ""
+        current_class = " active" if key == active else ""
+        items.append(f"""
+          <li>
+            <a class="nav-item{current_class}" href="{e(href)}"{current}>
+              {_NAV_ICONS[key]}
+              <span>{e(label)}</span>
+            </a>
+          </li>""")
+    unavailable = []
+    for label, tag, icon in _NAV_UNAVAILABLE:
+        unavailable.append(f"""
+          <li>
+            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
+              {icon}
+              <span>{e(label)}</span><em class="nav-tag">{e(tag)}</em>
+            </span>
+          </li>""")
+    return f"""
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul class="nav-list">{''.join(items)}
+        </ul>
+        <p class="nav-label">Indisponível nesta versão</p>
+        <ul class="nav-list">{''.join(unavailable)}
+        </ul>
+      </nav>
+      <nav class="nav-resources" aria-label="Recursos externos">
+        <ul class="nav-list">
+          <li>
+            <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              <span>API Docs</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-item" href="http://localhost:5678" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>n8n Workflows</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    """
+
+
+def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_html: str) -> str:
+    """Casca lateral completa (marca + navegação em grupos + card de orçamento + aviso)."""
+    return f"""<aside class="sidebar" aria-label="Barra lateral">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">FS</div>
+        <div>
+          <div class="brand-title">Faceless Studio V2</div>
+          <div class="brand-sub">YouTube Automation</div>
+        </div>
+      </div>
+      {build_sidebar_nav(active=active, base_href=base_href)}
+      {side_card_html}
+      <p class="mock-note">Dados reais do Studio. Sem conteúdo ilustrativo.</p>
+    </aside>"""
+
+
+def budget_side_card(month: MonthCost, budget_bar_html: str = "") -> str:
+    """Card "Orçamento do mês" com o resumo rotulado; ausência nunca vira `US$ 0,00`."""
+    state = (
+        f"Custo do mês: {month.text}"
+        if month.breakdown.calls > 0
+        else "Não disponível: nenhuma chamada registrada neste mês."
+    )
+    return f"""
+        <div class="side-card">
+          <h2>Orçamento do mês</h2>
+          <p>{e(state)}</p>
+          {budget_bar_html}
+        </div>
+    """
+
 
 CSS = """
 :root {
@@ -2146,16 +2270,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
           <a class="btn btn-primary" style="width: 100%;" href="/studio/panel/videos/{e(latest_failure.id)}">Ver correção</a>
         """
 
-    rail_cost_rows = [
-        ("Real", f"US$ {view.month.breakdown.real_usd:.2f}".replace(".", ",") if view.month.breakdown.real_calls else "nenhum"),
-        ("Estimado", f"US$ {view.month.breakdown.estimate_usd:.2f}".replace(".", ",") if view.month.breakdown.estimate_calls else "nenhum"),
-        ("Sem custo", f"{view.month.breakdown.free_calls} chamada(s)" if view.month.breakdown.free_calls else "nenhum"),
-        ("Desconhecido", f"{view.month.breakdown.unknown_calls} chamada(s)" if view.month.breakdown.unknown_calls else "nenhum"),
-    ]
-    rail_cost_html = "".join(
-        f'<div class="kv"><span>{e(label)}</span><span>{e(value)}</span></div>'
-        for label, value in rail_cost_rows
-    )
+    rail_cost_html = cost_breakdown_rows(view.month.breakdown)
 
     fases_html = """
       <div class="kv"><span>F0 Segurança e docs</span><span class="state s-done"><span class="state-icon" aria-hidden="true">✓</span> concluído</span></div>
@@ -2167,93 +2282,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
       <p class="fine">Rótulos do plano de implementação do repositório; não são estado de execução do Studio.</p>
     """
 
-    sidebar_nav_html = """
-      <nav class="nav" aria-label="Principal">
-        <p class="nav-label">Operação</p>
-        <ul class="nav-list">
-          <li>
-            <a class="nav-item active" href="#inicio-section" aria-current="page">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-              <span>Início</span>
-            </a>
-          </li>
-          <li>
-            <a class="nav-item" href="#producao-section">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="4"></rect><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-              <span>Produção</span>
-            </a>
-          </li>
-          <li>
-            <a class="nav-item" href="#trending-section">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
-              <span>Tendências</span>
-            </a>
-          </li>
-          <li>
-            <a class="nav-item" href="#videos-section">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
-              <span>Vídeos</span>
-            </a>
-          </li>
-        </ul>
-        <p class="nav-label">Indisponível nesta versão</p>
-        <ul class="nav-list">
-          <li>
-            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="14" rx="2"></rect><line x1="8" y1="22" x2="16" y2="22"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>
-              <span>Canais</span><em class="nav-tag">em breve</em>
-            </span>
-          </li>
-          <li>
-            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="14"></line></svg>
-              <span>Analytics</span><em class="nav-tag">em breve</em>
-            </span>
-          </li>
-          <li>
-            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-              <span>Equipe</span><em class="nav-tag">SaaS</em>
-            </span>
-          </li>
-          <li>
-            <span class="nav-item nav-item-unavailable is-disabled" aria-disabled="true" tabindex="-1">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-              <span>Configurações</span><em class="nav-tag">em breve</em>
-            </span>
-          </li>
-        </ul>
-      </nav>
-      <nav class="nav-resources" aria-label="Recursos externos">
-        <ul class="nav-list">
-          <li>
-            <a class="nav-item" href="/docs" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-              <span>API Docs</span>
-            </a>
-          </li>
-          <li>
-            <a class="nav-item" href="http://localhost:5678" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-              <span>n8n Workflows</span>
-            </a>
-          </li>
-        </ul>
-      </nav>
-    """
-
-    budget_state_html = (
-        f"Custo do mês: {view.month.text}"
-        if month_breakdown.calls > 0
-        else "Não disponível: nenhuma chamada registrada neste mês."
-    )
-    side_card_html = f"""
-        <div class="side-card">
-          <h2>Orçamento do mês</h2>
-          <p>{e(budget_state_html)}</p>
-          {budget_bar_html}
-        </div>
-    """
+    side_card_html = budget_side_card(view.month, budget_bar_html)
 
     create_form_html = f"""
         <form id="create-video-form" class="idea-row">
@@ -2327,18 +2356,7 @@ def render_panel(view: PanelView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#inicio-section">Ir para o conteúdo</a>
   <div class="app-layout">
-    <aside class="sidebar" aria-label="Barra lateral">
-      <div class="brand">
-        <div class="brand-icon" aria-hidden="true">FS</div>
-        <div>
-          <div class="brand-title">Faceless Studio V2</div>
-          <div class="brand-sub">YouTube Automation</div>
-        </div>
-      </div>
-      {sidebar_nav_html}
-      {side_card_html}
-      <p class="mock-note">Dados reais do Studio. Sem conteúdo ilustrativo.</p>
-    </aside>
+    {render_sidebar(active="inicio", side_card_html=side_card_html)}
 
     <main class="main-content">
       <header class="topbar">

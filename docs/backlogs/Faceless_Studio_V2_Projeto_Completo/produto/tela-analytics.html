@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Faceless Studio V2 — Analytics</title>
+<link rel="stylesheet" href="prototipo.css">
+</head>
+<body>
+
+<div class="shell">
+<section class="screen" id="analytics">
+  <header class="top">
+    <div>
+      <h2 class="title" tabindex="-1">Analytics</h2>
+      <p class="goal">Ação primária: <b>aprender</b>. CTR e retenção aparecem só quando a API entrega e a permissão existe — fora disso, “ainda não disponível”.</p>
+    </div>
+    <span class="screen-no">Tela 10 de 12 · dados ilustrativos</span>
+  </header>
+
+  <div class="app3">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">FS</div>
+        <div><div class="brand-name">Faceless Studio V2</div><div class="brand-sub">YouTube Automation</div></div></div>
+      <nav class="nav" aria-label="Principal">
+        <p class="nav-label">Operação</p>
+        <ul>
+          <li><a href="#inicio"><span class="ico" aria-hidden="true">⌂</span> Início</a></li>
+          <li><a href="#tendencias"><span class="ico" aria-hidden="true">◭</span> Tendências</a></li>
+          <li><a href="#novo"><span class="ico" aria-hidden="true">＋</span> Novo vídeo</a></li>
+          <li><a href="#producao"><span class="ico" aria-hidden="true">▤</span> Produção</a></li>
+          <li><a href="#pesquisa"><span class="ico" aria-hidden="true">◔</span> Pesquisa</a></li>
+          <li><a href="#roteiro"><span class="ico" aria-hidden="true">≡</span> Roteiro</a></li>
+          <li><a href="#editor"><span class="ico" aria-hidden="true">✂</span> Editor</a></li>
+          <li><a href="#preview"><span class="ico" aria-hidden="true">▷</span> Preview e QA</a></li>
+          <li><a href="#publicacao"><span class="ico" aria-hidden="true">⇪</span> Publicação</a></li>
+        </ul>
+        <p class="nav-label" style="margin-top:16px">Aprendizado e gestão</p>
+        <ul>
+          <li><a href="#analytics" aria-current="page"><span class="ico" aria-hidden="true">▦</span> Analytics</a></li>
+          <li><a href="#canais"><span class="ico" aria-hidden="true">◎</span> Canais <span class="tag">nova</span></a></li>
+          <li><a href="#equipe"><span class="ico" aria-hidden="true">☰</span> Equipe <span class="tag">SaaS · adiada</span></a></li>
+          <li><span class="is-disabled" aria-disabled="true"><span class="ico" aria-hidden="true">⚙</span> Configurações <em>em breve</em></span></li>
+        </ul>
+      </nav>
+      <div class="side-card"><h3>Orçamento do mês</h3><p>Real US$ 0,07 · Estimado US$ 0,05 · Sem custo 3 chamadas · Desconhecido 1</p></div>
+      <p class="mock-flag">Mockup de proposta · dados ilustrativos</p>
+    </aside>
+
+    <main>
+      <div class="card">
+        <div class="spread">
+          <div>
+            <h3>Desempenho</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Recorte por canal, vídeo, pilar e período. Cada número diz de onde vem — ou por que não existe.</p>
+          </div>
+          <button class="btn btn-sm" type="button">Atualizar agora</button>
+        </div>
+        <div class="filters" style="margin-top:12px" role="group" aria-label="Filtrar por dimensão">
+          <button class="chip" type="button" aria-pressed="true">Canal: Finanças Descomplicadas</button>
+          <button class="chip" type="button" aria-pressed="false">Vídeo: todos</button>
+          <button class="chip" type="button" aria-pressed="false">Pilar: todos</button>
+        </div>
+        <div class="filters" style="margin-top:8px" role="group" aria-label="Filtrar por período">
+          <button class="chip" type="button" aria-pressed="true">7 dias</button>
+          <button class="chip" type="button" aria-pressed="false">28 dias</button>
+          <button class="chip" type="button" aria-pressed="false">90 dias</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="spread">
+          <div><h3>Métricas do período</h3>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Nenhuma publicação coletada ainda neste canal.</p></div>
+          <span class="state s-idle"><span class="glyph" aria-hidden="true">○</span> Ainda não disponível</span>
+        </div>
+
+        <div class="tiles" style="margin-top:14px">
+          <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Views</span>
+            <span class="why">Sem publicação autorizada/coletada. O valor só existe depois do primeiro envio com o escopo de leitura.</span></div>
+          <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">CTR (cliques / impressões)</span>
+            <span class="why">Depende de impressões, que a API expõe por janela e permissão. Sem isso, não estimamos.</span></div>
+          <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Retenção média</span>
+            <span class="why">Só vem da API de Analytics do canal. Não derivamos de duração nem de palavras/minuto.</span></div>
+          <div class="tile na"><span class="metric">Ainda não disponível</span><span class="label">Tempo assistido</span>
+            <span class="why">Mesma origem da retenção. Ausência de dado não é 0.</span></div>
+        </div>
+
+        <p class="fine">Zero não é o mesmo que “sem dado”: quando a API não devolve o valor, o estado é <b>ainda não disponível</b> — nunca 0% nem estimativa apresentada como medição.</p>
+      </div>
+
+      <details class="advanced">
+        <summary><span aria-hidden="true">▸</span> Como a tela fica quando houver dado (exemplo de layout · dados ilustrativos)</summary>
+        <div class="body">
+          <p style="margin:0 0 12px">Os números abaixo são <b>ilustrativos</b>, só para fixar o layout aprovado. Não são medição deste canal.</p>
+          <div class="tiles">
+            <div class="tile"><span class="metric num">12,4 mil</span><span class="label">Views</span><span class="why">Origem: API YouTube Analytics · janela 7 d</span></div>
+            <div class="tile"><span class="metric num">4,8%</span><span class="label">CTR</span><span class="why">Ilustrativo · requer impressões</span></div>
+            <div class="tile"><span class="metric num">41,2%</span><span class="label">Retenção média</span><span class="why">Ilustrativo · amostra de 3 vídeos</span></div>
+            <div class="tile"><span class="metric num">318 h</span><span class="label">Tempo assistido</span><span class="why">Ilustrativo</span></div>
+          </div>
+
+          <p style="margin:16px 0 6px"><b>Por dimensão</b></p>
+          <div class="kv"><span>Pilar “Como funciona o dinheiro”</span><span class="num">5,1% CTR · 44% retenção (ilustrativo)</span></div>
+          <div class="kv"><span>Pilar “Notícias de IA”</span><span class="num">3,2% CTR · 33% retenção (ilustrativo)</span></div>
+          <div class="kv"><span>Short de 60 s</span><span>retenção não comparável com long-form</span></div>
+          <p class="fine">Comparações só entre vídeos comparáveis; um Short de 60 s e um vídeo de 8 min não entram na mesma média.</p>
+        </div>
+      </details>
+
+      <div class="card">
+        <h3>Insights</h3>
+        <p class="dim" style="margin:6px 0 10px;font-size:12.5px">
+          <b>Observação</b> é o que o dado mostra; <b>hipótese</b> é o que ainda não foi comprovado. Os dois são rótulos diferentes, com evidência e nível de confiança.
+        </p>
+
+        <div class="list">
+          <div class="ins">
+            <div class="spread">
+              <span class="state s-done"><span class="glyph" aria-hidden="true">✓</span> Observação · confiança alta</span>
+              <span class="dim" style="font-size:11.5px">exemplo ilustrativo</span>
+            </div>
+            <p>Neste canal, os vídeos long-form retiveram mais do que os Shorts no mesmo período.</p>
+            <div class="ev">Evidência: <code>retention_avg p50</code> de 6 vídeos comparáveis · janela 28 d · amostra suficiente.</div>
+          </div>
+
+          <div class="ins">
+            <div class="spread">
+              <span class="state s-act"><span class="glyph" aria-hidden="true">!</span> Hipótese · confiança baixa</span>
+              <span class="dim" style="font-size:11.5px">exemplo ilustrativo</span>
+            </div>
+            <p>Títulos em forma de pergunta <b>podem</b> elevar o CTR neste canal público.</p>
+            <div class="ev">Evidência frágil: apenas 3 vídeos, sem controle de tema nem período. Fica registrada como hipótese, <b>não</b> como conclusão.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card empty">
+        <h3>Recomendações</h3>
+        <p class="muted" style="margin:6px 0 0;font-size:13px">
+          Uma recomendação sugere, não decide. <b>Nada é reconfigurado sozinho</b>: aplicar cria uma nova versão do perfil do canal e só vale depois da sua aprovação — e você pode recusar sem efeito.
+        </p>
+        <div class="spread" style="margin-top:14px">
+          <p class="fine" style="margin:0">Exemplo ilustrativo: “manter ~8 min no próximo vídeo do pilar de finanças”.</p>
+          <div class="row">
+            <button class="btn btn-sm btn-ghost" type="button">Recusar</button>
+            <button class="btn btn-sm" type="button" aria-disabled="true">Aplicar (abre confirmação)</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="rail">
+      <div class="card"><h3>Honestidade do dado</h3>
+        <p class="fine" style="margin:0">CTR e retenção dependem de escopos e permissão da API do canal. Quando o dado não vem, mostramos <b>ainda não disponível</b>; nunca preenchemos com 0 nem com estimativa disfarçada de medição.</p>
+      </div>
+      <div class="card"><h3>Frescor e origem</h3>
+        <div class="kv"><span>Última coleta</span><span>nunca (sem publicação)</span></div>
+        <div class="kv"><span>Escopo de leitura</span><span>não concedido</span></div>
+        <p class="fine">A coleta só começa após a primeira publicação e com <code>yt-analytics.readonly</code> autorizado no canal.</p>
+      </div>
+      <div class="card"><h3>O que esta tela não faz</h3>
+        <p class="fine" style="margin:0">Não muda configuração, não promete métrica que a API não entrega e não junta vídeos não comparáveis numa média só.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+</div>
+
+</body>
+</html>
