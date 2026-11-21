@@ -22,13 +22,12 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-02 | O canal aponta para um estilo (`channel_profiles.style_id`, recusa estilo inexistente) | 133 testes focados | `6f33692` |
 | YT-01 | Identidade de publicação: schema `0035` + domínio (conta → grants → canais) | 56 testes focados | `2d7a471` |
 | VS-02b | Override de estilo por vídeo (`videos.style_id`, `set_video_style`, recusa estilo inexistente) | 47 testes focados | `d57a272` |
+| VS-03 | O estilo **aplica**: plano grava o snapshot do `VisualStyle` + `motion`/`music` do estilo | 133 testes | merge `475ae63` |
+| YT-01b | Repositórios da identidade YouTube (conta/grants/canais/vínculos) + 4 portas | 41 testes | merge `2 merge` |
 
 ## Em execução (paralelo)
 
-| ID | Atividade | Depende de | Arquivos-alvo |
-| --- | --- | --- | --- |
-| **VS-03** | O estilo **aplica**: o plano grava o `StyleSnapshot` do `VisualStyle` e usa `motion`/`music`/`transition` do estilo | — | `domain/visual_style.py`, `application/ports.py`, `application/render.py`, `adapters/render_plan_ffmpeg.py`, `composition.py` |
-| **YT-01b** | Repositórios da identidade YouTube (contas, grants, canais, vínculos) + portas | YT-01 | `adapters/postgres/youtube_identity_repo.py` (novo), `application/ports.py` |
+**Nada em execução agora.** As duas fatias paralelas (VS-03, YT-01b) foram mescladas e verificadas. Próxima onda a disparar: VS-04 + YT-02.
 
 ## Na fila
 
