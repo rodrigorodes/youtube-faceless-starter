@@ -12,6 +12,7 @@ from pathlib import Path
 import psycopg
 
 from .adapters.postgres.db import migrate
+from .domain.ids import InvalidId
 from .adapters.fetcher import HttpxFetcher
 from .adapters.postgres.budget_repo import PostgresPaidOperationRepository
 from .adapters.image_opencode import OpenCodeImage
@@ -27,6 +28,11 @@ from .adapters.postgres.render_repo import PostgresRenderJobRepository
 from .adapters.postgres.production_repo import build_postgres_production_run_repository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
 from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
+from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
+                                                    PostgresChannelUsageRepository)
+from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
+from .adapters.secret_store import FileSecretStore
+from .adapters.provider_probes import HttpReachableProbe, LocalProviderProbe
 from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
@@ -46,6 +52,12 @@ from .application.panel import BuildPanel
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .application.channel_budget import GetChannelBudget, SetChannelBudget
+from .application.providers import ProviderService
+from .application.secrets import GetPublicProjectConfig
+from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
+                                           GetYouTubeChannel)
+from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
 from .application.observability import BridgeAlerts, Resume
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
@@ -85,19 +97,95 @@ def _production_mode(value: str | None) -> ProductionMode:
         return ProductionMode.INTERACTIVE
 
 
-class _MeasuredSpendFloor:
-    """Projeção conservadora do coordenador: o gasto já registrado no mês contra o teto do canal.
+class _ChannelBudgetFloor:
+    """Teto soft do canal para o modo guardado do coordenador (F10-05).
 
-    É um **piso medido**, não uma previsão do que ainda será gasto. Serve para o modo guardado
-    dispensar a pausa intermediária só quando o gasto corrente já está sob o teto; a proteção dura
-    contra estouro por operação é do guard hard (fatia A), que precisa estar ligado junto.
+    O limite hard é do guard de operação paga; aqui o soft decide a pausa humana. O gasto medido é
+    global (piso conservador — superestimar é seguro): sem budget de canal, vale o teto das settings.
     """
 
-    def __init__(self, usage, ceiling_usd: Decimal):
-        self.usage, self.ceiling_usd = usage, ceiling_usd
+    def __init__(self, usage, videos, budgets, default_ceiling_usd: Decimal):
+        self.usage = usage
+        self.videos = videos
+        self.budgets = budgets
+        self.default_ceiling_usd = default_ceiling_usd
 
     def project(self, run, next_stage) -> BudgetProjection:
-        return BudgetProjection(projected_usd=Decimal(str(self.usage.spent_month())), ceiling_usd=self.ceiling_usd)
+        ceiling = self.default_ceiling_usd
+        video = self.videos.get_video(run.video_id) if run.video_id else None
+        if video is not None:
+            limits = self.budgets.get(video.project_id)
+            if limits is not None:
+                ceiling = limits.soft_monthly_usd
+        return BudgetProjection(projected_usd=Decimal(str(self.usage.spent_month())), ceiling_usd=ceiling)
+
+
+def channel_guard_limits(videos, budgets):
+    """Resolvedor de limites hard do canal para o guard de operação paga (F10-05).
+
+    Devolve `(teto mensal, teto por vídeo)` do canal do vídeo, ou None para o guard usar os padrões
+    das settings. Vídeo desconhecido/id inválido não bloqueia por si: cai no padrão.
+    """
+    def limits_for(video_id: str | None):
+        if not video_id:
+            return None
+        try:
+            video = videos.get_video(video_id)
+        except InvalidId:
+            return None
+        if video is None:
+            return None
+        limits = budgets.get(video.project_id)
+        return limits.guard_limits() if limits is not None else None
+    return limits_for
+
+
+def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
+    """Implementações registradas e o que cada uma é capaz de fazer (F10-03).
+
+    `validated=False` quando falta credencial ou homologação: o catálogo mostra UNAVAILABLE.
+    """
+    bridge_ok = bool(s.bridge_token)
+    pexels_ok = bool(s.pexels_key)
+    return [
+        ProviderImplementation(ProviderKind.TEXT, "opencode",
+                               capabilities=("text.generate", "text.json"),
+                               cost=CostEstimate.unknown(note="preço do bridge"), quality=4,
+                               validated=bridge_ok, reason=None if bridge_ok else "OPENCODE_BRIDGE_TOKEN ausente"),
+        ProviderImplementation(ProviderKind.TEXT, "demo", capabilities=("text.generate",),
+                               cost=CostEstimate.free(note="texto determinístico local"), quality=1,
+                               validated=True),
+        ProviderImplementation(ProviderKind.IMAGE, "opencode", capabilities=("image.generate",),
+                               cost=CostEstimate.estimate(s.paid_image_usd, note="por imagem"),
+                               quality=4, validated=bridge_ok,
+                               reason=None if bridge_ok else "OPENCODE_BRIDGE_TOKEN ausente"),
+        ProviderImplementation(ProviderKind.IMAGE, "placeholder", capabilities=("image.generate",),
+                               cost=CostEstimate.free(note="placeholder local"), quality=1, validated=True),
+        ProviderImplementation(ProviderKind.IMAGE, "stock", capabilities=("image.generate",),
+                               cost=CostEstimate.free(note="Pexels com licença"), quality=3,
+                               validated=pexels_ok, reason=None if pexels_ok else "PEXELS_API_KEY ausente"),
+        ProviderImplementation(ProviderKind.IMAGE, "veo", capabilities=("image.generate",),
+                               cost=CostEstimate.estimate(s.veo_usd_per_second, note="por segundo"),
+                               quality=5, validated=False, reason="provedor experimental, sem homologação"),
+        ProviderImplementation(ProviderKind.VOICE, "piper", capabilities=("voice.speak",),
+                               cost=CostEstimate.free(note="síntese local"), quality=3, validated=True),
+        ProviderImplementation(ProviderKind.RENDERER, "ffmpeg", capabilities=("render.video",),
+                               cost=CostEstimate.free(note="render local"), quality=4, validated=True),
+    ]
+
+
+def _provider_probes(s: "Settings", implementations) -> dict[tuple[str, str], object]:
+    probes: dict[tuple[str, str], object] = {}
+    local = {"demo", "placeholder", "piper", "ffmpeg"}
+    for impl in implementations:
+        if not impl.validated:
+            continue
+        if impl.name == "opencode":
+            probes[(impl.kind.value, impl.name)] = HttpReachableProbe(
+                f"{s.bridge_url.rstrip('/')}/health", timeout=3.0)
+        elif impl.name in local:
+            probes[(impl.kind.value, impl.name)] = LocalProviderProbe()
+    return probes
 
 
 @dataclass(frozen=True)
@@ -118,10 +206,12 @@ class Settings:
     token_env_path: Path = Path("credentials/token.env")
     budget_guard: bool = False  # liga a reserva preventiva de orçamento nos caminhos pagos (STUDIO_BUDGET_GUARD=1)
     production_mode: ProductionMode = ProductionMode.INTERACTIVE  # modo do coordenador (STUDIO_PRODUCTION_MODE)
+    secrets_root: Path | None = None  # cofre de segredos (F10-07); None = <storage_root>/secrets
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         env = os.environ if env is None else env
+        secrets_root = env.get("STUDIO_SECRETS_ROOT") or None
         return cls(env.get("STUDIO_DATABASE_URL") or None, Path(env.get("STUDIO_STORAGE_ROOT", "/data")),
                    _csv(env.get("STUDIO_SOURCE_ALLOWLIST"), DEFAULT_ALLOWLIST), _csv(env.get("STUDIO_ALLOW_NAMES"), DEFAULT_ALLOW_NAMES),
                    _cap(env.get("MAX_COST_USD_PER_VIDEO"), 0.0), _cap(env.get("MAX_COST_USD_PER_MONTH"), 15.0),
@@ -130,7 +220,8 @@ class Settings:
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
                    _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
                    Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")),
-                   _production_mode(env.get("STUDIO_PRODUCTION_MODE")))
+                   _production_mode(env.get("STUDIO_PRODUCTION_MODE")),
+                   Path(secrets_root) if secrets_root else None)
 
 
 RETRY_SECONDS = 5.0
@@ -228,10 +319,16 @@ class Studio:
             return provider_for("text", project_id)
 
         guard = CostGuard(usage, s.max_cost_video, s.max_cost_month)
+        budget_repo = PostgresChannelBudgetRepository(connect)
+        usage_repo = PostgresChannelUsageRepository(connect)
+        youtube_repo = PostgresYouTubeChannelRepository(connect)
+        secret_store = FileSecretStore(s.secrets_root or (s.storage_root / "secrets"))
+
         paid_guard = None
         if s.budget_guard:  # caminhos pagos passam a exigir reserva; desligado por padrão até a operação estar pronta
             paid_guard = PaidOperationGuard(PostgresPaidOperationRepository(connect),
-                                            Decimal(str(s.max_cost_month)), Decimal(str(s.max_cost_video)))
+                                            Decimal(str(s.max_cost_month)), Decimal(str(s.max_cost_video)),
+                                            limits_for=channel_guard_limits(repo, budget_repo))
         editorial = Editorial(
             ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
             generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for, paid=paid_guard),
@@ -275,6 +372,8 @@ class Studio:
         save_category = SaveCategory(category_repo, repo)
         delete_category = DeleteCategory(category_repo)
         channel_repo = PostgresChannelProfileRepository(connect)
+        implementations = _provider_implementations(s)
+        probes = _provider_probes(s, implementations)
         refresh_trends = RefreshTrends(
             repo=category_repo,
             ingest=ingest_trends,
@@ -290,8 +389,8 @@ class Studio:
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
-        # pode dispensar a pausa intermediária; sem projeção o coordenador pausa para humano.
-        budget = _MeasuredSpendFloor(usage, Decimal(str(s.max_cost_month))) if s.budget_guard else None
+        # pode dispensar a pausa intermediária; o teto é o soft do canal (fallback: settings).
+        budget = _ChannelBudgetFloor(usage, repo, budget_repo, Decimal(str(s.max_cost_month))) if s.budget_guard else None
         coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget)
         worker = ProductionWorker(coordinator)
         production = Production(coordinator=coordinator, worker=worker,
@@ -308,7 +407,17 @@ class Studio:
                                   get_channel_profile=GetChannelProfile(channel_repo, repo),
                                   update_channel_profile=UpdateChannelProfile(channel_repo),
                                   list_channel_profiles=ListChannelProfiles(channel_repo),
-                                  production=production)
+                                  production=production,
+                                  providers=ProviderService(repo, self.environ, implementations, probes),
+                                  get_channel_budget=GetChannelBudget(
+                                      budget_repo, repo, usage_repo,
+                                      default_hard_monthly=Decimal(str(s.max_cost_month)),
+                                      default_hard_video=Decimal(str(s.max_cost_video))),
+                                  set_channel_budget=SetChannelBudget(budget_repo, repo),
+                                  get_youtube_channel=GetYouTubeChannel(youtube_repo, secret_store),
+                                  associate_youtube_channel=AssociateYouTubeChannel(youtube_repo, secret_store),
+                                  disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
+                                  get_project_config=GetPublicProjectConfig(repo))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

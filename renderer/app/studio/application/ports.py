@@ -12,6 +12,9 @@ from ..domain.render import Cue
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
+from ..domain.channel_budget import BudgetLimits, CostSummary
+from ..domain.provider import ProviderKind, ProviderProbeResult
+from ..domain.youtube_channel import YouTubeChannel
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, QaReport, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
@@ -316,6 +319,38 @@ class ChannelProfileRepository(Protocol):
     def list(self, include_archived: bool = False) -> list[ChannelProfile]: ...
     def update(self, profile_id: str, expected_version: int, changes: dict[str, object]) -> ChannelProfile | None:
         """Atualiza de forma otimista: None se o perfil não existe; `ChannelVersionConflict` se a versão divergiu."""
+
+
+class ChannelBudgetRepository(Protocol):
+    def get(self, project_id: str) -> "BudgetLimits | None": ...
+    def upsert(self, limits: "BudgetLimits") -> "BudgetLimits": ...
+
+
+class ChannelUsageRepository(Protocol):
+    def month_summary(self, project_id: str) -> "CostSummary":
+        """Custo do mês corrente só dos vídeos do canal, classificado de forma honesta."""
+
+
+class YouTubeChannelRepository(Protocol):
+    def get(self, project_id: str) -> "YouTubeChannel | None": ...
+    def upsert(self, channel: "YouTubeChannel") -> "YouTubeChannel": ...
+    def delete(self, project_id: str) -> bool: ...
+
+
+class SecretStore(Protocol):
+    """Cofre de segredos: só o valor por (escopo, chave). `names` nunca devolve valores."""
+
+    def get(self, scope: str, key: str) -> str | None: ...
+    def set(self, scope: str, key: str, value: str) -> None: ...
+    def delete(self, scope: str, key: str) -> None: ...
+    def names(self, scope: str) -> tuple[str, ...]: ...
+
+
+class ProviderProbe(Protocol):
+    """Sonda de conexão de um provider; roda no adaptador (nunca no core)."""
+
+    def probe(self, kind: "ProviderKind", spec: str) -> "ProviderProbeResult": ...
+
 
 
 class ProductionRunRepository(Protocol):
