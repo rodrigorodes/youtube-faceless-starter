@@ -39,14 +39,13 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-06 | Voz com **precedência única** (estilo > projeto > default; `PIPER_VOICE` como fallback de deployment/teste), o **mesmo** valor para síntese e ledger | 182 focados + 386 integração | merge `e7a5182` |
 | PROD-01 | **Fecha o ciclo de produção pela UI**: Início cria **e inicia**; página do vídeo ganha **Fontes** (URL+texto) e **Iniciar produção** / **Tentar novamente** com o motivo real | 258 focados + 105 UX/nav (re-verificados por mim) | merge `efd697b` |
 | PROD-02 | **Retomar/retentar religa o worker** (o gate humano era intransponível) + run `RUNNING` órfão recuperável pela tela de execução | 104 (re-verificados) + falsificação do teste (sabotei o `_enqueue`: 2 falham) | merge `59c32da` |
+| PROD-03 | **O boot religa produção**: runs em voo órfãos são re-dirigidos no `lifespan` (porta sem N+1, regra pura `orphan_in_flight` reusando `has_live_lease`, mesmo `submit` do `start`; falha na varredura não derruba a subida) | 158 (re-verificados) + falsificação (sabotei a recuperação: o teste de boot falha) + **efeito observado no ambiente real** (2 runs re-dirigidos) | merge `95ac030` |
 | IA-01 | **Início, Produção e Tendências como telas separadas**: rotas de servidor (`/panel`, `/panel/producao`, `/panel/tendencias`), `/panel/videos` → 302, nav sem âncoras; o HTML de uma tela nunca entra na outra | 301 (re-verificados) + verificação viva (3×200, 302, zero vazamento, 1 `aria-current`/página) | merge `1b98ddd` |
 
 ## Em execução (paralelo)
 
 **PROD-04 (em execução):** a criação não pode perder a fonte nem iniciar produção fadada ao
 `SourceRefused`; e um vídeo sempre pode iniciar produção nova. Fundiu o antigo PROD-05 (achado 5).
-
-**PROD-03 (em execução):** recuperação de runs em voo no boot (o `lifespan` não varre nada hoje).
 
 ## Na fila
 
@@ -130,6 +129,37 @@ qualquer run existente (mesmo `FAILED`/`CANCELLED`), a tela não expõe a ação
 `coordinator.start` → `runs.create_run(...)` **não tem guarda** de run ativo. Sem isso, não há como
 refazer um vídeo cujo roteiro nasceu de fonte ruim (retry re-executa a etapa falha, não reescreve o
 roteiro). Absorvido pelo **PROD-04**, que decide onde a produção começa.
+
+## Achado do dono (6) — 2026-11-21: o deploy do PROD-03 re-dirigiu runs em voo **e produziu um vídeo de verdade**
+
+Ao subir o PROD-03 (a recuperação de boot), o efeito foi observado no ambiente real — e é o prova do
+fix: o log trouxe `production: 2 run(s) em voo orfao(s) re-dirigido(s) no boot`. Eram **dois** runs que
+estavam parados (`production_runs` em `RUNNING` sem lease vivo):
+
+| Run | Vídeo | O que aconteceu |
+| --- | --- | --- |
+| `04260fa5…` | `e0ae111f…` (GTA VI) | **Avançou até o fim do DAG**: factcheck → storyboard → assets → render (20 s) → qa, e parou em **`WAITING_HUMAN` — "aguardando a aprovação humana do render"**. Vídeo `AWAITING_APPROVAL`, mp4 real em `storage/projects/…/final-18299315….mp4`, QA `verified` com `findings: []`. |
+| `4723a366…` | `cf662e714…` | **`FAILED` corretamente** no `script`: `SourceRefused: no sources with checkable claims`. A fonte desse vídeo tem texto **"A"** (1 caractere) — fino demais, e o sistema recusou. |
+
+**O conteúdo do vídeo 1 é lixo — e não é bug.** As 6 narrações são a **minha frase de chat reescrita**:
+*"A URL virou apenas uma referência. Foi assim que se contornou a lista de nicho travada em
+amsterdam-dance-event.nl"*, *"O ponto central foi contornar uma lista de nicho que estava travada…"*.
+O `factcheck` **passou** (`passed: true`, `scenes: []`).
+
+**Correção de uma suspeita minha (importante):** eu quase acusei o fact-check de "falso positivo".
+Não é: `scenes` no report lista só as cenas **com problema** (`editorial.py:279` —
+`passed=not flagged ... scenes=flagged`). `{"passed": true, "scenes": []}` significa **nenhum problema
+encontrado**, não "nada verificado". O stage confere narração/legenda/rótulo de cada cena contra os
+textos das fontes (`check_narration`) e o prompt de imagem contra nomes reais (`check_names`). Como a
+fonte **é** aquela frase, o roteiro é **fiel a ela** → passa. O fact-check é **internamente consistente**;
+ele verifica fidelidade à fonte, **não** se a fonte é verdadeira ou faz sentido.
+
+**Item de política aberto (registrado, não decidido por mim):** o estágio de roteiro recusa fonte sem
+*claims* verificáveis (prova: a fonte `"A"` falhou), mas uma fonte de 100 caracteres de prosa qualquer
+**passa** e gera roteiro. Falta um piso de qualidade/mínimo de fonte. Não vou inventar esse piso.
+
+**Custo:** 7 chamadas de modelo no total (1 `text` + 6 `image`), todas com `cost_usd = 0.000000`.
+O run ficou **parado no gate humano** — não publica nada sozinho.
 
 ## Bloqueadas
 
