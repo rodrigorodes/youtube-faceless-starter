@@ -3807,7 +3807,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         const select = document.getElementById('video-estilo');
         const videoId = styleForm.getAttribute('data-video-id') || '';
         const value = select ? select.value : '';
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start();
         if (feedback) feedback.textContent = 'Salvando estilo...';
         try {{
           const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/style', {{
@@ -3821,15 +3822,18 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
             setTimeout(() => location.reload(), 500);
           }} else if (response.status === 404) {{
             if (feedback) feedback.textContent = 'Não foi possível salvar: o vídeo não foi encontrado.';
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar o estilo: '
               + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar o estilo. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -3846,7 +3850,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         const url = urlInput ? urlInput.value.trim() : '';
         const text = textInput ? textInput.value : '';
         if (!url) {{ feedback.textContent = 'Informe a URL da fonte.'; return; }}
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start();
         feedback.textContent = 'Registrando a fonte...';
         try {{
           const payload = {{ url: url }};
@@ -3863,11 +3868,13 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
           }} else {{
             feedback.textContent = 'Não foi possível registrar a fonte: '
               + (typeof data.detail === 'string' ? data.detail : 'verifique a URL e tente novamente.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           feedback.textContent = 'Falha de rede ao registrar a fonte. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -3877,6 +3884,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
       startBtn.addEventListener('click', async () => {{
         const videoId = startBtn.getAttribute('data-video-id') || '';
         startBtn.disabled = true;
+        startBtn.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start();
         if (runFeedback) runFeedback.textContent = 'Iniciando a produção...';
         try {{
           const key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
@@ -3894,10 +3903,14 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
             if (runFeedback) runFeedback.textContent = 'Não foi possível iniciar: '
               + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
             startBtn.disabled = false;
+            startBtn.classList.remove('carregando');
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (runFeedback) runFeedback.textContent = 'Falha de rede ao iniciar a produção. Tente novamente.';
           startBtn.disabled = false;
+          startBtn.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }});
@@ -3907,6 +3920,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         const videoId = retryProductionBtn.getAttribute('data-video-id') || '';
         const runId = retryProductionBtn.getAttribute('data-run-id') || '';
         retryProductionBtn.disabled = true;
+        retryProductionBtn.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start();
         if (runFeedback) runFeedback.textContent = 'Retomando a produção...';
         try {{
           const response = await fetch('/studio/videos/' + encodeURIComponent(videoId) +
@@ -3920,10 +3935,14 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
             if (runFeedback) runFeedback.textContent = 'Não foi possível retomar: '
               + (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite nova tentativa.');
             retryProductionBtn.disabled = false;
+            retryProductionBtn.classList.remove('carregando');
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (runFeedback) runFeedback.textContent = 'Falha de rede ao retomar a produção. Tente novamente.';
           retryProductionBtn.disabled = false;
+          retryProductionBtn.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}

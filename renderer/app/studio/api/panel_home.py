@@ -103,7 +103,10 @@ HOME_JS = """
     if (!tema || !canal) return;
     var formato = form.querySelector('input[name="format"]:checked');
     var btn = document.getElementById('btn-create-video');
-    btn.disabled = true; fb.removeAttribute('data-tipo'); fb.textContent = 'Criando vídeo…';
+    btn.disabled = true;
+    btn.classList.add('carregando');
+    if (window.StudioLoading) window.StudioLoading.start();
+    fb.removeAttribute('data-tipo'); fb.textContent = 'Criando vídeo…';
     fetch('/studio/videos', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: canal.value, topic: tema, format: formato ? formato.value : 'short' })
@@ -113,14 +116,20 @@ HOME_JS = """
         if (!r.ok || !d.id) {
           fb.setAttribute('data-tipo', 'erro');
           fb.textContent = 'Erro ao criar: ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
-          btn.disabled = false; return;
+          btn.disabled = false;
+          btn.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
+          return;
         }
         // A produção não começa aqui: o vídeo abre para você informar a fonte.
         fb.textContent = 'Vídeo criado. Abrindo para você informar a fonte…';
         location.href = '/studio/panel/videos/' + encodeURIComponent(d.id);
       })
       .catch(function (err) {
-        fb.setAttribute('data-tipo', 'erro'); fb.textContent = 'Falha de rede: ' + err.message; btn.disabled = false;
+        fb.setAttribute('data-tipo', 'erro'); fb.textContent = 'Falha de rede: ' + err.message;
+        btn.disabled = false;
+        btn.classList.remove('carregando');
+        if (window.StudioLoading) window.StudioLoading.done();
       });
   });
   document.addEventListener('click', function (ev) {

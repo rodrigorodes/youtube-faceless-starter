@@ -81,6 +81,8 @@ NEW_VIDEO_JS = """
       if (!tema || !canalSel) return;
       var fmt = $('input[name="formato-novo"]:checked');
       btnCriar.disabled = true;
+      btnCriar.classList.add('carregando');
+      if (window.StudioLoading) window.StudioLoading.start();
       if (fb) { fb.removeAttribute('data-tipo'); fb.textContent = 'Criando vídeo…'; }
 
       fetch('/studio/videos', {
@@ -94,6 +96,8 @@ NEW_VIDEO_JS = """
       }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; }); })
         .then(function (par) {
           var r = par[0], d = par[1];
+          btnCriar.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
           if (r.ok && d.id) {
             var link = $('#link-abrir-video');
             if (link) link.href = '/studio/panel/videos/' + encodeURIComponent(d.id);
@@ -107,6 +111,8 @@ NEW_VIDEO_JS = """
           }
         })
         .catch(function (err) {
+          btnCriar.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
           if (fb) {
             fb.setAttribute('data-tipo', 'erro');
             fb.textContent = 'Falha de rede: ' + err.message;
