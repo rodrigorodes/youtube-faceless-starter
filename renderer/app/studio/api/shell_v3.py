@@ -70,20 +70,22 @@ PRODUCT_CSS = """
 
 /* Botões do Design System V3 */
 .btn {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-.btn:hover:not(:disabled) { transform: translateY(-1px); }
-.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:hover:not(:disabled) {
+  background: var(--panel3, #22222d);
+  border-color: #595268;
+}
 .btn-primary, .btn-primario {
   background: var(--accentfill); color: var(--onaccent); border-color: var(--accentfill); font-weight: 700;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accentfill) 32%, transparent);
 }
-.btn-primary:hover, .btn-primario:hover { filter: brightness(1.08); box-shadow: 0 6px 22px color-mix(in srgb, var(--accentfill) 48%, transparent); }
+.btn-primary:hover, .btn-primario:hover { filter: brightness(1.1); box-shadow: 0 4px 20px color-mix(in srgb, var(--accentfill) 45%, transparent); }
 .btn-danger, .btn-perigo { background: #7a2436; color: #fff; border-color: #7a2436; font-weight: 650; }
 .btn-danger:hover, .btn-perigo:hover { background: #8e2b40; filter: brightness(1.08); }
 .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
 .btn-ghost { background: transparent; border-color: var(--line); }
-.btn-ghost:hover { background: var(--panel2); }
+.btn-ghost:hover { background: var(--panel2); border-color: #595268; }
 
 /* Campos e formulários V3 */
 .field, .campo { margin-bottom: 18px; display: flex; flex-direction: column; gap: 6px; }
@@ -100,6 +102,41 @@ PRODUCT_CSS = """
 .hint, .dica { font-size: 12px; color: var(--muted); margin: 3px 0 0; line-height: 1.45; }
 .error-msg, .campo-erro { font-size: 12px; color: var(--warn); font-weight: 600; margin-top: 4px; }
 .form-feedback, .feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 6px; }
+
+/* ComboBox e Select estilizados (Modern Web Guidance › branded-select-styling) */
+select, .field select, .campo select, select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a19cad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px 16px;
+  padding-right: 42px !important;
+  cursor: pointer;
+}
+select option, .field select option, .campo select option, select.input option {
+  background-color: var(--panel2, #1a1a22) !important;
+  color: #ffffff !important;
+  padding: 10px 14px !important;
+  font-size: 13px;
+}
+select option:checked {
+  background-color: var(--accentfill, #7928ca) !important;
+  color: #ffffff !important;
+}
+@supports (appearance: base-select) {
+  select, .field select, .campo select, select.input {
+    appearance: base-select;
+  }
+  select::picker(select) {
+    background-color: var(--panel2, #1a1a22);
+    border: 1px solid var(--line, #2a2833);
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    color: #ffffff;
+  }
+}
 
 /* Estados e Badges */
 .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; }
@@ -128,14 +165,14 @@ PRODUCT_CSS = """
 .btn.carregando::before, .btn.is-loading::before {
   content: '';
   display: inline-block;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   margin-right: 8px;
-  border: 2px solid currentColor;
+  border: 2.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
-  vertical-align: -1px;
+  vertical-align: -2px;
 }
 
 /* Barra de progresso de atividade no topo da página (padrão YouTube/Vercel/Modern Web) */
@@ -143,13 +180,13 @@ PRODUCT_CSS = """
   position: fixed;
   top: 0;
   left: 0;
-  height: 3px;
+  height: 4px;
   width: 0%;
-  background: linear-gradient(90deg, var(--accent), var(--accentfill));
-  z-index: 9999;
+  background: linear-gradient(90deg, var(--accent), var(--accentfill), #e0aaff);
+  z-index: 99999;
   transition: width 0.25s ease, opacity 0.3s ease;
   pointer-events: none;
-  box-shadow: 0 0 10px var(--accentfill);
+  box-shadow: 0 0 14px var(--accentfill), 0 0 24px var(--accent);
   opacity: 0;
 }
 #barra-progresso-topo.ativo {
@@ -159,6 +196,42 @@ PRODUCT_CSS = """
   width: 100% !important;
   opacity: 0;
   transition: width 0.12s ease, opacity 0.35s ease 0.1s;
+}
+
+/* Indicador flutuante de carregamento altamente visível */
+#indicador-carregando {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel2, #1a1a22);
+  color: #ffffff;
+  border: 1px solid var(--accentfill);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 18px color-mix(in srgb, var(--accentfill) 40%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#indicador-carregando.ativo {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.indicador-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid var(--accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
 }
 
 /* Shimmer / Skeleton screens para carregamento de conteúdo */
@@ -174,7 +247,7 @@ PRODUCT_CSS = """
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .state.s-run .state-icon, .btn.carregando::before, .btn.is-loading::before, .skeleton, .esqueleto {
+  .state.s-run .state-icon, .btn.carregando::before, .btn.is-loading::before, .skeleton, .esqueleto, .indicador-spinner {
     animation: none !important;
   }
 }
@@ -219,7 +292,8 @@ PRODUCT_CSS = """
   background: var(--soft); border-left: 3px solid var(--warn); padding: 0.6rem 0.8rem;
   margin-top: 0.75rem; font-size: 0.8rem;
 }
-.pill {
+/* Badges de situação */
+span.pill {
   display: inline-flex; align-items: center; padding: 0.2rem 0.55rem; border-radius: 999px;
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
 }
@@ -230,6 +304,48 @@ PRODUCT_CSS = """
 .pill-COMPLETED { background: var(--soft); color: var(--ok); }
 .pill-FAILED { background: var(--soft); color: var(--err); border: 1px solid var(--err); }
 .pill-REJECTED { background: var(--soft); color: var(--err); }
+
+/* Filtros por rádio e pílulas interativas (Tela de vídeos e formulários) */
+.pills {
+  border: 0; padding: 4px; margin: 0; display: inline-flex; gap: 5px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+.filtros { border: 0; padding: 0; margin: 0; }
+.filtros legend { font-size: 13px; font-weight: 650; margin-bottom: 8px; padding: 0; }
+
+label.pill, .pills .pill {
+  display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent;
+  background: transparent; border-radius: 8px; padding: 7px 13px; font-size: 12.5px;
+  font-weight: 600; color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: normal;
+  transition: all 0.15s ease; user-select: none;
+}
+label.pill:hover, .pills .pill:hover {
+  color: light-dark(#111116, #ffffff); background: var(--panel2);
+}
+
+/* Custom radio visual elegante */
+label.pill input[type="radio"], .pills .pill input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px; border: 1.5px solid var(--line); border-radius: 50%;
+  margin: 0; display: grid; place-content: center; cursor: pointer;
+  background: var(--panel2); transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+label.pill input[type="radio"]::before, .pills .pill input[type="radio"]::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  transform: scale(0); transition: transform 0.15s ease-in-out;
+  background-color: var(--accentfill);
+}
+label.pill input[type="radio"]:checked, .pills .pill input[type="radio"]:checked {
+  border-color: var(--accentfill);
+}
+label.pill input[type="radio"]:checked::before, .pills .pill input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+label.pill:has(input[type="radio"]:checked), .pills .pill:has(input[type="radio"]:checked) {
+  border-color: var(--line); background: var(--panel2); color: light-dark(#111116, #ffffff);
+  font-weight: 680; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
 .nav-item-unavailable { opacity: 0.55; cursor: not-allowed; }
 .nav-tag { font-size: 0.65rem; padding: 2px 5px; border-radius: 4px; background: var(--panel2); color: var(--muted); margin-left: 6px; }
 """
@@ -429,22 +545,32 @@ SHELL_JS = """
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', pintarTema);
   }
 
-  // ---- indicador de atividade / loading de topo ----
+  // ---- indicador de atividade / loading de topo e flutuante ----
   var bar = $('#barra-progresso-topo');
+  var badge = $('#indicador-carregando');
+  var badgeTexto = $('#indicador-texto');
   var barTimer = null;
   window.StudioLoading = {
-    start: function () {
+    start: function (msg) {
+      if (badge) {
+        if (badgeTexto && msg) badgeTexto.textContent = msg;
+        badge.classList.add('ativo');
+      }
       if (!bar) return;
       clearTimeout(barTimer);
       bar.classList.remove('finalizado');
       bar.classList.add('ativo');
-      bar.style.width = '22%';
+      bar.style.width = '28%';
       barTimer = setTimeout(function () {
-        bar.style.width = '68%';
-        barTimer = setTimeout(function () { bar.style.width = '84%'; }, 400);
+        bar.style.width = '72%';
+        barTimer = setTimeout(function () { bar.style.width = '88%'; }, 400);
       }, 150);
     },
     done: function () {
+      if (badge) {
+        badge.classList.remove('ativo');
+        setTimeout(function () { if (badgeTexto) badgeTexto.textContent = 'Carregando…'; }, 300);
+      }
       if (!bar) return;
       clearTimeout(barTimer);
       bar.classList.add('finalizado');
@@ -454,6 +580,11 @@ SHELL_JS = """
       }, 450);
     }
   };
+
+  // Carregamento visível em transições de página
+  window.addEventListener('beforeunload', function () {
+    if (window.StudioLoading) window.StudioLoading.start('Atualizando estúdio…');
+  });
 
   // ---- canal ativo: recarrega a tela no canal escolhido ----
   var sel = $('#canal-ativo');
@@ -531,6 +662,7 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
 </head>
 <body>
 <div id="barra-progresso-topo" aria-hidden="true"></div>
+<div id="indicador-carregando" class="indicador-carregando" aria-live="polite" aria-hidden="true"><span class="indicador-spinner"></span><span id="indicador-texto">Carregando…</span></div>
 <a class="skip" href="#conteudo">Ir para o conteúdo</a>
 <div class="app">
   {render_sidebar(active=active, cost_note=cost_note)}

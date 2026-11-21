@@ -44,24 +44,199 @@ _DECISION_STATE = {
 }
 
 CHANNELS_CSS = """
+/* Sanfona / Accordion dos painéis de canais */
+details.painel-sanfona {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+details.painel-sanfona:hover {
+  border-color: #3b3748;
+}
+details.painel-sanfona[open] {
+  border-color: #433d52;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+summary.sanfona-cabecalho {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  user-select: none;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+summary.sanfona-cabecalho::-webkit-details-marker {
+  display: none;
+}
+summary.sanfona-cabecalho:hover {
+  background: color-mix(in srgb, var(--panel2) 55%, transparent);
+}
+.sanfona-titulos {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sanfona-titulos h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: light-dark(#111116, #ffffff);
+}
+.sanfona-subtitulo {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.sanfona-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sanfona-seta {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel2);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease, background 0.15s ease;
+}
+details.painel-sanfona[open] > summary .sanfona-seta {
+  transform: rotate(180deg);
+  color: var(--accent);
+  background: var(--soft);
+}
+.sanfona-corpo {
+  padding: 14px 22px 24px;
+  border-top: 1px solid var(--line);
+  animation: sanfonaDesce 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes sanfonaDesce {
+  from { opacity: 0.5; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Grade e Cards de Providers por Tarefa */
+.grade-providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+.cartao-provider {
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cartao-provider:hover {
+  border-color: #4b455b;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.cartao-provider-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cartao-provider-tipo {
+  display: block;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  margin-bottom: 3px;
+}
+.cartao-provider-nome {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: light-dark(#111116, #ffffff);
+}
+.cartao-provider-modelo {
+  font-size: 11px;
+  background: var(--soft);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 5px;
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cartao-provider-metas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.meta-item { display: inline-flex; gap: 4px; align-items: baseline; }
+.meta-sep { color: var(--line); }
+.cartao-provider-motivo {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.4;
+}
+.cartao-provider-inferior {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.porta-spec { font-size: 11px; }
+.provider-acao { display: flex; align-items: center; gap: 8px; }
+.provider-result { font-size: 12px; color: var(--muted); }
+.provider-result:empty { display: none; }
+
+/* Bloco de Roteamento Econômico */
+.bloco-roteamento {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--panel2);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+.roteamento-item {
+  padding: 8px 0;
+}
+
 .list { display: grid; gap: 0.5rem; }
-.item-4 { grid-template-columns: minmax(0, 1.7fr) auto auto auto; align-items: center; }
-.item-4 { display: grid; gap: 0.75rem; padding: 0.75rem 0; }
-.item-title { font-weight: 600; }
-.item-sub { font-size: 0.78rem; color: var(--text-dim); }
-.cost { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.cost { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1.1rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
-.field .hint { color: var(--text-dim); font-size: 0.72rem; line-height: 1.4; }
-.s-idle { color: var(--text-muted); background: var(--surface-raised); border-color: var(--border); }
+.field .hint { color: var(--muted); font-size: 0.72rem; line-height: 1.4; }
+.s-idle { color: var(--muted); background: var(--surface-raised); border-color: var(--border); }
 .pill-row { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
 .advanced-body .kv { border-top: 0; }
 .new-channel { margin-top: 0.85rem; }
-.new-channel summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; padding: 0.35rem 0; }
-.provider-result { font-size: 0.78rem; color: var(--text-muted); }
-.provider-result:empty { display: none; }
+.new-channel summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; padding: 0.35rem 0; }
 @media (max-width: 820px) {
-  .item-4 { grid-template-columns: minmax(0, 1fr); }
+  .grade-providers { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 """
@@ -103,32 +278,51 @@ def _provider_item(card: ProviderCard, project_id: str) -> str:
     state = _badge("s-done", "✓", "Disponível") if available else _badge("s-act", "!", "Indisponível")
     capabilities = ", ".join(card.capabilities) if card.capabilities else "não declarada"
     rate = f"{card.rate_limit_per_min} chamada(s)/min" if card.rate_limit_per_min else "não declarado"
-    model_html = f' <code>{e(card.model)}</code>' if card.model else ""
+    model_html = f' <code class="cartao-provider-modelo">{e(card.model)}</code>' if card.model else ""
     reason_html = (
-        f'<div class="item-sub">Motivo: {e(card.reason or "sem motivo registrado")}</div>'
+        f'<div class="item-sub cartao-provider-motivo"><b>Motivo:</b> {e(card.reason or "sem motivo registrado")}</div>'
         if not available else ""
     )
     if available:
         command = (
+            f'<div class="provider-acao">'
             f'<button type="button" class="btn btn-sm btn-ghost" data-test-provider="{e(card.kind.value)}" '
             f'data-provider-spec="{e(card.spec)}" data-project-id="{e(project_id)}">Testar conexão</button>'
             f'<div class="provider-result" role="status" aria-live="polite"></div>'
+            f'</div>'
         )
     else:
         command = (
+            f'<div class="provider-acao">'
             '<span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">'
             'Testar conexão</span>'
+            f'</div>'
         )
+    kind_label = KIND_LABELS.get(card.kind, card.kind.value)
     return f"""
-      <div class="item item-4" data-provider-kind="{e(card.kind.value)}" data-provider-spec="{e(card.spec)}">
-        <div>
-          <div class="item-title">{e(KIND_LABELS.get(card.kind, card.kind.value))} · {e(card.name)}{model_html}</div>
-          <div class="item-sub">Capability: {e(capabilities)} · rate limit: {e(rate)} · disponibilidade: {state}</div>
+      <div class="item item-4 cartao-provider" data-provider-kind="{e(card.kind.value)}" data-provider-spec="{e(card.spec)}">
+        <div class="cartao-provider-corpo">
+          <div class="cartao-provider-topo">
+            <div>
+              <span class="cartao-provider-tipo">{e(kind_label)}</span>
+              <div class="item-title cartao-provider-nome">{e(card.name)}{model_html}</div>
+            </div>
+            <div class="cartao-provider-badge">{state}</div>
+          </div>
+          <div class="item-sub cartao-provider-metas">
+            <span class="meta-item"><b>Capability:</b> <code>{e(capabilities)}</code></span>
+            <span class="meta-sep">·</span>
+            <span class="meta-item"><b>rate limit:</b> {e(rate)}</span>
+            <span class="meta-sep">·</span>
+            <span class="meta-item"><b>disponibilidade:</b> {state}</span>
+          </div>
           {reason_html}
         </div>
-        <span class="cost"><b>Custo:</b> {_provider_cost(card)}</span>
-        {state}
-        {command}
+        <div class="cartao-provider-inferior">
+          <span class="cost"><b>Custo:</b> {_provider_cost(card)}</span>
+          <span class="dim porta-spec">Porta: <code>{e(card.spec)}</code></span>
+          {command}
+        </div>
       </div>
     """
 
@@ -140,17 +334,22 @@ def _routing_html(view: ChannelsPageView) -> str:
         fallbacks = " → ".join(e(card.name) for card in decision.fallbacks)
         fallback_text = f" · fallback: {fallbacks}" if fallbacks else ""
         rows.append(
-            f'<div class="kv"><span>Escolha no perfil {e(profile)} — {e(KIND_LABELS.get(decision.kind, decision.kind.value))}</span>'
+            f'<div class="kv roteamento-item"><span><b>Escolha no perfil {e(profile)}</b> — {e(KIND_LABELS.get(decision.kind, decision.kind.value))}</span>'
             f'<span>{e(decision.reason)}{fallback_text}</span></div>'
         )
     for kind, reason in view.route_failures:
         rows.append(
-            f'<div class="kv"><span>Escolha no perfil {e(profile)} — {e(KIND_LABELS.get(kind, kind.value))}</span>'
+            f'<div class="kv roteamento-item"><span><b>Escolha no perfil {e(profile)}</b> — {e(KIND_LABELS.get(kind, kind.value))}</span>'
             f'<span>Sem candidato disponível: {e(reason)}</span></div>'
         )
     if not rows:
         return '<p class="muted">Nenhuma porta de provider configurada para roteamento.</p>'
-    return "".join(rows)
+    return (
+        f'<div class="bloco-roteamento">'
+        f'<h3 style="margin:0 0 10px;font-size:14px;font-weight:700">Roteamento econômico ativo</h3>'
+        f'{"".join(rows)}'
+        f'</div>'
+    )
 
 
 def _decision_html(view: ChannelsPageView) -> str:
@@ -214,43 +413,53 @@ def _channel_card(view: ChannelsPageView) -> str:
         for pid, label in view.projects
     )
     return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="painel-identidade">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>{e(name)}</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">Canal ativo · {version}</p>
+            <p class="dim sanfona-subtitulo">Canal ativo · {version}</p>
           </div>
-          <div class="row">
-            <label class="sr-only" for="canal-switcher">Canal ativo</label>
-            <select id="canal-switcher" class="input" style="width:auto">{options}</select>
+          <div class="sanfona-meta">
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
           </div>
+        </summary>
+        <div class="sanfona-corpo">
+          <div class="spread" style="margin-bottom:12px;align-items:center">
+            <span class="muted" style="font-size:13px">Trocar canal ativo:</span>
+            <div class="row">
+              <label class="sr-only" for="canal-switcher">Canal ativo</label>
+              <select id="canal-switcher" class="input" style="width:auto">{options}</select>
+            </div>
+          </div>
+          <details class="new-channel">
+            <summary>Adicionar canal</summary>
+            <form id="new-channel-form" class="grid-2" style="margin-top:0.6rem">
+              <div class="field">
+                <label for="novo-canal-nome">Nome do canal</label>
+                <input class="input" type="text" id="novo-canal-nome" name="name" maxlength="120" required>
+              </div>
+              <div class="field">
+                <label for="novo-canal-nicho">Nicho editorial</label>
+                <input class="input" type="text" id="novo-canal-nicho" name="niche" maxlength="200">
+              </div>
+              <div class="field">
+                <label for="novo-canal-idioma">Idioma</label>
+                <select class="input" id="novo-canal-idioma" name="language">
+                  <option value="pt-BR" selected>Português (Brasil)</option>
+                  <option value="en-US">Inglês (EUA)</option>
+                  <option value="es-ES">Espanhol</option>
+                </select>
+              </div>
+              <div class="field" style="justify-content:end">
+                <button class="btn btn-primary" type="submit" id="btn-novo-canal">Criar canal</button>
+                <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+              </div>
+            </form>
+          </details>
         </div>
-        <details class="new-channel">
-          <summary>Adicionar canal</summary>
-          <form id="new-channel-form" class="grid-2" style="margin-top:0.6rem">
-            <div class="field">
-              <label for="novo-canal-nome">Nome do canal</label>
-              <input class="input" type="text" id="novo-canal-nome" name="name" maxlength="120" required>
-            </div>
-            <div class="field">
-              <label for="novo-canal-nicho">Nicho editorial</label>
-              <input class="input" type="text" id="novo-canal-nicho" name="niche" maxlength="200">
-            </div>
-            <div class="field">
-              <label for="novo-canal-idioma">Idioma</label>
-              <select class="input" id="novo-canal-idioma" name="language">
-                <option value="pt-BR" selected>Português (Brasil)</option>
-                <option value="en-US">Inglês (EUA)</option>
-                <option value="es-ES">Espanhol</option>
-              </select>
-            </div>
-            <div class="field" style="justify-content:end">
-              <button class="btn btn-primary" type="submit" id="btn-novo-canal">Criar canal</button>
-              <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-            </div>
-          </form>
-        </details>
-      </div>
+      </details>
     """
 
 
@@ -293,73 +502,80 @@ def _profile_card(view: ChannelsPageView) -> str:
         )
         updated = ""
     return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="painel-perfil">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>Estratégia e identidade</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">
+            <p class="dim sanfona-subtitulo">
               Cada alteração cria uma versão auditável do perfil do canal. Nada de editar arquivo de configuração.
             </p>
           </div>
-          {state}
+          <div class="sanfona-meta">
+            {state}
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          {empty_note}
+          <form id="channel-form" data-profile-id="{e(profile_id)}" data-profile-version="{version}"
+                data-project-id="{e(project.id)}" style="margin-top:14px">
+            <div class="grid-2">
+              <div class="field">
+                <label for="canal-nome">Nome do perfil</label>
+                <input class="input" type="text" id="canal-nome" name="name" maxlength="120"
+                       value="{e(default_name)}" required>
+              </div>
+              <div class="field">
+                <label for="canal-nicho">Nicho</label>
+                <input class="input" type="text" id="canal-nicho" value="{e(niche)}" disabled
+                       aria-describedby="canal-nicho-hint">
+                <span class="hint" id="canal-nicho-hint">Definido na criação do canal; não é editável neste formulário.</span>
+              </div>
+              <div class="field">
+                <label for="canal-estrategia">Estratégia</label>
+                <input class="input" type="text" id="canal-estrategia" name="strategy" maxlength="500"
+                       value="{e(strategy)}">
+              </div>
+              <div class="field">
+                <label for="canal-idioma">Idioma</label>
+                <select class="input" id="canal-idioma" name="language">{language_options}</select>
+              </div>
+              <div class="field">
+                <label for="canal-publico">Público</label>
+                <input class="input" type="text" id="canal-publico" name="audience" maxlength="500"
+                       value="{e(audience)}">
+              </div>
+              <div class="field">
+                <label for="canal-voz">Voz padrão</label>
+                <input class="input" type="text" id="canal-voz" name="voice" maxlength="200"
+                       value="{e(voice)}">
+                <span class="hint">Especificação do provider de voz (ex.: provedor:modelo).</span>
+              </div>
+              <div class="field">
+                <label for="canal-pilares">Pilares editoriais</label>
+                <input class="input" type="text" id="canal-pilares" name="pillars" maxlength="600"
+                       value="{e(pillars)}">
+                <span class="hint">Separe os pilares por vírgula; repetidos são descartados.</span>
+              </div>
+              <div class="field">
+                <label for="canal-identidade">Identidade visual</label>
+                <input class="input" type="text" id="canal-identidade" name="visual_identity" maxlength="2000"
+                       value="{e(visual)}">
+                <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span>
+              </div>
+            </div>
+            <div class="spread" style="margin-top:1rem">
+              <div>
+                <button class="btn btn-primary" type="submit" id="btn-salvar-canal">{e(submit_label)}</button>
+                <div id="channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+              </div>
+              {updated}
+            </div>
+          </form>
         </div>
-        {empty_note}
-        <form id="channel-form" data-profile-id="{e(profile_id)}" data-profile-version="{version}"
-              data-project-id="{e(project.id)}" style="margin-top:14px">
-          <div class="grid-2">
-            <div class="field">
-              <label for="canal-nome">Nome do perfil</label>
-              <input class="input" type="text" id="canal-nome" name="name" maxlength="120"
-                     value="{e(default_name)}" required>
-            </div>
-            <div class="field">
-              <label for="canal-nicho">Nicho</label>
-              <input class="input" type="text" id="canal-nicho" value="{e(niche)}" disabled
-                     aria-describedby="canal-nicho-hint">
-              <span class="hint" id="canal-nicho-hint">Definido na criação do canal; não é editável neste formulário.</span>
-            </div>
-            <div class="field">
-              <label for="canal-estrategia">Estratégia</label>
-              <input class="input" type="text" id="canal-estrategia" name="strategy" maxlength="500"
-                     value="{e(strategy)}">
-            </div>
-            <div class="field">
-              <label for="canal-idioma">Idioma</label>
-              <select class="input" id="canal-idioma" name="language">{language_options}</select>
-            </div>
-            <div class="field">
-              <label for="canal-publico">Público</label>
-              <input class="input" type="text" id="canal-publico" name="audience" maxlength="500"
-                     value="{e(audience)}">
-            </div>
-            <div class="field">
-              <label for="canal-voz">Voz padrão</label>
-              <input class="input" type="text" id="canal-voz" name="voice" maxlength="200"
-                     value="{e(voice)}">
-              <span class="hint">Especificação do provider de voz (ex.: provedor:modelo).</span>
-            </div>
-            <div class="field">
-              <label for="canal-pilares">Pilares editoriais</label>
-              <input class="input" type="text" id="canal-pilares" name="pillars" maxlength="600"
-                     value="{e(pillars)}">
-              <span class="hint">Separe os pilares por vírgula; repetidos são descartados.</span>
-            </div>
-            <div class="field">
-              <label for="canal-identidade">Identidade visual</label>
-              <input class="input" type="text" id="canal-identidade" name="visual_identity" maxlength="2000"
-                     value="{e(visual)}">
-              <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span>
-            </div>
-          </div>
-          <div class="spread" style="margin-top:1rem">
-            <div>
-              <button class="btn btn-primary" type="submit" id="btn-salvar-canal">{e(submit_label)}</button>
-              <div id="channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-            </div>
-            {updated}
-          </div>
-        </form>
-      </div>
+      </details>
     """
 
 
@@ -424,16 +640,23 @@ def _appearance_card(view: ChannelsPageView) -> str:
     library_note = ("Nenhum estilo na biblioteca ainda." if count == 0
                     else f"{count} estilo(s) na biblioteca.")
     return f"""
-      <div class="card" id="canal-aparencia">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="canal-aparencia">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>Aparência</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">{e(intro)}</p>
+            <p class="dim sanfona-subtitulo">{e(intro)}</p>
           </div>
+          <div class="sanfona-meta">
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          <div style="margin-top:6px">{control}</div>
+          <p class="fine">{e(library_note)}</p>
         </div>
-        <div style="margin-top:14px">{control}</div>
-        <p class="fine">{e(library_note)}</p>
-      </div>
+      </details>
     """
 
 
@@ -448,23 +671,35 @@ def _providers_card(view: ChannelsPageView) -> str:
     elif not items:
         items = '<p class="muted">Nenhuma porta de provider configurada para este canal.</p>'
     return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="painel-providers">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>Providers por tarefa</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">
+            <p class="dim sanfona-subtitulo">
               Cada tarefa aponta para um provider com capability, custo estimado, rate limit e disponibilidade real.
             </p>
           </div>
-          <span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">Reordenar fallback</span>
+          <div class="sanfona-meta">
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          <div class="spread" style="margin-bottom:12px;align-items:center">
+            <p class="fine" style="margin:0">
+              Roteamento derivado do perfil econômico do canal e recalculado a cada leitura.
+            </p>
+            <span class="btn btn-sm btn-ghost is-disabled" aria-disabled="true" tabindex="-1">Reordenar fallback</span>
+          </div>
+          <p class="fine" style="margin-top:0">Reordenar fallback manualmente não está implementado nesta versão: o roteamento é derivado do
+          perfil econômico do canal e recalculado a cada leitura.</p>
+          <div class="grade-providers list" style="margin-top:14px">{items}</div>
+          {_routing_html(view)}
+          <p class="fine" style="margin-top:14px">Custo estimado não é preço cobrado, e custo desconhecido não é tratado como zero.
+          Disponibilidade reflete o estado real do provider: sem implementação validada, aparece indisponível com o motivo.</p>
         </div>
-        <p class="fine">Reordenar fallback manualmente não está implementado nesta versão: o roteamento é derivado do
-        perfil econômico do canal e recalculado a cada leitura.</p>
-        <div class="list" style="margin-top:14px">{items}</div>
-        {_routing_html(view)}
-        <p class="fine">Custo estimado não é preço cobrado, e custo desconhecido não é tratado como zero.
-        Disponibilidade reflete o estado real do provider: sem implementação validada, aparece indisponível com o motivo.</p>
-      </div>
+      </details>
     """
 
 
@@ -494,51 +729,58 @@ def _budget_card(view: ChannelsPageView) -> str:
                              ("Limite hard por vídeo", limits.hard_video_usd))
     )
     return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="painel-orcamento">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>Orçamento do canal</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">
+            <p class="dim sanfona-subtitulo">
               Limites por mês e por vídeo. Real, estimado, sem custo e desconhecido nunca são somados num número só.
             </p>
           </div>
-          <span class="chip-metric">Perfil econômico: {e(limits.economic_profile.value)}</span>
+          <div class="sanfona-meta">
+            <span class="chip-metric">Perfil econômico: {e(limits.economic_profile.value)}</span>
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          {configured_note}
+          <form id="budget-form" data-project-id="{e(view.project.id)}" style="margin-top:14px">
+            <div class="grid-2">
+              <div class="field">
+                <label for="limite-soft-mensal">Limite soft mensal (US$)</label>
+                <input class="input" type="text" inputmode="decimal" id="limite-soft-mensal" name="soft_monthly_usd"
+                       value="{e(_input_amount(limits.soft_monthly_usd))}">
+                <span class="hint">Ao atingir, o Studio pausa e pede sua decisão.</span>
+              </div>
+              <div class="field">
+                <label for="limite-hard-mensal">Limite hard mensal (US$)</label>
+                <input class="input" type="text" inputmode="decimal" id="limite-hard-mensal" name="hard_monthly_usd"
+                       value="{e(_input_amount(limits.hard_monthly_usd))}">
+                <span class="hint">Ao atingir, o Studio para sozinho. Não ultrapassa.</span>
+              </div>
+              <div class="field">
+                <label for="limite-soft-video">Limite soft por vídeo (US$)</label>
+                <input class="input" type="text" inputmode="decimal" id="limite-soft-video" name="soft_video_usd"
+                       value="{e(_input_amount(limits.soft_video_usd))}">
+              </div>
+              <div class="field">
+                <label for="limite-hard-video">Limite hard por vídeo (US$)</label>
+                <input class="input" type="text" inputmode="decimal" id="limite-hard-video" name="hard_video_usd"
+                       value="{e(_input_amount(limits.hard_video_usd))}">
+              </div>
+            </div>
+            <div class="spread" style="margin-top:1rem">
+              <button class="btn btn-primary" type="submit" id="btn-salvar-orcamento">Salvar limites</button>
+              <div id="budget-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+            </div>
+          </form>
+          <div style="margin-top:14px">{limit_rows}</div>
+          <div style="margin-top:14px">{_summary_rows(view)}</div>
+          {_decision_html(view)}
         </div>
-        {configured_note}
-        <form id="budget-form" data-project-id="{e(view.project.id)}" style="margin-top:14px">
-          <div class="grid-2">
-            <div class="field">
-              <label for="limite-soft-mensal">Limite soft mensal (US$)</label>
-              <input class="input" type="text" inputmode="decimal" id="limite-soft-mensal" name="soft_monthly_usd"
-                     value="{e(_input_amount(limits.soft_monthly_usd))}">
-              <span class="hint">Ao atingir, o Studio pausa e pede sua decisão.</span>
-            </div>
-            <div class="field">
-              <label for="limite-hard-mensal">Limite hard mensal (US$)</label>
-              <input class="input" type="text" inputmode="decimal" id="limite-hard-mensal" name="hard_monthly_usd"
-                     value="{e(_input_amount(limits.hard_monthly_usd))}">
-              <span class="hint">Ao atingir, o Studio para sozinho. Não ultrapassa.</span>
-            </div>
-            <div class="field">
-              <label for="limite-soft-video">Limite soft por vídeo (US$)</label>
-              <input class="input" type="text" inputmode="decimal" id="limite-soft-video" name="soft_video_usd"
-                     value="{e(_input_amount(limits.soft_video_usd))}">
-            </div>
-            <div class="field">
-              <label for="limite-hard-video">Limite hard por vídeo (US$)</label>
-              <input class="input" type="text" inputmode="decimal" id="limite-hard-video" name="hard_video_usd"
-                     value="{e(_input_amount(limits.hard_video_usd))}">
-            </div>
-          </div>
-          <div class="spread" style="margin-top:1rem">
-            <button class="btn btn-primary" type="submit" id="btn-salvar-orcamento">Salvar limites</button>
-            <div id="budget-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-          </div>
-        </form>
-        <div style="margin-top:14px">{limit_rows}</div>
-        <div style="margin-top:14px">{_summary_rows(view)}</div>
-        {_decision_html(view)}
-      </div>
+      </details>
     """
 
 
@@ -626,24 +868,31 @@ def _youtube_card(view: ChannelsPageView) -> str:
             '<div class="item-sub">Nenhuma credencial registrada para este canal.</div>'
         )
     return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
+      <details class="card painel-sanfona" id="painel-youtube">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
             <h2>Canal do YouTube</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">
+            <p class="dim sanfona-subtitulo">
               Associação e status do OAuth. Só o estado e os escopos aparecem; nenhum segredo é exibido.
             </p>
           </div>
-          {_badge(kind, icon, label)}
-        </div>
-        <div class="list" style="margin-top:14px">
-          <div class="item" style="padding:0.6rem 0">{channel_info}</div>
-          <div class="item" style="padding:0.6rem 0">
-            {credential_line}
-            {_oauth_controls(view, status)}
+          <div class="sanfona-meta">
+            {_badge(kind, icon, label)}
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          <div class="list" style="margin-top:14px">
+            <div class="item" style="padding:0.6rem 0">{channel_info}</div>
+            <div class="item" style="padding:0.6rem 0">
+              {credential_line}
+              {_oauth_controls(view, status)}
+            </div>
           </div>
         </div>
-      </div>
+      </details>
     """
 
 
@@ -661,9 +910,18 @@ def _advanced_card(view: ChannelsPageView) -> str:
     )
     unattributed = view.budget.summary.unattributed_calls if view.budget else 0
     return f"""
-      <details class="advanced" id="canais-avancado">
-        <summary class="advanced-summary">Avançado — identificadores, configuração sanitizada e uso</summary>
-        <div class="advanced-body">
+      <details class="card advanced painel-sanfona" id="canais-avancado">
+        <summary class="advanced-summary sanfona-cabecalho">
+          <div class="sanfona-titulos">
+            <h2 style="font-size:14px;font-weight:600;margin:0">Avançado — identificadores, configuração sanitizada e uso</h2>
+          </div>
+          <div class="sanfona-meta">
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="advanced-body sanfona-corpo">
           <p>Canal: <code>{e(project.id)}</code> · nicho: <code>{e(project.niche or "não informado")}</code>
              · idioma: <code>{e(project.language)}</code></p>
           {profile_line}
@@ -789,10 +1047,19 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         content_html=content_html,
     )
     page_js = f"""
+    try {{
+      document.querySelectorAll('details.painel-sanfona').forEach((det) => {{
+        if (det.id !== 'canais-avancado') {{
+          det.open = true;
+        }}
+      }});
+    }} catch (e) {{}}
+
     const projectId = "{e(project.id)}";
     const switcher = document.getElementById('canal-switcher');
     if (switcher) {{
       switcher.addEventListener('change', () => {{
+        if (window.StudioLoading) window.StudioLoading.start('Trocando canal ativo…');
         window.location.href = '/studio/canais?project_id=' + encodeURIComponent(switcher.value);
       }});
     }}
@@ -805,7 +1072,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         const button = document.getElementById('btn-novo-canal');
         const name = (document.getElementById('novo-canal-nome').value || '').trim();
         if (!name) {{ if (feedback) feedback.textContent = 'Informe o nome do canal.'; return; }}
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start('Criando canal…');
         if (feedback) feedback.textContent = 'Criando canal...';
         try {{
           const response = await fetch('/studio/projects', {{
@@ -823,11 +1091,13 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível criar o canal: '
               + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao criar o canal. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -854,7 +1124,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           voice: document.getElementById('canal-voz').value.trim()
         }};
         if (!changes.name) {{ if (feedback) feedback.textContent = 'Informe o nome do perfil.'; return; }}
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start(profileId ? 'Salvando nova versão do canal…' : 'Criando perfil do canal…');
         if (feedback) feedback.textContent = profileId ? 'Salvando nova versão...' : 'Criando o perfil...';
         try {{
           const target = profileId
@@ -872,15 +1143,18 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
             setTimeout(() => window.location.reload(), 500);
           }} else if (response.status === 409) {{
             if (feedback) feedback.textContent = 'Outra alteração venceu a corrida: recarregue e revise a versão atual.';
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar o perfil: '
               + (typeof data.detail === 'string' ? data.detail : 'verifique os campos e tente novamente.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar o perfil. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -895,7 +1169,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         const profileId = appearanceForm.getAttribute('data-profile-id') || '';
         const version = Number(appearanceForm.getAttribute('data-profile-version') || '0');
         const value = select ? select.value : '';
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start('Salvando aparência…');
         if (feedback) feedback.textContent = 'Salvando aparência...';
         try {{
           const response = await fetch('/studio/channels/' + encodeURIComponent(profileId), {{
@@ -909,15 +1184,18 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
             setTimeout(() => window.location.reload(), 500);
           }} else if (response.status === 409) {{
             if (feedback) feedback.textContent = 'Outra alteração venceu a corrida: recarregue e revise a versão atual.';
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar a aparência: '
               + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar a aparência. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -934,7 +1212,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           soft_video_usd: (document.getElementById('limite-soft-video').value || '').trim(),
           hard_video_usd: (document.getElementById('limite-hard-video').value || '').trim()
         }};
-        if (button) button.disabled = true;
+        if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
+        if (window.StudioLoading) window.StudioLoading.start('Salvando limites de orçamento…');
         if (feedback) feedback.textContent = 'Salvando limites...';
         try {{
           const response = await fetch('/studio/projects/' + encodeURIComponent(projectId) + '/budget', {{
@@ -949,11 +1228,13 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar os limites: '
               + (typeof data.detail === 'string' ? data.detail : 'o soft não pode passar do hard.');
-            if (button) button.disabled = false;
+            if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar os limites. Tente novamente.';
-          if (button) button.disabled = false;
+          if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -964,6 +1245,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         const feedback = document.getElementById('youtube-feedback');
         const path = reauth.getAttribute('data-authorize-path');
         reauth.disabled = true;
+        reauth.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start('Conectando ao Google…');
         if (feedback) feedback.textContent = 'Abrindo a tela de consentimento do Google...';
         try {{
           const response = await fetch(path, {{
@@ -977,10 +1260,14 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
             if (feedback) feedback.textContent = 'Não foi possível iniciar o consentimento: '
               + (typeof data.detail === 'string' ? data.detail : 'o servidor não devolveu a URL de autorização.');
             reauth.disabled = false;
+            reauth.classList.remove('carregando');
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao iniciar o consentimento. Tente novamente.';
           reauth.disabled = false;
+          reauth.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -992,6 +1279,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         const path = revoke.getAttribute('data-revoke-path');
         if (!window.confirm('Revogar o acesso do Studio ao canal do YouTube?')) return;
         revoke.disabled = true;
+        revoke.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start('Revogando acesso…');
         if (feedback) feedback.textContent = 'Revogando o acesso no Google...';
         try {{
           const response = await fetch(path, {{
@@ -1006,10 +1295,14 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
             if (feedback) feedback.textContent = 'Não foi possível revogar: '
               + (typeof data.detail === 'string' ? data.detail : 'tente novamente.');
             revoke.disabled = false;
+            revoke.classList.remove('carregando');
+            if (window.StudioLoading) window.StudioLoading.done();
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao revogar. Tente novamente.';
           revoke.disabled = false;
+          revoke.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
         }}
       }});
     }}
@@ -1021,6 +1314,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         const targetProject = button.getAttribute('data-project-id') || projectId;
         const result = button.parentElement.querySelector('.provider-result');
         button.disabled = true;
+        button.classList.add('carregando');
+        if (window.StudioLoading) window.StudioLoading.start('Testando conexão do provider…');
         if (result) result.textContent = 'Executando a sonda...';
         try {{
           const response = await fetch('/studio/projects/' + encodeURIComponent(targetProject) + '/providers/test', {{
@@ -1044,6 +1339,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           if (result) result.textContent = 'Não foi possível testar agora: falha de rede. Nada foi medido.';
         }}
         button.disabled = false;
+        button.classList.remove('carregando');
+        if (window.StudioLoading) window.StudioLoading.done();
       }});
     }});
     """
