@@ -1,6 +1,8 @@
 import math
 import os
+import struct
 import sys
+import types
 import wave
 from pathlib import Path
 
@@ -54,3 +56,66 @@ def test_music_is_original_bounded_and_nonsilent(tmp_path):
         import numpy as np
         data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
     assert 0.3 < np.abs(data).max() / 32767 <= 0.81 and data.std() > 500
+
+
+# ---------- VS-06: precedência da voz (voz pedida > PIPER_VOICE > default) ----------
+
+class _FakePiperVoice:
+    """Síntese falsa: escreve 1 s de tom — nenhum modelo do Piper é carregado."""
+
+    def synthesize_wav(self, text, wav):
+        wav.setnchannels(1), wav.setsampwidth(2), wav.setframerate(22050)
+        wav.writeframes(struct.pack("<h", 8000) * 22050)
+
+
+def _fake_piper(monkeypatch, loaded):
+    """Troca o `piper` por um carregador que registra o caminho pedido, e isola o estado global."""
+    class FakePiper:
+        @staticmethod
+        def load(path):
+            loaded.append(path)
+            return _FakePiperVoice()
+
+    monkeypatch.setitem(sys.modules, "piper", types.SimpleNamespace(PiperVoice=FakePiper))
+    monkeypatch.setattr(rich.os.path, "isfile", lambda path: True)  # os arquivos não existem no teste
+    monkeypatch.setattr(rich, "_voice", None)
+    monkeypatch.setattr(rich, "_voice_loaded", None)
+    monkeypatch.setattr(rich, "_requested_voice", None)
+
+
+def test_synthesize_speech_prefers_the_requested_voice_over_the_env(monkeypatch, tmp_path):
+    """Uma voz**pedida** vence o `PIPER_VOICE`: é a mesma que o ledger/cache registram."""
+    loaded = []
+    _fake_piper(monkeypatch, loaded)
+    monkeypatch.setenv("PIPER_VOICE", "/opt/voices/from-env.onnx")
+    with rich.use_voice("/opt/voices/requested.onnx"):
+        assert rich.synthesize_speech("Olá, mundo.", tmp_path / "a.wav") == pytest.approx(1.0, abs=0.01)
+    assert loaded == ["/opt/voices/requested.onnx"]
+
+
+def test_synthesize_speech_uses_the_env_only_when_nothing_was_requested(monkeypatch, tmp_path):
+    """`PIPER_VOICE` é fallback de deployment/teste: só decide quando ninguém pediu voz."""
+    loaded = []
+    _fake_piper(monkeypatch, loaded)
+    monkeypatch.setenv("PIPER_VOICE", "/opt/voices/from-env.onnx")
+    rich.synthesize_speech("Olá, mundo.", tmp_path / "b.wav")
+    assert loaded == ["/opt/voices/from-env.onnx"]
+
+
+def test_synthesize_speech_falls_back_to_the_deployment_default(monkeypatch, tmp_path):
+    loaded = []
+    _fake_piper(monkeypatch, loaded)
+    monkeypatch.delenv("PIPER_VOICE", raising=False)
+    rich.synthesize_speech("Olá, mundo.", tmp_path / "c.wav")
+    assert loaded == [rich.DEFAULT_VOICE]
+
+
+def test_synthesize_speech_names_the_missing_model_instead_of_falling_silent(monkeypatch, tmp_path):
+    """Voz pedida sem arquivo em /opt/voices: falha dizendo **qual** modelo faltou (nunca silêncio)."""
+    monkeypatch.setitem(sys.modules, "piper", types.SimpleNamespace(PiperVoice=object))
+    monkeypatch.setattr(rich.os.path, "isfile", lambda path: False)
+    monkeypatch.setattr(rich, "_voice", None)
+    monkeypatch.setattr(rich, "_voice_loaded", None)
+    with rich.use_voice("/opt/voices/pt_BR-inexistente.onnx"):
+        with pytest.raises(FileNotFoundError, match="pt_BR-inexistente"):
+            rich.synthesize_speech("Olá, mundo.", tmp_path / "d.wav")

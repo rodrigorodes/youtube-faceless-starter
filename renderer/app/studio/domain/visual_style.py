@@ -279,9 +279,12 @@ class ResolvedStyle:
     pelo executor (VS-04): o adapter parte do layout/cores atuais como default e sobrepõe só as
     chaves declaradas aqui. Vazio = comportamento default de sempre (byte-a-byte).
 
-    ``voice`` é **carregada** desde já, por fidelidade ao estilo, mas **ainda não é aplicada**:
-    a precedência da voz (``PIPER_VOICE`` env > voz do projeto > default) vive em ``rich.py`` e
-    não muda nesta fatia — a decisão de quem vence está registrada no relatório do VS-04.
+    ``voice`` (``params.voice.model``) é **aplicada** (VS-06): quando o estilo declara uma voz,
+    ela vence o projeto (``STUDIO_VOICE``/``Project.config.voice``) e o default. A precedência
+    final é **estilo > projeto > default**; ``PIPER_VOICE`` é só fallback de deployment/teste.
+    Quem resolve o modelo efetivo é a composição (``composition._voice_for_video``), que devolve
+    um ``Voice`` com esse modelo — a **mesma** identidade que a síntese usa e o ledger/cache
+    registram, fechando a divergência entre a voz que fala e a voz que é cobrada/cacheada.
     """
 
     snapshot: StyleSnapshot

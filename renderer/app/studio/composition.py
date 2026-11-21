@@ -210,6 +210,35 @@ def _style_for_video(video, channels, styles):
     return resolve_style(profile, channel_style, override=video_style)
 
 
+def _voice_model(style) -> str | None:
+    """O modelo de voz que o estilo declara (``params.voice.model``), ou None. Puro."""
+    model = style.voice.get("model") if style is not None else None
+    return model.strip() if isinstance(model, str) and model.strip() else None
+
+
+def _voice_for_video(video, channels, styles, fallback, build_provider):
+    """VS-06: a voz **efetiva** do render — precedência **estilo > projeto > default**.
+
+    Resolve o estilo do vídeo pelo mesmo caminho da VS-05c (``_style_for_video``: canal + override
+    do vídeo); se o estilo declara ``params.voice.model``, ele manda e o provider é construído
+    **pelo registro** (``build_provider("voice", "piper:<modelo>")``), mantendo a validação num
+    lugar só. Aceita o modelo com ou sem o prefixo ``piper:``. Sem voz no estilo, quem decide é o
+    projeto (``fallback`` → ``provider_for("voice", ...)``, que resolve ``ProjectConfig.voice``:
+    override do projeto > ``STUDIO_VOICE`` > default).
+
+    O ``Voice`` devolvido carrega o **modelo efetivo** no atributo ``model``: é a mesma identidade
+    que a síntese usa (``PiperVoice.voice_path`` deriva dela) e que o cache/ledger registram
+    (``_voice_identity``), então a divergência entre "quem fala" e "quem é registrado" deixa de
+    existir. Voz de estilo sem arquivo em ``/opt/voices`` falha no ``synthesize_speech`` dizendo
+    **qual** modelo faltou — nunca cai para outra voz em silêncio.
+    """
+    model = _voice_model(_style_for_video(video, channels, styles))
+    if model is None:
+        return fallback(video.project_id)
+    spec = model if ":" in model else f"piper:{model}"
+    return build_provider("voice", spec)
+
+
 def build_google_oauth(settings: "Settings",
                        transport=None) -> GoogleOAuthClient | None:
     """Monta o cliente OAuth a partir do client secret **no caminho original** (somente leitura).
@@ -491,7 +520,10 @@ class Studio:
             files.sweep_work()
         except OSError:
             pass
-        run = RunRender(repo, scripts, assets, jobs, files, voice_for=lambda project_id: provider_for("voice", project_id),
+        run = RunRender(repo, scripts, assets, jobs, files,
+                         voice_for=lambda video: _voice_for_video(video, channel_repo, style_repo,
+                                                                  lambda project_id: provider_for("voice", project_id),
+                                                                  self._build_provider),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
                          paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
                          style_for=lambda video: _style_for_video(video, channel_repo, style_repo))
