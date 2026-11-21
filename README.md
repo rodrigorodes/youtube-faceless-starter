@@ -23,6 +23,7 @@ Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publi
 - [Aprovação e publicação: prévia, gate de QA e publicação nativa](docs/15-publicacao.md)
 - [Recuperação e analytics: versão inicial e limites](docs/p06-p07-offline.md)
 - [Alertas passivos e suas limitações](docs/16-alertas-p06.md)
+- [Estender o stúdio: providers e portas](docs/21-extensao.md)
 
 ## Pré-requisitos
 
