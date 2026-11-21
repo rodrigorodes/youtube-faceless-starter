@@ -48,13 +48,15 @@ def test_env_provider_reads_only_the_refresh_variable_and_returns_the_new_access
     oauth = OAuth()
     path = env_file(tmp_path)
     provider = EnvRefreshTokenProvider(oauth, path)
-    assert provider.execute("a" * 32) == ACCESS and oauth.seen == [REFRESH]
+    access = provider.execute("a" * 32)
+    assert access.token == ACCESS and access.youtube_channel_id is None  # sem conferência de identidade
+    assert oauth.seen == [REFRESH]
     assert REFRESH not in repr(provider) and ACCESS not in repr(provider)
 
 
 def test_env_provider_accepts_a_quoted_value(tmp_path):
     oauth = OAuth()
-    assert EnvRefreshTokenProvider(oauth, env_file(tmp_path, quote=True)).execute("a" * 32) == ACCESS
+    assert EnvRefreshTokenProvider(oauth, env_file(tmp_path, quote=True)).execute("a" * 32).token == ACCESS
 
 
 def test_env_provider_never_leaks_the_value_when_it_is_missing(tmp_path):
@@ -79,7 +81,7 @@ def test_fallback_only_switches_when_the_project_has_no_consent(tmp_path):
 
     oauth = OAuth()
     env = EnvRefreshTokenProvider(oauth, env_file(tmp_path))
-    assert FallbackTokenProvider(NoVault(), env).execute("a" * 32) == ACCESS
+    assert FallbackTokenProvider(NoVault(), env).execute("a" * 32).token == ACCESS
     with pytest.raises(OAuthReconnectRequired, match="invalid_grant"):
         FallbackTokenProvider(Revoked(), env).execute("a" * 32)
 

@@ -24,7 +24,7 @@ from ..domain.youtube_oauth import (
     token_set_from_response,
 )
 from .errors import ServiceUnavailable
-from .ports import OAuthClient, SecretStore, YouTubeChannelRepository
+from .ports import AccessToken, OAuthClient, SecretStore, YouTubeChannelRepository
 from .youtube_channels import (
     ACCESS_TOKEN,
     OAUTH_CODE_VERIFIER,
@@ -201,12 +201,20 @@ class EnsureAccessToken:
 
     `invalid_grant` marca o canal como REVOKED e apaga o access vencido: reconectar é decisão
     humana/UI, nunca retry cego.
+
+    YT-03: devolve também o **canal a que o token pertence**, lido da associação legada do projeto
+    (`YouTubeChannelRepository`). É a identidade que o gate de publicação compara com o destino do
+    canal; sem associação registrada o canal é `None` e o gate falha fechado quando há destino.
     """
 
     def __init__(self, oauth: OAuthClient, repo: YouTubeChannelRepository, secrets: SecretStore, *, clock=_utc_now):
         self.oauth, self.repo, self.secrets, self.clock = oauth, repo, secrets, clock
 
-    def execute(self, project_id: str) -> str:
+    def _channel_id(self, project_id: str) -> str | None:
+        channel = self.repo.get(project_id)
+        return channel.channel_id if channel is not None else None
+
+    def execute(self, project_id: str) -> AccessToken:
         p_id = check_id(project_id)
         scope = youtube_scope(p_id)
         now = self.clock()
@@ -214,7 +222,7 @@ class EnsureAccessToken:
         expiry = _parse_iso(_safe(lambda: self.secrets.get(scope, TOKEN_EXPIRES_AT)))
         refresh = _safe(lambda: self.secrets.get(scope, REFRESH_TOKEN))
         if access and (expiry is None or expiry > now + timedelta(seconds=120)):
-            return access
+            return AccessToken(access, self._channel_id(p_id))
         if not refresh:
             raise ChannelNotConnected("the channel has no refresh token; run the OAuth consent flow")
         try:
@@ -229,7 +237,7 @@ class EnsureAccessToken:
         _safe(lambda: self.secrets.set(scope, REFRESH_TOKEN, refreshed))
         _safe(lambda: self.secrets.set(scope, TOKEN_EXPIRES_AT, _iso(tokens.expires_at)))
         _safe(lambda: self.secrets.set(scope, OAUTH_SCOPES, " ".join(tokens.scopes)))
-        return tokens.access_token
+        return AccessToken(tokens.access_token, self._channel_id(p_id))
 
 
 class RevokeConsent:

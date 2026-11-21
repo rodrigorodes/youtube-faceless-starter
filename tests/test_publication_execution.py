@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.application.publication_execution import PublicationResult, RunPublication  # noqa: E402
-from app.studio.application.ports import UploadOutcome, UploadResult  # noqa: E402
+from app.studio.application.ports import AccessToken, UploadOutcome, UploadResult  # noqa: E402
 from app.studio.domain.contracts import (  # noqa: E402
     Approval, Asset, AssetKind, Publication, PublicationStatus, Scene, Script, SourceSnapshot, Video,
     VideoFormat, VideoStatus,
@@ -177,15 +177,16 @@ class Uploads:
 
 
 class Tokens:
-    def __init__(self, error=None):
+    def __init__(self, error=None, channel_id=None):
         self.error = error
+        self.channel_id = channel_id
         self.calls = 0
 
     def execute(self, project_id):
         self.calls += 1
         if self.error:
             raise self.error
-        return "ya29.SYNTHETIC_access"
+        return AccessToken("ya29.SYNTHETIC_access", self.channel_id)
 
 
 def use(tmp_path, *, videos=None, intents=None, approvals=None, pubs=None, uploads=None, tokens=None, retry=None,

@@ -30,6 +30,7 @@ from ..domain.youtube_oauth import OAuthError, OAuthReconnectRequired, OAuthTran
 from .youtube_oauth import ChannelNotConnected
 from .editorial import StateConflict
 from .ports import (
+    AccessToken,
     ApprovalRepository,
     AssetRepository,
     PublicationIntentRepository,
@@ -64,16 +65,20 @@ class PublicationRun:
 
 
 class TokenProvider:
-    """Porta mínima: devolve um access token válido para o canal do projeto."""
+    """Porta mínima: devolve um access token válido **e o canal a que ele pertence** (YT-03).
 
-    def execute(self, project_id: str) -> str:  # pragma: no cover - interface
+    Devolver a identidade junto do token é o que permite ao gate de publicação comparar o canal
+    real do token com o destino esperado. O token cru, sozinho, não prova canal.
+    """
+
+    def execute(self, project_id: str) -> AccessToken:  # pragma: no cover - interface
         raise NotImplementedError
 
 
 class MissingTokenProvider:
     """Sem app OAuth configurado: falha fechado e explica, nunca inventa credencial."""
 
-    def execute(self, project_id: str) -> str:
+    def execute(self, project_id: str) -> AccessToken:
         raise ChannelNotConnected("the Google OAuth app is not configured; set the client secret file")
 
 
@@ -87,7 +92,7 @@ class FallbackTokenProvider:
     def __init__(self, primary: TokenProvider, fallback: TokenProvider):
         self.primary, self.fallback = primary, fallback
 
-    def execute(self, project_id: str) -> str:
+    def execute(self, project_id: str) -> AccessToken:
         try:
             return self.primary.execute(project_id)
         except ChannelNotConnected:
@@ -192,7 +197,7 @@ class RunPublication:
         except OAuthError as exc:
             return self._blocked(pub, f"the YouTube channel credentials are unusable ({exc})")
         try:
-            result = self.uploads.upload(request, access_token)
+            result = self.uploads.upload(request, access_token.token)
         except Exception as exc:  # adaptador quebrado não pode derrubar o worker nem marcar sucesso
             return self._retry(pub, f"the uploader failed ({type(exc).__name__})", FailureClass.TRANSIENT)
         return self._settle(pub, result)
@@ -264,7 +269,7 @@ class ReconcilePublication:
             return PublicationRun(PublicationResult.RECONCILE, publication=pub, detail="could not obtain a token to reconcile")
         request = UploadRequest(idempotency_key="reconcile", file_path=Path("."), file_size=0,
                                 content_type="video/mp4", youtube_body={}, upload_uri=pub.upload_uri, offset=0)
-        result = self.uploads.reconcile(request, access_token)
+        result = self.uploads.reconcile(request, access_token.token)
         if result.outcome is UploadOutcome.UPLOADED and result.youtube_video_id:
             saved = self.pubs.mark_uploaded(pub.id, result.youtube_video_id)
             return PublicationRun(PublicationResult.UPLOADED, publication=saved, youtube_video_id=result.youtube_video_id)

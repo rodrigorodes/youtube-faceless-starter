@@ -567,6 +567,21 @@ class OAuthClient(Protocol):
 
 
 @dataclass(frozen=True)
+class AccessToken:
+    """Access token pronto para uso + o canal do YouTube a que ele pertence (YT-03).
+
+    O **valor** do token não aparece em `repr` (nunca entra em log). O que autoriza a publicação é
+    a **identidade** (`youtube_channel_id`), não o token: o gate compara este canal com o destino
+    configurado do canal do estúdio. `youtube_channel_id=None` significa "o provedor não sabe a
+    que canal o token pertence" (ex.: fallback de ambiente sem `channels.list`) — e o gate de
+    publicação falha fechado nesse caso quando há destino configurado.
+    """
+
+    token: str = field(repr=False)
+    youtube_channel_id: str | None = None
+
+
+@dataclass(frozen=True)
 class PublicationIntentRecord:
     """Linha de `publication_intents` lida do banco (evidência imutável de F8-02)."""
 

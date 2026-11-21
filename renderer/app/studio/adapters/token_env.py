@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..application.ports import OAuthClient
+from ..application.ports import AccessToken, OAuthClient
 from ..domain.youtube_oauth import OAuthReconnectRequired
 
 
@@ -33,5 +33,9 @@ class EnvRefreshTokenProvider:
                     return token
         raise OAuthReconnectRequired(f"{self.variable} is not set in the token environment file")
 
-    def execute(self, project_id: str) -> str:
-        return self.oauth.refresh(self._token()).access_token
+    def execute(self, project_id: str) -> AccessToken:
+        """Devolve o access token de ambiente e **nenhum** canal: o refresh token do arquivo não
+        passou por uma conferência de identidade (YT-03). Com destino configurado, o gate de
+        publicação falha fechado em vez de presumir o canal.
+        """
+        return AccessToken(self.oauth.refresh(self._token()).access_token)
