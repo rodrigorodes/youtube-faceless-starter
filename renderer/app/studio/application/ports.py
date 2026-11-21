@@ -8,7 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from ..domain.asset_resolver import AssetDescriptor
 from ..domain.render import Cue
+from ..domain.render_plan import AssetReference
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
@@ -137,6 +139,19 @@ class AssetRepository(Protocol):
 class AssetStore(Protocol):
     def put(self, cache_key: str, data: bytes, aspect: str) -> str:
         """Valida e grava a imagem; devolve o caminho relativo à raiz de storage."""
+
+
+class AssetResolver(Protocol):
+    """RP-019: resolve um ``AssetReference`` do manifesto em um ``AssetDescriptor``.
+
+    Recebe a entrada do manifesto (URI, versão, ``content_sha256`` e licença) e devolve
+    a visão resolvida — disponibilidade comprovada, hash do **conteúdo** conferido e
+    metadado técnico (codec, resolução, duração) — validada por
+    ``domain.asset_resolver``. O resolver concreto (toca disco/rede) mora em
+    ``adapters/``; o núcleo de render não importa mídia (RP-022 é política pura).
+    """
+
+    def resolve(self, reference: AssetReference) -> AssetDescriptor: ...
 
 
 class ProductionLock(Protocol):
