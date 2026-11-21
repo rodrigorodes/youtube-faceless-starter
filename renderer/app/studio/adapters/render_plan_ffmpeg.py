@@ -44,7 +44,7 @@ from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
-from ..domain.render_plan_builder import StoryboardScene, build_render_plan
+from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardScene, build_render_plan
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 # Identidade do canal por chave + versão (R4). O RenderSpec do RunRender não carrega o
@@ -515,7 +515,11 @@ class PlanFfmpegRenderer:
         if music.silent:  # `music=False` mantém o grafo de mixagem com a trilha muda (C2)
             _write_silence(path, seconds)
         else:
-            rich.synth_music(seconds, path, bpm=int(music.params.get("bpm", 122)))
+            # bpm/seed vêm do plano (canônico em DEFAULT_MUSIC_PARAMS); o fallback é o mesmo objeto
+            params = music.params
+            rich.synth_music(seconds, path,
+                             bpm=int(params.get("bpm", DEFAULT_MUSIC_PARAMS["bpm"])),
+                             seed=int(params.get("seed", DEFAULT_MUSIC_PARAMS["seed"])))
 
     @staticmethod
     def _publish(source: Path, out_path: Path) -> Path:
