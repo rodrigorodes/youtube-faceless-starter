@@ -300,3 +300,24 @@ Confirma R1: a fundação hospeda o multi-shot no contrato; o produtor de beats 
 `beat_plan`/`evaluate_qa`/`production_run` já fechados, sem reescrever a fatia B e sem
 derrubar o renderer legado. Fatias **1 e 2** podem começar em paralelo com A/C/G1; o restante
 **depois** que essas fecharem.
+
+---
+
+## 14. Emenda — decisão do usuário (2026-11-21): remover o legado
+
+O usuário **revogou** a decisão §5.6 e §11-R2 ("manter os dois caminhos lado a lado, legado como
+default"). Nova diretriz: **manter só o caminho baseado em plano** e **remover o renderer legado**.
+
+Consequência para a fatia 6 (RP-05), com a salvaguarda que permanece:
+
+1. **Paridade medida antes de apagar.** O caminho novo tem de reproduzir, no mínimo: Ken Burns
+   (modo explícito por shot), selo, aviso de imagem sintética (`disclosure`), legenda queimada por
+   trecho, ducking, `loudnorm -16`, fades, 1080×1920 (short) e 1920×1080 (long), a 25 fps. Aceite
+   por `evaluate_qa` (§11-R6) — não por hash byte-a-byte nem SSIM.
+2. **Só então** remover `adapters/render_ffmpeg.py` e o que ficar comprovadamente morto, e
+   eliminar a flag e o dispatch dual do `RunRender` (o caminho novo passa a ser o único).
+3. **O que não puder ser replicado NÃO é removido** — fica e é reportado. Perder funcionalidade em
+   silêncio é o que esta emenda proíbe.
+
+Nota: a rota `/videos` (`rich.py`, §13-C3) segue **fora do escopo** — a remoção é do renderer do
+caminho `RenderSpec`, não da rota legada do painel.
