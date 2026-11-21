@@ -1,3 +1,4 @@
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -408,24 +409,43 @@ def test_preview_does_not_offer_revision_when_render_file_is_missing(tmp_path):
 
 
 def test_preview_page_renders_sidebar_navigation(tmp_path):
+    """A prévia usa a casca compartilhada — não uma cópia própria da navegação nem da paleta."""
     from app.studio.api.preview import render_preview
     v = Videos(S.AWAITING_APPROVAL, qa_report(True))
     preview = GetPreview(v, Scripts(), Assets(), Jobs(), Snaps(), Approvals(v), Pubs(), Files(tmp_path)).execute(V)
     html_doc, _ = render_preview(preview)
-    assert '<aside class="sidebar">' in html_doc
+
+    # Estrutura da casca compartilhada (`api.panel.render_sidebar`).
+    assert '<aside class="sidebar" aria-label="Barra lateral">' in html_doc
     assert '<div class="app-layout">' in html_doc
     assert '<main class="main-content">' in html_doc
-    assert 'href="/studio/panel"' in html_doc
-    assert 'href="/studio/panel#trending-section"' in html_doc
-    assert 'href="/studio/panel#videos-section"' in html_doc
-    assert 'href="/studio/panel#new-video-section"' in html_doc
+    assert "Faceless Studio V2" in html_doc and "YouTube Automation" in html_doc
+
+    # Navegação renderizada: mesmos itens das outras telas do painel.
+    nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html_doc, re.S)
+    assert nav is not None, "prévia sem a navegação principal da casca"
+    labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Equipe", "Configurações"):
+        assert expected in labels, f"prévia: '{expected}' fora da casca"
+    assert 'href="/studio/panel#trending-section"' in nav.group(1)
+    assert 'href="/studio/panel#videos-section"' in nav.group(1)
     assert 'href="/docs"' in html_doc
     assert 'href="http://localhost:5678"' in html_doc
-    assert "TETO MENSAL" in html_doc or "Teto Mensal" in html_doc
+
+    # A prévia é a página do vídeo: "Vídeos" é o único item ativo.
+    assert html_doc.count('aria-current="page"') == 1
+    videos_item = next(li for li in re.findall(r"<li>(.*?)</li>", nav.group(1), re.S) if "Vídeos" in li)
+    assert 'aria-current="page"' in videos_item
+
+    # Conteúdo da página intacto.
     assert "Painel / Prévia do Vídeo" in html_doc
     assert "Voltar ao Painel" in html_doc
-    assert "--bg: #0f0f0f" in html_doc
-    assert "--surface: #181818" in html_doc
+
+    # A casca antiga e a paleta duplicada saíram desta página.
+    for stale in ("FACELESS STUDIO", "Pipeline de Vídeos", "Temas em Alta", "+ Novo Vídeo",
+                  "--bg: #0f0f0f", "--surface: #181818"):
+        assert stale not in html_doc, f"prévia ainda traz o template antigo: {stale!r}"
+    assert "--bg-canvas: #101827" in html_doc  # paleta única da casca
 
 
 

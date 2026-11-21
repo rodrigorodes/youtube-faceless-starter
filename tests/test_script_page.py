@@ -162,6 +162,29 @@ def test_roteiro_escapes_xss_in_chapter_title(env):
     assert "innerHTML" not in r.text
 
 
+def test_roteiro_page_uses_the_shared_shell(env):
+    """A tela de Roteiro entra pela casca aprovada, não por uma <aside> própria.
+
+    Antes ela hardcodava a barra lateral (marca + nav reduzida). Agora usa
+    `api.panel.render_sidebar`, a mesma casca de todas as telas.
+    """
+    video = seed_video(env)
+    r = env["client"].get(f"/studio/videos/{video.id}/roteiro", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert '<aside class="sidebar" aria-label="Barra lateral">' in r.text
+    assert "Faceless Studio V2" in r.text and "YouTube Automation" in r.text
+
+    nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', r.text, re.S)
+    assert nav is not None, "roteiro sem a navegação principal da casca"
+    labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Equipe"):
+        assert expected in labels, f"roteiro: '{expected}' fora da casca"
+
+    assert r.text.count('aria-current="page"') == 1
+    videos_item = next(li for li in re.findall(r"<li>(.*?)</li>", nav.group(1), re.S) if "Vídeos" in li)
+    assert 'aria-current="page"' in videos_item
+
+
 def test_roteiro_page_preserves_csp(env):
     video = seed_video(env)
     r = env["client"].get(f"/studio/videos/{video.id}/roteiro", headers=AUTH_HEADER)

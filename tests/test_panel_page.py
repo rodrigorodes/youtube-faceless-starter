@@ -512,8 +512,8 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
 
 
 def test_panel_uses_dark_mockup_palette_and_preview_stays_dark(client_env):
-    # Paleta do painel trocada pelos tokens aprovados do mockup (G1); a prévia
-    # continua com o tema anterior porque não faz parte desta fatia.
+    # Paleta única (tokens aprovados do mockup, G1) para o painel e para a prévia:
+    # a casca compartilhada é a fonte de verdade do CSS.
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
@@ -525,11 +525,15 @@ def test_panel_uses_dark_mockup_palette_and_preview_stays_dark(client_env):
     assert "#0b111e" not in r.text  # no navy blue tint
     assert "#0b0f17" not in r.text
 
-    from app.studio.api.preview import CSS as PREVIEW_CSS
-    assert "--bg: #0f0f0f" in PREVIEW_CSS
-    assert "--surface: #181818" in PREVIEW_CSS
-    assert "#0b111e" not in PREVIEW_CSS
-    assert "#0b0f17" not in PREVIEW_CSS
+    # A prévia não tem paleta própria: usa a mesma casca escura do painel.
+    import app.studio.api.preview as preview
+    assert not hasattr(preview, "CSS"), "a prévia não deve manter CSS/paleta próprios"
+    v = client_env["videos"].create_video(client_env["project_id"], "Preview Palette Video", VideoFormat.short)
+    preview_page = client.get(f"/studio/videos/{v.id}/preview", headers=AUTH_HEADER).text
+    assert "--bg-canvas: #101827" in preview_page
+    assert "--surface: #131b2d" in preview_page
+    assert "--bg: #0f0f0f" not in preview_page
+    assert "--surface: #181818" not in preview_page
 
 
 def test_panel_has_project_selector_and_create_project_modal(client_env):
@@ -608,18 +612,29 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
 
     r = client.get(f"/studio/videos/{v.id}/preview", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert '<aside class="sidebar">' in r.text
+    assert '<aside class="sidebar" aria-label="Barra lateral">' in r.text
     assert '<div class="app-layout">' in r.text
     assert '<main class="main-content">' in r.text
-    assert 'href="/studio/panel"' in r.text
-    assert 'href="/studio/panel#trending-section"' in r.text
+    assert "Faceless Studio V2" in r.text and "YouTube Automation" in r.text
+
+    # A navegação renderizada na prévia é a mesma casca das outras telas do painel.
+    items = _nav_items(r.text)
+    labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
+    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Equipe", "Configurações"):
+        assert any(expected in label for label in labels), expected
+    active = [item for item in items if 'aria-current="page"' in item]
+    assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
     assert 'href="/studio/panel#videos-section"' in r.text
-    assert 'href="/studio/panel#new-video-section"' in r.text
     assert 'href="/docs"' in r.text
     assert 'href="http://localhost:5678"' in r.text
-    assert "TETO MENSAL" in r.text or "Teto Mensal" in r.text
+
+    # Conteúdo da prévia intacto.
     assert "Painel / Prévia do Vídeo" in r.text
     assert "Voltar ao Painel" in r.text
+
+    # O template antigo (marca, navegação e CTA) não pode voltar.
+    for stale in ("FACELESS STUDIO", "Pipeline de Vídeos", "Temas em Alta", "+ Novo Vídeo"):
+        assert stale not in r.text, stale
 
 
 def test_panel_trends_has_compact_expansion_toggle(client_env):
