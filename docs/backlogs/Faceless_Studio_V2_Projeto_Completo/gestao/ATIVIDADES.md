@@ -55,6 +55,7 @@ para `RUNNING` e **ninguém religa o motor**. Ver abaixo o achado completo.
 | ID | Atividade | Depende de |
 | --- | --- | --- |
 | **PROD-03** | **Recuperação de runs em voo no boot** (hoje o `lifespan` do app não varre nada): um run `RUNNING` após queda/reinício fica órfão e só se recupera pela ação manual do PROD-02. Sem varredor, nenhuma produção sobrevive a um deploy. | PROD-02 |
+| **PROD-04** | **"Criar vídeo da tendência" perde o link do YouTube**: pré-preencher a URL da fonte com o vídeo base resolvido pelo `topic_key` (sem migração — o vínculo já existe). Achado 3 abaixo. | IA-01 (mesma tela e arquivo: `panel.py`) |
 
 ## Achado do dono (2) — 2026-11-21: o gate humano travava toda produção
 
@@ -75,6 +76,40 @@ primeiro gate — e o "Tentar novamente" da PROD-01 tinha o mesmo defeito.
 100 caracteres), com URL `https://www.youtube.com/watch?v=nTJ5Z9gZsZU`. Ou seja: o roteiro foi gerado
 **sem base factual** — é o dono colar o texto real da fonte. Registrado porque o fact-check seguinte
 tende a reprovar.
+
+## Achado do dono (3) — 2026-11-21: "criar vídeo da tendência" não leva o link do YouTube
+
+Relato: *"ao criar video da trend nao carrega o link do video do youtube URL da fonte * vem vazio"*.
+
+**Diagnóstico (verificado; o elo foi provado com dados reais).** O tema do vídeo do dono é
+`GTA VI: DIA 3 ZERANDO  🔴 CORINGA AO VIVO` e existe a trend correspondente
+(`trend_topics.id = 35db5b7c…`), cujo `evidence` traz
+`https://youtube.com/watch?v=nTJ5Z9gZsZU` — **exatamente a URL que o dono digitou à mão** na fonte. Ou
+seja: o dado já estava no estúdio e não chegou à tela. Três lacunas independentes:
+
+1. **A URL é descartada no botão.** `panel.py:1966` — o botão "✨ Criar Vídeo deste Tema" carrega
+   **só** `data-topic`; a URL do vídeo (`TrendCard.video_url`, vinda de `evidence[].url`, já renderizada
+   como "▶️ Assistir no YouTube") **não** é passada.
+2. **Não existe onde guardar.** `VideoIn` (`routes.py:151`) é `project_id/topic/format` e
+   `studio.videos` **não tem** coluna de origem (cols reais: `id, project_id, topic, format, status,
+   title, description, tags, privacy, qa_report, schema_version, created_at, updated_at, style_id`).
+3. **O campo nunca é preenchido.** `#source-url` (`panel.py:3101`) é renderizado **sempre vazio** — é um
+   formulário de "adicionar fonte", nada conhece a procedência.
+
+**O vínculo já existe e dispensa migração:** o cartão da tendência conta os vídeos por
+`topic_key` (`application/panel.py:324`, `grouped_videos[r.topic_key]`), e a normalização do tema do
+vídeo **casa exatamente** com a da trend (`topic_key(...) == "gta vi: dia 3 zerando 🔴 coringa ao vivo"`,
+conferido rodando a função do domínio). Então a URL do vídeo base é **resolvível** a partir do tema.
+
+**Correção proposta (fatia PROD-04, depende da IA-01 — mesma tela/arquivo):** resolver a URL do vídeo
+base pelo `topic_key` (porta dedicada no repositório de tendências, resolução na aplicação pura) e
+**pré-preencher** `#source-url`, mostrando "vídeo base" como no desenho aprovado. **Não** criar fonte
+automaticamente: com `text=None` a busca seria recusada pela allowlist de nicho, e fonte sem texto não é
+evidência.
+
+**Limitação honesta:** se o dono **editar** o tema ao criar, o `topic_key` deixa de casar e a URL não se
+resolve. Gravar a procedência (id da trend no vídeo) resolveria isso, mas exige migração — registrado
+como opção, não incluído no escopo.
 
 ## Bloqueadas
 
