@@ -39,15 +39,17 @@ Sem push/merge remoto (bloqueado pelo harness).
 
 ## Em execução (paralelo)
 
-**VS-06 (em execução):** voz com **precedência única** — decisão do dono, **Opção A**:
-estilo > projeto > default, com `PIPER_VOICE` rebaixado a fallback de deployment/teste. Resolve a
-"duas verdades" (o que sintetiza vs. o que o ledger/cache registram). Postgres dedicado próprio.
+**PROD-01 (em execução):** fechar o ciclo de produção pela UI — o form do Início passa a **iniciar** a
+produção, a página do vídeo ganha **Fontes** (URL + texto) e os controles **Iniciar produção** /
+**Tentar novamente** (retry). Diagnóstico com prova: o vídeo do dono ficou preso em `IDEA` porque o
+form do Início só criava (nunca chamava `/production-runs`) e o stage `SCRIPT` exige fontes
+(`SourceRefused: no sources with checkable claims`), que a UI não tinha como adicionar.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| — | (vazio) | — |
+| **IA-01** | Início, Produção e Tendências como **páginas separadas** (hoje são âncoras de uma página só) — seguir `produto/prototipo.html` e `JORNADA-E-TELAS.md` | PROD-01 (mesmo arquivo: `panel.py`) |
 
 ## Bloqueadas
 
