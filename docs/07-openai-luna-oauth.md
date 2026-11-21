@@ -30,10 +30,11 @@ Garantias do bridge:
 No `.env`:
 
 ```
-AI_PROVIDER=opencode
+STUDIO_TEXT=opencode:openai/gpt-6-luna
 OPENCODE_BRIDGE_TOKEN=<token aleatório, 16+ caracteres>
 OPENCODE_MODEL=openai/gpt-6-luna
 ```
+`STUDIO_TEXT` é o provider de texto padrão do Studio (o config do projeto sobrescreve); `OPENCODE_MODEL` escolhe o modelo do bridge. Veja [04-variaveis-de-ambiente](04-variaveis-de-ambiente.md).
 Gerar o token: macOS `openssl rand -hex 24`; Windows (PowerShell) `-join ((1..24) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })` ou a função `New-Secret 24` do guia do Windows.
 Variantes de raciocínio: `OPENCODE_MODEL=openai/gpt-6-luna#low` (também `medium`, `high`...). Evite as variantes `-fast` no teste.
 
@@ -44,7 +45,7 @@ Variantes de raciocínio: `OPENCODE_MODEL=openai/gpt-6-luna#low` (também `mediu
    - Windows: `py scripts\opencode-bridge.py`
 
    Saída esperada: `opencode-bridge em http://127.0.0.1:8787 (modelo openai/gpt-6-luna)`.
-2. **Terminal 2**: `docker compose up -d --build` e então `bash scripts/test-create.sh` (Windows: `.\scripts\test-create.ps1`).
+2. **Terminal 2**: `docker compose up -d --build`. Crie os vídeos pelo painel do Studio em <http://localhost:8000/studio/panel>.
 3. Para parar: `Ctrl+C` no terminal do bridge.
 
 O container alcança o host por `host.docker.internal` (Docker Desktop no Mac e no Windows; no Linux o compose já inclui `extra_hosts: host-gateway`). Se mudar a porta do bridge, ajuste `OPENCODE_BRIDGE_PORT` **e** `OPENCODE_BRIDGE_URL`.
@@ -53,21 +54,21 @@ O container alcança o host por `host.docker.internal` (Docker Desktop no Mac e 
 
 | Resposta do renderer | Causa |
 |----------------------|-------|
-| `500 AI_PROVIDER=opencode requires OPENCODE_BRIDGE_TOKEN` | Token ausente no `.env` do renderer |
+| `422 opencode text provider requires OPENCODE_BRIDGE_TOKEN` | Token ausente no `.env` do renderer |
 | `502 OpenCode bridge failed: ConnectError` | Bridge não está rodando, ou porta/URL errada |
 | `502 ... HTTPStatusError (HTTP 401)` | Token do renderer diferente do token do bridge |
 | `502 ... HTTPStatusError (HTTP 429)` | Já há uma geração em andamento |
 | `502 ... HTTPStatusError (HTTP 502/504)` | O OpenCode falhou ou expirou: veja se `opencode` está logado e com cota de uso |
 | `502 ... ValueError` / `JSONDecodeError` | O modelo não devolveu exatamente 4 strings em JSON |
 
-Pelo n8n, essas falhas aparecem como HTTP 200 com corpo vazio ([01](01-como-o-workflow-executa.md)). Chame `POST :8000/videos` direto para ver o erro real.
+No painel do Studio, a falha do provider aparece no próprio erro da chamada (ex.: `502` do bridge). Não há mais o `200` vazio do fluxo antigo pelo n8n.
 
 ## Limites e cuidados
 
 - O uso consome a **cota da sua assinatura**, e os termos dela se aplicam. Uso pessoal e de teste, sem automação em volume.
 - O bridge depende do endpoint **experimental** `/api/experimental/generate/text` do OpenCode v2 (testado na 2.3.x). Pode mudar.
 - É uma ponte de **teste local**: não a exponha na rede nem a rode em servidor.
-- Windows não foi executado (veja [05](05-validacao-realizada.md)).
+- Windows não foi executado.
 
 ## Validado
 

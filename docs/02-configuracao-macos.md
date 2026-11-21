@@ -27,7 +27,7 @@ sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/; s
 ```
 > No macOS o `sed -i` exige o `''` depois do `-i`. Não imprima nem compartilhe o `.env`.
 
-Opcional: preencha `GEMINI_API_KEY` para o roteiro vir do Gemini. Veja [04-variaveis-de-ambiente](04-variaveis-de-ambiente.md).
+O roteiro é gerado pelo provider de texto do Studio (`STUDIO_TEXT`); com `opencode`, deixe o bridge do OpenCode rodando. Veja [04-variaveis-de-ambiente](04-variaveis-de-ambiente.md) e [07-openai-luna-oauth](07-openai-luna-oauth.md).
 
 ## 3. Subir
 
@@ -37,26 +37,17 @@ docker compose ps
 ```
 O primeiro build baixa imagens e pacotes (alguns minutos). Esperado: `postgres` *healthy*, `n8n` e `renderer` *running*.
 
-Teste rápido do renderer (sem n8n):
+Teste rápido do renderer:
 ```bash
 curl -fsS http://localhost:8000/health
-bash scripts/test-create.sh
 ```
-O retorno traz `video_url`. Abra a URL no navegador ou veja o arquivo em `storage/output/`.
+O fluxo antigo de criação por `POST /videos` foi removido (a rota responde **410 Gone**). Crie e gerencie vídeos pelo painel do Studio em <http://localhost:8000/studio/panel> (veja [18-painel](18-painel.md)).
 
-## 4. Configurar o n8n
+## 4. Configurar o n8n (opcional)
 
 1. Abra <http://localhost:5678> e crie a conta de proprietário (local).
-2. **Import from File** → `workflows/01-create-short.json`.
-3. Para testar: clique em **Listen for test event** no nó Webhook e, em outro terminal:
-   ```bash
-   curl -X POST 'http://localhost:5678/webhook-test/faceless-create' \
-     -H 'Content-Type: application/json' \
-     -d '{"topic":"Como será a IA em 2030?","duration_seconds":20,"style":"documentary"}'
-   ```
-4. Para usar `/webhook/faceless-create`, ative o workflow (toggle *Active*).
-
-Como o fluxo funciona por dentro: [01-como-o-workflow-executa](01-como-o-workflow-executa.md).
+2. O fluxo de criação não depende mais do n8n: crie os vídeos pelo painel do Studio em <http://localhost:8000/studio/panel>.
+3. Os workflows seguros de publicação, analytics e tendências (`workflows/03-publish-approved.json`, `04-analytics-daily.json`, `05-trends-daily.json`) podem ser importados com a credencial `studio_worker`; veja [17-studio-auth](17-studio-auth.md).
 
 ## 5. Parar, reiniciar, limpar
 
