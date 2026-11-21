@@ -184,13 +184,15 @@ def _connected():
 
 def test_ensure_access_token_uses_a_valid_token_without_refreshing():
     secrets, channels, oauth, ensure, _ = _connected()
-    assert ensure.execute(PID) == ACCESS and oauth.refresh_calls == []
+    access = ensure.execute(PID)
+    assert access.token == ACCESS and access.youtube_channel_id == "UC_synthetic"  # canal do token (YT-03)
+    assert oauth.refresh_calls == []
 
 
 def test_ensure_access_token_refreshes_an_expired_token_and_preserves_the_refresh_token():
     secrets, channels, oauth, ensure, _ = _connected()
     secrets.set(f"youtube:{PID}", "token_expires_at", (NOW - timedelta(minutes=1)).isoformat())
-    assert ensure.execute(PID) == ACCESS + ".new"
+    assert ensure.execute(PID).token == ACCESS + ".new"
     assert oauth.refresh_calls == [REFRESH]
     assert secrets.get(f"youtube:{PID}", REFRESH_TOKEN) == REFRESH  # a resposta não trouxe novo refresh
     assert secrets.get(f"youtube:{PID}", "token_expires_at") == (NOW + timedelta(seconds=1800)).isoformat()

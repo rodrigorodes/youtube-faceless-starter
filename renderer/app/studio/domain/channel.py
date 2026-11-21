@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 
 from .ids import check_id
 from .youtube_channel import OAuthStatus
@@ -250,3 +251,64 @@ def resolve_publication_authorization(
         if authorization.status is OAuthStatus.CONNECTED:
             return authorization
     return None
+
+
+class PublicationAuthorizationDecision(str, Enum):
+    """Decisão do gate de identidade antes de publicar (YT-03)."""
+
+    ALLOW = "ALLOW"
+    BLOCK = "BLOCK"
+
+
+@dataclass(frozen=True)
+class PublicationAuthorizationVerdict:
+    """Veredito do gate de identidade: a publicação pode prosseguir e, se sim, por qual autorização."""
+
+    decision: PublicationAuthorizationDecision
+    reason: str = ""
+    authorization: ChannelAuthorization | None = None
+
+    @property
+    def allowed(self) -> bool:
+        return self.decision is PublicationAuthorizationDecision.ALLOW
+
+
+def verify_publication_authorization(
+    channel: ChannelProfile,
+    authorizations: Iterable[ChannelAuthorization],
+    *,
+    token_channel_id: str | None,
+) -> PublicationAuthorizationVerdict:
+    """O upload pode acontecer? Puro, sem I/O (YT-03).
+
+    Regra obrigatória (§3 do desenho): **antes de publicar**, a autorização tem de resolver para o
+    ``youtubeChannelId`` esperado. A verificação é sobre a **identidade do canal** — nunca sobre os
+    valores dos tokens (dois tokens isolados não provam restrição a um canal).
+
+    - Canal **sem destino** (``youtube_channel_id is None``): ``ALLOW`` — preserva o comportamento
+      de hoje (caminho antigo por projeto; nenhum canal tem destino no banco).
+    - Canal **com destino**: exige uma autorização ``CONNECTED`` que case com o destino
+      (``resolve_publication_authorization``) **e** que o token usado pertença ao mesmo canal. Sem
+      autorização vigente, com token de outro canal ou com canal do token **desconhecido**, bloqueia:
+      na dúvida sobre a identidade, não se publica (falha fechada).
+    """
+    target = channel.youtube_channel_id
+    if target is None:
+        return PublicationAuthorizationVerdict(
+            PublicationAuthorizationDecision.ALLOW,
+            "the channel has no YouTube target; the legacy per-project path is preserved")
+    authorization = resolve_publication_authorization(channel, authorizations)
+    if authorization is None:
+        return PublicationAuthorizationVerdict(
+            PublicationAuthorizationDecision.BLOCK,
+            f"no connected authorization for the expected YouTube channel {target}")
+    if token_channel_id != target:
+        arrived = token_channel_id or "an unknown channel"
+        return PublicationAuthorizationVerdict(
+            PublicationAuthorizationDecision.BLOCK,
+            f"the access token belongs to {arrived}, not the expected YouTube channel {target}",
+            authorization)
+    return PublicationAuthorizationVerdict(
+        PublicationAuthorizationDecision.ALLOW,
+        f"the authorization resolves to the expected YouTube channel {target}",
+        authorization)

@@ -16,6 +16,7 @@ from app.studio.domain.channel import (  # noqa: E402
     MAX_PILLARS,
     clean_pillars,
     resolve_publication_authorization,
+    verify_publication_authorization,
 )
 from app.studio.domain.ids import InvalidId  # noqa: E402
 from app.studio.domain.youtube_channel import OAuthStatus  # noqa: E402
@@ -186,3 +187,40 @@ def test_resolver_ignores_authorizations_for_other_channels():
     chan = profile(youtube_channel_id="UCabc123")
     other = _authorization("UCoutro")
     assert resolve_publication_authorization(chan, [other]) is None
+
+
+# --------------------------------- verificação de identidade antes de publicar (YT-03)
+
+
+def test_verification_allows_when_the_channel_has_no_youtube_target():
+    # Estado de hoje (0 canais com destino): a publicação segue pelo caminho antigo, sem bloqueio.
+    assert verify_publication_authorization(profile(), [], token_channel_id="UCqualquer").allowed
+    assert verify_publication_authorization(profile(), [], token_channel_id=None).allowed
+
+
+def test_verification_allows_when_the_token_belongs_to_the_resolved_channel():
+    chan = profile(youtube_channel_id="UCabc123")
+    ok = _authorization("UCabc123")
+    verdict = verify_publication_authorization(chan, [ok], token_channel_id="UCabc123")
+    assert verdict.allowed and verdict.authorization is ok
+
+
+def test_verification_blocks_a_token_from_another_channel():
+    chan = profile(youtube_channel_id="UCabc123")
+    verdict = verify_publication_authorization(chan, [_authorization("UCabc123")], token_channel_id="UCoutro")
+    assert not verdict.allowed
+    assert "UCoutro" in verdict.reason and "UCabc123" in verdict.reason  # motivo nomeia os dois canais
+
+
+def test_verification_fails_closed_when_the_token_channel_is_unknown():
+    chan = profile(youtube_channel_id="UCabc123")
+    verdict = verify_publication_authorization(chan, [_authorization("UCabc123")], token_channel_id=None)
+    assert not verdict.allowed and "unknown" in verdict.reason
+
+
+def test_verification_blocks_a_target_without_a_connected_authorization():
+    chan = profile(youtube_channel_id="UCabc123")
+    verdict = verify_publication_authorization(chan, [], token_channel_id="UCabc123")
+    assert not verdict.allowed and "UCabc123" in verdict.reason
+    revoked = _authorization("UCabc123", OAuthStatus.REVOKED)
+    assert not verify_publication_authorization(chan, [revoked], token_channel_id="UCabc123").allowed
