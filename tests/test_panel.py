@@ -850,7 +850,8 @@ def test_panel_uses_dark_mockup_palette_tokens_and_visible_focus():
     assert "color-scheme: dark" in root
     assert "accent-color: var(--accent);" in root
     assert "scrollbar-color: var(--border) var(--bg-app);" in root
-    assert "prefers-color-scheme" not in CSS
+    # UX-03: o :root base segue escuro; o claro só entra por override (SO ou escolha explícita).
+    assert "prefers-color-scheme: light" in CSS and ':root[data-theme="light"]' in CSS
     assert ":focus-visible" in CSS
     assert "outline: 2px solid var(--info)" in CSS
 

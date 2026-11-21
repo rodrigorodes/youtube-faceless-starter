@@ -182,3 +182,55 @@ def test_contract_catches_a_focusable_unavailable_nav_item():
 def test_contract_catches_an_open_advanced_section():
     with pytest.raises(AssertionError, match="aberta por padrão"):
         assert_ux_contract(_BASE + "<details open><summary>d</summary></details>", page="probe")
+
+
+# ---------------------------------------------------------------- UX-03: tema claro
+
+
+def _hex_to_rgb(value):
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def _luminance(value):
+    def lin(c):
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (lin(c) for c in _hex_to_rgb(value))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a, b):
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_light_theme_text_pairs_meet_wcag_aa():
+    """Cada par texto/fundo do tema claro tem contraste >= 4,5:1 (medido, não suposto)."""
+    from app.studio.api.panel import LIGHT_TOKENS as t
+
+    backgrounds = ("bg-app", "bg-canvas", "surface", "surface-raised")
+    for fg in ("text", "text-muted", "text-dim", "accent", "success", "info", "warn", "danger"):
+        for bg in backgrounds:
+            assert _contrast(t[fg], t[bg]) >= 4.5, (fg, bg, _contrast(t[fg], t[bg]))
+    for fg, bg in (("accent-contrast", "accent"), ("accent-contrast", "accent-strong"),
+                   ("text", "accent-soft"), ("success", "success-surface"),
+                   ("info", "info-surface"), ("warn", "warn-surface"), ("danger", "danger-surface")):
+        assert _contrast(t[fg], t[bg]) >= 4.5, (fg, bg, _contrast(t[fg], t[bg]))
+
+
+def test_theme_css_follows_os_preference_and_explicit_choice():
+    html = _render_panel_html()
+    css = re.search(r"<style[^>]*>(.*?)</style>", html, re.S).group(1)
+    assert '<meta name="color-scheme" content="dark light">' in html
+    assert '@media (prefers-color-scheme: light)' in css
+    assert ':root[data-theme="light"]' in css
+    assert ':root:not([data-theme="dark"])' in css  # a escolha explícita escura vence o SO
+    assert '@media (forced-colors: active)' in css
+
+
+def test_theme_toggle_is_hidden_without_js_and_uses_no_inline_handlers():
+    html = _render_panel_html()
+    button = re.search(r'<button[^>]*id="theme-toggle"[^>]*>', html).group(0)
+    assert " hidden" in button  # sem JS não existe controle morto
+    assert "onclick" not in html.lower()
+    assert re.search(r'<script nonce="[^"]+">[^<]*studio-theme', html)

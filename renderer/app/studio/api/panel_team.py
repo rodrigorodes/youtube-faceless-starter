@@ -453,14 +453,14 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Equipe</title>
   <style nonce="{nonce}">{shell.CSS}{TEAM_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#equipe-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="equipe", base_href="/studio/panel", side_card_html=_side_card(month))}
+    {shell.render_sidebar(active="equipe", base_href="/studio/panel", side_card_html=_side_card(month), nonce=nonce)}
     <main class="main-content" id="equipe-main">
       <div class="card">
         <div class="spread">

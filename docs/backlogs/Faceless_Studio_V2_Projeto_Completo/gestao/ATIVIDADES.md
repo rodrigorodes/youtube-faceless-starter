@@ -444,3 +444,21 @@ prova do Postgres descartável). Conferência visual do HTML renderizado no Chro
 
 Pendente (fatias próprias): **UX-02** Configurações como área (`/configuracoes/<seção>`),
 **UX-03** tema claro, **UX-04** Tendências no visual novo.
+
+## UX-02 e UX-03 — Configurações como área e tema claro (2026-11-21)
+
+- **UX-02**: `GET /studio/configuracoes` (→ Canais) e `/studio/configuracoes/{canais|estilos|conexoes|equipe}`
+  respondem 302 para a tela real; seção desconhecida → 404; exige a mesma autenticação do painel.
+  Decisão: o menu manteve o grupo "Configuração" com 4 itens (a IA aprovada) em vez de um item único,
+  porque os testes de Canais/Conexões/Estilos dependem desse formato; as telas continuam sendo a rota
+  canônica (os formulários publicam nelas). Testes de banco desatualizados ("Gestão", "Produção",
+  "Analytics") foram alinhados à navegação do UX-01.
+- **UX-03**: paleta clara (`LIGHT_TOKENS`, contraste >= 4,5:1 **medido** em teste) via
+  `prefers-color-scheme` e escolha explícita `data-theme` (a escolha escura vence o SO);
+  `meta color-scheme="dark light"` em todas as telas; `forced-colors`; alternador na barra lateral
+  que nasce `hidden` (sem JS não há controle morto), persiste em `localStorage` (`studio-theme`), usa
+  `<script nonce>` e nenhum handler inline. Fundos escuros fixos (sidebar, hero, tabs, estados vazios,
+  tiles) ganharam override claro. Conferido no Chrome headless nos dois temas.
+- Ambiente local: `fastapi` do pyenv alinhado a `renderer/requirements.txt` (0.115.12) — o antigo
+  (0.104) quebrava o `TestClient`. 21 falhas pré-existentes (idênticas com/sem estas mudanças:
+  snapshot de contratos por versão local do pydantic, render_reuse etc.).

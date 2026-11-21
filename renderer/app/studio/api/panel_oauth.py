@@ -38,14 +38,14 @@ def _page_shell(nonce: str, body: str) -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Consentimento do YouTube</title>
   <style nonce="{nonce}">{shell.CSS}{CALLBACK_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#oauth-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=_side_card())}
+    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=_side_card(), nonce=nonce)}
     <main class="main-content" id="oauth-main">
       <div class="card">
         <div class="spread">

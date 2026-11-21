@@ -191,8 +191,26 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
     """
 
 
+_THEME_JS = """(function(){var K='studio-theme',r=document.documentElement,b=document.getElementById('theme-toggle');
+if(!b){return;}
+function sys(){return window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}
+function cur(){return r.getAttribute('data-theme')||sys();}
+function paint(){var t=cur()==='light'?'Usar tema escuro':'Usar tema claro';b.textContent=t;b.setAttribute('aria-label',t);}
+try{var s=localStorage.getItem(K);if(s==='light'||s==='dark'){r.setAttribute('data-theme',s);}}catch(e){}
+b.hidden=false;paint();
+b.addEventListener('click',function(){var n=cur()==='light'?'dark':'light';r.setAttribute('data-theme',n);try{localStorage.setItem(K,n);}catch(e){}paint();});})();"""
+
+
+def theme_toggle_html(nonce: str | None) -> str:
+    """Alternador de tema. Nasce `hidden`: sem JS (ou sem nonce) não existe controle morto."""
+    if not nonce:
+        return ""
+    return ('<button type="button" class="btn btn-compact theme-toggle" id="theme-toggle" hidden>'
+            f'Usar tema claro</button><script nonce="{nonce}">{_THEME_JS}</script>')
+
+
 def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_html: str,
-                   channels_href: str | None = "/studio/canais") -> str:
+                   channels_href: str | None = "/studio/canais", nonce: str | None = None) -> str:
     """Casca lateral completa (marca + navegação em grupos + card de orçamento + aviso)."""
     return f"""<aside class="sidebar" aria-label="Barra lateral">
       <div class="brand">
@@ -204,6 +222,7 @@ def render_sidebar(*, active: str = "inicio", base_href: str = "", side_card_htm
       </div>
       {build_sidebar_nav(active=active, base_href=base_href, channels_href=channels_href)}
       {side_card_html}
+      {theme_toggle_html(nonce)}
       <p class="mock-note">Dados reais do Studio. Sem conteúdo ilustrativo.</p>
     </aside>"""
 
@@ -1787,6 +1806,66 @@ h1 {
 """
 
 
+# ---------- UX-03: tema claro ----------
+# Paleta clara com pares de contraste medidos (>= 4,5:1; ver tests/test_ux_contract.py). O tema
+# escuro continua o padrão histórico; o claro entra pelo SO (prefers-color-scheme) ou pela escolha
+# explícita (`data-theme`), e a escolha explícita escura vence o SO.
+LIGHT_TOKENS = {
+    "bg-app": "#f3f4fa", "bg-canvas": "#f8f9fd", "surface": "#ffffff", "surface-raised": "#eef0f8",
+    "border": "#cfd5e6", "border-soft": "#e3e7f2",
+    "text": "#161b2e", "text-muted": "#444e6a", "text-dim": "#566082",
+    "accent": "#6d28d9", "accent-strong": "#5b21b6", "accent-soft": "#e9e0fb", "accent-contrast": "#ffffff",
+    "success": "#0d7a4d", "success-surface": "#dcf5e8", "success-contrast": "#ffffff",
+    "info": "#0369a1", "info-surface": "#dbeefb",
+    "warn": "#8a5a00", "warn-surface": "#fcf0d2",
+    "danger": "#b4232f", "danger-surface": "#fde4e7", "gold": "#8a5a00",
+    "border-hover": "#b4bdd6", "input-bg": "#ffffff",
+}
+_LIGHT_EXTRAS = {
+    "primary-focus": "rgba(109, 40, 217, 0.28)", "ok-bg": "rgba(13, 122, 77, 0.12)",
+    "warn-bg": "rgba(138, 90, 0, 0.12)", "bad-bg": "rgba(180, 35, 47, 0.10)",
+    "info-bg": "rgba(3, 105, 161, 0.10)",
+}
+
+
+def _light_rules(root: str) -> str:
+    tokens = "\n".join(f"  --{k}: {v};" for k, v in {**LIGHT_TOKENS, **_LIGHT_EXTRAS}.items())
+    return f"""{root} {{
+  color-scheme: light;
+{tokens}
+}}
+{root} body {{ background-image: radial-gradient(1200px 620px at 72% -8%, #e4dcfa 0%, transparent 62%); }}
+{root} .nav-item.active, {root} .nav-item[aria-current] {{
+  background: var(--accent-soft); box-shadow: inset 0 0 0 1px #c9b8f3;
+}}
+{root} .accent-word {{ background: linear-gradient(92deg, var(--accent-strong), var(--accent) 55%, var(--gold)); -webkit-background-clip: text; background-clip: text; }}
+{root} .sidebar {{ background: linear-gradient(180deg, #ffffff, var(--bg-app)); }}
+{root} .hero {{ background: linear-gradient(135deg, #efe8fd 0%, #f6f4fd 55%, #ffffff 100%); }}
+{root} .tab {{ background: var(--surface-raised); }}
+{root} .tab[aria-selected="true"] {{ background: var(--accent-strong); color: var(--accent-contrast); }}
+{root} .steps li, {root} .card.empty, {root} details.advanced, {root} .tile.na,
+{root} .conn-channel, {root} .field input[disabled], {root} .field select[disabled] {{ background: var(--surface-raised); }}
+{root} .s-act {{ border-color: #e3c37a; }}
+{root} .s-fail {{ border-color: #eaa5ad; }}
+"""
+
+
+THEME_CSS = (
+    _light_rules(':root[data-theme="light"]')
+    + "@media (prefers-color-scheme: light) {\n"
+    + _light_rules(':root:not([data-theme="dark"])')
+    + "}\n"
+    + """
+.theme-toggle { width: 100%; margin-top: 0.75rem; }
+@media (forced-colors: active) {
+  .nav-item.active, .nav-item[aria-current] { outline: 2px solid Highlight; }
+  .btn, .theme-toggle { border: 1px solid ButtonText; }
+}
+"""
+)
+CSS = CSS + THEME_CSS
+
+
 def _headers(nonce: str) -> dict[str, str]:
     return {
         "Content-Security-Policy": (
@@ -2641,14 +2720,14 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>{_PANEL_TITLES[mode]}</title>
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="{_PANEL_SKIP_HREFS[mode]}">Ir para o conteúdo</a>
   <div class="app-layout">
-    {render_sidebar(active=mode, side_card_html=side_card_html, channels_href="/studio/canais")}
+    {render_sidebar(active=mode, side_card_html=side_card_html, channels_href="/studio/canais", nonce=nonce)}
 
     <main class="main-content">
       <header class="topbar">
@@ -3589,7 +3668,7 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
 <body>
   <a class="skip-link" href="#detalhe-heading">Ir para o conteúdo</a>
   <div class="app-layout">
-    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html)}
+    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html, nonce=nonce)}
 
     <main class="main-content">
       <header class="topbar">
@@ -3994,14 +4073,14 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Roteiro</title>
   <style nonce="{nonce}">{CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#roteiro-heading">Ir para o conteúdo</a>
   <div class="app-layout">
-    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html)}
+    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html, nonce=nonce)}
 
     <main class="main-content">
       <header class="topbar">

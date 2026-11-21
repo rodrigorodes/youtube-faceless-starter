@@ -378,14 +378,14 @@ def render_analytics(view: AnalyticsDashboardView,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Desempenho</title>
   <style nonce="{nonce}">{shell.CSS}{ANALYTICS_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#analytics-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="analytics", base_href="/studio/panel", side_card_html=side_card)}
+    {shell.render_sidebar(active="analytics", base_href="/studio/panel", side_card_html=side_card, nonce=nonce)}
     <main class="main-content" id="analytics-main">
       <div class="card">
         <div class="spread">

@@ -478,14 +478,14 @@ def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Estilos</title>
   <style nonce="{nonce}">{shell.CSS}{STYLES_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#estilos-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="estilos", base_href="/studio/panel", side_card_html=_sidebar_card(view), channels_href="/studio/canais")}
+    {shell.render_sidebar(active="estilos", base_href="/studio/panel", side_card_html=_sidebar_card(view), channels_href="/studio/canais", nonce=nonce)}
     <main class="main-content" id="estilos-main">
       <div class="card">
         <div class="spread">

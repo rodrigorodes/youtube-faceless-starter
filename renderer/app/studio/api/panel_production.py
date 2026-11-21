@@ -385,14 +385,14 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Novo vídeo</title>
   <style nonce="{nonce}">{shell.CSS}{PRODUCTION_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#novo-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=side_card, channels_href="/studio/canais")}
+    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=side_card, channels_href="/studio/canais", nonce=nonce)}
     <main class="main-content" id="novo-main">
       <div class="card">
         <div class="spread">
@@ -659,14 +659,14 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Execução</title>
   <style nonce="{nonce}">{shell.CSS}{PRODUCTION_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#exec-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=shell.budget_side_card(view.month), channels_href="/studio/canais")}
+    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=shell.budget_side_card(view.month), channels_href="/studio/canais", nonce=nonce)}
     <main class="main-content" id="exec-main">
       <div class="card">
         <div class="spread">

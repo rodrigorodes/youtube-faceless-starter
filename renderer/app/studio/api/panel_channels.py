@@ -714,14 +714,14 @@ def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Canais</title>
   <style nonce="{nonce}">{shell.CSS}{CHANNELS_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#canais-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=side_card_html)}
+    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=side_card_html, nonce=nonce)}
     <main class="main-content" id="canais-main">
       <div class="card">
         <div class="spread">
@@ -784,14 +784,14 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Faceless Studio — Canais</title>
   <style nonce="{nonce}">{shell.CSS}{CHANNELS_CSS}</style>
 </head>
 <body>
   <a class="skip-link" href="#canais-main">Ir para o conteúdo</a>
   <div class="app-layout">
-    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=_sidebar_card(view))}
+    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=_sidebar_card(view), nonce=nonce)}
     <main class="main-content" id="canais-main">
       <div class="card">
         <div class="spread">
