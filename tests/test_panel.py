@@ -422,7 +422,8 @@ def test_build_panel_extracts_video_metadata_and_region():
 )
 def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, expected_region, label):
     from app.studio.adapters.youtube_trends import fetch_popular_trends
-    from app.studio.api.panel import render_panel
+    # IA-01: as tendências passaram a viver na tela Tendências (/studio/panel/tendencias).
+    from app.studio.api.panel import render_tendencias
     from app.studio.application.ports import TrendRecord
 
     response = MagicMock()
@@ -445,7 +446,7 @@ def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, 
     view = panel.execute(days=7)
     assert view.trends[0].region == expected_region
     assert f"regionCode={code}" in urlopen.call_args[0][0].full_url
-    html, _ = render_panel(view)
+    html, _ = render_tendencias(view)
     assert f'data-region-code="{expected_region}"' in html
     assert f'data-region="{expected_region}"' in html
     assert f"{label} (1)" in html
@@ -454,7 +455,8 @@ def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, 
 
 
 def test_legacy_global_label_is_displayed_as_unknown_not_global():
-    from app.studio.api.panel import render_panel
+    # IA-01: as tendências passaram a viver na tela Tendências (/studio/panel/tendencias).
+    from app.studio.api.panel import render_tendencias
     from app.studio.application.ports import TrendRecord
 
     now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
@@ -467,7 +469,7 @@ def test_legacy_global_label_is_displayed_as_unknown_not_global():
     view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
                       trends=FakeTrendRepo([record], now)).execute(days=7)
     assert view.trends[0].region == "UNKNOWN"
-    html, _ = render_panel(view)
+    html, _ = render_tendencias(view)
     assert 'data-region-code="UNKNOWN"' in html
     assert 'data-region="UNKNOWN"' in html
     assert "Origem desconhecida (1)" in html
@@ -477,7 +479,8 @@ def test_legacy_global_label_is_displayed_as_unknown_not_global():
 
 
 def test_panel_header_lists_distinct_sources_for_mixed_trends():
-    from app.studio.api.panel import render_panel
+    # IA-01: o cabeçalho de fontes pertence à tela Tendências (/studio/panel/tendencias).
+    from app.studio.api.panel import render_tendencias
     from app.studio.application.ports import TrendRecord
 
     now = datetime(2026, 11, 20, tzinfo=timezone.utc)
@@ -496,7 +499,7 @@ def test_panel_header_lists_distinct_sources_for_mixed_trends():
     ]
     view = BuildPanel(FakePanelRepo(), 15.0, lambda: now,
                       trends=FakeTrendRepo(records, now)).execute(days=7)
-    html, _ = render_panel(view)
+    html, _ = render_tendencias(view)
     header = html.split('<div class="trends-source">', 1)[1].split("</div>", 1)[0]
     assert "Fontes (todas as tendências):" in header
     assert header.count("YouTube Brasil (Em Alta)") == 1
@@ -628,10 +631,12 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
     assert html.count('aria-current="page"') == 1
 
     for label, href in (
-        ("Início", "#inicio-section"),
-        ("Produção", "#producao-section"),
-        ("Tendências", "#trending-section"),
-        ("Vídeos", "#videos-section"),
+        # IA-01: Início, Produção e Tendências são rotas de servidor reais; "Vídeos" aponta para
+        # a rota real /studio/panel/videos (302 para o bloco #videos do Início) — não âncoras.
+        ("Início", "/studio/panel"),
+        ("Produção", "/studio/panel/producao"),
+        ("Tendências", "/studio/panel/tendencias"),
+        ("Vídeos", "/studio/panel/videos"),
         ("Canais", "/studio/canais"),
         ("Analytics", "/studio/panel/analytics"),
     ):
@@ -640,13 +645,17 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
 
 
 def test_render_panel_shell_nav_targets_exist_in_the_page():
-    """Todo item da casca aponta para âncora que existe na página — "Vídeos" não é link morto."""
+    """IA-01: "Vídeos" aponta para a rota real /studio/panel/videos (302 → `#videos` do Início).
+
+    A casca deixou de ter âncoras para Início/Produção/Tendências (viraram rotas de servidor); a
+    única âncora que o Início publica é `#videos`, e é ela que a rota de Vídeos resolve.
+    """
     html = _render_panel_html()
     items = _primary_nav(html)
 
     videos = next(item for item in items if "Vídeos" in _nav_text(item))
-    assert 'href="#videos-section"' in videos
-    assert 'id="videos-section"' in html
+    assert 'href="/studio/panel/videos"' in videos
+    assert 'id="videos"' in html
 
     for item in items:
         match = re.search(r'href="(#[^"]+)"', item)
@@ -674,8 +683,13 @@ def test_render_panel_has_one_h1_section_ids_and_no_invented_product_state():
 
     assert html.count("<h1") == 1
     assert 'lang="pt-BR"' in html
-    for section_id in ("inicio-section", "producao-section", "trending-section", "videos-section", "new-video-section"):
+    # IA-01: o Início publica só as suas seções. Produção (`producao-section`) e Tendências
+    # (`trending-section`) viraram telas separadas; aqui ficam os resumos e o bloco Vídeos.
+    for section_id in ("inicio-section", "inicio-producao-section", "precisa-section",
+                       "inicio-tendencias-section", "videos", "new-video-section"):
         assert f'id="{section_id}"' in html
+    assert 'id="producao-section"' not in html
+    assert 'id="trending-section"' not in html
 
     for forbidden in (
         "Implementado", "Plano Pro", "créditos/mês", "Gerando imagens", "62%",

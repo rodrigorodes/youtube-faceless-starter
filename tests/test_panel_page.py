@@ -197,7 +197,8 @@ def test_panel_page_renders_trending_topics_block(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: a lista de tendências vive na tela Tendências (/studio/panel/tendencias).
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "Temas em Alta" in r.text
     assert "ADE Lineup 2026 Revelado" in r.text
@@ -223,10 +224,15 @@ def test_panel_page_has_create_video_form_and_safe_script(client_env):
 
 def test_panel_page_trend_create_button_wires_to_form(client_env):
     client = client_env["client"]
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: o botão «Criar Vídeo deste Tema» vive na tela Tendências; o formulário para onde ele
+    # leva (com o tema pré-preenchido) vive no Início — o destino real é coberto em
+    # test_panel_ia01_trend_create_link_prefills_the_home_topic.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "btn-create-from-trend" in r.text or "new-video-topic" in r.text
     assert "btn-create-from-trend" in r.text
+    home = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert home.status_code == 200
+    assert 'id="create-video-form"' in home.text and 'id="topic"' in home.text
 
 
 def test_panel_page_renders_category_pills_and_management_modal(client_env):
@@ -257,7 +263,8 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: pílulas de filtro e gestão de pilares vivem na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
     # Pílulas de filtro
@@ -291,7 +298,8 @@ def test_panel_page_category_xss_safety(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: os pilares (e o rótulo da categoria) aparecem na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "<script>alert('cat')</script>" not in r.text
     assert "&lt;script&gt;alert(&#x27;cat&#x27;)&lt;/script&gt;" in r.text or "&lt;script&gt;alert('cat')&lt;/script&gt;" in r.text
@@ -301,7 +309,8 @@ def test_panel_page_category_xss_safety(client_env):
 
 def test_panel_page_empty_trends_still_shows_category_actions(client_env):
     client = client_env["client"]
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: as ações de coleta e pilares (mesmo sem tendências) ficam na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "Buscar Agora" in r.text
     assert "Gerenciar Categorias" in r.text
@@ -363,7 +372,8 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: os cartões de tendência vivem na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
     # Attributes on trend items
@@ -425,7 +435,8 @@ def test_panel_youtube_card_escapes_xss_in_video_metadata(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: metadados de tendência são renderizados na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "<script>alert(1)</script>" not in r.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r.text
@@ -478,7 +489,8 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: filtros de região/pilar, spinner e «Criar Vídeo deste Tema» ficam na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
     # 1. Pill Filters order & attributes
@@ -576,20 +588,23 @@ def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
     p_id = client_env["project_id"]
 
     v = videos.create_video(p_id, "Workflow Modern Cards Video", VideoFormat.short)
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
-    assert r.status_code == 200
+    # IA-01: o funil de produção vive na tela Produção (/studio/panel/producao)...
+    r_prod = client.get("/studio/panel/producao", headers=AUTH_HEADER)
+    assert r_prod.status_code == 200
 
     # Funnel cards with colored borders
-    assert "grid-summary" in r.text
-    assert "border-left: 4px solid var(--info)" in r.text or "border-left: 4px solid #38bdf8" in r.text
-    assert "border-left: 4px solid var(--warn)" in r.text or "border-left: 4px solid #fbbf24" in r.text
-    assert "border-left: 4px solid var(--ok)" in r.text or "border-left: 4px solid #4ade80" in r.text
-    assert "border-left: 4px solid var(--accent)" in r.text
-    assert "Jobs de render/áudio ativos" in r.text
-    assert "Exigem revisão humana" in r.text
-    assert "Concluídos / Publicados" in r.text or "CONCLUÍDOS / PUBLICADOS" in r.text
+    assert '<div class="grid-summary">' in r_prod.text
+    assert "border-left: 4px solid var(--info)" in r_prod.text or "border-left: 4px solid #38bdf8" in r_prod.text
+    assert "border-left: 4px solid var(--warn)" in r_prod.text or "border-left: 4px solid #fbbf24" in r_prod.text
+    assert "border-left: 4px solid var(--ok)" in r_prod.text or "border-left: 4px solid #4ade80" in r_prod.text
+    assert "border-left: 4px solid var(--accent)" in r_prod.text
+    assert "Jobs de render/áudio ativos" in r_prod.text
+    assert "Exigem revisão humana" in r_prod.text
+    assert "Concluídos / Publicados" in r_prod.text or "CONCLUÍDOS / PUBLICADOS" in r_prod.text
 
-    # Modern video cards
+    # ...e os cartões modernos de vídeo continuam no Início, no bloco Vídeos.
+    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    assert r.status_code == 200
     assert "video-sample-card" in r.text
     assert "video-thumb-sample" in r.text
     assert "Workflow Modern Cards Video" in r.text
@@ -624,7 +639,8 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
         assert any(expected in label for label in labels), expected
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
-    assert 'href="/studio/panel#videos-section"' in r.text
+    # IA-01: "Vídeos" aponta para a rota real (302 → bloco #videos do Início).
+    assert 'href="/studio/panel/videos"' in r.text
     assert 'href="/docs"' in r.text
     assert 'href="http://localhost:5678"' in r.text
 
@@ -661,7 +677,8 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
         )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: o comportamento de expansão compacta pertence à tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
     # Toggle button and expansion bar presence
@@ -700,7 +717,7 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
         )
     conn.commit()
 
-    r_few = client.get("/studio/panel", headers=AUTH_HEADER)
+    r_few = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r_few.status_code == 200
     assert 'id="btn-toggle-more-trends"' not in r_few.text
     assert 'class="trend-item trend-item-extra"' not in r_few.text
@@ -746,8 +763,9 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     assert 'href="/studio/panel/estilos"' in estilos
     assert not estilos.lstrip().startswith("<span ")
 
-    for label, href in (("Início", "#inicio-section"), ("Produção", "#producao-section"),
-                        ("Tendências", "#trending-section"), ("Vídeos", "#videos-section"),
+    # IA-01: Início/Produção/Tendências/Vídeos são rotas de servidor reais, não âncoras de uma página.
+    for label, href in (("Início", "/studio/panel"), ("Produção", "/studio/panel/producao"),
+                        ("Tendências", "/studio/panel/tendencias"), ("Vídeos", "/studio/panel/videos"),
                         ("Canais", "/studio/canais"),
                         ("Analytics", "/studio/panel/analytics")):
         item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
@@ -802,15 +820,23 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
 
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    for section_id in ("inicio-section", "producao-section", "trending-section", "videos-section", "new-video-section"):
+    # IA-01: o Início publica só as suas seções; Produção e Tendências viraram telas próprias.
+    for section_id in ("inicio-section", "inicio-producao-section", "precisa-section",
+                       "inicio-tendencias-section", "videos", "new-video-section"):
         assert f'id="{section_id}"' in r.text
+    assert 'id="producao-section"' not in r.text
+    assert 'id="trending-section"' not in r.text
     assert r.text.count("<h1") == 1
-    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas (8)</button>' in r.text
-    assert 'data-filter-type="region" data-region-code="BR" aria-pressed="false"' in r.text
-    assert "🇧🇷 Em Alta Brasil (8)" in r.text
-    assert "Ver Mais Tendências (+2)" in r.text
-    assert "trend-item-extra" in r.text
-    assert "Fontes (todas as tendências):" in r.text
+
+    # O contrato de filtro de tendências mudou de página: agora é da tela Tendências.
+    r_trend = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
+    assert r_trend.status_code == 200
+    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas (8)</button>' in r_trend.text
+    assert 'data-filter-type="region" data-region-code="BR" aria-pressed="false"' in r_trend.text
+    assert "🇧🇷 Em Alta Brasil (8)" in r_trend.text
+    assert "Ver Mais Tendências (+2)" in r_trend.text
+    assert "trend-item-extra" in r_trend.text
+    assert "Fontes (todas as tendências):" in r_trend.text
 
 
 def test_panel_shell_escapes_trend_topic_and_source(client_env):
@@ -833,7 +859,8 @@ def test_panel_shell_escapes_trend_topic_and_source(client_env):
     )
     conn.commit()
 
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
+    # IA-01: o tema e a origem da tendência aparecem (escapados) na tela Tendências.
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "<script>alert" not in r.text
     assert "&lt;script&gt;alert(&#x27;topic&#x27;)&lt;/script&gt;" in r.text
@@ -1093,3 +1120,108 @@ def test_video_detail_page_lists_registered_sources(client_env):
     assert r.status_code == 200
     assert "amsterdam-dance-event.nl/en/about" in r.text
     assert "caractere" in r.text
+
+
+# ---------- IA-01: Início, Produção e Tendências como telas separadas ----------
+
+
+def test_panel_ia01_each_route_renders_only_its_own_section(client_env):
+    """IA-01: três rotas de servidor reais; cada uma devolve **só** a sua tela."""
+    client = client_env["client"]
+    inicio = client.get("/studio/panel", headers=AUTH_HEADER)
+    producao = client.get("/studio/panel/producao", headers=AUTH_HEADER)
+    tendencias = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
+    for r in (inicio, producao, tendencias):
+        assert r.status_code == 200
+
+    # Cada tela tem a sua própria seção...
+    assert 'id="inicio-section"' in inicio.text
+    assert 'id="precisa-section"' in inicio.text
+    assert 'id="videos"' in inicio.text
+    assert 'id="producao-section"' in producao.text
+    assert 'id="trending-section"' in tendencias.text
+
+    # ...e o HTML completo de uma tela nunca aparece dentro da outra.
+    assert 'id="producao-section"' not in inicio.text
+    assert 'id="trending-section"' not in inicio.text
+    assert '<div class="grid-summary">' not in inicio.text
+    assert '<div class="card trends-card">' not in inicio.text
+    assert 'id="inicio-section"' not in producao.text
+    assert 'id="trending-section"' not in producao.text
+    assert '<div class="card trends-card">' not in producao.text
+    assert 'id="inicio-section"' not in tendencias.text
+    assert 'id="producao-section"' not in tendencias.text
+    assert '<div class="grid-summary">' not in tendencias.text
+
+    # Exatamente um aria-current="page" por página, no item certo da nav.
+    for r, label in ((inicio, "Início"), (producao, "Produção"), (tendencias, "Tendências")):
+        assert r.text.count('aria-current="page"') == 1
+        active = next(item for item in _nav_items(r.text) if 'aria-current="page"' in item)
+        assert label in re.sub(r"<[^>]+>", " ", active)
+
+
+def test_panel_ia01_videos_route_redirects_to_the_home_videos_block(client_env):
+    """IA-01: "Vídeos" não é tela própria — a rota real redireciona para o bloco #videos do Início."""
+    client = client_env["client"]
+    r = client.get("/studio/panel/videos", headers=AUTH_HEADER, follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/studio/panel#videos"
+    # A rota é privada como as demais telas do painel.
+    assert client.get("/studio/panel/videos", follow_redirects=False).status_code == 401
+
+
+def test_panel_ia01_producao_and_tendencias_are_isolated_from_the_home(client_env):
+    """O Início mostra resumo; o quadro completo de Produção/Tendências não vaza para ele."""
+    client = client_env["client"]
+    videos = client_env["videos"]
+    p_id = client_env["project_id"]
+    videos.create_video(p_id, "Vídeo para funil", VideoFormat.short)
+
+    inicio = client.get("/studio/panel", headers=AUTH_HEADER)
+    producao = client.get("/studio/panel/producao", headers=AUTH_HEADER)
+    assert inicio.status_code == 200 and producao.status_code == 200
+
+    # O funil completo (grid-summary + status por fase) fica só em Produção...
+    assert '<div class="grid-summary">' in producao.text
+    assert "Status por fase" in producao.text
+    assert '<div class="grid-summary">' not in inicio.text
+    # ...e o Início traz o resumo de produção, com link para a tela cheia.
+    assert 'href="/studio/panel/producao"' in inicio.text
+    assert "Ver Produção" in inicio.text
+
+
+def test_panel_ia01_trend_create_link_prefills_the_home_topic(client_env):
+    """O «Criar Vídeo deste Tema» (Tendências) leva o tema pré-preenchido para o Início."""
+    import html as html_module
+
+    client = client_env["client"]
+    conn = client_env["conn"]
+    p_id = client_env["project_id"]
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=7)
+    conn.execute(
+        """
+        INSERT INTO studio.trend_topics (
+            id, project_id, topic, topic_key, source_name, source_url,
+            observed_at, window_start, window_end, metric_name, metric_value, evidence
+        ) VALUES (%s, %s, %s, %s, 'YouTube Brasil (Em Alta)',
+                  'https://www.youtube.com/feed/trending', %s, %s, %s, 'views', 1000, '[]'::jsonb)
+        """,
+        (uuid.uuid4().hex, p_id, "Tema com Acento & Cia", "tema com acento", now, past, now),
+    )
+    conn.commit()
+
+    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    match = re.search(
+        r'class="btn btn-primary btn-create-from-trend"[^>]*href="([^"]+)"', r.text
+    )
+    assert match is not None, "botão «Criar Vídeo deste Tema» sem destino real"
+    href = html_module.unescape(match.group(1))
+    assert href.startswith("/studio/panel?topic=")
+    assert "project_id=" in href and "days=7" in href
+
+    # O Início trata o parâmetro: o tema chega pré-preenchido (e escapado) no formulário.
+    home = client.get(href, headers=AUTH_HEADER)
+    assert home.status_code == 200
+    assert 'value="Tema com Acento &amp; Cia"' in home.text

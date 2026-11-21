@@ -10,7 +10,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..application.config import ProviderNotFound
@@ -54,7 +54,7 @@ from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
-from .panel import render_panel, render_script, render_video
+from .panel import render_panel, render_producao, render_script, render_tendencias, render_video
 from .panel_channels import render_channels
 from .panel_styles import render_styles
 from .panel_connections import render_connections
@@ -1226,15 +1226,45 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         return run(get_detail)
 
     @router.get("/panel", response_class=HTMLResponse)
-    def panel_html(days: int = 7, project_id: str | None = None):
+    def panel_html(days: int = 7, project_id: str | None = None, topic: str = ""):
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             p_id = check_id(project_id) if project_id else None
             view = uc.panel.execute(days=days, project_id=p_id)
-            return render_panel(view)
+            # `topic` pré-preenche o tema (vindo de "Criar Vídeo deste Tema" na tela Tendências).
+            return render_panel(view, topic=(topic or "")[:300])
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
+
+    # IA-01: Início/Produção/Tendências são telas separadas (rotas reais), não âncoras de uma só.
+    @router.get("/panel/producao", response_class=HTMLResponse)
+    def panel_producao_html(days: int = 7, project_id: str | None = None):
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = check_id(project_id) if project_id else None
+            return render_producao(uc.panel.execute(days=days, project_id=p_id))
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/tendencias", response_class=HTMLResponse)
+    def panel_tendencias_html(days: int = 7, project_id: str | None = None):
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = check_id(project_id) if project_id else None
+            return render_tendencias(uc.panel.execute(days=days, project_id=p_id))
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/videos")
+    def panel_videos_redirect():
+        """IA-01: "Vídeos" não é tela própria — a lista vive no Início, no bloco `#videos`.
+
+        A rota existe para não haver link morto: 302 para o Início com o foco no bloco.
+        """
+        return RedirectResponse(url="/studio/panel#videos", status_code=302)
 
     @router.get("/panel/equipe", response_class=HTMLResponse)
     def panel_team_html(org_id: str | None = None):
