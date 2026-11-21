@@ -1,0 +1,52 @@
+{
+  "scene_seconds": 3.0,
+  "runs": 3,
+  "target": "render de um vídeo de 8 minutos em 1080p (§10 do pedido; alvo a medir, não promessa)",
+  "samples": [
+    {
+      "video_seconds": 3.8,
+      "render_seconds": 1.474,
+      "qa_passed": true
+    },
+    {
+      "video_seconds": 3.8,
+      "render_seconds": 1.546,
+      "qa_passed": true
+    },
+    {
+      "video_seconds": 3.8,
+      "render_seconds": 1.569,
+      "qa_passed": true
+    }
+  ],
+  "metrics": [
+    {
+      "name": "render_seconds_per_video_minute",
+      "unit": "s/min",
+      "label": "Real",
+      "value": 24.151088826137745,
+      "note": ""
+    },
+    {
+      "name": "failure_rate",
+      "unit": "fração",
+      "label": "Real",
+      "value": 0.0,
+      "note": ""
+    },
+    {
+      "name": "cost_per_video_minute",
+      "unit": "USD/min",
+      "label": "Estimado",
+      "value": null,
+      "note": "sem medição de custo de provedor neste benchmark"
+    },
+    {
+      "name": "cache_hit_rate",
+      "unit": "fração",
+      "label": "Estimado",
+      "value": null,
+      "note": "cache de render é RP-06; não medi no caminho de render"
+    }
+  ]
+}
