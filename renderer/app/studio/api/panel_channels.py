@@ -362,6 +362,80 @@ def _profile_card(view: ChannelsPageView) -> str:
     """
 
 
+def _style_options(view: ChannelsPageView, selected: str | None) -> str:
+    """Opções reais do seletor de Aparência: "padrão do estúdio" + os estilos da biblioteca."""
+    options = [
+        f'<option value=""{" selected" if selected is None else ""}>'
+        "Segue o padrão do estúdio (nenhum estilo)</option>"
+    ]
+    for style in view.styles:
+        chosen = " selected" if style.id == selected else ""
+        options.append(f'<option value="{e(style.id)}"{chosen}>{e(style.name)}</option>')
+    return "".join(options)
+
+
+def _appearance_card(view: ChannelsPageView) -> str:
+    """A aba Aparência: uma escolha (não um formulário). Sem estilo escolhido não é erro.
+
+    O seletor lê a biblioteca pelo caso de uso — a tela não consulta o banco. "Criar novo estilo"
+    leva à biblioteca compartilhada; nada de preview, cor ou percentual inventado.
+    """
+    profile = view.profile
+    selected = profile.style_id if profile else None
+    options = _style_options(view, selected)
+    create_link = '<a class="btn" href="/studio/panel/estilos">Criar novo estilo</a>'
+    if profile is not None:
+        intro = ("O canal segue um estilo da biblioteca; cada vídeo pode sobrepor. "
+                 "Sem estilo escolhido, o render usa o padrão do estúdio.")
+        control = f"""
+          <form id="appearance-form" data-profile-id="{e(profile.id)}"
+                data-profile-version="{profile.version}">
+            <div class="field">
+              <label for="canal-estilo">Segue o estilo</label>
+              <select class="input" id="canal-estilo" name="style_id" aria-describedby="canal-estilo-hint">
+                {options}
+              </select>
+              <span class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais: editar na biblioteca vale para todos que o usam.</span>
+            </div>
+            <div class="spread" style="margin-top:1rem">
+              <div class="pill-row">
+                <button class="btn btn-primary" type="submit" id="btn-salvar-aparencia">Salvar aparência</button>
+                {create_link}
+              </div>
+              <div id="appearance-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+            </div>
+          </form>
+        """
+    else:
+        intro = "Crie o perfil do canal para escolher um estilo; por ora ele segue o padrão do estúdio."
+        control = f"""
+          <div class="field">
+            <label for="canal-estilo">Segue o estilo</label>
+            <select class="input" id="canal-estilo" name="style_id" disabled
+                    aria-describedby="canal-estilo-hint">
+              {options}
+            </select>
+            <span class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais; a escolha fica disponível depois de criar o perfil.</span>
+          </div>
+          <div class="pill-row" style="margin-top:1rem">{create_link}</div>
+        """
+    count = len(view.styles)
+    library_note = ("Nenhum estilo na biblioteca ainda." if count == 0
+                    else f"{count} estilo(s) na biblioteca.")
+    return f"""
+      <div class="card" id="canal-aparencia">
+        <div class="spread">
+          <div>
+            <h2>Aparência</h2>
+            <p class="dim" style="margin:4px 0 0;font-size:12.5px">{e(intro)}</p>
+          </div>
+        </div>
+        <div style="margin-top:14px">{control}</div>
+        <p class="fine">{e(library_note)}</p>
+      </div>
+    """
+
+
 def _providers_card(view: ChannelsPageView) -> str:
     project = view.project
     assert project is not None
@@ -732,6 +806,7 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
       </div>
       {_channel_card(view)}
       {_profile_card(view)}
+      {_appearance_card(view)}
       {_providers_card(view)}
       {_budget_card(view)}
       {_youtube_card(view)}
@@ -831,6 +906,43 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           }}
         }} catch (error) {{
           if (feedback) feedback.textContent = 'Falha de rede ao salvar o perfil. Tente novamente.';
+          if (button) button.disabled = false;
+        }}
+      }});
+    }}
+
+    const appearanceForm = document.getElementById('appearance-form');
+    if (appearanceForm) {{
+      appearanceForm.addEventListener('submit', async (ev) => {{
+        ev.preventDefault();
+        const feedback = document.getElementById('appearance-feedback');
+        const button = document.getElementById('btn-salvar-aparencia');
+        const select = document.getElementById('canal-estilo');
+        const profileId = appearanceForm.getAttribute('data-profile-id') || '';
+        const version = Number(appearanceForm.getAttribute('data-profile-version') || '0');
+        const value = select ? select.value : '';
+        if (button) button.disabled = true;
+        if (feedback) feedback.textContent = 'Salvando aparência...';
+        try {{
+          const response = await fetch('/studio/channels/' + encodeURIComponent(profileId), {{
+            method: 'PATCH',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ expected_version: version, changes: {{ style_id: value || null }} }})
+          }});
+          const data = await response.json().catch(() => ({{}}));
+          if (response.ok) {{
+            if (feedback) feedback.textContent = 'Aparência salva. Atualizando...';
+            setTimeout(() => window.location.reload(), 500);
+          }} else if (response.status === 409) {{
+            if (feedback) feedback.textContent = 'Outra alteração venceu a corrida: recarregue e revise a versão atual.';
+            if (button) button.disabled = false;
+          }} else {{
+            if (feedback) feedback.textContent = 'Não foi possível salvar a aparência: '
+              + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
+            if (button) button.disabled = false;
+          }}
+        }} catch (error) {{
+          if (feedback) feedback.textContent = 'Falha de rede ao salvar a aparência. Tente novamente.';
           if (button) button.disabled = false;
         }}
       }});

@@ -226,6 +226,56 @@ def test_channels_shows_niche_as_read_only_and_does_not_fake_editable_field(env)
     assert 'id="nicho"' not in html
 
 
+# ------------------------------------------------------------------- aparência
+
+
+def _seed_style(env, name, params=None):
+    r = env["client"].post("/studio/styles", json={"name": name, "params": params or {}},
+                           headers=POST_HEADER)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_channel_appearance_selects_the_current_style(env):
+    style = _seed_style(env, "Documentário Cinemático")
+    _seed_profile(env, style_id=style["id"])
+
+    html = page(env).text
+    assert 'id="canal-estilo"' in html
+    assert 'for="canal-estilo"' in html
+    assert re.search(rf'<option value="{style["id"]}" selected>Documentário Cinemático</option>', html)
+    assert 'href="/studio/panel/estilos"' in html
+    assert "Criar novo estilo" in page_text(html)
+    assert_ux_contract(html, page="canais/aparencia")
+
+
+def test_channel_appearance_defaults_to_the_studio_default_without_a_style(env):
+    _seed_style(env, "Cinemático")
+    _seed_profile(env)
+
+    html = page(env).text
+    assert re.search(r'<option value="" selected>Segue o padrão do estúdio \(nenhum estilo\)</option>', html)
+    assert_ux_contract(html, page="canais/aparencia-sem-estilo")
+
+
+def test_channel_appearance_form_has_label_hint_and_live_feedback(env):
+    _seed_profile(env)
+    html = page(env).text
+    assert 'for="canal-estilo"' in html
+    assert 'aria-describedby="canal-estilo-hint"' in html
+    assert 'id="canal-estilo-hint"' in html
+    assert 'id="appearance-feedback"' in html
+    assert 'role="status"' in html and 'aria-live="polite"' in html
+    assert "<details open" not in html  # nada de avançado aberto por padrão
+    assert html.count("<h1") == 1
+
+
+def test_channel_appearance_without_profile_teaches_the_next_step(env):
+    visible = page_text(page(env).text)
+    assert "Crie o perfil do canal para escolher um estilo" in visible
+    assert "Criar novo estilo" in visible
+
+
 # -------------------------------------------------------------------- providers
 
 

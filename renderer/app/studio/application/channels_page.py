@@ -19,11 +19,13 @@ from ..domain.channel import ChannelProfile
 from ..domain.channel_budget import CostSummary
 from ..domain.contracts import Project
 from ..domain.provider import NoProviderAvailable, ProviderCard, ProviderKind, RoutingDecision
+from ..domain.visual_style import VisualStyle
 from .channel_budget import ChannelBudgetView, GetChannelBudget
 from .channels import GetChannelProfile
 from .errors import ProjectNotFound
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig
+from .styles import GetVisualStyle, ListVisualStyles
 from .youtube_channels import GetYouTubeChannel
 
 __all__ = ["ChannelsPageView", "BuildChannelsPage", "ProjectListPort"]
@@ -53,6 +55,8 @@ class ChannelsPageView:
     youtube: dict[str, object] | None = None
     public_config: dict[str, str] = field(default_factory=dict)
     providers_error: str | None = None
+    # VS-05b: os estilos reais disponíveis para o seletor de Aparência do canal (biblioteca ativa).
+    styles: tuple[VisualStyle, ...] = ()
     # O fluxo OAuth existe (F8) mas só pode ser iniciado se o servidor tiver o app do Google.
     # `oauth_available=False` desabilita o controle **com o motivo real**, nunca negando o fluxo.
     oauth_available: bool = False
@@ -72,7 +76,9 @@ class BuildChannelsPage:
                  providers: ProviderService, budget: GetChannelBudget,
                  youtube: GetYouTubeChannel, config: GetPublicProjectConfig, *,
                  oauth_available: bool = False,
-                 oauth_unavailable_reason: str | None = None):
+                 oauth_unavailable_reason: str | None = None,
+                 list_styles: ListVisualStyles | None = None,
+                 get_style: GetVisualStyle | None = None):
         self.project_list = project_list
         self.videos = videos
         self.get_profile = get_profile
@@ -84,6 +90,9 @@ class BuildChannelsPage:
         # Sem app OAuth montado, o botão não pode prometer um consentimento que daria 503.
         self.oauth_available = oauth_available
         self.oauth_unavailable_reason = oauth_unavailable_reason
+        # VS-05b: o seletor de Aparência lê a biblioteca pelo caso de uso — a tela nunca fala com o banco.
+        self.list_styles = list_styles
+        self.get_style = get_style
 
     def execute(self, project_id: str | None = None) -> ChannelsPageView:
         projects = tuple(self.project_list.projects())
@@ -115,6 +124,15 @@ class BuildChannelsPage:
             revoke_path = f"/studio/projects/{project.id}/youtube-oauth/revoke"
         else:
             oauth_reason = self.oauth_unavailable_reason or OAUTH_UNAVAILABLE_REASON
+        styles = tuple(self.list_styles.execute()) if self.list_styles is not None else ()
+        # Um canal pode apontar para um estilo fora da lista ativa (ex.: arquivado depois): a opção
+        # do seletor continua representável com o nome real, nunca "vira" nenhum sem avisar.
+        current_style_id = profile.style_id if profile is not None else None
+        if (current_style_id is not None and all(s.id != current_style_id for s in styles)
+                and self.get_style is not None):
+            extra = self.get_style.execute(current_style_id)
+            if extra is not None:
+                styles = styles + (extra,)
         return ChannelsPageView(
             projects=projects,
             project=project,
@@ -126,6 +144,7 @@ class BuildChannelsPage:
             youtube=self.youtube.execute(project.id),
             public_config=dict(self.config.execute(project.id)["config"]),
             providers_error=providers_error,
+            styles=styles,
             oauth_available=self.oauth_available,
             oauth_unavailable_reason=oauth_reason,
             oauth_authorize_path=authorize_path,
