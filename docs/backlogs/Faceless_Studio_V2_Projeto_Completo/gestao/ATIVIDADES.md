@@ -49,7 +49,7 @@ form do Início só criava (nunca chamava `/production-runs`) e o stage `SCRIPT`
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **IA-01** | Início, Produção e Tendências como **páginas separadas** (hoje são âncoras de uma página só) — seguir `produto/prototipo.html` e `JORNADA-E-TELAS.md` | PROD-01 (mesmo arquivo: `panel.py`) |
+| **IA-01** | Início, Produção e Tendências como **páginas separadas** (hoje são âncoras de uma página só) — seguir `produto/prototipo.html` e `JORNADA-E-TELAS.md` | PROD-01 (mesmo arquivo: `panel.py`) — desenho pronto em `gestao/IA-01-arquitetura-de-informacao.md` |
 
 ## Bloqueadas
 
