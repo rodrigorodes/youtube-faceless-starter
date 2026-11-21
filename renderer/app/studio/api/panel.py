@@ -1687,6 +1687,39 @@ body {
 .kv span:last-child { font-weight: 600; }
 .tag { margin-left: 0.35rem; color: var(--text-dim); font-size: 0.65rem; }
 details.advanced { background: #0e1524; }
+
+/* Utilitários genéricos das telas (ex.: prévia). Fonte única de verdade do design system. */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  margin-right: 0.35rem;
+}
+.ok { color: var(--ok); }
+.bad { color: var(--bad); }
+.hint { font-weight: 400; font-size: 0.78rem; opacity: 0.8; }
+.btn-danger {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.btn-danger:hover {
+  background: var(--danger-surface);
+  border-color: var(--bad);
+}
+video {
+  width: 100%;
+  max-height: 80vh;
+  background: #000;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
 """
 
 
@@ -3321,6 +3354,12 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
           {review_html}
         """
 
+    side_card_html = (
+        '<div class="side-card"><h2>Decisão de roteiro</h2>'
+        '<p>A aprovação fica presa a uma versão: editar o roteiro cria outra, e a versão aprovada '
+        'passa a constar como superada.</p></div>'
+    )
+
     html_content = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -3333,22 +3372,7 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
 <body>
   <a class="skip-link" href="#roteiro-heading">Ir para o conteúdo</a>
   <div class="app-layout">
-    <aside class="sidebar" aria-label="Barra lateral">
-      <div class="brand">
-        <div class="brand-icon" aria-hidden="true">FS</div>
-        <div>
-          <div class="brand-title">Faceless Studio V2</div>
-          <div class="brand-sub">YouTube Automation</div>
-        </div>
-      </div>
-      <nav class="nav" aria-label="Principal">
-        <p class="nav-label">Operação</p>
-        <ul class="nav-list">
-          <li><a class="nav-item" href="/studio/panel">Início</a></li>
-          <li><a class="nav-item" href="/studio/panel/videos/{e(view.video_id)}">Detalhe do vídeo</a></li>
-        </ul>
-      </nav>
-    </aside>
+    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html)}
 
     <main class="main-content">
       <header class="topbar">
