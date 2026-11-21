@@ -69,6 +69,7 @@ from .panel_production import (
     render_execution,
     render_new_video,
 )
+from .panel_new_video import render_new_video_v3
 from ..application.errors import VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
@@ -1750,7 +1751,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 pipeline=_wizard_pipeline(uc),
                 selected_project_id=check_id(project_id) if project_id else "",
             )
-            return render_new_video(view)
+            return render_new_video_v3(view)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
