@@ -310,3 +310,32 @@ def test_channel_api_refuses_a_channel_pointing_to_an_unknown_style(api):
     r = api["client"].post(f"/studio/projects/{other.id}/channels",
                            json={"name": "História", "style_id": "f" * 32}, headers=WORKER_HEADER)
     assert r.status_code == 422 and "style" in r.json()["detail"].lower()
+
+
+def test_channel_api_round_trips_the_youtube_target(api):
+    from app.studio.adapters.postgres.youtube_identity_repo import PostgresYouTubeChannelIdentityRepository
+    from app.studio.domain.youtube_identity import YouTubeChannelIdentity
+    PostgresYouTubeChannelIdentityRepository(api["connect"]).upsert(
+        YouTubeChannelIdentity(youtube_channel_id="UCabc123", title="História"))
+    p_id = api["project_id"]
+
+    created = api["client"].post(f"/studio/projects/{p_id}/channels",
+                                 json={"name": "História", "youtube_channel_id": "UCabc123"}, headers=WORKER_HEADER)
+    assert created.status_code == 201, created.text
+    assert created.json()["youtube_channel_id"] == "UCabc123"
+    got = api["client"].get(f"/studio/projects/{p_id}/channels", headers=WORKER_HEADER)
+    assert got.json()["youtube_channel_id"] == "UCabc123"
+
+    profile_id = created.json()["id"]
+    cleared = api["client"].patch(f"/studio/channels/{profile_id}",
+                                  json={"expected_version": 1, "changes": {"youtube_channel_id": None}},
+                                  headers=WORKER_HEADER)
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["youtube_channel_id"] is None
+
+
+def test_channel_api_refuses_a_channel_pointing_to_an_unknown_youtube_channel(api):
+    other = api["videos"].create_project("Outro", niche="Geral", language="pt-BR")
+    r = api["client"].post(f"/studio/projects/{other.id}/channels",
+                           json={"name": "História", "youtube_channel_id": "UCinexistente"}, headers=WORKER_HEADER)
+    assert r.status_code == 422 and "youtube" in r.json()["detail"].lower()

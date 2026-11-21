@@ -18,11 +18,12 @@ from ..application.budget import (BudgetDenied, CostConfirmationError, Idempoten
                                   OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation)
 from ..domain.channel import (ChannelDurationInvalid, ChannelFieldInvalid, ChannelLockTimeout, ChannelNameInvalid,
                               ChannelProjectNotFound, ChannelStyleNotFound, ChannelVersionConflict, ChannelVersionInvalid,
-                              DuplicateChannelProfile)
+                              ChannelYouTubeTargetNotFound, DuplicateChannelProfile)
 from ..domain.channel_budget import BudgetLimitInvalid
 from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailable, ProviderKind,
                                ProviderSpecInvalid)
 from ..domain.youtube_channel import YouTubeChannelInvalid
+from ..domain.youtube_identity import YouTubeChannelIdentityInvalid
 from ..application.analytics import DailyMetric
 from ..application.analytics_collection import (AnalyticsPillarNotFound, AnalyticsVideoNotFound,
                                                  CollectionRequest)
@@ -415,6 +416,7 @@ class ChannelProfileIn(BaseModel):
     thumbnail: str = Field(default="", max_length=2000)
     cta: str = Field(default="", max_length=500)
     style_id: str | None = None
+    youtube_channel_id: str | None = None
     archived: bool = False
 
 
@@ -439,6 +441,7 @@ class ChannelProfileOut(BaseModel):
     thumbnail: str
     cta: str
     style_id: str | None = None
+    youtube_channel_id: str | None = None
     version: int
     archived: bool
     created_at: datetime | None = None
@@ -571,6 +574,7 @@ def _channel_out(profile) -> dict:
             "target_duration_s": profile.target_duration_s, "visual_identity": profile.visual_identity,
             "voice": profile.voice, "audio": profile.audio, "thumbnail": profile.thumbnail, "cta": profile.cta,
             "style_id": profile.style_id,
+            "youtube_channel_id": profile.youtube_channel_id,
             "version": profile.version, "archived": profile.archived,
             "created_at": profile.created_at, "updated_at": profile.updated_at}
 
@@ -816,7 +820,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         except (DuplicateChannelProfile, ChannelVersionConflict, ChannelLockTimeout) as exc:
             raise HTTPException(409, str(exc)) from exc
         except (ChannelNameInvalid, ChannelFieldInvalid, ChannelDurationInvalid, ChannelVersionInvalid,
-                ChannelStyleNotFound) as exc:
+                ChannelStyleNotFound, ChannelYouTubeTargetNotFound, YouTubeChannelIdentityInvalid) as exc:
             raise HTTPException(422, str(exc)) from exc
         except ProviderSpecInvalid as exc:
             raise HTTPException(422, str(exc)) from exc

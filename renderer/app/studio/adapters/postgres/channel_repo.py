@@ -22,6 +22,7 @@ from ...domain.channel import (
     ChannelProjectNotFound,
     ChannelStyleNotFound,
     ChannelVersionConflict,
+    ChannelYouTubeTargetNotFound,
     DuplicateChannelProfile,
     UPDATABLE_FIELDS,
     validate_version,
@@ -31,7 +32,8 @@ from .editorial_repo import _Base
 from .repo import _translated
 
 _COLS = ("id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s, "
-         "visual_identity, voice, audio, thumbnail, cta, style_id, version, archived, created_at, updated_at")
+         "visual_identity, voice, audio, thumbnail, cta, style_id, youtube_channel_id, version, archived, "
+         "created_at, updated_at")
 
 
 def _profile(row: dict) -> ChannelProfile:
@@ -70,9 +72,13 @@ class PostgresChannelProfileRepository(_Base):
             except psycopg.errors.UniqueViolation as exc:
                 raise DuplicateChannelProfile(f"channel profile already exists for project '{p_id}'") from exc
             except psycopg.errors.ForeignKeyViolation as exc:
-                # A violação pode ser do projeto (canal órfão) ou do estilo (VS-02, canal→estilo):
-                # a mensagem tem de dizer qual, senão "projeto não existe" mente quando o problema é o estilo.
-                if "style_id" in (getattr(exc.diag, "constraint_name", "") or ""):
+                # A violação pode ser do projeto (canal órfão), do estilo (VS-02) ou do canal do
+                # YouTube (YT-02): a mensagem tem de dizer qual, senão "projeto não existe" mente.
+                constraint = getattr(exc.diag, "constraint_name", "") or ""
+                if "youtube_channel_id" in constraint:
+                    raise ChannelYouTubeTargetNotFound(
+                        f"youtube channel {profile.youtube_channel_id!r} does not exist") from exc
+                if "style_id" in constraint:
                     raise ChannelStyleNotFound(f"visual style {profile.style_id!r} does not exist") from exc
                 raise ChannelProjectNotFound(f"project '{p_id}' does not exist") from exc
 
@@ -122,16 +128,22 @@ class PostgresChannelProfileRepository(_Base):
                             f"""UPDATE studio.channel_profiles SET
                                 name = %s, strategy = %s, language = %s, audience = %s, pillars = %s, narrative = %s,
                                 target_duration_s = %s, visual_identity = %s, voice = %s, audio = %s, thumbnail = %s,
-                                cta = %s, style_id = %s, version = %s, archived = %s, updated_at = now()
+                                cta = %s, style_id = %s, youtube_channel_id = %s, version = %s, archived = %s,
+                                updated_at = now()
                                 WHERE id = %s RETURNING {_COLS}""",
                             (updated.name, updated.strategy, updated.language, updated.audience, list(updated.pillars),
                              updated.narrative, updated.target_duration_s, updated.visual_identity, updated.voice,
-                             updated.audio, updated.thumbnail, updated.cta, updated.style_id, updated.version, updated.archived, pid),
+                             updated.audio, updated.thumbnail, updated.cta, updated.style_id,
+                             updated.youtube_channel_id, updated.version, updated.archived, pid),
                         )
                         new_row = cur.fetchone()
                     except psycopg.errors.ForeignKeyViolation as exc:
-                        # VS-02: apontar para um estilo inexistente é recusado com o motivo certo
-                        # (não como conflito de versão nem erro genérico).
+                        # VS-02/YT-02: apontar para um estilo ou canal do YouTube inexistente é
+                        # recusado com o motivo certo (não como conflito de versão nem erro genérico).
+                        constraint = getattr(exc.diag, "constraint_name", "") or ""
+                        if "youtube_channel_id" in constraint:
+                            raise ChannelYouTubeTargetNotFound(
+                                f"youtube channel {updated.youtube_channel_id!r} does not exist") from exc
                         raise ChannelStyleNotFound(f"visual style {updated.style_id!r} does not exist") from exc
                     self._insert_revision(cur, _profile(new_row))
                     return _profile(new_row)
@@ -143,12 +155,13 @@ class PostgresChannelProfileRepository(_Base):
         cur.execute(
             """INSERT INTO studio.channel_profiles (
                 id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s,
-                visual_identity, voice, audio, thumbnail, cta, style_id, version, archived
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                visual_identity, voice, audio, thumbnail, cta, style_id, youtube_channel_id, version, archived
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING """ + _COLS,
             (profile.id, profile.project_id, profile.name, profile.strategy, profile.language, profile.audience,
              list(profile.pillars), profile.narrative, profile.target_duration_s, profile.visual_identity, profile.voice,
-             profile.audio, profile.thumbnail, profile.cta, profile.style_id, profile.version, profile.archived),
+             profile.audio, profile.thumbnail, profile.cta, profile.style_id, profile.youtube_channel_id,
+             profile.version, profile.archived),
         )
         return cur.fetchone()
 

@@ -315,3 +315,42 @@ def test_channel_pointing_to_an_unknown_style_is_refused(chan_env):
     profile = chan_env["repo"].create(chan_env["project_id"], "Outro")
     with pytest.raises(ChannelStyleNotFound):
         chan_env["repo"].update(profile.id, 1, {"style_id": "f" * 32})
+
+
+def test_channel_can_point_to_a_youtube_channel_and_clear_it(chan_env):
+    from app.studio.adapters.postgres.youtube_identity_repo import PostgresYouTubeChannelIdentityRepository
+    from app.studio.domain.youtube_identity import YouTubeChannelIdentity
+    channels = PostgresYouTubeChannelIdentityRepository(chan_env["connect"])
+    channels.upsert(YouTubeChannelIdentity(youtube_channel_id="UCabc123", title="História"))
+
+    created = chan_env["repo"].create(chan_env["project_id"], "História", youtube_channel_id="UCabc123")
+    assert created.youtube_channel_id == "UCabc123"
+    assert chan_env["repo"].get(created.id).youtube_channel_id == "UCabc123"  # persistiu
+
+    cleared = chan_env["repo"].update(created.id, 1, {"youtube_channel_id": None})
+    assert cleared.youtube_channel_id is None and cleared.version == 2
+
+
+def test_channel_pointing_to_an_unknown_youtube_channel_is_refused(chan_env):
+    from app.studio.domain.channel import ChannelYouTubeTargetNotFound
+    with pytest.raises(ChannelYouTubeTargetNotFound):
+        chan_env["repo"].create(chan_env["project_id"], "História", youtube_channel_id="UCinexistente")
+    profile = chan_env["repo"].create(chan_env["project_id"], "Outro")
+    with pytest.raises(ChannelYouTubeTargetNotFound):
+        chan_env["repo"].update(profile.id, 1, {"youtube_channel_id": "UCinexistente"})
+    assert chan_env["repo"].get(profile.id).youtube_channel_id is None
+
+
+def test_deleting_the_youtube_channel_detaches_the_studio_channel(chan_env):
+    from app.studio.adapters.postgres.youtube_identity_repo import PostgresYouTubeChannelIdentityRepository
+    from app.studio.domain.youtube_identity import YouTubeChannelIdentity
+    channels = PostgresYouTubeChannelIdentityRepository(chan_env["connect"])
+    channels.upsert(YouTubeChannelIdentity(youtube_channel_id="UCabc123", title="História"))
+    created = chan_env["repo"].create(chan_env["project_id"], "História", youtube_channel_id="UCabc123")
+
+    chan_env["conn"].execute("DELETE FROM studio.youtube_channels WHERE youtube_channel_id = %s", ("UCabc123",))
+    chan_env["conn"].commit()
+
+    # ON DELETE SET NULL: apagar a identidade do YouTube destaca o canal, não o apaga nem bloqueia
+    detached = chan_env["repo"].get(created.id)
+    assert detached is not None and detached.youtube_channel_id is None and detached.version == 1
