@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Protocol
 
 from ..domain.asset_resolver import AssetDescriptor
+from ..domain.quality import QualityEvidence
+from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
-from ..domain.render_plan import AssetReference
+from ..domain.render_plan import AssetReference, RenderPlan
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
@@ -215,6 +217,22 @@ class QaAnalyzer(Protocol):
     def analyze(self, path: Path, narration: Path | None = None) -> dict:
         """Métricas do arquivo: duration_s, width, height, has_audio, integrated_lufs, silence_ratio, black_ratio e,
         se `narration` (WAV só com a voz) for dado, narration_lufs e narration_silence_ratio."""
+
+
+class QualityEvaluator(Protocol):
+    """Porta do QA do render (RP-030, design §6/§7.5): plano + evidências → QualityReport.
+
+    O ``QualityReport`` é o contrato versionado da F6 (``domain.qa_report.QaReport``):
+    achados com severidade ``blocking``/``warning``/``info`` e cobertura
+    ``verified``/``not_verified``. A porta decide sobre a evidência disponível de forma
+    determinística — **não** avalia semântica multimodal (sem provedor) nem inventa score
+    visual; a falta de evidência vira cobertura ``not_verified``.
+
+    A implementação concreta mora em ``adapters/`` (ffprobe/ebur128) e é montada **só**
+    em ``composition.py``; a política de severidade é pura (``domain.quality``).
+    """
+
+    def evaluate(self, plan: RenderPlan, evidence: QualityEvidence) -> QualityReport: ...
 
 
 class RenderJobRepository(Protocol):
