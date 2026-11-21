@@ -654,51 +654,9 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
         if unavailable else ""
     )
 
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Execução</title>
-  <style nonce="{nonce}">{shell.CSS}{PRODUCTION_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#exec-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="producao", base_href="/studio/panel", side_card_html=shell.budget_side_card(view.month), channels_href="/studio/canais", nonce=nonce)}
-    <main class="main-content" id="exec-main">
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h1 id="exec-heading">{e(view.topic)}</h1>
-            <p class="exec-meta">Execução iniciada {e(elapsed_text(view.run.created_at, view.now))} · {e(mode_label)}</p>
-          </div>
-          {run_badge(view.run.state)}
-        </div>
+    from . import shell_v3
 
-        {steps_html}
-        <p class="fine">{position}Etapa atual: <b>{e(current_label)}</b>. Próxima ação: <b>{e(next_line)}</b>.
-        Não há barra de progresso nem percentual: o trabalho não é linear e etapas podem ser refeitas.</p>
-      </div>
-
-      {action_card}
-
-      {_advanced_html(view)}
-    </main>
-
-    <aside class="rail" aria-label="Resumo">
-      <section class="card" aria-labelledby="h-custo-exec">
-        <h2 id="h-custo-exec">Custo desta execução</h2>
-        {shell.cost_breakdown_rows(view.cost) if view.cost.calls else '<p class="muted">Sem registro de uso de IA para este vídeo.</p>'}
-        <p class="fine">O total é o custo registrado do vídeo: não há atribuição de custo por execução.
-        Real e estimado nunca são somados num número só; ausência de custo não é zero.</p>
-      </section>
-      {_rail_actions_html(view)}
-      {unavailable_card}
-    </aside>
-  </div>
-  <script nonce="{nonce}">
+    js_code = f"""
     document.querySelectorAll('[data-run-action]').forEach((btn) => {{
       btn.addEventListener('click', async () => {{
         const action = btn.getAttribute('data-run-action');
@@ -730,7 +688,62 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
         }}
       }});
     }});
-  </script>
-</body>
-</html>"""
+    """
+
+    body_html = f"""      <section class="pagina" id="pagina-execucao" aria-labelledby="exec-heading">
+        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos">← Vídeos</a> /
+          <span>Execução da produção</span></p>
+        <div class="cab-video">
+          <div>
+            <p class="eyebrow">PRODUÇÃO DO VÍDEO</p>
+            <h1 class="h1" id="exec-heading">{e(view.topic)}</h1>
+            <p class="lead" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span>Execução iniciada {e(elapsed_text(view.run.created_at, view.now))} · {e(mode_label)}</span>
+              {run_badge(view.run.state)}
+            </p>
+          </div>
+        </div>
+
+        <div class="grade-video">
+          <div>
+            <div class="card">
+              <h2>Etapas da produção</h2>
+              <p class="muted" style="margin:0 0 14px">Acompanhe o andamento de cada etapa do pipeline.</p>
+              {steps_html}
+              <p class="fine" style="margin-top:14px">{position}Etapa atual: <b>{e(current_label)}</b>. Próxima ação: <b>{e(next_line)}</b>.
+              Não há barra de progresso nem percentual: o trabalho não é linear e etapas podem ser refeitas.</p>
+            </div>
+
+            {action_card}
+
+            {_advanced_html(view)}
+          </div>
+
+          <div>
+            {_rail_actions_html(view)}
+
+            <section class="card" aria-labelledby="h-custo-exec">
+              <h2 id="h-custo-exec">Custo desta execução</h2>
+              {shell.cost_breakdown_rows(view.cost) if view.cost.calls else '<p class="muted">Sem registro de uso de IA para este vídeo.</p>'}
+              <p class="fine" style="margin-top:12px">O total é o custo registrado do vídeo: não há atribuição de custo por execução.
+              Real e estimado nunca são somados num número só; ausência de custo não é zero.</p>
+            </section>
+
+            {unavailable_card}
+          </div>
+        </div>
+      </section>"""
+
+    page = shell_v3.render_document(
+        title=f"Faceless Studio — Execução: {view.topic}",
+        active="videos",
+        crumb="Vídeos / Execução da produção",
+        body_html=body_html,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=js_code,
+        extra_css=PRODUCTION_CSS,
+    )
     return page, shell._headers(nonce)
