@@ -26,6 +26,8 @@ from .providers import ProviderService
 from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .youtube_channels import AssociateYouTubeChannel, DisconnectYouTubeChannel, GetYouTubeChannel
 from .youtube_oauth import (BeginConsent, CompleteConsent, RefreshYouTubeChannel, RevokeConsent)
+from .connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel, ListConnections,
+                          RevokeAuthorization, Unlink)
 from .saas import (ChangeMemberRole, InviteMember, RegisterByokKey, RemoveMember, ResolveActor,
                    RevokeByokKey, RotateByokKey)
 from typing import TYPE_CHECKING
@@ -125,6 +127,13 @@ class UseCases:
     complete_youtube_oauth: CompleteConsent | None = None
     refresh_youtube_channel: RefreshYouTubeChannel | None = None
     revoke_youtube_channel: RevokeConsent | None = None
+    # YT-04a: Conexões (conta Google → autorizações → canais do YouTube). Sem painel; só serviço + API.
+    list_connections: ListConnections | None = None
+    begin_account_consent: BeginAccountConsent | None = None
+    complete_account_consent: CompleteAccountConsent | None = None
+    revoke_authorization: RevokeAuthorization | None = None
+    link_studio_channel: LinkStudioChannel | None = None
+    unlink_studio_channel: Unlink | None = None
     # L2: mutações de Equipe. O ator é o operador autenticado do painel, resolvido no vínculo dele.
     resolve_actor: ResolveActor | None = None
     invite_member: InviteMember | None = None
@@ -181,6 +190,12 @@ class UseCases:
                   complete_youtube_oauth: CompleteConsent | None = None,
                   refresh_youtube_channel: RefreshYouTubeChannel | None = None,
                   revoke_youtube_channel: RevokeConsent | None = None,
+                  list_connections: ListConnections | None = None,
+                  begin_account_consent: BeginAccountConsent | None = None,
+                  complete_account_consent: CompleteAccountConsent | None = None,
+                  revoke_authorization: RevokeAuthorization | None = None,
+                  link_studio_channel: LinkStudioChannel | None = None,
+                  unlink_studio_channel: Unlink | None = None,
                   resolve_actor: ResolveActor | None = None,
                   invite_member: InviteMember | None = None,
                   change_member_role: ChangeMemberRole | None = None,
@@ -208,6 +223,8 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    analytics_repo, analytics_dashboard, analytics_collection, analytics_decide,
                    analytics_register_experiment,
                    begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel,
+                   list_connections, begin_account_consent, complete_account_consent, revoke_authorization,
+                   link_studio_channel, unlink_studio_channel,
                    resolve_actor, invite_member, change_member_role, remove_member,
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,

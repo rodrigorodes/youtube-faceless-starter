@@ -142,14 +142,22 @@ class OAuthTokenResponse:
 
 @dataclass(frozen=True)
 class OAuthIdentity:
-    """Identidade do canal autorizado, obtida com o access token (nunca do formulário)."""
+    """Identidade do canal autorizado, obtida com o access token (nunca do formulário).
+
+    `email` é a identidade da **conta** quando o consentimento a expõe (escopos com e-mail do
+    Google); fica vazia quando o provedor não a revela — a conta nunca é inventada a partir do
+    canal. O consentimento antigo, por projeto, ignora este campo.
+    """
 
     channel_id: str
     title: str = ""
+    email: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.channel_id, str) or not self.channel_id.strip():
             raise ValueError("a YouTube channel id is required")
+        if not isinstance(self.email, str):
+            raise ValueError("the account email must be a string")
 
 
 @dataclass(frozen=True)

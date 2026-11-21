@@ -23,7 +23,8 @@ from ..domain.channel_budget import BudgetLimitInvalid
 from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailable, ProviderKind,
                                ProviderSpecInvalid)
 from ..domain.youtube_channel import YouTubeChannelInvalid
-from ..domain.youtube_identity import YouTubeChannelIdentityInvalid
+from ..domain.youtube_identity import (ChannelAuthorizationInvalid, GoogleAccountInvalid, OAuthGrantInvalid,
+                                       YouTubeChannelIdentityInvalid)
 from ..domain.visual_style import (DuplicateVisualStyle, VisualStyleFieldInvalid, VisualStyleNameInvalid,
                                    VisualStyleParamsInvalid, VisualStyleVersionConflict, VisualStyleVersionInvalid)
 from ..application.analytics import DailyMetric
@@ -39,6 +40,7 @@ from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
 from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid, consent_project_id
+from ..application.connections import AuthorizationNotFound, ConnectionNotFound
 from ..application.render import RenderRefused
 from ..domain.production_run import (InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
                                      ProductionIdempotencyConflict, ProductionRunLockTimeout,
@@ -592,6 +594,73 @@ class ProjectConfigOut(BaseModel):
     config: dict[str, str]
 
 
+# -- conexões: conta Google → autorizações → canais do YouTube (YT-04a) ------
+
+
+class ConnectionsAuthorizeOut(BaseModel):
+    authorization_url: str
+    state: str
+    expires_at: datetime
+
+
+class ConnectionsCallbackIn(BaseModel):
+    code: str = Field(min_length=1, max_length=4000)
+    state: str = Field(min_length=1, max_length=256)
+    email: str | None = Field(default=None, max_length=320)  # reserva: quando o consentimento não a expõe
+
+
+class ConnectionAccountOut(BaseModel):
+    id: str
+    email: str
+    display_name: str
+
+
+class ConnectionChannelIdentityOut(BaseModel):
+    youtube_channel_id: str
+    title: str
+
+
+class ConnectionConsentOut(BaseModel):
+    account: ConnectionAccountOut
+    channel: ConnectionChannelIdentityOut
+    grant_id: str
+    status: str
+    validated_at: datetime | None = None
+
+
+class StudioChannelRefOut(BaseModel):
+    id: str
+    name: str
+    archived: bool
+
+
+class ConnectionChannelOut(BaseModel):
+    youtube_channel_id: str
+    title: str
+    grant_id: str
+    status: str
+    token_expires_at: datetime | None = None
+    validated_at: datetime | None = None
+    studio_channels: list[StudioChannelRefOut] = Field(default_factory=list)
+
+
+class ConnectionAccountConnectionsOut(BaseModel):
+    id: str
+    email: str
+    display_name: str
+    channels: list[ConnectionChannelOut] = Field(default_factory=list)
+
+
+class ConnectionsOut(BaseModel):
+    accounts: list[ConnectionAccountConnectionsOut] = Field(default_factory=list)
+
+
+class AuthorizationRevokedOut(BaseModel):
+    grant_id: str
+    youtube_channel_id: str
+    status: str
+
+
 def _channel_out(profile) -> dict:
     return {"id": profile.id, "project_id": profile.project_id, "name": profile.name,
             "strategy": profile.strategy, "language": profile.language, "audience": profile.audience,
@@ -852,8 +921,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         except (DuplicateChannelProfile, ChannelVersionConflict, ChannelLockTimeout) as exc:
             raise HTTPException(409, str(exc)) from exc
         except (ChannelNameInvalid, ChannelFieldInvalid, ChannelDurationInvalid, ChannelVersionInvalid,
-                ChannelStyleNotFound, ChannelYouTubeTargetNotFound, YouTubeChannelIdentityInvalid) as exc:
+                ChannelStyleNotFound, ChannelYouTubeTargetNotFound, YouTubeChannelIdentityInvalid,
+                GoogleAccountInvalid, OAuthGrantInvalid, ChannelAuthorizationInvalid) as exc:
             raise HTTPException(422, str(exc)) from exc
+        # -- conexões: conta → autorizações → canais (YT-04a) --
+        except (ConnectionNotFound, AuthorizationNotFound) as exc:
+            raise HTTPException(404, str(exc)) from exc
         # -- estilos: biblioteca compartilhada (VS-05a) --
         except VisualStyleNotFound as exc:
             raise HTTPException(404, "visual style not found") from exc
@@ -1821,6 +1894,30 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def revoke_youtube_oauth(project_id: str):
         return run(lambda uc: _need(uc, "revoke_youtube_channel", "youtube OAuth is not configured").execute(
             check_id(project_id)))
+
+    # -- Conexões: conta Google → autorizações → canais do YouTube (YT-04a) ---
+    #
+    # O vínculo do canal do estúdio a um canal do YouTube reusa o `PATCH /channels/{profile_id}`
+    # (já aceita `youtube_channel_id`): nenhuma rota redundante é criada aqui.
+
+    @router.get("/connections", response_model=ConnectionsOut)
+    def list_connections():
+        return run(lambda uc: _need(uc, "list_connections", "connection services unavailable").execute())
+
+    @router.post("/connections/oauth/start", response_model=ConnectionsAuthorizeOut)
+    def begin_connection_oauth():
+        return run(lambda uc: _need(uc, "begin_account_consent", "youtube OAuth is not configured").execute())
+
+    @router.post("/connections/oauth/callback", response_model=ConnectionConsentOut)
+    def complete_connection_oauth(body: ConnectionsCallbackIn):
+        return run(lambda uc: _need(uc, "complete_account_consent", "youtube OAuth is not configured").execute(
+            body.code, body.state, email=body.email))
+
+    @router.post("/connections/authorizations/{grant_id}/{youtube_channel_id}/revoke",
+                 response_model=AuthorizationRevokedOut)
+    def revoke_connection_authorization(grant_id: str, youtube_channel_id: str):
+        return run(lambda uc: _need(uc, "revoke_authorization", "connection services unavailable").execute(
+            check_id(grant_id), youtube_channel_id))
 
     # -- configuração pública do projeto (F10-07) ----------------------------
 
