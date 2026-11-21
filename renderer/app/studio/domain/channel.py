@@ -4,13 +4,20 @@ Um canal é um projeto; o perfil guarda a configuração editorial/visual/áudio
 (estratégia, idioma, público, pilares, narrativa, duração, identidade, voz, áudio, thumbnail e CTA).
 O perfil é imutável e versionado: cada leitura/atualização carrega a `version`, e o repositório
 incrementa a versão de forma otimista, gravando um snapshot auditável por versão.
+
+YT-02: o canal também **referencia** o canal do YouTube em que publica (`youtube_channel_id`) e o
+domínio sabe **resolver** qual autorização (`ChannelAuthorization`) o valida — sem religar a
+publicação (essa é a YT-03).
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
 from .ids import check_id
+from .youtube_channel import OAuthStatus
+from .youtube_identity import ChannelAuthorization, validate_youtube_channel_id
 
 MAX_NAME_LENGTH = 120
 MAX_STRATEGY_LENGTH = 500
@@ -37,6 +44,7 @@ CREATABLE_FIELDS = (
     "thumbnail",
     "cta",
     "style_id",
+    "youtube_channel_id",
     "archived",
 )
 
@@ -55,6 +63,7 @@ UPDATABLE_FIELDS = (
     "thumbnail",
     "cta",
     "style_id",
+    "youtube_channel_id",
     "archived",
 )
 
@@ -93,6 +102,14 @@ class ChannelProjectNotFound(ChannelError, LookupError):
 
 class ChannelStyleNotFound(ChannelError, LookupError):
     """O estilo visual informado não existe: o canal não pode apontar para ele (VS-02)."""
+
+
+class ChannelYouTubeTargetNotFound(ChannelError, LookupError):
+    """O canal do YouTube informado não existe: o canal do estúdio não pode publicar nele (YT-02).
+
+    A referência é para `studio.youtube_channels(youtube_channel_id)` — a identidade oficial do
+    canal (`UC...`), não a conta nem a autorização.
+    """
 
 
 class ChannelLockTimeout(ChannelError, RuntimeError):
@@ -176,6 +193,9 @@ class ChannelProfile:
     # VS-02: o estilo visual que este canal segue (biblioteca compartilhada). None = sem estilo;
     # o render cai no bundle neutro. A referência é por chave — o plano grava (style_id, version).
     style_id: str | None = None
+    # YT-02: o canal do YouTube **em que** este canal publica (identidade oficial, `UC...`).
+    # None = destino não escolhido; a publicação segue pelo caminho antigo até a YT-03.
+    youtube_channel_id: str | None = None
     version: int = 1
     archived: bool = False
     created_at: datetime | None = None
@@ -200,6 +220,33 @@ class ChannelProfile:
             if not isinstance(self.style_id, str):
                 raise ChannelFieldInvalid("style_id must be a string or null")
             check_id(self.style_id)
+        if self.youtube_channel_id is not None:
+            if not isinstance(self.youtube_channel_id, str):
+                raise ChannelFieldInvalid("youtube_channel_id must be a string or null")
+            object.__setattr__(self, "youtube_channel_id",
+                               validate_youtube_channel_id(self.youtube_channel_id))
         object.__setattr__(self, "version", validate_version(self.version))
         if not isinstance(self.archived, bool):
             raise ChannelFieldInvalid("archived must be a boolean")
+
+
+def resolve_publication_authorization(
+    channel: ChannelProfile,
+    authorizations: Iterable[ChannelAuthorization],
+) -> ChannelAuthorization | None:
+    """Qual autorização valida o canal do YouTube deste canal do estúdio (YT-02). Puro, sem I/O.
+
+    Devolve a primeira autorização **vigente** (status CONECTADO) cujo `youtube_channel_id` casa
+    com o destino do canal; `None` se o canal não escolheu destino, se não há autorização para
+    ele, ou se todas estão revogadas/expiradas. Nunca presume vínculo: só o que está CONECTADO
+    resolve — a mesma postura de `ChannelAuthorization`/`effective_status`.
+    """
+    target = channel.youtube_channel_id
+    if target is None:
+        return None
+    for authorization in authorizations:
+        if authorization.youtube_channel_id != target:
+            continue
+        if authorization.status is OAuthStatus.CONNECTED:
+            return authorization
+    return None

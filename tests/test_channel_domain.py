@@ -15,8 +15,14 @@ from app.studio.domain.channel import (  # noqa: E402
     ChannelVersionInvalid,
     MAX_PILLARS,
     clean_pillars,
+    resolve_publication_authorization,
 )
 from app.studio.domain.ids import InvalidId  # noqa: E402
+from app.studio.domain.youtube_channel import OAuthStatus  # noqa: E402
+from app.studio.domain.youtube_identity import (  # noqa: E402
+    ChannelAuthorization,
+    YouTubeChannelIdentityInvalid,
+)
 
 PID = "a" * 32
 CID = "b" * 32
@@ -131,3 +137,52 @@ def test_style_id_is_optional_but_validated_when_present():
         profile(style_id="not-an-id")
     with pytest.raises(ChannelFieldInvalid):
         profile(style_id=42)
+
+
+def test_youtube_target_is_optional_but_validated_when_present():
+    assert profile().youtube_channel_id is None  # canal sem destino do YouTube é válido
+    assert profile(youtube_channel_id="  UCabc123  ").youtube_channel_id == "UCabc123"
+    # é o id do YouTube ([A-Za-z0-9._-]{1,128}), não o check_id hex32 dos ids internos
+    assert profile(youtube_channel_id="UC" + "x" * 126).youtube_channel_id == "UC" + "x" * 126
+    for bad in ("", "   ", "com espaço", "x" * 129):
+        with pytest.raises(YouTubeChannelIdentityInvalid):
+            profile(youtube_channel_id=bad)
+    with pytest.raises(ChannelFieldInvalid):
+        profile(youtube_channel_id=42)
+
+
+# --------------------------------------------------- resolvedor de autorização
+
+
+def _authorization(channel_id: str, status: OAuthStatus = OAuthStatus.CONNECTED, grant_id: str = "b" * 32):
+    return ChannelAuthorization(grant_id=grant_id, youtube_channel_id=channel_id, status=status)
+
+
+def test_resolver_finds_the_connected_authorization():
+    chan = profile(youtube_channel_id="UCabc123")
+    ok = _authorization("UCabc123")
+    assert resolve_publication_authorization(chan, [ok]) is ok
+
+
+def test_resolver_returns_none_when_channel_has_no_target():
+    assert resolve_publication_authorization(profile(), [_authorization("UCabc123")]) is None
+
+
+def test_resolver_returns_none_without_authorizations():
+    assert resolve_publication_authorization(profile(youtube_channel_id="UCabc123"), []) is None
+
+
+def test_resolver_ignores_revoked_and_expired_authorizations():
+    chan = profile(youtube_channel_id="UCabc123")
+    revoked = _authorization("UCabc123", OAuthStatus.REVOKED)
+    expired = _authorization("UCabc123", OAuthStatus.EXPIRED, grant_id="d" * 32)
+    assert resolve_publication_authorization(chan, [revoked, expired]) is None
+    # a vigente vence, mesmo vindo depois de revogadas na lista
+    ok = _authorization("UCabc123", OAuthStatus.CONNECTED, grant_id="e" * 32)
+    assert resolve_publication_authorization(chan, [revoked, ok, expired]) is ok
+
+
+def test_resolver_ignores_authorizations_for_other_channels():
+    chan = profile(youtube_channel_id="UCabc123")
+    other = _authorization("UCoutro")
+    assert resolve_publication_authorization(chan, [other]) is None
