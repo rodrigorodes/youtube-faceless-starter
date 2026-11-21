@@ -70,6 +70,7 @@ from .panel_production import (
     render_new_video,
 )
 from .panel_new_video import render_new_video_v3
+from .panel_videos import render_videos
 from ..application.errors import VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
@@ -1259,13 +1260,15 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
-    @router.get("/panel/videos")
-    def panel_videos_redirect():
-        """IA-01: "Vídeos" não é tela própria — a lista vive no Início, no bloco `#videos`.
-
-        A rota existe para não haver link morto: 302 para o Início com o foco no bloco.
-        """
-        return RedirectResponse(url="/studio/panel#videos", status_code=302)
+    @router.get("/panel/videos", response_class=HTMLResponse)
+    def panel_videos_html(project_id: str | None = None, days: int = 7):
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = check_id(project_id) if project_id else None
+            return render_videos(uc.panel.execute(days=days, project_id=p_id))
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
 
     # UX-02: Configurações como área de rotas reais. Cada seção leva à tela que já existe; a
     # tela continua sendo a rota canônica (seus formulários publicam nela), sem duplicar página.
