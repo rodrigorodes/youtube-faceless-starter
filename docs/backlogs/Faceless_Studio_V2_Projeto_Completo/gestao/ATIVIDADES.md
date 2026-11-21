@@ -21,6 +21,7 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-01 | Biblioteca de estilos visuais versionada (domínio + migração `0033` + repo) | 42 testes focados | `02fc6ea` |
 | VS-02 | O canal aponta para um estilo (`channel_profiles.style_id`, recusa estilo inexistente) | 133 testes focados | `6f33692` |
 | YT-01 | Identidade de publicação: schema `0035` + domínio (conta → grants → canais) | 56 testes focados | `2d7a471` |
+| VS-02b | Override de estilo por vídeo (`videos.style_id`, `set_video_style`, recusa estilo inexistente) | 47 testes focados | `d57a272` |
 
 ## Em execução (paralelo)
 
@@ -28,7 +29,6 @@ Sem push/merge remoto (bloqueado pelo harness).
 | --- | --- | --- | --- |
 | **VS-03** | O estilo **aplica**: o plano grava o `StyleSnapshot` do `VisualStyle` e usa `motion`/`music`/`transition` do estilo | — | `domain/visual_style.py`, `application/ports.py`, `application/render.py`, `adapters/render_plan_ffmpeg.py`, `composition.py` |
 | **YT-01b** | Repositórios da identidade YouTube (contas, grants, canais, vínculos) + portas | YT-01 | `adapters/postgres/youtube_identity_repo.py` (novo), `application/ports.py` |
-| **VS-02b** | Override de estilo por vídeo (`videos.style_id`) — o "herda e pode sobrepor" | VS-02 | `domain/contracts.py`, `adapters/postgres/repo.py`, migração `0036` |
 
 ## Na fila
 
@@ -55,3 +55,15 @@ Sem push/merge remoto (bloqueado pelo harness).
    (`tests/test_architecture.py`).
 4. Suíte Postgres precisa das **duas** DSNs + `STUDIO_BUDGET_TEST_PROOF_FILE`.
 5. Nada de `git push`/merge remoto; `origin` intocado.
+
+## Infra de teste — lição aprendida (2026-11-21)
+
+O fixture `conn` faz `DROP SCHEMA IF EXISTS studio CASCADE` **no mesmo banco**. Consequência:
+**suítes concorrentes no mesmo Postgres colidem** (`schema "studio" does not exist`,
+`duplicate key ... (nspname)=(studio)`). Rodar duas fatias em paralelo contra o `integ-pg`
+compartilhado produz falhas **fantasma** — que não são bug de código.
+
+**Regra:** cada fatia em execução paralela usa o **seu** Postgres. Há quatro no ar:
+`integ-pg` (compartilhado), `integ-pg-orch` (orquestrador), `integ-pg-a`, `integ-pg-b` (agentes).
+Antes de mesclar qualquer fatia, o orquestrador **re-verifica serialmente** numa base só dele.
+
