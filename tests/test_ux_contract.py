@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from test_panel import _detail_view, _render_panel_html, _row, _visible_text
+from test_panel import _detail_view, _render_panel_html, _render_producao_html, _row, _visible_text
 
 # Texto que existe SÓ no mockup ilustrativo e não pode vazar para o produto.
 MOCKUP_ONLY_TEXT = (
@@ -87,7 +87,7 @@ def test_shell_uses_the_prototype_typeface():
     Sem isso, trocar a ordem do `font-family` muda a renderização de todas as telas sem quebrar
     nenhum outro teste.
     """
-    html = _render_panel_html()
+    html = _render_producao_html()
     css = re.search(r"<style[^>]*>(.*?)</style>", html, re.S).group(1)
 
     assert "--font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont" in css
@@ -219,7 +219,7 @@ def test_light_theme_text_pairs_meet_wcag_aa():
 
 
 def test_theme_css_follows_os_preference_and_explicit_choice():
-    html = _render_panel_html()
+    html = _render_producao_html()
     css = re.search(r"<style[^>]*>(.*?)</style>", html, re.S).group(1)
     assert '<meta name="color-scheme" content="dark light">' in html
     assert '@media (prefers-color-scheme: light)' in css
@@ -229,7 +229,7 @@ def test_theme_css_follows_os_preference_and_explicit_choice():
 
 
 def test_theme_toggle_is_hidden_without_js_and_uses_no_inline_handlers():
-    html = _render_panel_html()
+    html = _render_producao_html()
     button = re.search(r'<button[^>]*id="theme-toggle"[^>]*>', html).group(0)
     assert " hidden" in button  # sem JS não existe controle morto
     assert "onclick" not in html.lower()

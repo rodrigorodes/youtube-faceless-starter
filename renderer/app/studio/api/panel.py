@@ -3253,7 +3253,9 @@ def render_panel(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, st
     """Início: hero + criar vídeo + produção em andamento + precisa de atenção + resumo de
     tendências + bloco Vídeos. `topic` pré-preenche o tema (usado pelo «Criar Vídeo deste Tema»
     vindo da tela Tendências)."""
-    return _render_panel_page(view, mode="inicio", topic=topic)
+    from .panel_home import render_home  # UX V3: o Início segue a proposta aprovada
+
+    return render_home(view, topic=topic)
 
 
 def render_producao(view: PanelView) -> tuple[str, dict[str, str]]:
