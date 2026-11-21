@@ -278,7 +278,7 @@ Nem toda pendência é card novo: algumas são costura entre fatias que fecharam
 
 | # | Pendência | Origem | O que falta |
 |---|---|---|---|
-| L1 | **"Reautorizar" na tela de Canais** | tela de Canais (F10 UI) nasceu sem OAuth real | **em andamento** (fatia `feat/l1-reauth`): a F8 entregou o fluxo e o controle passa a chamar `POST /youtube-oauth/authorize` |
+| L1 | **"Reautorizar" na tela de Canais** | tela de Canais (F10 UI) nasceu sem OAuth real | ✅ fatia `feat/l1-reauth` `76fe92b` — o botão chama `POST /youtube-oauth/authorize` e a página de callback vive em `GET /studio/oauth/callback`; sem app Google, fica desabilitado com **motivo real** |
 | L2 | **Mutações de Equipe não expostas na rota** | F11 — a rota exibe só a leitura | **em andamento** (fatia `feat/ligacoes`): o ator **já existe** via Basic auth (`STUDIO_BROWSER_USER`, `routes.py:93`), então **não** depende de OIDC; RBAC do domínio aplicado de verdade |
 | L3 | **"Vídeos" tem destino real na casca do painel** | consistência de UI | resolvido em `80d7f4f`; a fatia `feat/ligacoes` só confirma |
 
