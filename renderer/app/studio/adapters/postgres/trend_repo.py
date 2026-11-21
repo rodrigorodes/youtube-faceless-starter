@@ -12,6 +12,28 @@ from ...domain.trends import TrendItem
 from .editorial_repo import _Base
 from .repo import _translated
 
+_RECORD_COLUMNS = (
+    "id, project_id, topic, topic_key, source_name, source_url, "
+    "observed_at, window_start, window_end, metric_name, metric_value, evidence"
+)
+
+
+def _record(row: dict) -> TrendRecord:
+    return TrendRecord(
+        id=row["id"],
+        project_id=row["project_id"],
+        topic=row["topic"],
+        topic_key=row["topic_key"],
+        source_name=row["source_name"],
+        source_url=row["source_url"],
+        observed_at=row["observed_at"],
+        window_start=row["window_start"],
+        window_end=row["window_end"],
+        metric_name=row["metric_name"],
+        metric_value=float(row["metric_value"]) if row["metric_value"] is not None else None,
+        evidence=row["evidence"] or [],
+    )
+
 
 class PostgresTrendRepository(_Base):
     def upsert(self, project_id: str, items: list[TrendItem]) -> int:
@@ -64,8 +86,7 @@ class PostgresTrendRepository(_Base):
             params.append(check_id(project_id))
 
         query = f"""
-            SELECT id, project_id, topic, topic_key, source_name, source_url,
-                   observed_at, window_start, window_end, metric_name, metric_value, evidence
+            SELECT {_RECORD_COLUMNS}
             FROM studio.trend_topics
             WHERE window_end >= %s {clause}
             ORDER BY metric_value DESC NULLS LAST, observed_at DESC
@@ -75,23 +96,20 @@ class PostgresTrendRepository(_Base):
             cur.execute(query, tuple(params))
             rows = cur.fetchall()
 
-        return [
-            TrendRecord(
-                id=r["id"],
-                project_id=r["project_id"],
-                topic=r["topic"],
-                topic_key=r["topic_key"],
-                source_name=r["source_name"],
-                source_url=r["source_url"],
-                observed_at=r["observed_at"],
-                window_start=r["window_start"],
-                window_end=r["window_end"],
-                metric_name=r["metric_name"],
-                metric_value=float(r["metric_value"]) if r["metric_value"] is not None else None,
-                evidence=r["evidence"] or [],
-            )
-            for r in rows
-        ]
+        return [_record(r) for r in rows]
+
+    def find_by_topic_key(self, project_id: str, topic_key: str) -> TrendRecord | None:
+        query = f"""
+            SELECT {_RECORD_COLUMNS}
+            FROM studio.trend_topics
+            WHERE project_id = %s AND topic_key = %s
+            ORDER BY observed_at DESC, id DESC
+            LIMIT 1
+        """
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(query, (check_id(project_id), topic_key))
+            row = cur.fetchone()
+        return _record(row) if row is not None else None
 
     def last_collected_at(self, project_id: str | None) -> datetime | None:
         params: list[object] = []

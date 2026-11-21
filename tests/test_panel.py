@@ -227,6 +227,12 @@ class FakeTrendRepo:
     def last_collected_at(self, project_id):
         return self._last_collected
 
+    def find_by_topic_key(self, project_id, topic_key):
+        for r in self._records:
+            if r.project_id == project_id and r.topic_key == topic_key:
+                return r
+        return None
+
 
 def test_panel_trends_never_collected():
     now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
@@ -855,7 +861,7 @@ def test_panel_uses_dark_mockup_palette_tokens_and_visible_focus():
 
 
 def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_error=None, publication=None,
-                 sources=None, latest_run=None):
+                 sources=None, latest_run=None, base_video_url=None, base_video_source_name=None):
     detail = VideoDetailView(
         video=row,
         stage=stage,
@@ -866,6 +872,8 @@ def _detail_view(row, *, stage=Stage.PENDING, steps=None, usage=None, render_err
         publication=publication,
         sources=sources or [],
         latest_run=latest_run,
+        base_video_url=base_video_url,
+        base_video_source_name=base_video_source_name,
     )
     from app.studio.api.panel import render_video
     return render_video(detail)[0]
@@ -961,16 +969,121 @@ def test_render_panel_series_tab_is_disabled_and_not_focusable():
     assert ideia is not None and 'aria-selected="true"' in ideia.group(0)
 
 
-# ---------- PROD-01: criar→iniciar, fontes e retomar (página do vídeo) ----------
+# ---------- PROD-01/PROD-04: criar→abrir o vídeo, fontes e (nova) produção ----------
 
 
-def test_home_create_form_also_starts_the_production_run():
-    """O form da Início não pode só criar: precisa iniciar a produção (mesmo caminho do assistente)."""
+def test_home_create_form_opens_the_video_page_without_starting_production():
+    """PROD-04 (achado 4): o Início cria o vídeo e abre a página do vídeo, **sem** iniciar run.
+
+    Isto reverte deliberadamente o auto-start do PROD-01. O fluxo aprovado em
+    JORNADA-E-TELAS.md é Produzir vídeo → Pesquisar fontes → Roteiro: a 1ª etapa do DAG
+    (`script`) exige fontes, e a fonte só pode ser adicionada depois que o vídeo existe — então
+    iniciar no ato de criar garantia um run `FAILED` ("SourceRefused: no sources...") na cara
+    do usuário. O vídeo abre onde vivem Fontes e «Iniciar produção».
+    """
     html = _render_panel_html()
-    assert "/production-runs" in html
-    assert "Idempotency-Key" in html
-    # O texto da própria tela promete que a produção começa; o script tem de cumprir.
-    assert "A produção começa no modo assistido" in _visible_text(html)
+    # Cria o vídeo pelo mesmo endpoint...
+    assert "/studio/videos" in html
+    # ...mas não inicia produção nenhuma: nenhum POST /production-runs sai do Início.
+    assert "/production-runs" not in html
+    # O destino é a página do vídeo (onde a fonte é registrada e a produção começa).
+    assert "location.href = '/studio/panel/videos/' + encodeURIComponent(data.id)" in html
+    # A tela declara o novo fluxo, sem prometer que a produção já começa.
+    assert "pesquisar as fontes" in _visible_text(html)
+
+
+# ---------- PROD-04 (achado 3): a criação carrega o vídeo base da tendência ----------
+
+
+def test_evidence_video_url_is_the_shared_trend_extraction():
+    """Uma só extração da URL do vídeo base, usada pelo cartão de tendência e pela página do vídeo."""
+    from app.studio.application.panel import evidence_video_url
+
+    assert evidence_video_url([{"url": "https://youtube.com/watch?v=abc"}]) == "https://youtube.com/watch?v=abc"
+    assert evidence_video_url([]) is None
+    assert evidence_video_url([{}]) is None
+    assert evidence_video_url([{"title": "sem url"}]) is None
+
+
+def _detail_with_trends(topic, *, records):
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", topic, VideoStatus.IDEA)
+    detail = VideoDetail(video=row, steps=[], usage=[], render_error=None, publication=None)
+    panel = BuildPanel(FakePanelRepo(detail_map={"v1": detail}), 15.0, lambda: now,
+                       trends=FakeTrendRepo(records, now))
+    return panel.detail("v1")
+
+
+def test_detail_resolves_base_video_url_by_topic_key():
+    """O tema do vídeo casa com a tendência por `topic_key` do domínio (a prova do achado 3)."""
+    from app.studio.application.ports import TrendRecord
+    from app.studio.domain.panel import topic_key
+
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    topic = "GTA VI: DIA 3 ZERANDO  🔴 CORINGA AO VIVO"
+    assert topic_key(topic) == "gta vi: dia 3 zerando 🔴 coringa ao vivo"
+    trend = TrendRecord(
+        id="t1", project_id="p1", topic=topic, topic_key=topic_key(topic),
+        source_name="YouTube Brasil (Em Alta)", source_url="https://www.youtube.com/feed/trending",
+        observed_at=now, window_start=now - timedelta(days=7), window_end=now,
+        metric_name="views", metric_value=1000.0,
+        evidence=[{"url": "https://youtube.com/watch?v=nTJ5Z9gZsZU"}],
+    )
+    view = _detail_with_trends(topic, records=[trend])
+    assert view.base_video_url == "https://youtube.com/watch?v=nTJ5Z9gZsZU"
+    assert view.base_video_source_name == "YouTube Brasil (Em Alta)"
+
+
+def test_detail_without_a_matching_trend_has_no_base_video_url():
+    view = _detail_with_trends("Tema sem tendência correspondente", records=[])
+    assert view.base_video_url is None
+    assert view.base_video_source_name is None
+
+
+def test_video_detail_sources_card_prefills_the_base_video_url():
+    html = _detail_view(
+        _row("v1", "Tema com base"),
+        base_video_url="https://youtube.com/watch?v=nTJ5Z9gZsZU",
+        base_video_source_name="YouTube Brasil (Em Alta)",
+    )
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'value="https://youtube.com/watch?v=nTJ5Z9gZsZU"' in main_area
+    assert "vídeo base" in main_area
+    assert "https://youtube.com/watch?v=nTJ5Z9gZsZU" in main_area
+
+
+def test_video_detail_sources_card_stays_empty_without_a_matching_trend():
+    html = _detail_view(_row("v1", "Tema sem base"))
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert "vídeo base" not in main_area
+    match = re.search(r'<input[^>]*id="source-url"[^>]*>', main_area)
+    assert match is not None and "value=" not in match.group(0)
+
+
+# ---------- PROD-04 (achado 5): produção nova num vídeo que já tem run ----------
+
+
+@pytest.mark.parametrize("state", ["FAILED", "CANCELLED", "SUCCEEDED"])
+def test_video_detail_terminal_run_offers_new_production(state):
+    failed = state == "FAILED"
+    html = _detail_view(_row("v1", "Run terminal"), latest_run=LatestRun(
+        run_id="a" * 32, state=state,
+        failed_stage="script" if failed else None,
+        failure_reason="no sources with checkable claims: add sources first" if failed else None))
+    main_area = html.split('id="advanced-diagnostics"', 1)[0]
+    assert 'id="btn-new-production"' in main_area
+    assert "Iniciar nova produção" in main_area
+    # Deixa claro que não é o retry: recomeça do zero.
+    assert "recomeça do zero" in main_area
+
+
+def test_video_detail_live_run_does_not_offer_new_production():
+    for state in ("RUNNING", "WAITING_HUMAN"):
+        html = _detail_view(_row("v1", "Run vivo"), latest_run=LatestRun(run_id="a" * 32, state=state))
+        main_area = html.split('id="advanced-diagnostics"', 1)[0]
+        assert 'id="btn-new-production"' not in main_area, state
+        assert 'id="btn-start-production"' not in main_area, state
+        assert "Abrir execução" in main_area, state
 
 
 def test_video_detail_lists_registered_sources_with_url_and_size():
