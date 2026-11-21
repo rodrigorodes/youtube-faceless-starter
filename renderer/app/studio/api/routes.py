@@ -32,6 +32,15 @@ from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_video
+from .panel_production import (
+    STAGE_LABELS,
+    ExecutionView,
+    NewVideoView,
+    PipelineStage,
+    render_execution,
+    render_new_video,
+)
+from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, QaReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
@@ -841,5 +850,65 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(409, "retry is available only for a FAILED production run")
             return {"run_id": run_id, "state": transition.run.state.value}
         return run(go)
+
+    # -- páginas do fluxo único (F2-02..F2-05): wizard e execução ----------------
+
+    def _wizard_pipeline(uc: UseCases) -> tuple[PipelineStage, ...]:
+        coordinator = production_service(uc).coordinator
+        available = set(coordinator.available_stages())
+        reasons = dict(coordinator.unavailable_stages())
+        pipeline = []
+        for stage in ProductionStage:
+            label = STAGE_LABELS.get(stage, stage.value)
+            if stage in available:
+                pipeline.append(PipelineStage(stage, label, True))
+            elif stage in reasons:
+                pipeline.append(PipelineStage(stage, label, False, reasons[stage]))
+        return tuple(pipeline)
+
+    @router.get("/panel/novo-video", response_class=HTMLResponse)
+    def panel_new_video_html(project_id: str | None = None):
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            if uc.production is None:
+                raise HTTPException(503, "production services unavailable")
+            view = NewVideoView(
+                projects=uc.panel.repo.projects(),
+                month=uc.panel.month_cost(),
+                pipeline=_wizard_pipeline(uc),
+                selected_project_id=check_id(project_id) if project_id else "",
+            )
+            return render_new_video(view)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/videos/{video_id}/production-runs/{run_id}", response_class=HTMLResponse)
+    def panel_production_run_html(video_id: str, run_id: str):
+        def get_page(uc):
+            if uc.panel is None or uc.production is None:
+                raise HTTPException(503, "panel/production services unavailable")
+            projection = _owned(uc, video_id, run_id)
+            detail = uc.panel.detail(check_id(video_id))
+            usage_rows = (
+                [(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) for u in detail.usage]
+                if detail.usage else detail.video.cost_rows
+            )
+            view = ExecutionView(
+                topic=detail.video.topic,
+                run=projection.run,
+                stages=projection.stages,
+                next_action=projection.next_action,
+                next_stage=projection.next_stage,
+                mode=projection.mode.value,
+                month=uc.panel.month_cost(),
+                unavailable_stages=projection.unavailable_stages,
+                cost=cost_breakdown(usage_rows),
+                usage=tuple(detail.usage),
+                events=tuple(production_service(uc).coordinator.events(check_id(run_id))),
+            )
+            return render_execution(view)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
 
     return router
