@@ -199,6 +199,13 @@ viewport + media query, um único `<h1>`, sem barra de progresso afirmando linea
 **nenhum texto ilustrativo do mockup vazando** para o produto. Cada regra tem sonda própria que
 prova que a checagem morde.
 
+**Furo corrigido em `80d7f4f`:** o contrato do detalhe do vídeo passava **vacuosamente** —
+`_nav_items()` devolvia `[]` porque a página não tinha `nav.nav`, então a regra R2 nunca era
+exercitada. O detalhe passou a usar a casca (`render_sidebar`, `active="videos"`) e o teste
+agora **exige** a nav principal, para que nenhuma tela volte a satisfazer o contrato por ausência.
+"Vídeos" tem destino real (`/studio/panel#videos-section`), com teste que valida **toda** âncora
+interna da nav contra os `id` da página.
+
 ## Aprovações do usuário (fonte de verdade de design)
 
 | Data | Artefato | Escopo da aprovação |
@@ -246,5 +253,12 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 **Baseline:** `main` local com **1926 passed, 35 skipped, 0 failed** (1961 coletados) rodado com
 Postgres real e as duas DSNs; o gate de higiene voltou a passar após `7f248cd`, que corrigiu falsos
 positivos do scanner em código de canal/segredos.
+
+**Flakiness — causa medida (não é bug de código):** com várias suítes em paralelo,
+`test_render_adapters` falha porque o `ffmpeg` do container morre com **SIGKILL (rc 137)** e
+produz `mp4` de 48 bytes; `test_render_api`/`test_publish_api` caem no mesmo ponto
+(`PIL.UnidentifiedImageError`). Reproduzido **na base limpa** (`git stash`) com o mesmo resultado
+— portanto é pressão de memória do ambiente, não regressão. Rodar a suíte **serializada** é a
+condição para veredito confiável.
 
 **Nada aqui foi publicado.** `main` local tem tudo; o remoto não foi tocado (sem push).
