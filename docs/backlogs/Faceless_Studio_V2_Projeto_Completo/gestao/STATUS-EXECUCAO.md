@@ -184,8 +184,8 @@ fases (RP-00…RP-07).
 | RP-03 builder | ✅ | `0982a08`/`1bead3f` — builder + compilador puro (`domain/render_plan_builder.py`, `application/render_compiler.py`) |
 | RP-04 asset resolver | ✅ | `9e6387b` — porta `AssetResolver`, manifesto com `content_sha256` próprio (C1), validação multi-asset |
 | RP-05 FFmpeg (executor) + remoção do legado | ✅ | `a60a78c` executor (`adapters/render_plan_ffmpeg.py`, publicação atômica) + `0bde80c` **removeu** `adapters/render_ffmpeg.py` após paridade medida (duração Δ0,04 s; LUFS −15,3; silêncio/preto 0,0; `passed=True`) |
-| RP-06 regeneração seletiva | ✅ | `73387a0`/`bf9307e`/`b43f26e` — grafo por conteúdo (não por posição), cache e plano versionado (**0032**). **Gap declarado:** o executor ainda re-renderiza tudo — a ligação do reúso ao executor é fatia seguinte |
-| RP-07 QA e rollout | ✅ | `05c8d8b`/`22d8f52`/`3e6dd35` — `QualityEvaluator` determinístico (multimodal **declarado fora**), benchmark rotulado (24,15 s/min **Real**, 0 falhas) e kill-switch. **Declarado fora:** adoção do avaliador dentro do `RunRender` |
+| RP-06 regeneração seletiva | ✅ | `73387a0`/`bf9307e`/`b43f26e` (grafo por **conteúdo**, cache, plano versionado **0032**) + `645c60d` (**RP-06b**: executor consome o cache — provado por contagem de FFmpeg) + `a57dc57` (**RP-06c**: TTS não roda para cena intacta). Aceite cumprido nas três partes: vídeo, imagem (`media.py` por `cache_key`) e narração |
+| RP-07 QA e rollout | ✅ | `05c8d8b`/`22d8f52`/`3e6dd35` (`QualityEvaluator` determinístico, benchmark rotulado, kill-switch) + `ed406a3`/`71ef0a7` (**RP-07b**: o loop adota o QA novo e o tipo antigo foi **aposentado**; corrigiu um fio trocado no `composition`). Multimodal **declarado fora** |
 
 Design aprovado para seguir: `docs/superpowers/specs/2026-11-20-render-plan-foundation-design.md`
 (com as decisões R1–R7 e as correções C1–C4 vindas da baseline).
@@ -272,6 +272,27 @@ Postgres limpo (**1,4 GB → 38 MB**) e rodando a suíte em **partições sequen
 do renderer (0,8 s por cena) fica **fora** da estimativa de fala; DarkPlanner não tem voz para medir. O erro
 por cena do roteiro longo varia de −6,1% a +11,0%; run-to-run do Piper chega a 3,8% em texto de 8 palavras. Rodar a suíte **serializada** é a
 condição para veredito confiável.
+
+## Padrão novo é o único — legado removido (decisão do usuário, 2026-11-21)
+
+Diretriz: o produto está em desenvolvimento; **tudo que for obsoleto pode ser removido** e a versão nova
+com o padrão novo é o que fica. Executado com uma regra que **não** foi relaxada: **nada sai sem prova de
+que está morto, e nada sai sem cópia verbatim** (`archive/`).
+
+| Removido | Evidência | Como foi provado |
+|---|---|---|
+| `adapters/render_ffmpeg.py` | renderer legado | **paridade medida antes** (`evaluate_qa`: duração Δ0,04 s, LUFS −15,3, silêncio/preto 0,0) |
+| MVP em `renderer/app/main.py` (387→33 linhas) + `tests/test_providers.py` | 28 símbolos sem consumidor | grep de referência + AST; prova de **boot** (`/health` 200, `/videos` 410) |
+| `rich.py` 225→140 (`render_scene`/`assemble`/`cover_image`/`make_overlay`/`placeholder_image`/`_run`/`FADE`) | renderer legado de imagem/vídeo | consumidor por símbolo; **manteve** voz/trilha/fontes (único caso entrelaçado) |
+| `docs/01,06,09`, `docker-compose.vertex.yml`, `scripts/test-create.*`, `examples/rich-*` | fluxo `/videos` (410) e Vertex ausente | endpoint citado existe? (grep) |
+| `docs/08`, `examples/ade-2026-publish.json` | endpoints mortos | `webhook/faceless-publish`, `/videos/<id>/file` → 410 |
+| `contracts.QaReport` (tipo antigo) | sem consumidor | duas representações de QA unificadas (RP-07b) |
+
+**Arquivado (não apagado):** `docs/05`, `docs/11` (registros históricos de validação) e todo o código removido, em
+`.superpowers/sdd/2026-11-20-faceless-studio-v2-plano-de-implementacao/archive/`.
+
+**Mantido de propósito:** `rich.py` (voz/trilha/fontes — o caminho novo usa), `image_placeholder` (fallback real),
+`workflows/03-publish-approved.json` (n8n inativo por design), `backups/` (backup do usuário; nunca apagado).
 
 ## Pendências de ligação entre fatias (nascem dos merges)
 
