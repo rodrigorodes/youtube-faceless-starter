@@ -34,7 +34,7 @@ PRODUCT_CSS = """
 .tabela-lista a { font-weight: 650; }
 .rolagem-x { overflow-x: auto; }
 
-/* Compatibilidade e layout para telas de Configurações e formulários */
+/* Compatibilidade e layout para telas de Configurações, Execução e formulários */
 :root {
   --border: var(--line);
   --border-soft: var(--line);
@@ -52,25 +52,65 @@ PRODUCT_CSS = """
   --info-surface: var(--soft);
   --bad: var(--err);
 }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; margin-bottom: 18px; }
-.card h2 { font-size: 16px; margin: 0 0 10px; font-weight: 750; }
-.card h3 { font-size: 14px; margin: 0 0 8px; font-weight: 700; }
-.card.empty { text-align: center; padding: 36px 20px; color: var(--muted); }
+.card, .painel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin-bottom: 18px; }
+.card h2, .painel h2 { font-size: 16px; margin: 0 0 10px; font-weight: 750; }
+.card h3, .painel h3 { font-size: 15px; margin: 0 0 8px; font-weight: 700; }
+.card.empty, .painel.empty { text-align: center; padding: 36px 20px; color: var(--muted); }
 .config-corpo { display: flex; flex-direction: column; gap: 16px; }
-.spread { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.spread, .acoes { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.acoes-linha { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .dim { color: var(--sub); font-size: 12px; }
 .muted { color: var(--muted); font-size: 13px; }
-.fine { color: var(--sub); font-size: 11.5px; line-height: 1.45; }
-.kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.fine, .micro { color: var(--sub); font-size: 11.5px; line-height: 1.45; }
+.kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .kv:last-child { border-bottom: 0; }
 .item-title { font-weight: 650; font-size: 13.5px; }
 .item-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* Botões do Design System V3 */
+.btn-primary, .btn-primario { background: var(--accentfill); color: var(--onaccent); border-color: var(--accentfill); }
+.btn-primary:hover, .btn-primario:hover { filter: brightness(1.08); }
+.btn-danger, .btn-perigo { background: #7a2436; color: #fff; border-color: #7a2436; }
+.btn-danger:hover, .btn-perigo:hover { background: #8e2b40; }
+.btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.btn-ghost { background: transparent; border-color: var(--line); }
+.btn-ghost:hover { background: var(--panel2); }
+
+/* Campos e formulários V3 */
+.field, .campo { margin-bottom: 18px; display: flex; flex-direction: column; gap: 6px; }
+.field > label, .campo > label, .campo > .rotulo { display: block; font-size: 13px; font-weight: 650; margin-bottom: 2px; color: var(--txt); }
+.field input, .field select, .field textarea, .campo input, .campo select, .campo textarea, .input {
+  width: 100%; border: 1px solid var(--line); background: var(--panel2); color: var(--txt);
+  border-radius: 9px; padding: 11px 12px; font: inherit; font-size: 13px;
+}
+.field input:focus, .field select:focus, .field textarea:focus, .campo input:focus, .campo select:focus, .campo textarea:focus, .input:focus {
+  border-color: var(--accentfill); outline: none; box-shadow: 0 0 0 2px var(--soft);
+}
+.hint, .dica { font-size: 12px; color: var(--muted); margin: 3px 0 0; line-height: 1.45; }
+.error-msg, .campo-erro { font-size: 12px; color: var(--warn); font-weight: 600; margin-top: 4px; }
+.form-feedback, .feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 6px; }
+
+/* Estados e Badges */
 .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; }
 .state.s-done { color: var(--ok); }
+.state.s-run { color: var(--accent); }
 .state.s-act, .state.s-active { color: var(--warn); }
 .state.s-fail { color: var(--err); }
-.state.s-idle { color: var(--muted); }
-.form-feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 6px; }
+.state.s-idle, .state.state-idle { color: var(--muted); }
+
+/* Ação necessária e avisos */
+.act-card { border-color: var(--warn); border-left-width: 4px; background: var(--soft); }
+
+/* Etapas e checklist da execução */
+.steps { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.steps li {
+  display: flex; gap: 11px; align-items: center; padding: 10px 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+  font-size: 13px; font-weight: 550;
+}
+.steps li[aria-current="step"] {
+  border-color: var(--accentfill); background: var(--soft); font-weight: 700;
+}
 
 /* Detalhe do vídeo e diagnóstico */
 .timeline { list-style: none; padding-left: 1.5rem; position: relative; margin: 0; }
@@ -141,6 +181,8 @@ _ALIASES = {
     "analytics": "desempenho",
     "video": "videos",
     "roteiro": "videos",
+    "execucao": "videos",
+    "preview": "videos",
     "canais": "configuracoes",
     "estilos": "configuracoes",
     "conexoes": "configuracoes",
@@ -265,7 +307,7 @@ def render_novo_canal_dialog() -> str:
         <div class="acoes">
           <p class="feedback" id="canal-feedback" role="status"></p>
           <div class="acoes-linha">
-            <button class="btn" type="button" data-fechar-dialogo>Cancelar</button>
+            <button class="btn" type="button" data-fechar-dialogo>Fechar</button>
             <button class="btn btn-primario" type="submit" id="btn-salvar-canal">Cadastrar canal</button>
           </div>
         </div>

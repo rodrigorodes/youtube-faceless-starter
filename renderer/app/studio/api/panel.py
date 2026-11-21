@@ -3296,20 +3296,20 @@ def _video_style_card(style_view) -> str:
         chosen = " selected" if style.id == style_view.override_style_id else ""
         options.append(f'<option value="{e(style.id)}"{chosen}>{e(style.name)}</option>')
     return f"""
-      <div class="card" id="video-aparencia">
-        <h2>Estilo deste vídeo</h2>
-        <p class="dim" style="font-size:12.5px;margin:4px 0 0">{e(situation)}</p>
-        <form id="video-style-form" data-video-id="{e(style_view.video_id)}" style="margin-top:12px">
-          <div class="field">
-            <label for="video-estilo">Estilo</label>
-            <select class="input" id="video-estilo" name="style_id" aria-describedby="video-estilo-hint">
+      <div class="card painel" id="video-aparencia" style="margin-top:18px">
+        <h3>Estilo deste vídeo</h3>
+        <p class="muted" style="margin:4px 0 0">{e(situation)}</p>
+        <form id="video-style-form" data-video-id="{e(style_view.video_id)}" style="margin-top:14px">
+          <div class="campo field">
+            <label for="video-estilo">Estilo visual</label>
+            <select class="input campo" id="video-estilo" name="style_id" aria-describedby="video-estilo-hint">
               {''.join(options)}
             </select>
-            <span class="hint" id="video-estilo-hint">Herdar mantém o estilo do canal; escolher um estilo aqui sobrepõe só este vídeo.</span>
+            <p class="dica hint" id="video-estilo-hint">Herdar mantém o estilo do canal; escolher um estilo aqui sobrepõe só este vídeo.</p>
           </div>
-          <div class="spread" style="margin-top:1rem">
-            <button class="btn btn-primary" type="submit" id="btn-salvar-estilo-video">Salvar estilo</button>
-            <div id="video-style-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+          <div class="acoes spread" style="margin-top:14px">
+            <button class="btn btn-primario btn-primary" type="submit" id="btn-salvar-estilo-video">Salvar estilo</button>
+            <div id="video-style-feedback" class="feedback form-feedback" role="status" aria-live="polite"></div>
           </div>
         </form>
       </div>
@@ -3372,33 +3372,33 @@ def _video_sources_card(view: VideoDetailView) -> str:
         url_value = ""
         base_html = ""
     return f"""
-      <div class="card" id="video-fontes">
-        <h2>Fontes</h2>
-        <p class="dim" style="font-size:12.5px;margin:4px 0 0">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
+      <div class="card painel" id="video-fontes" style="margin-top:18px">
+        <h3>Fontes</h3>
+        <p class="muted" style="margin:4px 0 0">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
         {base_html}
         {count_html}
         {list_html}
-        <form id="video-sources-form" data-video-id="{e(v.id)}" style="margin-top:12px">
-          <div class="field">
+        <form id="video-sources-form" class="campo" data-video-id="{e(v.id)}" style="margin-top:14px" novalidate>
+          <div class="campo field">
             <label for="source-url">URL da fonte <span aria-hidden="true">*</span></label>
-            <input type="url" id="source-url" name="url" class="input" required
-                   data-error="source-url-error" placeholder="https://exemplo.com/noticia"
+            <input type="url" id="source-url" name="url" class="input campo" required
+                   data-error="source-url-error" placeholder="https://youtube.com/watch?v=..."
                    aria-describedby="source-rule"{url_value}>
-            <span class="error-msg" id="source-url-error"><span role="img" aria-label="Erro">&#9888;</span> Informe a URL da fonte.</span>
+            <p class="dica hint" id="source-rule">
+              Com texto: o texto colado é a fonte e a URL é só referência.
+              Sem texto: o servidor busca a URL, que precisa estar na lista permitida (STUDIO_SOURCE_ALLOWLIST);
+              se a busca for recusada, a mensagem do servidor aparece aqui.
+            </p>
+            <p class="campo-erro error-msg" id="source-url-error"><span role="img" aria-label="Erro">&#9888;</span> Informe a URL da fonte.</p>
           </div>
-          <div class="field" style="margin-top:10px">
-            <label for="source-text">Texto da fonte (opcional)</label>
-            <textarea id="source-text" name="text" class="input" rows="5"
+          <div class="campo field" style="margin-top:12px">
+            <label for="source-text">Texto da fonte <span class="micro">(opcional)</span></label>
+            <textarea id="source-text" name="text" class="input campo" rows="4"
                       placeholder="Cole o conteúdo da página quando o site bloquear a leitura"></textarea>
           </div>
-          <p class="hint" id="source-rule" style="margin-top:8px">
-            Com texto: o texto colado é a fonte e a URL é só referência.
-            Sem texto: o servidor busca a URL, que precisa estar na lista permitida (STUDIO_SOURCE_ALLOWLIST);
-            se a busca for recusada, a mensagem do servidor aparece aqui.
-          </p>
-          <div class="spread" style="margin-top:1rem">
-            <button class="btn btn-primary" type="submit" id="btn-add-source">Adicionar fonte</button>
-            <div id="video-sources-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+          <div class="acoes spread" style="margin-top:14px">
+            <button class="btn btn-primario btn-primary" type="submit" id="btn-add-source">Adicionar fonte</button>
+            <div id="video-sources-feedback" class="feedback form-feedback" role="status" aria-live="polite"></div>
           </div>
         </form>
       </div>
@@ -3440,11 +3440,11 @@ def _video_run_card(view: VideoDetailView) -> str:
     feedback = '<div id="video-run-feedback" class="form-feedback" role="status" aria-live="polite"></div>'
     if run is None:
         return f"""
-          <div class="card" id="video-producao">
-            <h2>Produção</h2>
-            <p class="dim" style="font-size:12.5px;margin:4px 0 0">Nenhuma produção iniciada para este vídeo.</p>
-            <div class="spread" style="margin-top:1rem">
-              <button class="btn btn-primary" type="button" id="btn-start-production"
+          <div class="card painel" id="video-producao">
+            <h3>Produção</h3>
+            <p class="muted" style="margin:4px 0 0">Nenhuma produção iniciada para este vídeo.</p>
+            <div class="acoes spread" style="margin-top:14px">
+              <button class="btn btn-primario btn-primary" type="button" id="btn-start-production"
                       data-video-id="{e(v.id)}">Iniciar produção</button>
               {feedback}
             </div>
@@ -3458,13 +3458,13 @@ def _video_run_card(view: VideoDetailView) -> str:
         else:
             reason_html = '<p class="muted" style="margin:0.5rem 0 0">O motivo não foi registrado; abra a execução para ver o detalhe.</p>'
         return f"""
-          <div class="card" id="video-producao">
+          <div class="card painel" id="video-producao">
             <span class="state s-fail" data-state="action"><span class="state-icon" aria-hidden="true">!</span> <span>Ação necessária</span></span>
-            <h2 style="margin-top:0.6rem">A produção parou</h2>
+            <h3 style="margin-top:0.6rem">A produção parou</h3>
             <p class="muted" style="margin:0.5rem 0 0">Parou na etapa <strong>{e(stage_label)}</strong>.</p>
             {reason_html}
-            <div class="spread" style="margin-top:1rem">
-              <button class="btn btn-primary" type="button" id="btn-retry-production"
+            <div class="acoes-linha spread" style="margin-top:14px">
+              <button class="btn btn-primario btn-primary" type="button" id="btn-retry-production"
                       data-video-id="{e(v.id)}" data-run-id="{e(run.run_id)}">Tentar novamente</button>
               {_new_production_button(v.id, primary=False)}
               <a class="btn" href="{exec_url}">Abrir execução</a>
@@ -3476,10 +3476,10 @@ def _video_run_card(view: VideoDetailView) -> str:
     if run.state in ("SUCCEEDED", "CANCELLED"):
         state_label = _RUN_STATE_LABELS.get(run.state, run.state)
         return f"""
-          <div class="card" id="video-producao">
-            <h2>Produção</h2>
+          <div class="card painel" id="video-producao">
+            <h3>Produção</h3>
             <p class="muted" style="margin:0.5rem 0 0">A execução atual terminou: <strong>{e(state_label)}</strong>.</p>
-            <div class="spread" style="margin-top:1rem">
+            <div class="acoes-linha spread" style="margin-top:14px">
               {_new_production_button(v.id, primary=True)}
               <a class="btn" href="{exec_url}">Abrir execução</a>
               {feedback}
@@ -3489,12 +3489,12 @@ def _video_run_card(view: VideoDetailView) -> str:
         """
     state_label = _RUN_STATE_LABELS.get(run.state, run.state)
     return f"""
-      <div class="card" id="video-producao">
-        <h2>Produção</h2>
+      <div class="card painel" id="video-producao">
+        <h3>Produção</h3>
         <p class="muted" style="margin:0.5rem 0 0">Execução atual: <strong>{e(state_label)}</strong>.</p>
-        <p class="dim" style="font-size:12.5px;margin:4px 0 0">Nova tentativa só é válida quando a execução está em falha; aqui o caminho é continuar pela execução.</p>
-        <div class="spread" style="margin-top:1rem">
-          <a class="btn btn-primary" href="{exec_url}">Abrir execução</a>
+        <p class="micro" style="margin:4px 0 0">Nova tentativa só é válida quando a execução está em falha; aqui o caminho é continuar pela execução.</p>
+        <div class="acoes spread" style="margin-top:14px">
+          <a class="btn btn-primario btn-primary" href="{exec_url}">Abrir execução</a>
           {feedback}
         </div>
       </div>
@@ -3694,7 +3694,12 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
 
         <div class="grade-video">
           <div>
-            <div class="card">
+            <div class="player">
+              <p style="margin:0;font-size:15px;font-weight:700">Prévia do corte final</p>
+              <p class="micro" style="margin:0;color:inherit">Acompanhe a produção e assista ao corte renderizado.</p>
+            </div>
+
+            <div class="card painel" style="margin-top:18px">
               <h2>Linha do Tempo dos Passos</h2>
               <ul class="timeline">
                 {''.join(steps_html)}
@@ -3702,18 +3707,19 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
               {failure_html}
               {publication_summary_html}
             </div>
+
             {run_card_html}
             {sources_card_html}
             {style_card_html}
 
-            <details class="card advanced" id="advanced-diagnostics">
-              <summary class="advanced-summary">Avançado — diagnóstico</summary>
+            <details class="card painel advanced" id="advanced-diagnostics" style="margin-top:18px">
+              <summary class="advanced-summary" style="cursor:pointer;font-weight:700">Avançado — diagnóstico</summary>
               <div class="advanced-body">
                 <p>ID do vídeo: <code>{e(v.id)}</code></p>
                 <div>
                   <h3>Registro de Uso de Modelos</h3>
                   <p class="cost-note">Cada chamada vem rotulada: “Real”, “Estimado”, “Sem custo” ou “Desconhecido”. Real e estimado nunca são fundidos.</p>
-                  <table>
+                  <table class="tabela-kv">
                     <thead>
                       <tr>
                         <th scope="col">Passo</th>
@@ -3735,7 +3741,7 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
           </div>
 
           <div>
-            <div class="card">
+            <div class="card painel">
               <h2>Neste vídeo</h2>
               <nav class="nav-menu" aria-label="Navegação do vídeo">
                 <ul class="nav-list">
@@ -3748,6 +3754,15 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
                   {preview_nav_html}
                 </ul>
               </nav>
+            </div>
+
+            <div class="card painel" style="margin-top:18px">
+              <h2>Detalhes do vídeo</h2>
+              <table class="tabela-kv">
+                <caption class="sr-only">Detalhes do vídeo</caption>
+                <tr><th scope="row">Situação</th><td><span class="pill pill-{e(view.stage.value)}">{e(STAGE_LABELS.get(view.stage, view.stage.value))}</span></td></tr>
+                <tr><th scope="row">Custo total</th><td>{_cost_html(view.cost_text)}</td></tr>
+              </table>
             </div>
           </div>
         </div>

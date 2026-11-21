@@ -7,6 +7,7 @@ import html
 import secrets
 
 from . import panel as shell
+from . import shell_v3
 from ..application.publishing import Preview
 from ..domain.contracts import VideoStatus
 
@@ -16,7 +17,11 @@ JS = """
 const form = document.getElementById('review');
 const out = document.getElementById('result');
 async function send(action) {
-  const v = (id) => document.getElementById(id).value.trim();
+  if (!form || !out) return;
+  const v = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  };
   const body = {};
   if (action === 'approve') {
     body.output_asset_id = form.dataset.outputAssetId;
@@ -33,8 +38,10 @@ async function send(action) {
     else out.textContent = 'Erro ' + r.status + ': ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
   } catch (err) { out.textContent = 'Falha de rede: ' + err.message; }
 }
-document.getElementById('approve').addEventListener('click', () => send('approve'));
-document.getElementById('reject').addEventListener('click', () => send('reject'));
+const btnApprove = document.getElementById('approve');
+if (btnApprove) btnApprove.addEventListener('click', () => send('approve'));
+const btnReject = document.getElementById('reject');
+if (btnReject) btnReject.addEventListener('click', () => send('reject'));
 """
 
 
@@ -44,47 +51,48 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
     base = f"/studio/videos/{v.id}"
     reviewable = v.status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED)
     qa_failed = p.qa is not None and not p.qa.is_publishable
-    player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file?output_asset_id={e(p.output_asset_id)}"><track kind="captions" srclang="pt-BR" label="Português" '
-              f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="bad" role="alert" style="padding: 2rem; background: var(--surface); border-radius: 8px; text-align: center;">Sem arquivo de vídeo renderizado.</p>'
-    qa = "<p style='color: var(--text-muted); font-size: 0.85rem;'>Sem relatório de QA.</p>"
+    player = (f'<video controls preload="metadata" poster="{base}/thumbnail" src="{base}/file?output_asset_id={e(p.output_asset_id)}" style="width:100%;max-height:460px;display:block"><track kind="captions" srclang="pt-BR" label="Português" '
+              f'src="{base}/subtitles.vtt" default></video>') if p.has_file else '<p class="muted" role="alert" style="padding: 2rem; text-align: center;">Sem arquivo de vídeo renderizado.</p>'
+    qa = "<p class='muted' style='font-size: 0.85rem;'>Sem relatório de QA.</p>"
     if p.qa is not None:
         aprovado = p.qa.is_publishable
         counts = p.qa.severity_counts
         findings = "".join(f"<li>{e(f.evidence)} <span class='hint'>({e(f.severity)} · {e(f.check_id)})</span></li>" for f in p.qa.findings)
         resumo = (f"{counts['blocking']} bloqueante(s), {counts['warning']} aviso(s), {counts['info']} informativo(s) · "
                   f"cobertura {e(p.qa.coverage.status)}")
-        findings_html = f"<ul class='bad' style='margin: 0.35rem 0;'>{findings}</ul>" if findings else ""
-        qa = (f'<p class="{"ok" if aprovado else "bad"}" style="font-weight: 600; font-size: 0.9rem;">QA {"aprovado" if aprovado else "REPROVADO"}</p>'
+        findings_html = f"<ul style='margin: 0.35rem 0;color:var(--err)'>{findings}</ul>" if findings else ""
+        selo_qa = '<span class="selo" style="color:var(--good);border-color:var(--good)">✓ QA Aprovado</span>' if aprovado else '<span class="selo" style="color:var(--err);border-color:var(--err)">× QA Reprovado</span>'
+        qa = (f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">{selo_qa}</div>'
               f"{findings_html}"
-              f"<p class='hint' style='color: var(--text-muted); font-size: 0.8rem;'>{resumo}</p>")
-    scenes = "".join(f"<li>{('<strong>' + e(s.label) + '</strong> ') if s.label else ''}{e(s.narration)}</li>" for s in p.scenes)
+              f"<p class='micro'>{resumo}</p>")
+    scenes = "".join(f"<li><span class='cena-n'>{i + 1}</span><div>{('<b>' + e(s.label) + '</b><br>') if s.label else ''}<span>{e(s.narration)}</span></div></li>" for i, s in enumerate(p.scenes))
     sources = "".join(f'<li><a href="{e(u)}" rel="noopener noreferrer" target="_blank">{e(u)}</a></li>' for u in p.sources if u.startswith(("https://", "http://")))
     credits = "".join(f"<li>{e(c)}</li>" for c in p.credits)
     side = [
-        f"<div class='card'><h2>Qualidade (QA)</h2>{qa}</div>",
-        f"<div class='card' style='margin-top: 1rem;'><h2>Roteiro narrado</h2><ol>{scenes}</ol></div>",
-        f"<div class='card' style='margin-top: 1rem;'><h2>Fontes</h2><ul>{sources or '<li>Nenhuma registrada.</li>'}</ul></div>"
+        f"<div class='card painel'><h3>Qualidade (QA)</h3>{qa}</div>",
+        f"<div class='card painel' style='margin-top: 18px;'><h3>Roteiro narrado</h3><ul class='cenas'>{scenes}</ul></div>",
+        f"<div class='card painel' style='margin-top: 18px;'><h3>Fontes</h3><ul>{sources or '<li>Nenhuma registrada.</li>'}</ul></div>"
     ]
     if credits:
-        side.append(f"<div class='card' style='margin-top: 1rem;'><h2>Créditos de imagem</h2><ul>{credits}</ul></div>")
+        side.append(f"<div class='card painel' style='margin-top: 18px;'><h3>Créditos de imagem</h3><ul>{credits}</ul></div>")
     review = ""
     if reviewable:
         override = ""
         if qa_failed:
-            override = ('<label for="override_reason">O QA reprovou. Para aprovar mesmo assim, explique o motivo '
-                        '<span class="hint">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea>')
-        review = (f"<div class='card' style='margin-top: 1rem;'><h2>Decisão de Aprovação</h2><form id=\"review\" data-base=\"{base}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
-                  f'<label for="title">Título <span class="hint">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
-                  f'<input id="title" maxlength="100" value="{e(p.default_title)}">'
-                  f'<label for="description">Descrição <span class="hint">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'
-                  f'<textarea id="description" rows="5" maxlength="4000">{e(p.default_description)}</textarea>'
-                  f'<label for="tags">Tags <span class="hint">(separadas por vírgula, até 15)</span></label><input id="tags" value="{e(", ".join(v.tags))}">'
-                  f'<label for="publish_at">Agendar publicação <span class="hint">(opcional; o vídeo sobe privado e o YouTube publica no horário; '
-                  f'mínimo 15 minutos à frente)</span></label><input id="publish_at" type="datetime-local">'
-                  f'{override}<div style="margin-top: 0.5rem;"><button type="button" id="approve" class="btn btn-primary">Aprovar Vídeo</button></div>'
-                  f'<label for="reject_reason" style="margin-top: 1.25rem;">Motivo da rejeição <span class="hint">(opcional)</span></label><textarea id="reject_reason" rows="2" maxlength="500"></textarea>'
-                  f'<div><button type="button" id="reject" class="btn btn-danger">Rejeitar</button></div><output id="result" role="status" aria-live="polite" style="display: block; margin-top: 0.75rem; font-weight: 600; font-size: 0.85rem;"></output></form>'
-                  f'<script nonce="{nonce}">{JS}</script></div>')
+            override = ('<div class="campo"><label for="override_reason">O QA reprovou. Para aprovar mesmo assim, explique o motivo '
+                        '<span class="micro">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea></div>')
+        review = (f"<div class='card painel' style='margin-top: 18px;'><h3>Decisão de Aprovação</h3><form id=\"review\" data-base=\"{base}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
+                  f'<div class="campo"><label for="title">Título <span class="micro">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
+                  f'<input id="title" class="campo" maxlength="100" value="{e(p.default_title)}"></div>'
+                  f'<div class="campo"><label for="description">Descrição <span class="micro">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'
+                  f'<textarea id="description" class="campo" rows="4" maxlength="4000">{e(p.default_description)}</textarea></div>'
+                  f'<div class="campo"><label for="tags">Tags <span class="micro">(separadas por vírgula, até 15)</span></label><input id="tags" class="campo" value="{e(", ".join(v.tags))}"></div>'
+                  f'<div class="campo"><label for="publish_at">Agendar publicação <span class="micro">(opcional; o vídeo sobe privado e o YouTube publica no horário; '
+                  f'mínimo 15 minutos à frente)</span></label><input id="publish_at" class="campo" type="datetime-local"></div>'
+                  f'{override}<div class="acoes" style="margin-top: 14px;"><button type="button" id="approve" class="btn btn-primario btn-primary">Aprovar Vídeo</button></div>'
+                  f'<div class="campo" style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px;"><label for="reject_reason">Motivo da rejeição <span class="micro">(opcional)</span></label><textarea id="reject_reason" class="campo" rows="2" maxlength="500" placeholder="Informe o motivo caso rejeite"></textarea></div>'
+                  f'<div class="acoes" style="margin-top: 10px;"><button type="button" id="reject" class="btn btn-perigo btn-danger">Rejeitar</button></div><output id="result" role="status" aria-live="polite" class="feedback"></output></form>'
+                  f'</div>')
     else:
         who = ""
         if p.approval:
@@ -95,40 +103,49 @@ def render_preview(p: Preview) -> tuple[str, dict[str, str]]:
         if p.publication:
             link = (f' <a href="https://www.youtube.com/watch?v={e(p.publication.youtube_video_id)}" rel="noopener noreferrer" target="_blank">abrir no YouTube</a>'
                     if p.publication.youtube_video_id else "")
-            who += f"<p>Publicação: <span class=\"badge\">{e(p.publication.status.value)}</span>{link}{(' — ' + e(p.publication.error)) if p.publication.error else ''}</p>"
-        review = f"<div class='card' style='margin-top: 1rem;'><h2>Decisão</h2>{who or '<p>Este vídeo não está em revisão.</p>'}</div>"
+            who += f"<p>Publicação: <span class=\"selo\">{e(p.publication.status.value)}</span>{link}{(' — ' + e(p.publication.error)) if p.publication.error else ''}</p>"
+        fallback_review = '<p class="muted">Este vídeo não está em revisão.</p>'
+        review = f"<div class='card painel' style='margin-top: 18px;'><h3>Decisão</h3>{who or fallback_review}</div>"
 
-    # Card lateral da casca: repete só o que é fato sobre a revisão — sem inventar custo do mês.
-    side_card_html = (
-        "<div class='side-card'><h2>Sobre esta prévia</h2>"
-        "<p>Revise QA, roteiro e fontes antes de decidir. A publicação é feita pelo workflow do "
-        "n8n — o Studio não publica sozinho.</p></div>"
-    )
+    body_html = f"""      <section class="pagina" id="pagina-previa" aria-labelledby="previa-heading">
+        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos/{e(v.id)}">← Voltar ao vídeo</a> /
+          <span>Prévia do corte final</span></p>
+        <div class="cab-video">
+          <div>
+            <p class="eyebrow">PRÉVIA E APROVAÇÃO</p>
+            <h1 class="h1" id="previa-heading">{e(p.default_title)}</h1>
+            <p class="lead" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span class="pill pill-{e(v.status.value)}">{e(v.status.value)}</span>
+              <span class="selo">{e(v.format.value)}</span>
+              <span class="micro">Tema: {e(v.topic)}</span>
+            </p>
+          </div>
+        </div>
 
-    doc = (
-        f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>Prévia: {e(p.default_title)}</title><style nonce="{nonce}">{shell.CSS}</style></head><body>'
-        f'<div class="app-layout">'
-        f'{shell.render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html)}'
-        f'<main class="main-content">'
-        f'<header class="topbar">'
-        f'  <div>'
-        f'    <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>'
-        f'    <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Painel / Prévia do Vídeo</div>'
-        f'    <h1>{e(p.default_title)}</h1>'
-        f'    <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">'
-        f'      <span class="badge">{e(v.status.value)}</span>'
-        f'      <span class="badge">{e(v.format.value)}</span>'
-        f'      <span style="font-size: 0.85rem; color: var(--text-muted);">Tema: {e(v.topic)}</span>'
-        f'    </div>'
-        f'  </div>'
-        f'</header>'
-        f'<div class="content-body">'
-        f'  <div class="layout-detail"><section aria-label="Vídeo">{player}</section><section aria-label="Detalhes">{"".join(side)}{review}</section></div>'
-        f'</div>'
-        f'</main>'
-        f'</div>'
-        f'</body></html>'
+        <div class="grade-video">
+          <div>
+            <div class="player" style="aspect-ratio:auto;padding:0;overflow:hidden;background:#000">
+              {player}
+            </div>
+            {review}
+          </div>
+
+          <div>
+            {"".join(side)}
+          </div>
+        </div>
+      </section>"""
+
+    doc = shell_v3.render_document(
+        title=f"Faceless Studio — Prévia: {p.default_title}",
+        active="videos",
+        crumb="Vídeos / Prévia",
+        body_html=body_html,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=JS,
     )
     headers = {"Content-Security-Policy": f"default-src 'none'; media-src 'self'; img-src 'self'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-{nonce}'; "
                                           "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
