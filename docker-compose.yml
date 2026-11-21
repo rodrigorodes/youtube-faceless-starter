@@ -67,6 +67,11 @@ services:
       MAX_COST_USD_PER_MONTH: ${MAX_COST_USD_PER_MONTH:-}
       MAX_DURATION_SECONDS: '60'
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # OAuth do Google (F8-05): o client secret é um arquivo montado em /app/credentials (read-only).
+      # Estas duas variáveis eram documentadas mas NÃO eram encaminhadas ao container — sem isso,
+      # `Settings.google_client_secret_file` fica None e o painel diz "OAuth não configurado".
+      STUDIO_GOOGLE_CLIENT_SECRET_FILE: ${STUDIO_GOOGLE_CLIENT_SECRET_FILE:-}
+      STUDIO_GOOGLE_OAUTH_REDIRECT_URI: ${STUDIO_GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/studio/oauth/callback}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
