@@ -229,10 +229,36 @@ def starter(w):
     return StartRender(w["videos"], w["scripts"], w["assets"], w["jobs"], enqueue=lambda job_id: None)
 
 
-def use_case(w, renderer):
+def use_case(w, renderer, plans=None):
     return RunRender(w["videos"], w["scripts"], w["assets"], w["jobs"], w["files"],
                      voice_for=lambda project_id: w["voice"], renderer_for=lambda project_id: renderer,
-                     analyzer=Analyzer(w["voice"].seconds, len(w["scripts"].texts)))
+                     analyzer=Analyzer(w["voice"].seconds, len(w["scripts"].texts)), plans=plans)
+
+
+class SpecSpy:
+    """Delega ao renderer real e guarda o ``RenderSpec`` de cada render (para inspecionar durações)."""
+
+    name = "spy"
+
+    def __init__(self, inner):
+        self.inner, self.specs = inner, []
+
+    def render(self, spec, out_path):
+        self.specs.append(spec)
+        return self.inner.render(spec, out_path)
+
+
+class SkewedVoice(Voice):
+    """Escreve um WAV de ``wav_seconds`` mas devolve ``seconds``: prova que o reúso mede o WAV real."""
+
+    def __init__(self, seconds=1.2, wav_seconds=1.7):
+        super().__init__(seconds)
+        self.wav_seconds = wav_seconds
+
+    def speak(self, text, out_path):
+        self.calls.append(text)
+        tone_wav(out_path, self.wav_seconds)
+        return self.seconds
 
 
 def outputs(runner):
@@ -294,3 +320,72 @@ def test_render_is_registered_so_the_next_cycle_has_a_cache_hit(tmp_path):
     runner.calls.clear()
     run.execute(starter(w).execute(V).id)
     assert runner.calls == [] and repo.revisions(f"plan:{V}") == [1, 2]
+
+
+# ------------------------------- RP-06c: o TTS deixa de rodar para a cena intacta -------------------------------
+#
+# A RP-06b provou o reúso do **vídeo** de B por contagem de FFmpeg, mas o `Voice.speak` ainda era
+# chamado para **toda** cena: o fingerprint da narração incluía a duração da fala — saída do TTS.
+# Aqui o fingerprint é da **entrada** (texto + voz) e o `RunRender` consulta o cache antes de
+# sintetizar: a narração em cache (WAV íntegro) é reusada e o `speak` NÃO é chamado para a cena B.
+
+
+def test_changing_one_scene_does_not_speak_for_the_other_scene(tmp_path):
+    """O aceite literal da RP-029 para narração no caminho de produção (RunRender → executor)."""
+    w = world(tmp_path)
+    repo, runner = FakePlanRepository(), StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache")
+    run = use_case(w, renderer, plans=repo)
+
+    run.execute(starter(w).execute(V).id)
+    assert w["voice"].calls == list(TEXTS)  # 1ª revisão: sintetiza as duas cenas
+
+    # Muda SÓ a cena A; a narração de B fica idêntica.
+    w["scripts"].texts = ["Primeira narração totalmente reescrita.", TEXTS[1]]
+    w["videos"].status = S.ASSETS_READY
+    w["voice"].calls.clear()
+    run.execute(starter(w).execute(V).id)
+
+    assert w["voice"].calls == ["Primeira narração totalmente reescrita."]  # só A sintetiza; B veio do cache
+    assert TEXTS[1] not in w["voice"].calls
+
+
+def test_a_corrupted_cached_narration_is_not_reused(tmp_path):
+    """Honestidade do cache: WAV de narração com hash divergente não é reusado — volta a sintetizar."""
+    w = world(tmp_path)
+    repo, runner = FakePlanRepository(), StubRunner()
+    renderer = PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache")
+    run = use_case(w, renderer, plans=repo)
+
+    run.execute(starter(w).execute(V).id)
+    b_wav = repo.entries(f"plan:{V}")[NodeId("narration", B)].artifact_uri
+    Path(b_wav).write_bytes(b"corrompido")  # o conteúdo deixa de bater com o hash registrado
+
+    w["scripts"].texts = ["Primeira narração reescrita por completo.", TEXTS[1]]  # A muda, B não
+    w["videos"].status = S.ASSETS_READY
+    w["voice"].calls.clear()
+    run.execute(starter(w).execute(V).id)
+
+    # sem a corrupção B seria reusado; com o hash divergente, B volta a sintetizar
+    assert "Primeira narração reescrita por completo." in w["voice"].calls
+    assert TEXTS[1] in w["voice"].calls
+
+
+def test_a_reused_narration_takes_the_real_duration_from_the_reused_wav(tmp_path):
+    """A duração de uma cena reusada é a **real** do WAV (medida), não o retorno do TTS nem estimativa."""
+    w = world(tmp_path)
+    w["voice"] = SkewedVoice(seconds=1.2, wav_seconds=1.7)  # o WAV é mais longo que o retorno
+    repo, runner = FakePlanRepository(), StubRunner()
+    spy = SpecSpy(PlanFfmpegRenderer(runner=runner, plans=repo, cache_root=tmp_path / "cache"))
+    run = use_case(w, spy, plans=repo)
+
+    run.execute(starter(w).execute(V).id)
+    assert spy.specs[0].scene_seconds == [scene_length(1.2), scene_length(1.2)]  # 1º render usa o retorno do TTS
+
+    w["videos"].status = S.ASSETS_READY
+    w["voice"].calls.clear()
+    run.execute(starter(w).execute(V).id)
+
+    assert w["voice"].calls == []  # nada de TTS: as duas narrações vieram do cache
+    assert spy.specs[1].scene_seconds == [scene_length(1.7), scene_length(1.7)]  # duração REAL do WAV reusado
+

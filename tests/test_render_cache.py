@@ -12,10 +12,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
+from app.studio.domain.render import split_chunks  # noqa: E402
 from app.studio.domain.render_cache import (  # noqa: E402
     CachePolicy,
     DependencyGraph,
     NodeId,
+    narration_fingerprint,
     plan_graph,
     selective_invalidation,
 )
@@ -49,10 +51,13 @@ def image_ref(asset_id="asset-01", sha=SHA_A, **overrides):
 
 def two_scene_plan(*, revision=1, first_speech=2.0, second_speech=2.0,
                    first_text="Primeira cena do vídeo.", second_text="Segunda cena do vídeo.",
+                   first_voice="", second_voice="",
                    first_sha=SHA_A, second_sha=SHA_B, **overrides):
     scenes = [
-        StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration=first_text, speech_seconds=first_speech),
-        StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration=second_text, speech_seconds=second_speech),
+        StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration=first_text, speech_seconds=first_speech,
+                        voice_id=first_voice),
+        StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration=second_text, speech_seconds=second_speech,
+                        voice_id=second_voice),
     ]
     data = dict(
         plan_id="plan:video-001",
@@ -99,6 +104,46 @@ def test_label_fed_to_the_compiler_changes_the_visual_fingerprint():
     plain = plan_graph(two_scene_plan())
     badged = plan_graph(two_scene_plan(), labels={"scene-01": "DADOS"})
     assert plain.fingerprint(A_VISUAL) != badged.fingerprint(A_VISUAL)
+
+
+# ---------------------------------------------- narração: fingerprint da ENTRADA (RP-06c)
+#
+# A duração da fala é **saída** do TTS; se ela entra no fingerprint, o acerto de cache da
+# narração só é decidível **depois** de sintetizar (o gap da RP-06b). Aqui a narração é
+# decidida pela **entrada**: texto + identidade da voz + parâmetros que mudam o áudio.
+
+
+def test_narration_fingerprint_ignores_the_tts_duration_but_follows_the_text():
+    base = plan_graph(two_scene_plan())
+    stretched = plan_graph(two_scene_plan(revision=2, first_speech=4.0))  # mesma fala, só mais longa
+    assert stretched.fingerprint(A_NARRATION) == base.fingerprint(A_NARRATION)
+    assert stretched.fingerprint(B_NARRATION) == base.fingerprint(B_NARRATION)
+    rewritten = plan_graph(two_scene_plan(revision=2, first_text="Outra narração, bem diferente da primeira."))
+    assert rewritten.fingerprint(A_NARRATION) != base.fingerprint(A_NARRATION)
+    assert rewritten.fingerprint(B_NARRATION) == base.fingerprint(B_NARRATION)
+
+
+def test_changing_the_voice_invalidates_only_that_scene_narration():
+    base = plan_graph(two_scene_plan())
+    changed = plan_graph(two_scene_plan(revision=2, first_voice="piper:alice"))
+    assert changed.fingerprint(A_NARRATION) != base.fingerprint(A_NARRATION)
+    assert changed.fingerprint(B_NARRATION) == base.fingerprint(B_NARRATION)
+
+
+def test_narration_fingerprint_helper_follows_text_and_voice_over_whitespace():
+    assert narration_fingerprint("Olá, mundo.", "v1") != narration_fingerprint("Outro texto.", "v1")
+    assert narration_fingerprint("Olá, mundo.", "v1") != narration_fingerprint("Olá, mundo.", "v2")
+    assert narration_fingerprint("Olá,  mundo.", "v1") == narration_fingerprint("Olá, mundo.", "v1")
+    assert narration_fingerprint("Olá, mundo.", "v1", {"model": "a"}) != narration_fingerprint("Olá, mundo.", "v1", {"model": "b"})
+
+
+def test_plan_graph_uses_the_same_input_fingerprint_the_run_render_consults():
+    # o grafo (com plano) e o RunRender (sem plano, só texto/voz) têm de concordar na entrada
+    plan = two_scene_plan(first_voice="piper:alice")
+    expected = narration_fingerprint(
+        " ".join(split_chunks("Primeira cena do vídeo.")), "voice:scene-01", {"voice": "piper:alice"})
+    assert plan_graph(plan).fingerprint(A_NARRATION) == expected
+
 
 
 def test_asset_content_hash_change_invalidates_only_that_visual():

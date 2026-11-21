@@ -46,6 +46,25 @@ def _fingerprint(*parts: object) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _canonical_params(params: Mapping[str, object] | None) -> tuple:
+    """Parâmetros de áudio numa forma canônica: pares ``(chave, valor)`` ordenados."""
+    return tuple(sorted((str(key), value) for key, value in (params or {}).items()))
+
+
+def narration_fingerprint(narration: str, voice: str = "", params: Mapping[str, object] | None = None) -> str:
+    """Fingerprint da **entrada** da narração: texto + identidade da voz + parâmetros de áudio.
+
+    Propositalmente **sem** a duração da fala: ela é **saída** do TTS, então incluí-la tornaria o
+    acerto de cache indecidível antes de sintetizar (o gap declarado da RP-06b). Aqui mudar o
+    texto, a voz ou um parâmetro que altera o áudio invalida a narração; alongar a fala sem mudar
+    a entrada **não** invalida — o WAV antigo continua reusável. É esta função que o ``RunRender``
+    consulta (sem plano) e o grafo usa (com plano), para as duas decisões concordarem.
+    """
+    text = " ".join(str(narration).split())
+    voices = ((voice, _canonical_params(params)),) if voice else ()
+    return _fingerprint("narration", text, voices)
+
+
 @dataclass(frozen=True, order=True)
 class NodeId:
     """Identidade **lógica** de um nó do grafo: o tipo, independente de revisão/artefato."""
@@ -161,6 +180,7 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
     badges = {str(scene_id): str(label) for scene_id, label in (labels or {}).items()}
     manifest = {reference.asset_id: reference for reference in plan.asset_manifest}
     disclosure = plan.output.disclosure
+    voice_params_by_ref = {source.source_id: source.params for source in plan.generated_audio if source.kind == "voice"}
 
     subtitles_by_scene: dict[str, list] = {}
     for cue in plan.timeline.subtitles:
@@ -177,16 +197,19 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
             cue.text for cue in sorted(subtitles_by_scene.get(scene.scene_id, []), key=lambda c: (c.start_tick, c.text))
         )
         narration_cues = sorted(narration_by_scene.get(scene.scene_id, []), key=lambda c: (c.start_tick, c.source_ref))
-        # Fingerprint da narração: voz (source_ref + duração da fala) e o texto falado (que se
-        # reflete nas legendas). **Sem** tempo absoluto: mover a cena não muda a fala.
+        # Fingerprint da narração: **entrada** — texto falado (que se reflete nas legendas) e a
+        # voz (source_ref + parâmetros que mudam o áudio). **Sem** `duration_ticks` (saída do
+        # TTS) nem tempo absoluto: mover/esticar a cena não muda a fala, e o reúso é decidível
+        # antes de sintetizar (RP-06c). O texto usa os trechos de legenda que o compilador queima.
         narration_id = NodeId("narration", scene.scene_id)
+        narration_cue = narration_cues[0] if narration_cues else None
         nodes.append(
             CacheNode(
                 node=narration_id,
-                fingerprint=_fingerprint(
-                    "narration",
-                    sorted((cue.source_ref, cue.duration_ticks) for cue in narration_cues),
-                    subtitle_texts,
+                fingerprint=narration_fingerprint(
+                    " ".join(subtitle_texts),
+                    narration_cue.source_ref if narration_cue else "",
+                    voice_params_by_ref.get(narration_cue.source_ref) if narration_cue else None,
                 ),
             )
         )

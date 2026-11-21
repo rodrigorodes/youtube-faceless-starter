@@ -57,6 +57,7 @@ class RenderSpec:
     music: bool = True
     disclosure: str = "Ilustração gerada por IA"
     work_dir: Path | None = None  # onde o renderer grava intermediários
+    voice_id: str = ""            # identidade da voz (nome+modelo): entra no fingerprint da narração (RP-06c)
 
 
 class ModelUnavailable(RuntimeError):
