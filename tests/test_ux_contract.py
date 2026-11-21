@@ -124,7 +124,7 @@ def test_video_detail_uses_the_shell_and_videos_has_a_real_destination():
     items = _nav_items(html)
     labels = [_visible_text(item) for item in items]
 
-    for expected in ("Início", "Produção", "Tendências", "Vídeos"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências"):
         assert any(expected in label for label in labels), f"painel/vídeo: '{expected}' fora da casca"
 
     videos = next(item for item in items if "Vídeos" in _visible_text(item))

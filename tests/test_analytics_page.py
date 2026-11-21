@@ -114,7 +114,7 @@ def test_empty_page_is_explicit_and_satisfies_the_ux_contract(env):
     r = page(env)
     assert r.status_code == 200
     assert_ux_contract(r.text, page="painel/analytics")
-    assert re.search(r"<h1[^>]*>Analytics</h1>", r.text)
+    assert re.search(r"<h1[^>]*>Desempenho</h1>", r.text)
 
     # Três métricas que dependem de F8: estado vazio com texto, não número.
     assert r.text.count("Ainda não disponível") >= 4

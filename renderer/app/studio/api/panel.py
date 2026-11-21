@@ -86,6 +86,9 @@ _NAV_ICONS = {
 # (biblioteca compartilhada, VS-05a). A seção só aparece quando houver, de fato, algo indisponível.
 _NAV_UNAVAILABLE: tuple[tuple[str, str, str], ...] = ()
 
+# UX-01: telas que continuam existindo fora do menu mantêm um item atual na casca.
+_NAV_ALIASES = {"analytics": "desempenho", "producao": "videos"}
+
 
 def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
                       channels_href: str | None = "/studio/canais") -> str:
@@ -98,15 +101,14 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
     para o bloco `#videos` do Início (destino real, sem link morto).
     `channels_href` é o link real da tela de Canais (F10), já entregue nesta versão; `None` omite o item.
     """
+    active = _NAV_ALIASES.get(active, active)
     links = [
         ("inicio", "Início", "/studio/panel"),
-        ("producao", "Produção", "/studio/panel/producao"),
-        ("tendencias", "Tendências", "/studio/panel/tendencias"),
+        ("novo-video", "Novo vídeo", "/studio/panel/novo-video"),
         ("videos", "Vídeos", "/studio/panel/videos"),
-        ("analytics", "Analytics", "/studio/panel/analytics"),
+        ("tendencias", "Tendências", "/studio/panel/tendencias"),
+        ("desempenho", "Desempenho", "/studio/panel/analytics"),
     ]
-    if channels_href:
-        links.append(("canais", "Canais", channels_href))
     items = []
     for key, label, href in links:
         current = ' aria-current="page"' if key == active else ""
@@ -119,8 +121,14 @@ def build_sidebar_nav(*, active: str = "inicio", base_href: str = "",
             </a>
           </li>""")
     management = f"""
-      <p class="nav-label">Gestão</p>
+      <p class="nav-label">Configuração</p>
       <ul class="nav-list">
+        <li>
+          <a class="nav-item{' active' if active == 'canais' else ''}" href="{e(channels_href or '/studio/canais')}"{' aria-current="page"' if active == 'canais' else ''}>
+            {_NAV_ICONS['canais']}
+            <span>Canais</span>
+          </a>
+        </li>
         <li>
           <a class="nav-item{' active' if active == 'estilos' else ''}" href="/studio/panel/estilos"{' aria-current="page"' if active == 'estilos' else ''}>
             {_NAV_ICONS['estilos']}
@@ -2433,6 +2441,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             <p class="muted">Quando você produzir um vídeo, o andamento aparece aqui com etapa atual, próxima ação e custo.</p>
             {steps_chips_html}
             <p class="fine">Etapas exibidas sem estado: nenhuma foi iniciada. Não há percentual porque não existe execução registrada.</p>
+            <div class="row"><a class="btn" href="/studio/panel/producao">Abrir Produção</a></div>
           </article>
         """
         if total_videos == 0

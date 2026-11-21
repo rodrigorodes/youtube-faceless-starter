@@ -379,7 +379,7 @@ def render_analytics(view: AnalyticsDashboardView,
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
-  <title>Faceless Studio — Analytics</title>
+  <title>Faceless Studio — Desempenho</title>
   <style nonce="{nonce}">{shell.CSS}{ANALYTICS_CSS}</style>
 </head>
 <body>
@@ -390,7 +390,7 @@ def render_analytics(view: AnalyticsDashboardView,
       <div class="card">
         <div class="spread">
           <div>
-            <h1 id="analytics-heading">Analytics</h1>
+            <h1 id="analytics-heading">Desempenho</h1>
             <p class="page-goal">Ação primária: <b>aprender</b>. CTR e retenção aparecem só quando a
             API entrega e a permissão existe — fora disso, “ainda não disponível”.</p>
           </div>

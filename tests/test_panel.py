@@ -627,8 +627,10 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
     items = _primary_nav(html)
     labels = [_nav_text(item) for item in items]
 
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Canais", "Analytics", "Estilos", "Equipe"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho",
+                     "Canais", "Estilos", "Conexões", "Equipe"):
         assert any(expected in label for label in labels), expected
+    assert not any("Produção" in label for label in labels), labels
 
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1
@@ -637,14 +639,12 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
     assert html.count('aria-current="page"') == 1
 
     for label, href in (
-        # IA-01: Início, Produção e Tendências são rotas de servidor reais; "Vídeos" aponta para
-        # a rota real /studio/panel/videos (302 para o bloco #videos do Início) — não âncoras.
         ("Início", "/studio/panel"),
-        ("Produção", "/studio/panel/producao"),
-        ("Tendências", "/studio/panel/tendencias"),
+        ("Novo vídeo", "/studio/panel/novo-video"),
         ("Vídeos", "/studio/panel/videos"),
+        ("Tendências", "/studio/panel/tendencias"),
+        ("Desempenho", "/studio/panel/analytics"),
         ("Canais", "/studio/canais"),
-        ("Analytics", "/studio/panel/analytics"),
     ):
         item = next(item for item in items if label in _nav_text(item))
         assert f'href="{href}"' in item
@@ -929,7 +929,7 @@ def test_render_panel_matches_approved_mockup_structure_without_illustrative_dat
     html = _render_panel_html()
     visible = _visible_text(html)
 
-    for group in ("Operação", "Gestão"):
+    for group in ("Operação", "Configuração"):
         assert group in visible
 
     assert 'class="hero"' in html
