@@ -97,6 +97,9 @@ class UseCases:
     associate_youtube_channel: AssociateYouTubeChannel | None = None
     disconnect_youtube_channel: DisconnectYouTubeChannel | None = None
     get_project_config: GetPublicProjectConfig | None = None
+    # F11: leitura da tela de Equipe (tenancy/BYOK). As mutações existem no serviço, mas a rota
+    # só as expõe quando houver ator autenticado (F11-02).
+    team_view: "BuildTeamView | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -122,10 +125,12 @@ class UseCases:
                   get_youtube_channel: GetYouTubeChannel | None = None,
                   associate_youtube_channel: AssociateYouTubeChannel | None = None,
                   disconnect_youtube_channel: DisconnectYouTubeChannel | None = None,
-                  get_project_config: GetPublicProjectConfig | None = None) -> "UseCases":
+                  get_project_config: GetPublicProjectConfig | None = None,
+                  team_view: "BuildTeamView | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
 list_channel_profiles, production, script_view, providers, get_channel_budget, set_channel_budget,
-                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config)
+                   get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
+                   team_view)

@@ -22,6 +22,7 @@ from .adapters.image_veo import VeoImage
 from .adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository
 from .adapters.postgres.analytics_repo import PostgresAnalyticsRepository
 from .adapters.postgres.panel_repo import PostgresPanelRepository
+from .adapters.postgres.saas_repo import PostgresSaasRepository
 from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
@@ -49,6 +50,7 @@ from .application.config import ProjectConfig, ProviderNotFound, build, register
 from .application.ideas import ScoreIdeas
 from .application.analytics import Analytics
 from .application.panel import BuildPanel
+from .application.saas import BuildTeamView
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
@@ -404,6 +406,7 @@ class Studio:
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id))
         panel = BuildPanel(PostgresPanelRepository(connect), s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
+        team_view = BuildTeamView(PostgresSaasRepository(connect), lambda: datetime.now(timezone.utc))
         script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
         return UseCases.from_repo(repo, editorial, media, rendering, publishing,
                                   Analytics(PostgresAnalyticsRepository(connect)), Resume(repo, rendering.start),
@@ -426,7 +429,8 @@ production=production, script_view=script_view,
                                   get_youtube_channel=GetYouTubeChannel(youtube_repo, secret_store),
                                   associate_youtube_channel=AssociateYouTubeChannel(youtube_repo, secret_store),
                                   disconnect_youtube_channel=DisconnectYouTubeChannel(youtube_repo, secret_store),
-                                  get_project_config=GetPublicProjectConfig(repo))
+                                  get_project_config=GetPublicProjectConfig(repo),
+                                  team_view=team_view)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
