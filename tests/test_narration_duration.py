@@ -4,7 +4,13 @@ import unicodedata
 import pytest
 
 from app.studio.domain.contracts import Scene
-from app.studio.domain.narration_duration import estimate_narration_durations
+from app.studio.domain.narration_duration import (
+    MEASURED_PAUSE_SECONDS,
+    MEASURED_SPEECH_WORDS_PER_MINUTE,
+    MEASURED_UTTERANCE_OVERHEAD_SECONDS,
+    estimate_narration_durations,
+    estimate_voice_durations,
+)
 
 
 def scene(idx, narration, duration_s=None):
@@ -81,3 +87,35 @@ def test_overflow_in_total_is_rejected_when_each_scene_is_finite():
 
     with pytest.raises(ValueError):
         estimate_narration_durations(scenes, 1e-306)
+
+
+# --- modelo medido do Piper (F4-03, calibração real) --------------------------
+
+def test_voice_model_adds_measured_overhead_rate_and_pauses():
+    result = estimate_voice_durations(["um dois três quatro cinco, seis"])
+
+    expected = (
+        MEASURED_UTTERANCE_OVERHEAD_SECONDS
+        + 6 * 60 / MEASURED_SPEECH_WORDS_PER_MINUTE
+        + MEASURED_PAUSE_SECONDS
+    )
+    assert result.scene_seconds == pytest.approx((expected,))
+    assert result.total_seconds == pytest.approx(expected)
+
+
+def test_voice_model_pays_overhead_per_synthesis_and_counts_punctuation_runs_once():
+    result = estimate_voice_durations(["Um, dois! Três...", "Quatro?"])
+
+    first = (
+        MEASURED_UTTERANCE_OVERHEAD_SECONDS
+        + 3 * 60 / MEASURED_SPEECH_WORDS_PER_MINUTE
+        + 3 * MEASURED_PAUSE_SECONDS  # vírgula, exclamação, reticências
+    )
+    second = MEASURED_UTTERANCE_OVERHEAD_SECONDS + 60 / MEASURED_SPEECH_WORDS_PER_MINUTE + MEASURED_PAUSE_SECONDS
+    assert result.scene_seconds == pytest.approx((first, second))
+    assert result.total_seconds == pytest.approx(first + second)
+
+
+def test_voice_model_of_silence_is_the_synthesis_overhead_only():
+    assert estimate_voice_durations([]).total_seconds == 0
+    assert estimate_voice_durations([" ... ! "]).total_seconds == pytest.approx(MEASURED_UTTERANCE_OVERHEAD_SECONDS)
