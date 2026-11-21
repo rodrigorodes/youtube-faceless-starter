@@ -223,6 +223,20 @@ class BuildPanel:
         self.trends = trends
         self.categories_repo = categories_repo
 
+    def month_cost(self) -> MonthCost:
+        """Custo do mês corrente com os quatro rótulos. Usado pelo painel e pelas telas de produção."""
+        m_breakdown = cost_breakdown(self.repo.month_usage())
+        m_known = m_breakdown.known_usd
+        percent = (m_known / self.monthly_cap_usd * 100.0) if self.monthly_cap_usd > 0 else None
+        return MonthCost(
+            text=cost_summary_text(m_breakdown),
+            known_usd=m_known,
+            cap_usd=self.monthly_cap_usd,
+            unknown_calls=m_breakdown.unknown_calls,
+            percent=percent,
+            breakdown=m_breakdown,
+        )
+
     def execute(self, days: int = 7, project_id: str | None = None) -> PanelView:
         if days not in (7, 14, 30):
             raise InvalidInput("days must be 7, 14 or 30")
@@ -288,17 +302,7 @@ class BuildPanel:
         # Order groups by most recent video update
         topic_groups.sort(key=lambda g: g.videos[0].updated_at, reverse=True)
 
-        m_breakdown = cost_breakdown(self.repo.month_usage())
-        m_known = m_breakdown.known_usd
-        percent = (m_known / self.monthly_cap_usd * 100.0) if self.monthly_cap_usd > 0 else None
-        month = MonthCost(
-            text=cost_summary_text(m_breakdown),
-            known_usd=m_known,
-            cap_usd=self.monthly_cap_usd,
-            unknown_calls=m_breakdown.unknown_calls,
-            percent=percent,
-            breakdown=m_breakdown,
-        )
+        month = self.month_cost()
 
         trend_views: list[TrendItemView] = []
         trends_status = "never_collected"

@@ -86,6 +86,18 @@ def test_invalid_days_raises_invalid_input():
     assert panel.execute(days=30).days == 30
 
 
+def test_month_cost_matches_execute_month_and_never_zero_for_absence():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    empty = BuildPanel(FakePanelRepo(month_rows=[]), 15.0, lambda: now)
+    assert empty.month_cost() == empty.execute(days=7).month
+    assert empty.month_cost().text == "sem registro de uso"
+
+    paid = FakePanelRepo(month_rows=[("opencode", "gpt-5-mini", 0.07, "ACTUAL")])
+    panel = BuildPanel(paid, 15.0, lambda: now)
+    assert panel.month_cost() == panel.execute(days=7).month
+    assert panel.month_cost().breakdown.real_calls == 1
+
+
 def test_groups_topics_by_normalized_key():
     now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
     v1 = _row("v1", "ADE Lineup!", VideoStatus.AWAITING_APPROVAL, updated_at=now)
