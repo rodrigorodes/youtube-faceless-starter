@@ -16,12 +16,11 @@ Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publi
 - [Configuração no Windows](docs/03-configuracao-windows.md)
 - [Variáveis de ambiente](docs/04-variaveis-de-ambiente.md)
 - [OpenAI Luna via OAuth (OpenCode)](docs/07-openai-luna-oauth.md)
-- [Publicar no YouTube (workflow V2)](docs/08-publicar-no-youtube.md)
 - [Arquitetura e contratos (gerado)](docs/10-arquitetura.md)
 - [Fluxo editorial: fontes, roteiro e checagem factual](docs/12-editorial.md)
 - [Storyboard e mídia: imagens por cena, cache, licença e custo](docs/13-midia.md)
 - [Narração e renderização: vídeo, legenda, QA e fila](docs/14-render.md)
-- [Aprovação e publicação: prévia, fila, upload retomável](docs/15-publicacao.md)
+- [Aprovação e publicação: prévia, gate de QA e publicação nativa](docs/15-publicacao.md)
 - [Recuperação e analytics: versão inicial e limites](docs/p06-p07-offline.md)
 - [Alertas passivos e suas limitações](docs/16-alertas-p06.md)
 
