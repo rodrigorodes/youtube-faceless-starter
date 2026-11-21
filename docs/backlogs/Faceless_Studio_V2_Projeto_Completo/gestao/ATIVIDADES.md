@@ -47,11 +47,34 @@ página só, que renderiza cinco seções de uma vez). Desenho pronto em
 `/panel/tendencias`), "Vídeos" segue o protótipo como bloco do Início com alias, e o mapa exato dos
 testes que fixam as âncoras atuais.
 
+**PROD-02 (em execução):** **o gate humano é intransponível** — o `resume` devolve 200, muda o estado
+para `RUNNING` e **ninguém religa o motor**. Ver abaixo o achado completo.
+
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| — | (vazio) | — |
+| **PROD-03** | **Recuperação de runs em voo no boot** (hoje o `lifespan` do app não varre nada): um run `RUNNING` após queda/reinício fica órfão e só se recupera pela ação manual do PROD-02. Sem varredor, nenhuma produção sobrevive a um deploy. | PROD-02 |
+
+## Achado do dono (2) — 2026-11-21: o gate humano travava toda produção
+
+O dono rodou a produção `04260fa5ed8f5fdfb4ab0b7a23d1456c` (vídeo `e0ae111f86084e3585de00fd5dc5cc65`). O
+roteiro foi gerado (17 s, 6 cenas, `SCRIPTED`), o run pausou em `WAITING_HUMAN` ("roteiro gerado:
+revisão humana obrigatória"), o dono clicou **Continuar** — o log mostra
+`POST /production-runs/04260.../resume → 200 OK` — o estado virou `RUNNING` e **nada mais aconteceu**:
+20+ min depois, nenhuma etapa com lease, nada reivindicado, nenhum erro.
+
+**Causa raiz:** `ProductionWorker.work` só é lançado por `Production.start`
+(`application/production.py:713`); os endpoints `/resume` e `/retry` (`routes.py`) chamam
+`coordinator.resume/retry` direto e **nunca** `submit`. Como o laço encerra quando o coordenador pausa,
+depois do gate não há quem religue. Em modo `INTERACTIVE` (o do dono) **toda** produção parava no
+primeiro gate — e o "Tentar novamente" da PROD-01 tinha o mesmo defeito.
+
+**Fonte suspeita:** a "fonte" registrada no vídeo é um **trecho da minha própria mensagem de chat**
+("a URL vira só referência — é isso que contorna a lista de nicho travada em amsterdam-dance-event.nl)",
+100 caracteres), com URL `https://www.youtube.com/watch?v=nTJ5Z9gZsZU`. Ou seja: o roteiro foi gerado
+**sem base factual** — é o dono colar o texto real da fonte. Registrado porque o fact-check seguinte
+tende a reprovar.
 
 ## Bloqueadas
 
