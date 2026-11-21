@@ -1,0 +1,366 @@
+{
+  "voice": "piper:pt_BR-faber-medium",
+  "voice_path": "/opt/voices/pt_BR-faber-medium.onnx",
+  "piper_version": "1.8.0",
+  "python_version": "3.12.16",
+  "reference_words_per_minute": 150.0,
+  "model_sha256": "75e913eb463db0b6ac7ddf68d3e4c9ac19ace36dc3b710a81039b448352b8ffc",
+  "config_sha256": "6b6801319e5a70aa4d75c63343515f55d1cd671ecd1ac511586bc16216812261",
+  "samples": [
+    {
+      "id": "curto_uma_frase",
+      "kind": "curto",
+      "description": "Uma frase curta e seca, caso base de fala mínima.",
+      "utterances": 1,
+      "words": 8,
+      "pause_marks": 1,
+      "estimated_seconds_at_reference": 3.2,
+      "measured_seconds": 2.8444444444444446,
+      "measured_utterance_seconds": [
+        2.8444444444444446
+      ],
+      "relative_error_estimate_vs_real": 0.12500000000000003,
+      "effective_words_per_minute": 168.75,
+      "ratio_real_over_estimate": 0.8888888888888888,
+      "synthesis_wall_seconds": 0.6256715420167893,
+      "calibrated_model_seconds": 3.275820454777669,
+      "relative_error_calibrated_vs_real": 0.15165562863277415
+    },
+    {
+      "id": "curto_pontuado",
+      "kind": "curto",
+      "description": "Frase curta com pergunta, exclamação e vírgula: pausas em pouco texto.",
+      "utterances": 1,
+      "words": 7,
+      "pause_marks": 4,
+      "estimated_seconds_at_reference": 2.8,
+      "measured_seconds": 3.7151927437641725,
+      "measured_utterance_seconds": [
+        3.7151927437641725
+      ],
+      "relative_error_estimate_vs_real": -0.24633789062500008,
+      "effective_words_per_minute": 113.04931640625,
+      "ratio_real_over_estimate": 1.3268545513443475,
+      "synthesis_wall_seconds": 0.6020987910451367,
+      "calibrated_model_seconds": 4.182380019754733,
+      "relative_error_calibrated_vs_real": 0.12575048139150222
+    },
+    {
+      "id": "frases_curtas",
+      "kind": "pontuacao",
+      "description": "Dez frases curtas com muito ponto final e interrogação, uma cena.",
+      "utterances": 1,
+      "words": 26,
+      "pause_marks": 10,
+      "estimated_seconds_at_reference": 10.4,
+      "measured_seconds": 12.561995464852608,
+      "measured_utterance_seconds": [
+        12.561995464852608
+      ],
+      "relative_error_estimate_vs_real": -0.17210605360443618,
+      "effective_words_per_minute": 124.18409195933457,
+      "ratio_real_over_estimate": 1.2078841793127506,
+      "synthesis_wall_seconds": 1.9375113339629024,
+      "calibrated_model_seconds": 11.795488643776224,
+      "relative_error_calibrated_vs_real": -0.06101791894615821
+    },
+    {
+      "id": "prosa_pontuada",
+      "kind": "pontuacao",
+      "description": "Parágrafo corrido com vírgulas e pontos, mesma sequência de palavras do item sem pontuação.",
+      "utterances": 1,
+      "words": 58,
+      "pause_marks": 10,
+      "estimated_seconds_at_reference": 23.2,
+      "measured_seconds": 20.340680272108845,
+      "measured_utterance_seconds": [
+        20.340680272108845
+      ],
+      "relative_error_estimate_vs_real": 0.1405714897260273,
+      "effective_words_per_minute": 171.0857234589041,
+      "ratio_real_over_estimate": 0.8767534600046916,
+      "synthesis_wall_seconds": 2.07634633500129,
+      "calibrated_model_seconds": 20.633567872831257,
+      "relative_error_calibrated_vs_real": 0.014399105477510518
+    },
+    {
+      "id": "prosa_sem_pontuacao",
+      "kind": "pontuacao_controle",
+      "description": "A mesma sequência de palavras da prosa pontuada, sem nenhuma pontuação: isola o custo das pausas.",
+      "utterances": 1,
+      "words": 58,
+      "pause_marks": 0,
+      "estimated_seconds_at_reference": 23.2,
+      "measured_seconds": 16.985396825396826,
+      "measured_utterance_seconds": [
+        16.985396825396826
+      ],
+      "relative_error_estimate_vs_real": 0.3658791866028707,
+      "effective_words_per_minute": 204.8818779904306,
+      "ratio_real_over_estimate": 0.7321291735084839,
+      "synthesis_wall_seconds": 1.0649310000007972,
+      "calibrated_model_seconds": 16.691069403214478,
+      "relative_error_calibrated_vs_real": -0.017328262931264916
+    },
+    {
+      "id": "numeros_siglas",
+      "kind": "numeros",
+      "description": "Números, moeda, porcentagem, ordinais e siglas que o Piper expande de forma diferente da contagem de palavras.",
+      "utterances": 1,
+      "words": 53,
+      "pause_marks": 13,
+      "estimated_seconds_at_reference": 21.2,
+      "measured_seconds": 20.154920634920636,
+      "measured_utterance_seconds": [
+        20.154920634920636
+      ],
+      "relative_error_estimate_vs_real": 0.05185231854838702,
+      "effective_words_per_minute": 157.77784778225805,
+      "ratio_real_over_estimate": 0.9507038035339923,
+      "synthesis_wall_seconds": 2.5036686670500785,
+      "calibrated_model_seconds": 20.43536753417644,
+      "relative_error_calibrated_vs_real": 0.013914562321317119
+    },
+    {
+      "id": "longo_480s",
+      "kind": "longo",
+      "description": "Roteiro documental de ~480 s em 20 cenas de até 400 caracteres, como o renderer sintetiza um vídeo longo.",
+      "utterances": 20,
+      "words": 1193,
+      "pause_marks": 176,
+      "estimated_seconds_at_reference": 477.2,
+      "measured_seconds": 412.734693877551,
+      "measured_utterance_seconds": [
+        20.166530612244898,
+        21.954467120181405,
+        19.82984126984127,
+        20.36390022675737,
+        21.037278911564627,
+        19.91111111111111,
+        21.91963718820862,
+        21.78031746031746,
+        20.654149659863947,
+        21.66421768707483,
+        19.969160997732427,
+        20.97922902494331,
+        20.59609977324263,
+        20.201360544217685,
+        21.420408163265307,
+        20.259410430839,
+        20.421950113378685,
+        20.340680272108845,
+        19.481541950113378,
+        19.783401360544218
+      ],
+      "relative_error_estimate_vs_real": 0.15619066455696198,
+      "effective_words_per_minute": 173.4285996835443,
+      "ratio_real_over_estimate": 0.8649092495338454,
+      "synthesis_wall_seconds": 48.82468793995213,
+      "calibrated_model_seconds": 399.5546651240154,
+      "relative_error_calibrated_vs_real": -0.03193341618489149
+    }
+  ],
+  "observations": [
+    {
+      "sample": "curto_uma_frase",
+      "words": 8,
+      "pauses": 1,
+      "seconds": 2.8444444444444446,
+      "chars": 45
+    },
+    {
+      "sample": "curto_pontuado",
+      "words": 7,
+      "pauses": 4,
+      "seconds": 3.7151927437641725,
+      "chars": 39
+    },
+    {
+      "sample": "frases_curtas",
+      "words": 26,
+      "pauses": 10,
+      "seconds": 12.561995464852608,
+      "chars": 143
+    },
+    {
+      "sample": "prosa_pontuada",
+      "words": 58,
+      "pauses": 10,
+      "seconds": 20.340680272108845,
+      "chars": 339
+    },
+    {
+      "sample": "prosa_sem_pontuacao",
+      "words": 58,
+      "pauses": 0,
+      "seconds": 16.985396825396826,
+      "chars": 329
+    },
+    {
+      "sample": "numeros_siglas",
+      "words": 53,
+      "pauses": 13,
+      "seconds": 20.154920634920636,
+      "chars": 251
+    },
+    {
+      "sample": "longo_480s",
+      "words": 58,
+      "pauses": 9,
+      "seconds": 20.166530612244898,
+      "chars": 341
+    },
+    {
+      "sample": "longo_480s",
+      "words": 59,
+      "pauses": 10,
+      "seconds": 21.954467120181405,
+      "chars": 361
+    },
+    {
+      "sample": "longo_480s",
+      "words": 61,
+      "pauses": 6,
+      "seconds": 19.82984126984127,
+      "chars": 363
+    },
+    {
+      "sample": "longo_480s",
+      "words": 56,
+      "pauses": 9,
+      "seconds": 20.36390022675737,
+      "chars": 347
+    },
+    {
+      "sample": "longo_480s",
+      "words": 66,
+      "pauses": 9,
+      "seconds": 21.037278911564627,
+      "chars": 375
+    },
+    {
+      "sample": "longo_480s",
+      "words": 59,
+      "pauses": 10,
+      "seconds": 19.91111111111111,
+      "chars": 356
+    },
+    {
+      "sample": "longo_480s",
+      "words": 60,
+      "pauses": 10,
+      "seconds": 21.91963718820862,
+      "chars": 379
+    },
+    {
+      "sample": "longo_480s",
+      "words": 59,
+      "pauses": 9,
+      "seconds": 21.78031746031746,
+      "chars": 368
+    },
+    {
+      "sample": "longo_480s",
+      "words": 62,
+      "pauses": 9,
+      "seconds": 20.654149659863947,
+      "chars": 378
+    },
+    {
+      "sample": "longo_480s",
+      "words": 59,
+      "pauses": 9,
+      "seconds": 21.66421768707483,
+      "chars": 371
+    },
+    {
+      "sample": "longo_480s",
+      "words": 63,
+      "pauses": 7,
+      "seconds": 19.969160997732427,
+      "chars": 348
+    },
+    {
+      "sample": "longo_480s",
+      "words": 58,
+      "pauses": 10,
+      "seconds": 20.97922902494331,
+      "chars": 368
+    },
+    {
+      "sample": "longo_480s",
+      "words": 59,
+      "pauses": 11,
+      "seconds": 20.59609977324263,
+      "chars": 362
+    },
+    {
+      "sample": "longo_480s",
+      "words": 57,
+      "pauses": 10,
+      "seconds": 20.201360544217685,
+      "chars": 338
+    },
+    {
+      "sample": "longo_480s",
+      "words": 61,
+      "pauses": 10,
+      "seconds": 21.420408163265307,
+      "chars": 372
+    },
+    {
+      "sample": "longo_480s",
+      "words": 60,
+      "pauses": 7,
+      "seconds": 20.259410430839,
+      "chars": 349
+    },
+    {
+      "sample": "longo_480s",
+      "words": 61,
+      "pauses": 6,
+      "seconds": 20.421950113378685,
+      "chars": 366
+    },
+    {
+      "sample": "longo_480s",
+      "words": 63,
+      "pauses": 9,
+      "seconds": 20.340680272108845,
+      "chars": 354
+    },
+    {
+      "sample": "longo_480s",
+      "words": 56,
+      "pauses": 9,
+      "seconds": 19.481541950113378,
+      "chars": 343
+    },
+    {
+      "sample": "longo_480s",
+      "words": 56,
+      "pauses": 7,
+      "seconds": 19.783401360544218,
+      "chars": 363
+    }
+  ],
+  "pooled": {
+    "observations": 26,
+    "words": 1403,
+    "seconds": 489.33732426303857,
+    "effective_words_per_minute": 172.02856971267911
+  },
+  "regression": {
+    "intercept_seconds": 0.6720508005522333,
+    "seconds_per_word": 0.2761899759079697,
+    "seconds_per_pause": 0.394249846961678,
+    "words_per_minute": 217.2417728150743,
+    "pause_marks": ".,;:!?… — –"
+  },
+  "summary": {
+    "max_abs_relative_error_estimate_at_reference": 0.3658791866028707,
+    "max_abs_relative_error_calibrated": 0.15165562863277415,
+    "samples": 7,
+    "utterances": 26
+  }
+}

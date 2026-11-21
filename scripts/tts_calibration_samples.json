@@ -1,0 +1,85 @@
+{
+  "voice": "piper:pt_BR-faber-medium",
+  "piper_version": "1.8.0",
+  "model_sha256": "75e913eb463db0b6ac7ddf68d3e4c9ac19ace36dc3b710a81039b448352b8ffc",
+  "config_sha256": "6b6801319e5a70aa4d75c63343515f55d1cd671ecd1ac511586bc16216812261",
+  "words_per_minute_reference": 150.0,
+  "notes": "Cada item é sintetizado separadamente, como o renderer faz por cena (voice.speak por Scene.narration, limite de 400 caracteres). O total do roteiro é a soma das durações reais, sem LEAD/TAIL.",
+  "samples": [
+    {
+      "id": "curto_uma_frase",
+      "kind": "curto",
+      "description": "Uma frase curta e seca, caso base de fala mínima.",
+      "texts": [
+        "Hoje o canal completa três anos de histórias."
+      ]
+    },
+    {
+      "id": "curto_pontuado",
+      "kind": "curto",
+      "description": "Frase curta com pergunta, exclamação e vírgula: pausas em pouco texto.",
+      "texts": [
+        "Espera. Você viu isso? Incrível, não é?"
+      ]
+    },
+    {
+      "id": "frases_curtas",
+      "kind": "pontuacao",
+      "description": "Dez frases curtas com muito ponto final e interrogação, uma cena.",
+      "texts": [
+        "O plano mudou. Ninguém avisou. Ele chegou cedo. Ela saiu tarde. O preço subiu. A equipe parou. Quem decide? Quem paga? O prazo venceu. E agora?"
+      ]
+    },
+    {
+      "id": "prosa_pontuada",
+      "kind": "pontuacao",
+      "description": "Parágrafo corrido com vírgulas e pontos, mesma sequência de palavras do item sem pontuação.",
+      "texts": [
+        "A empresa cresceu depressa, contratou gente nova e abriu três escritórios. O fundador dizia que o segredo era escutar o cliente, medir o resultado e corrigir a rota. Nem tudo deu certo. Houve meses difíceis, demissões e um produto que fracassou. Mesmo assim, a receita dobrou, a marca ficou conhecida e o time aprendeu a errar mais rápido."
+      ]
+    },
+    {
+      "id": "prosa_sem_pontuacao",
+      "kind": "pontuacao_controle",
+      "description": "A mesma sequência de palavras da prosa pontuada, sem nenhuma pontuação: isola o custo das pausas.",
+      "texts": [
+        "A empresa cresceu depressa contratou gente nova e abriu três escritórios O fundador dizia que o segredo era escutar o cliente medir o resultado e corrigir a rota Nem tudo deu certo Houve meses difíceis demissões e um produto que fracassou Mesmo assim a receita dobrou a marca ficou conhecida e o time aprendeu a errar mais rápido"
+      ]
+    },
+    {
+      "id": "numeros_siglas",
+      "kind": "numeros",
+      "description": "Números, moeda, porcentagem, ordinais e siglas que o Piper expande de forma diferente da contagem de palavras.",
+      "texts": [
+        "Em 2026, o IBGE divulgou que 5,7 milhões de pessoas mudaram de cidade. O PIB cresceu 2,3% no trimestre, segundo a ONU e o FMI. A empresa faturou R$ 1.200.000,00 com 42 lojas. O CEO admitiu: a IA cortou 18% dos custos, mas 1º de janeiro ainda preocupa."
+      ]
+    },
+    {
+      "id": "longo_480s",
+      "kind": "longo",
+      "description": "Roteiro documental de ~480 s em 20 cenas de até 400 caracteres, como o renderer sintetiza um vídeo longo.",
+      "texts": [
+        "Em 2007, ninguém imaginava que alugar filmes por alguns reais mudaria a forma como o mundo compra. O DVD já parecia moderno. Ainda assim, a ideia era simples: pagar pouco por mês e esquecer a multa de atraso. Duas décadas depois, esse modelo virou a espinha dorsal de indústrias inteiras. A história começa muito antes da internet comercial.",
+        "A lógica é antiga. Jornais sempre venderam assinaturas, clubes sempre cobraram mensalidade e companhias de telefone sempre somaram minutos. O que mudou foi a escala. Com pagamento automático e cartão salvo, cobrar todo mês ficou barato. O cliente deixa de decidir a cada compra e passa a decidir uma vez, no começo. A mudança foi silenciosa, gradual e profunda.",
+        "Para a empresa, a diferença é enorme. A receita deixa de oscilar com a sorte do mês e passa a ter previsibilidade. Um assinante que fica dois anos vale muito mais do que um comprador de passagem. Por isso o mercado deixou de perguntar quantas vendas fizemos e começou a perguntar quantos clientes permaneceram. Previsibilidade de receita vale dinheiro no mercado.",
+        "Mas toda assinatura carrega uma promessa perigosa. O cliente paga adiantado por algo que ainda não usou. Se o serviço decepciona, ele cancela e raramente volta. A conta não fecha apenas com marketing agressivo. É preciso entregar valor de verdade, mês após mês, sem depender de novidade constante. Uma promessa quebrada custa caro no ano seguinte.",
+        "Foi o que aconteceu com a música. Primeiro vieram os downloads ilegais, depois as lojas digitais e só então o streaming. Quando o catálogo inteiro coube em um aplicativo, a pergunta deixou de ser qual disco comprar e passou a ser qual plano escolher. O consumo explodiu, mas a margem ficou fina e a disputa virou global. O ouvinte ganhou acesso, o artista discutiu o repasse.",
+        "O mesmo roteiro se repetiu no vídeo. Locadora, televisão por assinatura, streaming e depois streaming de novo. Cada etapa prometeu mais conveniência por menos dinheiro. O problema é que a produção de conteúdo não fica mais barata com o tempo. Séries caras exigem orçamentos caros, e alguém precisa pagar essa conta. No fim das contas, a conta sempre chega.",
+        "No software, a assinatura virou dogma. Comprar uma licença para sempre deu lugar a pagar pelo direito de usar. O argumento era justo: atualizações contínuas, suporte ativo e servidores sempre no ar. O efeito colateral foi uma conta mensal que cresce em silêncio, aplicativo por aplicativo, até virar parte do orçamento fixo. O orçamento doméstico sente antes do cliente reclamar.",
+        "O consumidor aprendeu a desconfiar. Pesquisa recente mostrou que boa parte das pessoas não sabe quanto gasta em assinaturas. Os valores são pequenos, espalhados e automáticos. Ninguém sente o impacto de dez reais por mês, mas sente o de vinte serviços ao mesmo tempo. A conta chega sem aviso, direto no extrato. Pequenas cobranças mensais somam grandes valores anuais.",
+        "As empresas responderam com planos, pacotes e descontos. Em vez de escolher entre produtos, o cliente escolhe entre combinações. É uma forma de esconder o preço unitário e aumentar o tempo de permanência. Funciona enquanto a percepção de valor resiste. Quando o cliente começa a comparar linha por linha, o castelo balança. Pacote bom é pacote que o cliente entende de imediato.",
+        "Existe também o custo de sair. Cancelar deveria ser simples, mas raramente é. Formulários escondidos, atendimento demorado e promoções de retenção transformam o botão de cancelar em labirinto. A prática é tão comum que virou tema de regulação em vários países. Reter pela dificuldade não é estrategia, é dívida de confiança. Dificuldade de sair não é retenção de verdade.",
+        "A retenção real nasce de outra coisa. Um serviço que o cliente usa toda semana não precisa ser lembrado. Um serviço que ele esquece que paga é o primeiro da fila do cancelamento. A métrica que importa não é apenas quantos ficam, mas quantos usam. Frequência de uso é o melhor indicador de receita futura. Uso frequente é o termômetro real da saúde.",
+        "Nesse ponto, os dados viram matéria-prima. Saber quem abre, quem clica e quem para permite agir antes do cancelamento. O risco é cruzar a linha da vigilância. Personalizar demais assusta. O equilíbrio é delicado: usar o comportamento para melhorar o produto, não para perseguir o cliente com mensagens sem fim. Vigilância sem consentimento afasta gente e queima marca.",
+        "A concorrência também mudou de forma. Antes, disputava-se o cliente com um preço menor. Agora, disputa-se a atenção com um hábito. Quem entra primeiro na rotina diária ganha vantagem difícil de reverter. É por isso que tantas empresas oferecem meses grátis: o objetivo não é a primeira cobrança, é o primeiro hábito. Hábito vence promoção no longo prazo, sempre.",
+        "O teste grátis tem um lado obscuro. Quando termina, a cobrança começa sem cerimônia. Muita gente paga sem perceber que o período acabou. Para o negócio, isso é receita fácil. Para o cliente, é uma armadilha pequena que se repete. A confiança dura até a primeira surpresa no cartão. Surpresa no cartão destrói anos de confiança construída.",
+        "Há setores em que a assinatura faz sentido pleno. Remédio entregue todo mês, música disponível sempre, nuvem que guarda arquivos. Nesses casos, o valor é contínuo porque o uso é contínuo. O modelo quebra quando o cliente paga por algo sazonal, usa uma vez e passa meses esquecido. Aí a assinatura vira imposto. Assinatura aplicada a consumo sazonal raramente funciona bem.",
+        "Os números ajudam a separar os dois casos. Receita recorrente alta com uso baixo é sinal de alerta. Churn baixo escondido por contrato longo também engana. A saúde do negócio aparece quando o cliente pode sair e escolhe ficar. Qualquer outro indicador mede a dificuldade de sair, não o valor entregue. Sair e voltar mede o valor de verdade entregue.",
+        "O futuro provavelmente não será de assinatura pura nem de compra pura. Veremos modelos híbridos, com uma base mensal e cobranças por uso acima de um limite. É a tentativa de capturar previsibilidade sem punir quem consome pouco. A criatividade comercial vai continuar testando o limite do que o cliente aceita pagar. O hibridismo tenta agradar os dois lados da mesa.",
+        "A lição central é simples e antiga. Nenhum modelo de cobrança substitui um bom produto. Assinatura amplia o que já funciona e acelera o que já falha. Se o serviço entrega valor real, a recorrência é consequência. Se não entrega, o cancelamento é apenas questão de tempo, por mais barato que seja o plano. Produto fraco não se salva com plano mais barato.",
+        "Para quem empreende, o recado é medir o que importa. Acompanhar receita, uso e cancelamento juntos. Ouvir quem fica e principalmente quem sai. E lembrar que o cliente não compra um contrato, compra uma promessa renovada todo mês. Cumprir essa promessa é o único marketing que não cansa. Medir uso e cancelamento juntos esclarece o diagnóstico.",
+        "No fim, a economia das assinaturas não inventou um jeito novo de ganhar dinheiro. Ela apenas tornou visível uma verdade que sempre existiu: confiança repetida vale mais do que uma venda isolada. Quem entende isso constrói receita duradoura. Quem esquece constrói apenas uma cobrança mensal que um dia para. Confiança repetida constrói patrimônio real e duradouro."
+      ]
+    }
+  ]
+}

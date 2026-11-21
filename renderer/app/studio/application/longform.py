@@ -14,8 +14,11 @@ A aprovação humana é presa à (versão, hash): editar cria outra versão e ou
 hash, então a aprovação anterior deixa de ser atual. Nada aqui apaga histórico nem
 reescreve fontes.
 
-Limite explícito: a duração é estimativa por palavras/minuto, **não** medição de
-TTS (calibração real pendente). O ritmo e o alvo são configuráveis.
+Limite explícito: a duração continua sendo estimativa por palavras/minuto, não a
+duração exata de cada síntese. O ritmo padrão é o **medido** na voz do produto
+(``piper:pt_BR-faber-medium``): 172 palavras/minuto efetivas, contra a hipótese
+antiga de 150. O ritmo e o alvo continuam configuráveis; para a estimativa com
+pausas medidas do Piper use ``estimate_voice_durations`` (domínio).
 """
 from __future__ import annotations
 
@@ -37,7 +40,10 @@ from ..domain.longform import (
     review_script,
     validate_structure,
 )
-from ..domain.narration_duration import estimate_text_durations
+from ..domain.narration_duration import (
+    MEASURED_EFFECTIVE_WORDS_PER_MINUTE,
+    estimate_text_durations,
+)
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import (
     MAX_PROMPT_CHARS,
@@ -62,7 +68,10 @@ from .ports import (
     VideoRepository,
 )
 
-DEFAULT_WORDS_PER_MINUTE = 150.0
+# Ritmo padrão: o medido na voz do produto (Piper pt_BR-faber-medium), não a
+# hipótese antiga de 150. Ver domain/narration_duration.py e o relatório de
+# calibração. Continua configurável por chamada.
+DEFAULT_WORDS_PER_MINUTE = MEASURED_EFFECTIVE_WORDS_PER_MINUTE
 DEFAULT_TARGET_SECONDS = 480.0
 DEFAULT_DURATION_TOLERANCE = 0.15
 LONG_MIN_CHAPTERS = 3
