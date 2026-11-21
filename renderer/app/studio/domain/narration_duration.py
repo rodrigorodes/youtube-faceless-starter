@@ -18,12 +18,14 @@ class NarrationDurationEstimate:
     total_seconds: float
 
 
-def estimate_narration_durations(
-    scenes: Sequence[Scene], words_per_minute: float,
+def estimate_text_durations(
+    texts: Sequence[str], words_per_minute: float,
 ) -> NarrationDurationEstimate:
-    """Estima segundos por cena e no total, sem modificar as cenas recebidas.
+    """Estima segundos por texto e no total, sem modificar as entradas.
 
-    O ritmo é uma hipótese configurável, não uma medição de voz ou pausas.
+    O ritmo é uma hipótese configurável, não uma medição de voz ou pausas. É a
+    contagem única reutilizada pelo fluxo curto (``estimate_narration_durations``)
+    e pelo roteiro longo.
     """
     try:
         valid_rate = (
@@ -38,10 +40,20 @@ def estimate_narration_durations(
         raise ValueError("words_per_minute must be a finite positive number")
 
     durations = tuple(
-        len(_WORD.findall(unicodedata.normalize("NFC", scene.narration))) * 60 / words_per_minute
-        for scene in scenes
+        len(_WORD.findall(unicodedata.normalize("NFC", text))) * 60 / words_per_minute
+        for text in texts
     )
     total = sum(durations)
     if not all(math.isfinite(duration) for duration in durations) or not math.isfinite(total):
         raise ValueError("estimated duration must be finite")
     return NarrationDurationEstimate(scene_seconds=durations, total_seconds=total)
+
+
+def estimate_narration_durations(
+    scenes: Sequence[Scene], words_per_minute: float,
+) -> NarrationDurationEstimate:
+    """Estima segundos por cena e no total, sem modificar as cenas recebidas.
+
+    O ritmo é uma hipótese configurável, não uma medição de voz ou pausas.
+    """
+    return estimate_text_durations([scene.narration for scene in scenes], words_per_minute)
