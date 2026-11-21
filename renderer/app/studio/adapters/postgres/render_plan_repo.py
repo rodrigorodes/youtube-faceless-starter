@@ -87,6 +87,37 @@ class PostgresRenderPlanRepository(_Base):
                  entry.artifact_sha256, entry.artifact_uri),
             )
 
+    def record_entries(self, entries) -> None:
+        """Grava o índice de cache de uma revisão inteira numa transação só (RP-06b)."""
+        items = list(entries)
+        if not items:
+            return
+        with _translated(), self._connect() as conn:
+            for entry in items:
+                conn.execute(
+                    "INSERT INTO studio.render_cache_entries(plan_id, revision, node_kind, node_key, fingerprint, "
+                    "artifact_sha256, artifact_uri) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                    "ON CONFLICT (plan_id, node_kind, node_key, fingerprint) DO UPDATE SET revision = EXCLUDED.revision, "
+                    "artifact_sha256 = EXCLUDED.artifact_sha256, artifact_uri = EXCLUDED.artifact_uri",
+                    (entry.plan_id, entry.revision, entry.node.kind, entry.node.key, entry.fingerprint,
+                     entry.artifact_sha256, entry.artifact_uri),
+                )
+
+    def record_artifacts(self, artifacts) -> None:
+        """Grava os artefatos físicos (hash/codec/localização) produzidos, numa transação só (RP-06b)."""
+        items = list(artifacts)
+        if not items:
+            return
+        with _translated(), self._connect() as conn:
+            for artifact in items:
+                conn.execute(
+                    "INSERT INTO studio.plan_artifacts(content_sha256, location, codec, media_type, byte_size) "
+                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (content_sha256, location) DO UPDATE SET "
+                    "codec = EXCLUDED.codec, media_type = EXCLUDED.media_type, byte_size = EXCLUDED.byte_size",
+                    (artifact.content_sha256, artifact.location, artifact.codec, artifact.media_type,
+                     artifact.byte_size),
+                )
+
     def entries(self, plan_id: str) -> dict[NodeId, CacheEntry]:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
