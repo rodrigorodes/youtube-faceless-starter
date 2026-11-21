@@ -255,7 +255,7 @@ em `produto/`. Onde o mockup mostra dado ilustrativo, o painel real renderiza **
 
 **Veredito final do `main` (Render Plan RP-00..07, ligações L1/L2, limpeza do legado
 e as correções achadas rodando o app):**
-**2427 passed, 0 failed, 35 skipped** (135 arquivos, 8 partições sequenciais, `rc=0` em todas)
+**2430 passed, 0 failed, 35 skipped** (135 arquivos, 8 partições sequenciais, `rc=0` em todas)
 com Postgres real e as duas DSNs. Os 35 skips são de plataforma (Node.js ausente) — as ~100
 provas de orçamento **rodaram**. O gate de higiene passa (`scan` → exit 0) e
 `export_contracts --check` → exit 0 dentro do container.
