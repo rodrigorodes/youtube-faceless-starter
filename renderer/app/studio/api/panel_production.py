@@ -295,7 +295,7 @@ def _wizard_fields_html(view: NewVideoView) -> str:
     else:
         canal_html = '<select id="wiz-canal" name="project_id" disabled><option value="">Nenhum canal cadastrado</option></select>'
         canal_hint = None
-        canal_why = "Nenhum canal/projeto cadastrado neste Studio."
+        canal_why = "Nenhum canal cadastrado neste Studio."
 
     fields = [
         _wizard_field(

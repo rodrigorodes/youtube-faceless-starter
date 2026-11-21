@@ -291,7 +291,7 @@ def _advanced_html(view: AnalyticsDashboardView) -> str:
     <details class="advanced" id="analytics-advanced">
       <summary class="advanced-summary">Avançado — IDs, janela e origem das medições</summary>
       <div class="advanced-body">
-        <p>Projeto <code>{e(view.project_id)}</code> · janela {e(view.period_label)} ·
+        <p>Canal <code>{e(view.project_id)}</code> · janela {e(view.period_label)} ·
         gerado em {e(view.generated_at.strftime("%d/%m/%Y %H:%M"))}.</p>
         <p><b>Observações</b></p>{observations}
         <p><b>Experimentos</b></p>{experiments}

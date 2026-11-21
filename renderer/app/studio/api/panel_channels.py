@@ -653,7 +653,7 @@ def _advanced_card(view: ChannelsPageView) -> str:
     config_items = "".join(
         f'<div class="kv"><span><code>{e(key)}</code></span><span><code>{e(value)}</code></span></div>'
         for key, value in view.public_config.items()
-    ) or '<p class="dim">Nenhuma porta de provider sobrescrita no projeto; valem os padrões do servidor.</p>'
+    ) or '<p class="dim">Nenhuma porta de provider sobrescrita no canal; valem os padrões do servidor.</p>'
     profile_line = (
         f'<p>Perfil: <code>{e(profile.id)}</code> · versão {profile.version}</p>'
         if profile else '<p>Perfil: não registrado para este canal.</p>'
@@ -663,11 +663,11 @@ def _advanced_card(view: ChannelsPageView) -> str:
       <details class="advanced" id="canais-avancado">
         <summary class="advanced-summary">Avançado — identificadores, configuração sanitizada e uso</summary>
         <div class="advanced-body">
-          <p>Projeto: <code>{e(project.id)}</code> · nicho: <code>{e(project.niche or "não informado")}</code>
+          <p>Canal: <code>{e(project.id)}</code> · nicho: <code>{e(project.niche or "não informado")}</code>
              · idioma: <code>{e(project.language)}</code></p>
           {profile_line}
           <div>
-            <h3>Configuração pública do projeto</h3>
+            <h3>Configuração pública do canal</h3>
             <p class="fine">Lista branca das portas de provider. Qualquer chave com cara de segredo é descartada antes de chegar ao browser.</p>
             {config_items}
           </div>
@@ -737,7 +737,7 @@ def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
       <div class="card empty" id="canais-sem-canal">
         <h2>Nenhum canal cadastrado</h2>
         <p class="muted">Sem canal não há perfil, providers, orçamento ou associação do YouTube para configurar.</p>
-        <p class="fine">Crie o primeiro canal no painel — o canal é o projeto que agrupa os vídeos.</p>
+        <p class="fine">Crie o primeiro canal no painel — é ele que agrupa os vídeos, o perfil, os providers e o orçamento.</p>
         <a class="btn btn-primary" href="/studio/panel">Ir ao painel criar o canal</a>
       </div>
     </main>
