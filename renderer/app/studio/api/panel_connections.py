@@ -23,6 +23,7 @@ import secrets
 
 from ..domain.channel import ChannelProfile
 from . import panel as shell
+from . import shell_v3
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -529,44 +530,39 @@ def render_connections(board: dict, profiles: list[ChannelProfile]) -> tuple[str
     profiles = list(profiles or [])
     profiles_by_id = {profile.id: profile for profile in profiles}
     body = _accounts_card(accounts, profiles, profiles_by_id) if accounts else _empty_card()
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Conexões</title>
-  <style nonce="{nonce}">{shell.CSS}{CONNECTIONS_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#conexoes-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="conexoes", base_href="/studio/panel", side_card_html=_sidebar_card(accounts), channels_href="/studio/canais", nonce=nonce)}
-    <main class="main-content" id="conexoes-main">
+    content_html = f"""
       <div class="card">
         <div class="spread">
           <div>
-            <h1 id="conexoes-heading">Conexões</h1>
+            <h2>Contas do Google e canais do YouTube</h2>
             <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
               Ação primária: <b>conectar a conta e escolher o canal</b>. Confirme o canal do YouTube antes de
               vincular — errar de canal custa segundos para evitar e horas para consertar.
             </p>
           </div>
-          <span class="screen-no dim">Configuração · Conexões</span>
-        </div>
-        <div class="conn-actions conn-note">
           <button class="btn btn-primary" type="button" data-connect>Conectar conta Google</button>
-          <span class="dim" style="font-size:0.82rem">Adiciona uma conta (ou mais canais de uma conta que já existe).</span>
         </div>
+        <div class="conn-status" id="conexoes-status" role="status" aria-live="polite"></div>
       </div>
-      <div class="conn-status" id="conexoes-status" role="status" aria-live="polite"></div>
       {body}
       {_scopes_card()}
       {_confirm_dialog()}
-    </main>
-    {_rail(accounts, profiles)}
-  </div>
-  <script nonce="{nonce}">{CONNECTIONS_SCRIPT}</script>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+    """
+    body_page = shell_v3.render_settings_page_body(
+        active_section="conexoes",
+        section_title="Conexões",
+        content_html=content_html,
+    )
+    html = shell_v3.render_document(
+        title="Faceless Studio — Conexões",
+        active="conexoes",
+        crumb="Configurações / Conexões",
+        body_html=body_page,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=CONNECTIONS_SCRIPT,
+        extra_css=CONNECTIONS_CSS,
+    )
+    return html, shell._headers(nonce)

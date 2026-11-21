@@ -17,6 +17,7 @@ import secrets
 from ..application.styles_page import StyleListItem, StylesPageView
 from ..domain.visual_style import MOTIONS
 from . import panel as shell
+from . import shell_v3
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -473,37 +474,36 @@ def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
     """Página de Estilos: casca aprovada + lista real + criar/editar/arquivar."""
     nonce = secrets.token_urlsafe(16)
     body = _empty_card() if view.is_empty else _list_card(view)
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Estilos</title>
-  <style nonce="{nonce}">{shell.CSS}{STYLES_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#estilos-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="estilos", base_href="/studio/panel", side_card_html=_sidebar_card(view), channels_href="/studio/canais", nonce=nonce)}
-    <main class="main-content" id="estilos-main">
+    content_html = f"""
       <div class="card">
         <div class="spread">
           <div>
-            <h1 id="estilos-heading">Estilos</h1>
+            <h2>Biblioteca de estilos</h2>
             <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
               Ação primária: <b>manter estilos reutilizáveis</b>. O estilo é compartilhado — separado do canal, para não virar cópia à mão.
             </p>
           </div>
-          <span class="screen-no dim">Configuração · Estilos</span>
+          <span class="chip-metric">{len(view.items)} estilo(s)</span>
         </div>
       </div>
       {body}
       {_create_card()}
-    </main>
-    {_rail(view)}
-  </div>
-  <script nonce="{nonce}">{STYLES_SCRIPT}</script>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+    """
+    body_page = shell_v3.render_settings_page_body(
+        active_section="estilos",
+        section_title="Estilos",
+        content_html=content_html,
+    )
+    html = shell_v3.render_document(
+        title="Faceless Studio — Estilos",
+        active="estilos",
+        crumb="Configurações / Estilos",
+        body_html=body_page,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=STYLES_SCRIPT,
+        extra_css=STYLES_CSS,
+    )
+    return html, shell._headers(nonce)

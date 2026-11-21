@@ -18,6 +18,7 @@ from decimal import Decimal
 from ..application.channels_page import ChannelsPageView
 from ..domain.provider import Availability, ProviderCard, ProviderKind
 from . import panel as shell
+from . import shell_v3
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -709,48 +710,31 @@ def _rail_html(view: ChannelsPageView) -> str:
 
 def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Canais</title>
-  <style nonce="{nonce}">{shell.CSS}{CHANNELS_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#canais-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=side_card_html, nonce=nonce)}
-    <main class="main-content" id="canais-main">
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h1 id="canais-heading">Canais</h1>
-            <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
-              Ação primária: <b>configurar canal</b>. A configuração vive no Studio, não em arquivo de ambiente.
-            </p>
-          </div>
-          <span class="screen-no dim">Configuração · Canais</span>
-        </div>
-      </div>
+    content_html = """
       <div class="card empty" id="canais-sem-canal">
         <h2>Nenhum canal cadastrado</h2>
         <p class="muted">Sem canal não há perfil, providers, orçamento ou associação do YouTube para configurar.</p>
         <p class="fine">Crie o primeiro canal no painel — é ele que agrupa os vídeos, o perfil, os providers e o orçamento.</p>
         <a class="btn btn-primary" href="/studio/panel">Ir ao painel criar o canal</a>
       </div>
-    </main>
-    <aside class="rail" aria-label="Resumo">
-      <section class="card" aria-labelledby="h-sem-canal">
-        <h2 id="h-sem-canal">Orçamento do mês</h2>
-        <p class="fine" style="margin:0">Sem canal selecionado: não há orçamento de canal para exibir.</p>
-      </section>
-    </aside>
-  </div>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+    """
+    body = shell_v3.render_settings_page_body(
+        active_section="canais",
+        section_title="Canais",
+        content_html=content_html,
+    )
+    html = shell_v3.render_document(
+        title="Faceless Studio — Canais",
+        active="canais",
+        crumb="Configurações / Canais",
+        body_html=body,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        extra_css=CHANNELS_CSS,
+    )
+    return html, shell._headers(nonce)
 
 
 def _sidebar_card(view: ChannelsPageView) -> str:
@@ -779,24 +763,11 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         return _empty_page(_sidebar_card(view))
     nonce = secrets.token_urlsafe(16)
     project = view.project
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Canais</title>
-  <style nonce="{nonce}">{shell.CSS}{CHANNELS_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#canais-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="canais", channels_href="/studio/canais", side_card_html=_sidebar_card(view), nonce=nonce)}
-    <main class="main-content" id="canais-main">
+    content_html = f"""
       <div class="card">
         <div class="spread">
           <div>
-            <h1 id="canais-heading">Canais</h1>
+            <h2>Identidade e configuração do canal</h2>
             <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
               Ação primária: <b>configurar canal</b>. A configuração vive no Studio, não em arquivo de ambiente.
             </p>
@@ -811,10 +782,13 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
       {_budget_card(view)}
       {_youtube_card(view)}
       {_advanced_card(view)}
-    </main>
-    {_rail_html(view)}
-  </div>
-  <script nonce="{nonce}">
+    """
+    body_page = shell_v3.render_settings_page_body(
+        active_section="canais",
+        section_title="Canais",
+        content_html=content_html,
+    )
+    page_js = f"""
     const projectId = "{e(project.id)}";
     const switcher = document.getElementById('canal-switcher');
     if (switcher) {{
@@ -1072,7 +1046,17 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         button.disabled = false;
       }});
     }});
-  </script>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+    """
+    html = shell_v3.render_document(
+        title="Faceless Studio — Canais",
+        active="canais",
+        crumb="Configurações / Canais",
+        body_html=body_page,
+        nonce=nonce,
+        projects=[(project.id, project.name)],
+        project_id=project.id,
+        cost_note="",
+        page_js=page_js,
+        extra_css=CHANNELS_CSS,
+    )
+    return html, shell._headers(nonce)

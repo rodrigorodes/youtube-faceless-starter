@@ -33,6 +33,44 @@ PRODUCT_CSS = """
 .tabela-lista th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .tabela-lista a { font-weight: 650; }
 .rolagem-x { overflow-x: auto; }
+
+/* Compatibilidade e layout para telas de Configurações e formulários */
+:root {
+  --border: var(--line);
+  --border-soft: var(--line);
+  --border-hover: var(--accent);
+  --surface: var(--panel);
+  --surface-raised: var(--panel2);
+  --input-bg: var(--panel2);
+  --text-dim: var(--sub);
+  --text-muted: var(--muted);
+  --primary: var(--accent);
+  --primary-focus: var(--accent);
+  --gold: var(--warn);
+  --info: var(--accent);
+  --warn-surface: var(--soft);
+  --info-surface: var(--soft);
+  --bad: var(--err);
+}
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; margin-bottom: 18px; }
+.card h2 { font-size: 16px; margin: 0 0 10px; font-weight: 750; }
+.card h3 { font-size: 14px; margin: 0 0 8px; font-weight: 700; }
+.card.empty { text-align: center; padding: 36px 20px; color: var(--muted); }
+.config-corpo { display: flex; flex-direction: column; gap: 16px; }
+.spread { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dim { color: var(--sub); font-size: 12px; }
+.muted { color: var(--muted); font-size: 13px; }
+.fine { color: var(--sub); font-size: 11.5px; line-height: 1.45; }
+.kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.kv:last-child { border-bottom: 0; }
+.item-title { font-weight: 650; font-size: 13.5px; }
+.item-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; }
+.state.s-done { color: var(--ok); }
+.state.s-act, .state.s-active { color: var(--warn); }
+.state.s-fail { color: var(--err); }
+.state.s-idle { color: var(--muted); }
+.form-feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 6px; }
 """
 
 _SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" '
@@ -58,7 +96,50 @@ NAV_OPERACAO: tuple[tuple[str, str, str], ...] = (
 CONFIG_HREF = "/studio/configuracoes/canais"
 
 # Telas que existem fora do menu e herdam o item atual do menu mais próximo.
-_ALIASES = {"producao": "videos", "analytics": "desempenho", "video": "videos", "roteiro": "videos"}
+_ALIASES = {
+    "producao": "videos",
+    "analytics": "desempenho",
+    "video": "videos",
+    "roteiro": "videos",
+    "canais": "configuracoes",
+    "estilos": "configuracoes",
+    "conexoes": "configuracoes",
+    "equipe": "configuracoes",
+}
+
+SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
+    ("canais", "Canais", "/studio/canais"),
+    ("estilos", "Estilos", "/studio/panel/estilos"),
+    ("conexoes", "Conexões", "/studio/panel/conexoes"),
+    ("equipe", "Equipe", "/studio/panel/equipe"),
+)
+
+
+def render_settings_nav(active_section: str) -> str:
+    items = []
+    for key, label, href in SETTINGS_SECTIONS:
+        curr = ' aria-current="page"' if key == active_section else ""
+        items.append(f'<li><a href="{href}"{curr}>{e(label)}</a></li>')
+    return f"""<nav aria-label="Seções de configuração">
+      <ul class="menu-config" id="menu-config">
+        {"".join(items)}
+      </ul>
+    </nav>"""
+
+
+def render_settings_page_body(*, active_section: str, section_title: str, content_html: str) -> str:
+    return f"""      <section class="pagina" id="pagina-configuracoes" aria-labelledby="t-config">
+        <p class="eyebrow">SEU ESTÚDIO</p>
+        <h1 class="h1" id="t-config">Configurações · {e(section_title)}</h1>
+        <p class="lead" style="margin-bottom:24px">Fora do caminho quando você está criando.</p>
+
+        <div class="grade-config">
+          {render_settings_nav(active_section)}
+          <div class="config-corpo">
+            {content_html}
+          </div>
+        </div>
+      </section>"""
 
 _NAV_LABELS = {key: label for key, label, _ in NAV_OPERACAO}
 _NAV_LABELS["configuracoes"] = "Configurações"
@@ -238,7 +319,7 @@ SHELL_JS = """
 
 def render_document(*, title: str, active: str, crumb: str, body_html: str, nonce: str,
                     projects: list[tuple[str, str]], project_id: str, cost_note: str = "",
-                    page_js: str = "") -> str:
+                    page_js: str = "", extra_css: str = "") -> str:
     """Documento completo da tela V3. `body_html` é o conteúdo de `<div class="content">`."""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -247,7 +328,7 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{e(title)}</title>
-  <style nonce="{nonce}">{V3_CSS}{PRODUCT_CSS}</style>
+  <style nonce="{nonce}">{V3_CSS}{PRODUCT_CSS}{extra_css}</style>
   <script nonce="{nonce}">{THEME_BOOT_JS}</script>
 </head>
 <body>

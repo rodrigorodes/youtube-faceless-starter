@@ -22,6 +22,7 @@ from ..application.panel import CostBreakdown, MonthCost, cost_summary_text
 from ..application.saas import TeamView
 from ..domain.saas import ByokStatus, MembershipStatus, Role
 from . import panel as shell
+from . import shell_v3
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -448,27 +449,21 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
         _selo("idle", "○", "Sem organização cadastrada") if view.organization is None
         else _selo("done", "✓", "Organização cadastrada")
     )
-    page = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Equipe</title>
-  <style nonce="{nonce}">{shell.CSS}{TEAM_CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#equipe-main">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {shell.render_sidebar(active="equipe", base_href="/studio/panel", side_card_html=_side_card(month), nonce=nonce)}
-    <main class="main-content" id="equipe-main">
+    cost_str = (
+        f"Custo do mês: {month.text}"
+        if month is not None and month.breakdown.calls > 0
+        else "Não disponível: nenhuma chamada registrada neste mês."
+    )
+    content_html = f"""
       <div class="card">
         <div class="spread">
           <div>
-            <h1 id="equipe-heading">Equipe</h1>
-            <p class="page-goal">Ação primária: <b>gerir acesso</b>. Membros, papéis e BYOK são
+            <h2>Gestão de acesso e equipe</h2>
+            <p class="dim" style="margin:4px 0 0">
+              Ação primária: <b>gerir acesso</b>. Membros, papéis e BYOK são
               executados pela rota, autorizados pelo papel do operador autenticado; o isolamento de
-              runtime por tenant segue mono-usuário.</p>
+              runtime por tenant segue mono-usuário.
+            </p>
           </div>
           {organization_state}
         </div>
@@ -481,29 +476,40 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
       {_keys_card(view)}
       {_consumption_card(view)}
       {_advanced_card(view)}
-    </main>
 
-    <aside class="rail" aria-label="Resumo">
-      <section class="card" aria-labelledby="h-indisp-equipe">
+      <div class="card" aria-labelledby="h-indisp-equipe">
         <h2 id="h-indisp-equipe">O que ainda está indisponível</h2>
         <p class="muted" style="margin:0">{e(view.actions_note)}</p>
-      </section>
-      <section class="card" aria-labelledby="h-fronteira">
+      </div>
+      <div class="card" aria-labelledby="h-fronteira">
         <h2 id="h-fronteira">Fronteira de tenant</h2>
         <p class="muted" style="margin:0">Toda leitura e escrita do repositório recebe a
           organização do ator e a filtra no banco. O teste cross-tenant não acessa conteúdo nem
           credenciais de outra organização.</p>
-      </section>
-      <section class="card" aria-labelledby="h-correcao">
+      </div>
+      <div class="card" aria-labelledby="h-correcao">
         <h2 id="h-correcao">Estado desta tela</h2>
         <p class="muted" style="margin:0">O F11 foi liberado em 2026-11-20 e as mutações passaram a
           ser executadas pela rota: o ator é o operador autenticado e o papel do vínculo aplica o
           RBAC. O que falta é a fonte de identidade por SSO/OIDC (F11-02), o envio do e-mail de
           convite, a cobrança e o isolamento de runtime por tenant — declarados, não fingidos.</p>
-      </section>
-    </aside>
-  </div>
-  <script nonce="{nonce}">{TEAM_JS}</script>
-</body>
-</html>"""
-    return page, shell._headers(nonce)
+      </div>
+    """
+    body = shell_v3.render_settings_page_body(
+        active_section="equipe",
+        section_title="Equipe",
+        content_html=content_html,
+    )
+    html = shell_v3.render_document(
+        title="Faceless Studio — Equipe",
+        active="equipe",
+        crumb="Configurações / Equipe",
+        body_html=body,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note=cost_str,
+        page_js=TEAM_JS,
+        extra_css=TEAM_CSS,
+    )
+    return html, shell._headers(nonce)
