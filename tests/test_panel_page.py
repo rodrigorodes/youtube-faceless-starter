@@ -201,7 +201,7 @@ def test_panel_page_renders_trending_topics_block(client_env):
     # IA-01: a lista de tendências vive na tela Tendências (/studio/panel/tendencias).
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Temas em Alta" in r.text
+    assert "Temas em alta" in r.text
     assert "ADE Lineup 2026 Revelado" in r.text
     assert "YouTube Data API" in r.text
     assert "Lineup Revelado &lt;exclusivo&gt;" in r.text
@@ -271,11 +271,11 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     # Pílulas de filtro
     assert "Todas (" in r.text
     assert "Tecnologia (" in r.text
-    assert "+ Novo Pilar" in r.text or "btn-add-pillar" in r.text
+    assert "+ Novo pilar" in r.text or "btn-add-pillar" in r.text
 
     # Botões de ação do painel
-    assert "Buscar Agora" in r.text
-    assert "Gerenciar Categorias" in r.text
+    assert "Buscar agora" in r.text
+    assert "Gerenciar pilares" in r.text
 
     # Modal de gerenciamento
     assert 'id="categories-modal"' in r.text
@@ -313,8 +313,8 @@ def test_panel_page_empty_trends_still_shows_category_actions(client_env):
     # IA-01: as ações de coleta e pilares (mesmo sem tendências) ficam na tela Tendências.
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Buscar Agora" in r.text
-    assert "Gerenciar Categorias" in r.text
+    assert "Buscar agora" in r.text
+    assert "Gerenciar pilares" in r.text
     assert 'id="categories-modal"' in r.text
 
 
@@ -382,7 +382,7 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
     assert 'data-region="UNKNOWN"' in r.text
 
     # Badges de regiao
-    assert "🇧🇷 Em Alta Brasil" in r.text
+    assert "Em Alta Brasil" in r.text
     assert "Origem desconhecida" in r.text
     assert "Em Alta Mundo" not in r.text
 
@@ -496,9 +496,9 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
 
     # 1. Pill Filters order & attributes
     assert 'data-filter-type="all"' in r.text
-    assert '🔥 Todas (2)' in r.text
+    assert 'Todas (2)' in r.text
     assert 'data-filter-type="region" data-region-code="BR"' in r.text
-    assert '🇧🇷 Em Alta Brasil (1)' in r.text
+    assert 'Em Alta Brasil (1)' in r.text
     assert 'data-filter-type="region" data-region-code="UNKNOWN"' in r.text
     assert 'Origem desconhecida (1)' in r.text
     assert 'Em Alta Mundo' not in r.text
@@ -506,9 +506,9 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert f'data-cat-id="{cat_id}"' in r.text
     assert '🏷️ Inovação (0)' in r.text
     assert 'id="btn-open-categories-modal"' in r.text
-    assert '+ Novo Pilar' in r.text
+    assert '+ Novo pilar' in r.text
 
-    # 2. UX Loading Spinner on Buscar Agora
+    # 2. UX Loading Spinner on Buscar agora
     assert '.spinner-inline' in r.text
     assert '@keyframes spin' in r.text
     assert 'Consultando YouTube...' in r.text
@@ -832,9 +832,9 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
     # O contrato de filtro de tendências mudou de página: agora é da tela Tendências.
     r_trend = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r_trend.status_code == 200
-    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas (8)</button>' in r_trend.text
+    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">Todas (8)</button>' in r_trend.text
     assert 'data-filter-type="region" data-region-code="BR" aria-pressed="false"' in r_trend.text
-    assert "🇧🇷 Em Alta Brasil (8)" in r_trend.text
+    assert "Em Alta Brasil (8)" in r_trend.text
     assert "Ver Mais Tendências (+2)" in r_trend.text
     assert "trend-item-extra" in r_trend.text
     assert "Fontes (todas as tendências):" in r_trend.text

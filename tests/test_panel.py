@@ -423,7 +423,7 @@ def test_build_panel_extracts_video_metadata_and_region():
 
 @pytest.mark.parametrize(
     ("code", "expected_region", "label"),
-    [("BR", "BR", "🇧🇷 Em Alta Brasil"), ("US", "US", "🇺🇸 Em Alta EUA"),
+    [("BR", "BR", "Em Alta Brasil"), ("US", "US", "Em Alta EUA"),
      ("JP", "JP", "Em Alta JP")],
 )
 def test_popular_region_flows_from_adapter_to_panel_and_page(monkeypatch, code, expected_region, label):

@@ -67,6 +67,15 @@ def cost_breakdown_rows(breakdown: CostBreakdown) -> str:
     )
 
 
+def _ui_icon(path: str) -> str:
+    return ('<svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            f'aria-hidden="true" focusable="false">{path}</svg>')
+
+
+_ICON_FLAME = _ui_icon('<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>')
+_ICON_REFRESH = _ui_icon('<path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"></path>')
+_ICON_SLIDERS = _ui_icon('<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0"></path><circle cx="16" cy="6" r="2"></circle><circle cx="8" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle>')
+
 _NAV_ICONS = {
     "novo-video": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>',
     "desempenho": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false"><path d="M3 20h18M6 16V9m6 7V4m6 12v-5"></path></svg>',
@@ -1803,6 +1812,9 @@ h1 {
 .nav-item.active,
 .nav-item[aria-current] { font-weight: 750; }
 .brand-title { font-weight: 780; letter-spacing: -0.6px; }
+.icon-inline { width: 16px; height: 16px; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -3px; margin-right: 0.4rem; }
+.btn .icon-inline { margin-right: 0.45rem; }
+.block-head h1 { margin: 1.25rem 0 0.35rem; }
 """
 
 
@@ -1967,9 +1979,9 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
 
     total_trends = len(view.trends)
     pills = [
-        f'<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">🔥 Todas ({total_trends})</button>',
+        f'<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">Todas ({total_trends})</button>',
     ]
-    region_labels = {"BR": "🇧🇷 Em Alta Brasil", "US": "🇺🇸 Em Alta EUA", "UNKNOWN": "Origem desconhecida"}
+    region_labels = {"BR": "Em Alta Brasil", "US": "Em Alta EUA", "UNKNOWN": "Origem desconhecida"}
     regions = ["BR", "US"] + sorted({t.region for t in view.trends if t.region and t.region not in ("BR", "US")})
     for region in regions:
         count = sum(1 for t in view.trends if t.region == region)
@@ -1982,13 +1994,13 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
         pills.append(
             f'<button type="button" class="cat-pill" data-filter-type="category" data-cat-id="{e(cat.id)}" data-category-id="{e(cat.id)}" aria-pressed="false">🏷️ {e(cat.name)} ({cat_count})</button>'
         )
-    pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-open-categories-modal">+ Novo Pilar</button>')
+    pills.append('<button type="button" class="cat-pill cat-pill-btn" id="btn-open-categories-modal">+ Novo pilar</button>')
     cat_pills_html = f'<search class="cat-pills-bar" aria-label="Filtros de tendências">{"".join(pills)}</search>'
 
     action_buttons_html = f"""
       <div class="trends-actions">
-        <button type="button" class="btn btn-compact" id="btn-refresh-trends" data-project-id="{e(current_project_id)}">🔄 Buscar Agora</button>
-        <button type="button" class="btn btn-compact" id="btn-manage-categories" data-project-id="{e(current_project_id)}">⚙️ Gerenciar Categorias ({len(view.categories)})</button>
+        <button type="button" class="btn btn-compact" id="btn-refresh-trends" data-project-id="{e(current_project_id)}">{_ICON_REFRESH}Buscar agora</button>
+        <button type="button" class="btn btn-compact" id="btn-manage-categories" data-project-id="{e(current_project_id)}">{_ICON_SLIDERS}Gerenciar pilares ({len(view.categories)})</button>
       </div>
     """
 
@@ -1997,13 +2009,13 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
           <div class="card trends-card" style="margin-bottom: 1.75rem;">
             <div class="trends-header">
               <div class="trends-title">
-                <span>🔥 Temas em Alta nos Últimos {days} Dias</span>
+                <span>{_ICON_FLAME}Temas em alta nos últimos {days} dias</span>
               </div>
               {action_buttons_html}
             </div>
             {cat_pills_html}
             <div id="trends-refresh-feedback" class="form-feedback" style="margin-bottom: 0.5rem;"></div>
-            <div class="empty" style="padding: 1.5rem 1rem;">Ainda não há coleta de tendências registrada para o período selecionado. Clique em <strong>Buscar Agora</strong> para atualizar.</div>
+            <div class="empty" style="padding: 1.5rem 1rem;">Ainda não há coleta de tendências registrada para o período selecionado. Clique em <strong>Buscar agora</strong> para atualizar.</div>
           </div>
         """
     else:
@@ -2156,7 +2168,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
           <div class="card trends-card">
             <div class="trends-header">
               <div class="trends-title">
-                <span>🔥 Temas em Alta nos Últimos {days} Dias</span>{stale_badge}
+                <span>{_ICON_FLAME}Temas em alta nos últimos {days} dias</span>{stale_badge}
               </div>
               <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
                 <div class="trends-source">
@@ -2262,7 +2274,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
       <div class="modal-overlay" id="categories-modal" role="dialog" aria-modal="true" aria-labelledby="modal-categories-title">
         <div class="modal-content">
           <div class="modal-header">
-            <div class="modal-title" id="modal-categories-title">Gerenciar Categorias (Pilares de Conteúdo)</div>
+            <div class="modal-title" id="modal-categories-title">Gerenciar pilares de conteúdo</div>
             <button type="button" class="modal-close" id="btn-close-modal" aria-label="Fechar">&times;</button>
           </div>
           <div class="modal-body">
@@ -3197,7 +3209,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
     if (btnRefresh) {{
       btnRefresh.addEventListener('click', async () => {{
         btnRefresh.disabled = true;
-        const origText = btnRefresh.textContent;
+        const origHtml = btnRefresh.innerHTML;
         btnRefresh.textContent = ' Consultando YouTube...';
         const spinner = document.createElement('span');
         spinner.className = 'spinner-inline';
@@ -3219,12 +3231,12 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             const msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
             if (refreshFeedback) refreshFeedback.textContent = 'Erro na coleta: ' + msg;
             btnRefresh.disabled = false;
-            btnRefresh.textContent = origText;
+            btnRefresh.innerHTML = origHtml;
           }}
         }} catch (err) {{
           if (refreshFeedback) refreshFeedback.textContent = 'Falha de rede: ' + err.message;
           btnRefresh.disabled = false;
-          btnRefresh.textContent = origText;
+          btnRefresh.innerHTML = origHtml;
         }}
       }});
     }}
