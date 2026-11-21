@@ -1,7 +1,7 @@
 # Quadro de atividades — Estilos de canal + Identidade de publicação
 
 **Atualizado:** 2026-11-21
-**Base:** `main` @ `f848a57`
+**Base:** `main` @ `efd697b`
 **Regra de trabalho:** cada fatia em worktree isolada, branch própria, merge no `main` só depois de
 teste verde + arquitetura limpa + árvore limpa. Nada removido sem prova de morte. Sem `git add -A`.
 Sem push/merge remoto (bloqueado pelo harness).
@@ -36,20 +36,22 @@ Sem push/merge remoto (bloqueado pelo harness).
 | VS-05c | **Correções**: override do vídeo chega ao render (precedência vídeo > canal > neutro); `archive` limpa os vínculos + docstring corrigida | 211 testes | merge `08508ab` |
 | YT-04b | Página **Conexões** no painel (conta → canais → confirmar → revogar) + menu | 378 testes (integração) | merge `42f73ca` |
 | RF-01 | Reframe de vocabulário: "projeto" → "canal" na interface (16 textos; 5 mantidos por serem identificador/comentário) + teste-guarda | 202 testes | merge `ec8bda2` |
+| VS-06 | Voz com **precedência única** (estilo > projeto > default; `PIPER_VOICE` como fallback de deployment/teste), o **mesmo** valor para síntese e ledger | 182 focados + 386 integração | merge `e7a5182` |
+| PROD-01 | **Fecha o ciclo de produção pela UI**: Início cria **e inicia**; página do vídeo ganha **Fontes** (URL+texto) e **Iniciar produção** / **Tentar novamente** com o motivo real | 258 focados + 105 UX/nav (re-verificados por mim) | merge `efd697b` |
 
 ## Em execução (paralelo)
 
-**PROD-01 (em execução):** fechar o ciclo de produção pela UI — o form do Início passa a **iniciar** a
-produção, a página do vídeo ganha **Fontes** (URL + texto) e os controles **Iniciar produção** /
-**Tentar novamente** (retry). Diagnóstico com prova: o vídeo do dono ficou preso em `IDEA` porque o
-form do Início só criava (nunca chamava `/production-runs`) e o stage `SCRIPT` exige fontes
-(`SourceRefused: no sources with checkable claims`), que a UI não tinha como adicionar.
+**IA-01 (em execução):** Início, Produção e Tendências como **telas separadas** (hoje são âncoras de uma
+página só, que renderiza cinco seções de uma vez). Desenho pronto em
+`gestao/IA-01-arquitetura-de-informacao.md`: rotas de servidor reais (`/panel`, `/panel/producao`,
+`/panel/tendencias`), "Vídeos" segue o protótipo como bloco do Início com alias, e o mapa exato dos
+testes que fixam as âncoras atuais.
 
 ## Na fila
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **IA-01** | Início, Produção e Tendências como **páginas separadas** (hoje são âncoras de uma página só) — seguir `produto/prototipo.html` e `JORNADA-E-TELAS.md` | PROD-01 (mesmo arquivo: `panel.py`) — desenho pronto em `gestao/IA-01-arquitetura-de-informacao.md` |
+| — | (vazio) | — |
 
 ## Bloqueadas
 
