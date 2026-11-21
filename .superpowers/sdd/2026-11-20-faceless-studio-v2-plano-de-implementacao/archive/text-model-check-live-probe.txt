@@ -1,0 +1,9 @@
+== A) bridge REAL do usuário (127.0.0.1:8787) — SÓ GET /health, nenhum /generate ==
+health: {'status': 'ok', 'model': 'openai/gpt-6-luna', 'image_model': 'openrouter/recraft/recraft-v4.1-flash-v2:free'}
+spec == declarado                       -> verified = True
+spec != declarado                       -> PreEffectFailure: bridge text model (openai/gpt-6-luna) differs from the configured openai/gpt-5-inexistente; update OPENCODE_MODEL in scripts/opencode-bridge.py to match the project's text spec
+PreEffectFailure é ModelUnavailable?    -> True
+
+== B) antes/depois sob MockTransport (bridge declara openai/gpt-6-luna) ==
+HEAD (antes)  -> SUCESSO SILENCIOSO; ledger.model = openai/outro-modelo | texto = "roteiro gerado pelo modelo REAL"
+novo (depois) -> PreEffectFailure: bridge text model (openai/gpt-6-luna) differs from the configured openai/outro-modelo; update OPENCODE_MODEL in scripts/opencode-bridge.py to match the project's text spec

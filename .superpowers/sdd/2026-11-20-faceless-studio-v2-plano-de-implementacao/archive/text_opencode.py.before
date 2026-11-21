@@ -1,0 +1,48 @@
+"""TextModel via bridge local do OpenCode (login OAuth do usuário; sem cobrança por chamada).
+
+O bridge escolhe o modelo configurado nele (OPENCODE_MODEL); `model` aqui só identifica a chamada no ledger.
+O bridge não suporta saída estruturada, então `json_schema` é ignorado e a resposta é validada pelo caso de uso.
+"""
+import httpx
+
+from ..application.budget import PreEffectFailure
+from ..application.config import ProviderNotFound
+from ..application.ports import ModelUnavailable, TextResult
+from ..domain.contracts import UsageEntry
+
+
+class OpenCodeText:
+    name = "opencode"
+
+    def __init__(self, model: str, token: str, base_url: str = "http://host.docker.internal:8787",
+                 transport: httpx.BaseTransport | None = None, timeout: float = 100.0, alerts=None):
+        if not (token or "").strip():
+            raise ProviderNotFound("opencode text provider requires OPENCODE_BRIDGE_TOKEN")
+        self.model, self._token, self._base = model, token.strip(), base_url.rstrip("/")
+        self._transport, self._timeout = transport, timeout
+        self._alerts = alerts
+
+    def cost_estimate(self, prompt: str) -> float:
+        return 0.0  # assinatura OAuth do usuário: sem custo marginal por chamada
+
+    def complete(self, prompt: str, *, json_schema: dict | None = None) -> TextResult:
+        try:
+            with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
+                response = client.post(f"{self._base}/generate", headers={"Authorization": f"Bearer {self._token}"}, json={"prompt": prompt})
+                if self._alerts is not None:
+                    self._alerts.observe(True)
+                response.raise_for_status()
+                text = response.json()["text"]
+            if not isinstance(text, str):
+                raise TypeError("text is not a string")
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            if self._alerts is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                self._alerts.observe(False)
+            status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
+            message = f"OpenCode bridge failed: {type(exc).__name__}{status}; is scripts/opencode-bridge.py running?"
+            # Requisição recusada (4xx) ou nunca enviada (conexão): nenhum efeito externo pago.
+            if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)) or (
+                    isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500):
+                raise PreEffectFailure(message) from None
+            raise ModelUnavailable(message) from None
+        return TextResult(text=text, usage=UsageEntry(step="text", provider=self.name, model=self.model, cost_usd=0.0))

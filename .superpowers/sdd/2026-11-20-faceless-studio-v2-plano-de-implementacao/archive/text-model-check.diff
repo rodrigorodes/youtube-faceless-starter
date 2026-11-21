@@ -1,0 +1,149 @@
+diff --git a/renderer/app/studio/adapters/text_opencode.py b/renderer/app/studio/adapters/text_opencode.py
+index 06bd3c6..2781223 100644
+--- a/renderer/app/studio/adapters/text_opencode.py
++++ b/renderer/app/studio/adapters/text_opencode.py
+@@ -1,8 +1,13 @@
+ """TextModel via bridge local do OpenCode (login OAuth do usuário; sem cobrança por chamada).
+ 
+-O bridge escolhe o modelo configurado nele (OPENCODE_MODEL); `model` aqui só identifica a chamada no ledger.
++O bridge escolhe o modelo configurado nele (OPENCODE_MODEL). O `model` do spec identifica a chamada
++no ledger, então o adaptador confere no `/health` do bridge que o modelo declarado é exatamente esse:
++config que aponta para um modelo e roda outro não passa em silêncio — a mesma regra do `OpenCodeImage`
++(divergência declarada ⇒ `PreEffectFailure`, antes de qualquer geração).
+ O bridge não suporta saída estruturada, então `json_schema` é ignorado e a resposta é validada pelo caso de uso.
+ """
++import logging
++
+ import httpx
+ 
+ from ..application.budget import PreEffectFailure
+@@ -20,14 +25,38 @@ class OpenCodeText:
+             raise ProviderNotFound("opencode text provider requires OPENCODE_BRIDGE_TOKEN")
+         self.model, self._token, self._base = model, token.strip(), base_url.rstrip("/")
+         self._transport, self._timeout = transport, timeout
++        self._verified = False
+         self._alerts = alerts
+ 
+     def cost_estimate(self, prompt: str) -> float:
+         return 0.0  # assinatura OAuth do usuário: sem custo marginal por chamada
+ 
++    def _check_bridge(self, client: httpx.Client) -> None:
++        """O bridge escolhe o modelo real (OPENCODE_MODEL); o `model` do spec só rotula ledger/analytics.
++        Só gera se o bridge declarar exatamente o mesmo modelo no `/health` (como o `OpenCodeImage`)."""
++        if self._verified:
++            return
++        try:
++            response = client.get(f"{self._base}/health")
++            if self._alerts is not None:
++                self._alerts.observe(True)
++            declared = response.json().get("model")
++        except (httpx.HTTPError, ValueError, AttributeError) as exc:
++            if self._alerts is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
++                self._alerts.observe(False)
++            return  # inalcançável/ilegível: sem verificação agora; a geração decide o erro (nada em silêncio)
++        if declared is None:
++            # Bridge antigo, sem o campo: aceita para não quebrar o rollout, mas nunca em silêncio.
++            logging.getLogger("studio.alerts").warning('{"event":"bridge_text_model_undeclared"}')
++        elif declared != self.model:
++            raise PreEffectFailure(f"bridge text model ({declared}) differs from the configured {self.model}; "
++                                   "update OPENCODE_MODEL in scripts/opencode-bridge.py to match the project's text spec")
++        self._verified = True
++
+     def complete(self, prompt: str, *, json_schema: dict | None = None) -> TextResult:
+         try:
+             with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
++                self._check_bridge(client)
+                 response = client.post(f"{self._base}/generate", headers={"Authorization": f"Bearer {self._token}"}, json={"prompt": prompt})
+                 if self._alerts is not None:
+                     self._alerts.observe(True)
+diff --git a/tests/test_text_adapters.py b/tests/test_text_adapters.py
+index a3d3f74..b2c8be4 100644
+--- a/tests/test_text_adapters.py
++++ b/tests/test_text_adapters.py
+@@ -1,4 +1,5 @@
+ import json
++import logging
+ import sys
+ from pathlib import Path
+ 
+@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+ 
+ from app.studio.adapters.text_demo import DemoText  # noqa: E402
+ from app.studio.adapters.text_opencode import OpenCodeText  # noqa: E402
++from app.studio.application.budget import PreEffectFailure  # noqa: E402
+ from app.studio.application.editorial import build_prompt, parse_drafts  # noqa: E402
+ from app.studio.application.ports import ModelUnavailable  # noqa: E402
+ from app.studio.domain.claims import extract_claims  # noqa: E402
+@@ -17,8 +19,16 @@ SOURCE = ("Amsterdam Dance Event celebrates 30 years with more than 3,600 artist
+           "Jean-Michel Jarre opens the festival with a concert at AFAS Live on 21 October to mark 50 years of Oxygène.\n")
+ 
+ 
+-def opencode(handler, token="tok"):
+-    return OpenCodeText("openai/gpt-6-luna", token=token, base_url="http://bridge:8787/", transport=httpx.MockTransport(handler))
++def opencode(handler, token="tok", model="openai/gpt-6-luna", bridge_model=None):
++    """`bridge_model` é o que o `/health` do bridge declara (padrão: o mesmo modelo configurado)."""
++    declared = model if bridge_model is None else bridge_model
++
++    def routed(request):
++        if request.url.path == "/health":
++            return httpx.Response(200, json={"status": "ok", "model": declared})
++        return handler(request)
++
++    return OpenCodeText(model, token=token, base_url="http://bridge:8787/", transport=httpx.MockTransport(routed))
+ 
+ 
+ def test_opencode_posts_prompt_with_bearer_and_returns_text_and_free_usage():
+@@ -34,6 +44,53 @@ def test_opencode_posts_prompt_with_bearer_and_returns_text_and_free_usage():
+     assert opencode(handler).cost_estimate("x") == 0.0
+ 
+ 
++def test_opencode_accepts_a_bridge_that_declares_the_same_text_model():
++    calls = []
++
++    def handler(request):
++        calls.append(request.url.path)
++        return httpx.Response(200, json={"text": "ok"})
++
++    result = opencode(handler, model="openai/gpt-6-luna", bridge_model="openai/gpt-6-luna").complete("p")
++    assert result.text == "ok" and result.usage.model == "openai/gpt-6-luna"
++    assert calls == ["/generate"]  # o /health foi consultado, mas nada foi gerado a mais
++
++
++def test_opencode_refuses_a_bridge_that_declares_another_text_model_before_generating():
++    calls = []
++
++    def handler(request):
++        calls.append(request.url.path)
++        return httpx.Response(200, json={"text": "nunca"})
++
++    model = opencode(handler, model="openai/gpt-6-luna", bridge_model="openai/gpt-5")
++    with pytest.raises(PreEffectFailure) as err:
++        model.complete("p")
++    assert "openai/gpt-5" in str(err.value) and "openai/gpt-6-luna" in str(err.value)
++    assert calls == []  # divergência declarada: nenhum efeito externo aconteceu
++
++
++def test_opencode_accepts_a_bridge_without_the_declared_text_model_but_warns(caplog):
++    calls = []
++
++    def handler(request):
++        calls.append(request.url.path)
++        return httpx.Response(200, json={"text": "ok"})
++
++    def no_model(request):
++        if request.url.path == "/health":
++            return httpx.Response(200, json={"status": "ok"})  # bridge antigo: sem o campo
++        return handler(request)
++
++    model = OpenCodeText("openai/gpt-6-luna", token="tok", base_url="http://bridge:8787/",
++                         transport=httpx.MockTransport(no_model))
++    with caplog.at_level(logging.WARNING, logger="studio.alerts"):
++        assert model.complete("p").text == "ok"
++    assert calls == ["/generate"]
++    assert "bridge_text_model_undeclared" in caplog.text
++    assert "openai/gpt-6-luna" not in caplog.text  # o aviso é um evento, não um eco do modelo
++
++
+ @pytest.mark.parametrize("response", [httpx.Response(502, json={"detail": "x"}), httpx.Response(200, json={"nada": 1}), httpx.Response(200, content=b"nao json")])
+ def test_opencode_failures_become_model_unavailable(response):
+     with pytest.raises(ModelUnavailable):
