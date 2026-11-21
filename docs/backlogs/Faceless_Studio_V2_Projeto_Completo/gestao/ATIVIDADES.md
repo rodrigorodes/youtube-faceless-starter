@@ -38,6 +38,7 @@ Sem push/merge remoto (bloqueado pelo harness).
 | RF-01 | Reframe de vocabulário: "projeto" → "canal" na interface (16 textos; 5 mantidos por serem identificador/comentário) + teste-guarda | 202 testes | merge `ec8bda2` |
 | VS-06 | Voz com **precedência única** (estilo > projeto > default; `PIPER_VOICE` como fallback de deployment/teste), o **mesmo** valor para síntese e ledger | 182 focados + 386 integração | merge `e7a5182` |
 | PROD-01 | **Fecha o ciclo de produção pela UI**: Início cria **e inicia**; página do vídeo ganha **Fontes** (URL+texto) e **Iniciar produção** / **Tentar novamente** com o motivo real | 258 focados + 105 UX/nav (re-verificados por mim) | merge `efd697b` |
+| PROD-02 | **Retomar/retentar religa o worker** (o gate humano era intransponível) + run `RUNNING` órfão recuperável pela tela de execução | 104 (re-verificados) + falsificação do teste (sabotei o `_enqueue`: 2 falham) | merge `59c32da` |
 
 ## Em execução (paralelo)
 
@@ -54,8 +55,9 @@ para `RUNNING` e **ninguém religa o motor**. Ver abaixo o achado completo.
 
 | ID | Atividade | Depende de |
 | --- | --- | --- |
-| **PROD-03** | **Recuperação de runs em voo no boot** (hoje o `lifespan` do app não varre nada): um run `RUNNING` após queda/reinício fica órfão e só se recupera pela ação manual do PROD-02. Sem varredor, nenhuma produção sobrevive a um deploy. | PROD-02 |
-| **PROD-04** | **"Criar vídeo da tendência" perde o link do YouTube**: pré-preencher a URL da fonte com o vídeo base resolvido pelo `topic_key` (sem migração — o vínculo já existe). Achado 3 abaixo. | IA-01 (mesma tela e arquivo: `panel.py`) |
+| **PROD-03** | **Recuperação de runs em voo no boot** (hoje o `lifespan` do app não varre nada): um run `RUNNING` após queda/reinício fica órfão e só se recupera pela ação manual do PROD-02. Sem varredor, nenhuma produção sobrevive a um deploy. **Desbloqueada** (PROD-02 entregou o re-drive; falta o gatilho automático). | — (pronta para iniciar) |
+| **PROD-04** | **Criação a partir da tendência não leva a fonte**: (a) pré-preencher a URL da fonte com o vídeo base resolvido pelo `topic_key` (sem migração — o vínculo já existe); (b) **não iniciar** uma produção fadada ao `SourceRefused` (ver achado 4). Achados 3 e 4 abaixo. | IA-01 (mesma tela e arquivo: `panel.py`) |
+| **PROD-05** | **Sem UI para iniciar uma produção nova** num vídeo que já tem run: a página do vídeo só oferece "Iniciar produção" quando `latest_run` é `None`; a API aceita (`create_run` não tem guarda de run ativo), a tela não expõe. Necessário para refazer um vídeo cujo roteiro nasceu de fonte ruim. | IA-01 (mesma tela) |
 
 ## Achado do dono (2) — 2026-11-21: o gate humano travava toda produção
 
@@ -110,6 +112,21 @@ evidência.
 **Limitação honesta:** se o dono **editar** o tema ao criar, o `topic_key` deixa de casar e a URL não se
 resolve. Gravar a procedência (id da trend no vídeo) resolveria isso, mas exige migração — registrado
 como opção, não incluído no escopo.
+
+## Achado do dono (4) — 2026-11-21: criar pelo Início começa uma produção que **já nasce falhando**
+
+Consequência do PROD-01 que eu não vi ao entregá-lo: o formulário do Início **cria e inicia** a
+produção, mas a 1ª etapa do DAG (`script`) **exige fontes** — e a fonte só pode ser adicionada **depois**
+que o vídeo existe (cartão Fontes, na página do vídeo). Logo, todo vídeo novo criado por ali nasce com um
+run `FAILED` e a razão `SourceRefused: no sources with checkable claims: add sources first`.
+
+**Prova:** no meu diagnóstico da execução presa, criei um run para um vídeo com 0 fontes e ele falhou
+imediatamente com essa mensagem exata (os 2 runs de teste foram removidos depois).
+
+**Não é beco sem saída** (com o PROD-02, "Tentar novamente" funciona: adicionar a fonte e retentar
+recomeça o roteiro), mas é um defeito de fluxo: o ato de criar mostra "Falhou" na cara do usuário. O
+caminho aprovado em `JORNADA-E-TELAS.md` é **Produzir vídeo → Pesquisar fontes → Roteiro** — a produção
+não deveria começar antes de existir fonte. Escopo a resolver junto no **PROD-04**.
 
 ## Bloqueadas
 
