@@ -7,6 +7,7 @@ from .editorial import Editorial
 from .media import Media
 from .publishing import Publishing
 from .render import Rendering
+from .render_cache import PlanRegeneration
 from .panel import BuildPanel
 from .ports import CategoryRepository, ChannelProfileRepository, TrendRepository, VideoRepository
 from .trends import IngestTrends
@@ -128,6 +129,8 @@ class UseCases:
     register_byok_key: RegisterByokKey | None = None
     rotate_byok_key: RotateByokKey | None = None
     revoke_byok_key: RevokeByokKey | None = None
+    # RP-06: regeneração seletiva (grafo de dependências + cache) da tela Editor (fatia posterior).
+    plan_regeneration: PlanRegeneration | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -171,7 +174,8 @@ class UseCases:
                   remove_member: RemoveMember | None = None,
                   register_byok_key: RegisterByokKey | None = None,
                   rotate_byok_key: RotateByokKey | None = None,
-                  revoke_byok_key: RevokeByokKey | None = None) -> "UseCases":
+                  revoke_byok_key: RevokeByokKey | None = None,
+                  plan_regeneration: PlanRegeneration | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -184,4 +188,4 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    analytics_register_experiment,
                    begin_youtube_oauth, complete_youtube_oauth, refresh_youtube_channel, revoke_youtube_channel,
                    resolve_actor, invite_member, change_member_role, remove_member,
-                   register_byok_key, rotate_byok_key, revoke_byok_key)
+                   register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration)

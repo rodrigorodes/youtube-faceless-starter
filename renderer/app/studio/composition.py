@@ -26,6 +26,7 @@ from .adapters.postgres.saas_repo import PostgresSaasRepository
 from .adapters.postgres.step_repo import PostgresStepRepository
 from .adapters.postgres.trend_repo import PostgresTrendRepository
 from .adapters.postgres.render_repo import PostgresRenderJobRepository
+from .adapters.postgres.render_plan_repo import PostgresRenderPlanRepository
 from .adapters.postgres.production_repo import build_postgres_production_run_repository
 from .adapters.postgres.category_repo import PostgresCategoryRepository
 from .adapters.postgres.analytics_learning_repo import PostgresAnalyticsLearningRepository
@@ -79,6 +80,7 @@ from .application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAcc
                                         RefreshYouTubeChannel, RevokeConsent)
 from .domain.youtube_oauth import OAuthConfigurationError
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
+from .application.render_cache import PlanRegeneration
 from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, RunFactCheck
 from .application.longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
@@ -389,6 +391,8 @@ class Studio:
             list_assets=ListAssets(repo, scripts, assets))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
+        # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.
+        plan_regeneration = PlanRegeneration(PostgresRenderPlanRepository(connect))
         files = FileRenderStorage(s.storage_root)
         # Restrição: um processo só. Job QUEUED/RUNNING de um processo anterior não vai terminar: vira FAILED e `work/` é limpo
         # (retomada fina: P06). Com várias réplicas isto derrubaria jobs vivos de outro processo.
@@ -513,7 +517,8 @@ production=production, script_view=script_view,
                                   remove_member=RemoveMember(saas_repo),
                                   register_byok_key=RegisterByokKey(saas_repo, secret_store, saas_clock),
                                   rotate_byok_key=RotateByokKey(saas_repo, secret_store, saas_clock),
-                                  revoke_byok_key=RevokeByokKey(saas_repo, secret_store, saas_clock))
+                                  revoke_byok_key=RevokeByokKey(saas_repo, secret_store, saas_clock),
+                                  plan_regeneration=plan_regeneration)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
