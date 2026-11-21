@@ -348,3 +348,76 @@ O dono criou um vídeo e ele ficou **preso em `IDEA`**. Diagnóstico verificado,
 
 Os 2 runs de teste criados pelo orquestrador para provar o item 2 foram **removidos** (o vídeo
 voltou a `IDEA`, 0 fontes, 0 runs).
+
+## Cobertura da UX atual no protótipo V3 em pt-BR (2026-11-21)
+
+Pergunta do dono: *"na Tendências eu não achei como criar novas categorias; tudo que é cadastrado
+hoje pela nossa UX atual está coberta no protótipo também?"*. Resposta medida, rota por rota.
+
+### O que a UX atual tem (rotas verificadas em `api/routes.py`)
+
+| Tela | Rota | O que cadastra/gerencia |
+|---|---|---|
+| Início | `/panel` | tema/tendência, "precisa de você", vídeos, custo do mês, estado das fases, última falha |
+| Produção | `/panel/producao` | runs em voo, etapa atual, pausar/retomar/cancelar/retentar, custo, uso de modelos, eventos |
+| Tendências | `/panel/tendencias` | coleta (`Buscar agora`), filtro de período (`?days=`), pills de região e **pilar**, CRUD de pilar, evidência, criar vídeo |
+| Novo vídeo | `/panel/novo-video` | assistente com campos, prévia do pipeline e linha de custo |
+| Vídeo | `/panel/videos/{id}` | fontes, estilo do vídeo, produção, **publicação**, **diagnóstico** |
+| Roteiro | `/videos/{id}/roteiro` | versões, duração, revisão, aprovar/decidir |
+| Execução | `/panel/videos/{id}/production-runs/{run}` | etapas, ações, custo, uso, eventos, avançado |
+| Canais | `/canais` | perfis, provedores/rotas, orçamento, YouTube/OAuth |
+| Estilos | `/panel/estilos` | listar, **criar, editar, arquivar**, motion e parâmetros |
+| Conexões | `/panel/conexoes` | contas OAuth, escopos, destinos por perfil, revogar |
+| Equipe | `/panel/equipe` | membros, papéis, chaves de API (criar/rotacionar/remover), consumo |
+| Analytics | `/panel/analytics` | filtros, tiles, tabela por vídeo, tabela por pilar, insights, recomendações com decisão, experimentos |
+
+### Cobertura no protótipo (antes desta rodada)
+
+| Área | Status |
+|---|---|
+| Início | parcial — sem custo/falha no rail |
+| Novo vídeo | coberto |
+| Vídeo | parcial — sem publicação e sem diagnóstico |
+| Roteiro | **descoberto** |
+| Execução | parcial — só checklist e "tentar novamente" |
+| Tendências | **pilares descobertos** (corrigido nesta rodada); sem filtro de período |
+| Canais | parcial — lista e troca, sem orçamento/provedores/OAuth |
+| Estilos | **descoberto** — 3 cartões fixos, sem criar/editar/arquivar |
+| Conexões | parcial — status simples, sem contas/escopos/revogar |
+| Equipe | **descoberto** — botão com aviso |
+| Analytics | **descoberto** — 4 números e estado vazio |
+
+### O que foi implementado agora (Tendências)
+
+Espelha a UX atual, com a mesma semântica e o vocabulário do produto (**Pilar**, como em
+`project_categories`): barra de pills (Todas / Em Alta Brasil / Em Alta EUA / pilares, com
+contagem), `+ Novo pilar`, `Gerenciar pilares (N)`, `↻ Buscar agora`, chip do pilar em cada
+tendência e `<dialog>` nativo com lista (Editar/Excluir com confirmação em dois passos) e formulário
+(Nome 1–100, Termos de busca separados por vírgula, máx. 10, sem duplicata, nome único).
+
+Prova: 30 asserções no Chrome headless, todas OK — inclui duplicata recusada ignorando caixa,
+truncamento em 10 termos com aviso, filtro de pilar sem coleta caindo em estado vazio honesto,
+exclusão exigindo confirmação e atualização de contagens.
+
+Defeito encontrado e corrigido no caminho: `[hidden]` não escondia `.btn` (o `display:inline-flex`
+da classe vencia o atributo), então "Cancelar edição" aparecia sempre. Resolvido com
+`[hidden]{display:none!important}` — a classe inteira do problema, não só o botão.
+
+### Tipografia e ícones
+
+O mockup original declara `Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI"` com
+`line-height 1.5`; a proposta usava `system-ui` e `1.55`. Igualado à declaração original, com a
+escala do original (h1 35px/-1.3px/730, eyebrow 10px/2px, nav 560, sidebar 240px, topbar 78px,
+padding 52px, painel 25px). Ícones: os 6 SVGs de traço 1.8/18×18 do original (casa, criar, vídeos,
+lâmpada, barras, engrenagem) — a proposta tinha **zero** `svg`.
+
+Fato medido: **Inter não está instalada** nesta máquina. `document.fonts.check` não serve de prova
+(devolve `true` até para nome inexistente); a prova é a largura do mesmo texto: `Inter`, 
+`ui-sans-serif` e uma fonte inventada dão **178,50px** idênticos. Ou seja: os dois arquivos caem no
+mesmo fallback aqui, e usarão Inter onde ela estiver instalada.
+
+### Limites desta verificação
+
+- Chrome headless não aceita janela abaixo de **500px**; o layout móvel foi verificado até 500px
+  (sem estouro horizontal em 1440/1280/1024/860/500), não em 390px.
+- O protótipo não grava nada: pilares criados existem só na memória da página.
