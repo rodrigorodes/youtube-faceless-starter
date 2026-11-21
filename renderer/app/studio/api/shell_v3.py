@@ -71,6 +71,46 @@ PRODUCT_CSS = """
 .state.s-fail { color: var(--err); }
 .state.s-idle { color: var(--muted); }
 .form-feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 6px; }
+
+/* Detalhe do vídeo e diagnóstico */
+.timeline { list-style: none; padding-left: 1.5rem; position: relative; margin: 0; }
+.timeline-item { position: relative; margin-bottom: 1.25rem; }
+.timeline-dot {
+  position: absolute; left: -1.5rem; top: 0.25rem; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--soft);
+}
+.timeline-title { font-weight: 600; font-size: 0.875rem; }
+.timeline-desc { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+.advanced { margin-top: 1.25rem; padding: 0; }
+.advanced-summary { cursor: pointer; padding: 1rem 1.25rem; font-weight: 600; list-style: none; }
+.advanced-summary::-webkit-details-marker { display: none; }
+.advanced-summary::after { content: "▾"; float: right; color: var(--muted); }
+.advanced[open] .advanced-summary { border-bottom: 1px solid var(--line); }
+.advanced-body { padding: 1.25rem; font-size: 0.85rem; }
+.advanced-body code { color: var(--text); word-break: break-all; }
+.failure-summary {
+  background: var(--soft); border: 1px solid var(--err); border-radius: 8px;
+  padding: 1rem; margin-top: 1rem; color: var(--text);
+}
+.failure-summary p { margin-bottom: 0.4rem; }
+.failure-summary p:last-child { margin-bottom: 0; }
+.warning {
+  background: var(--soft); border-left: 3px solid var(--warn); padding: 0.6rem 0.8rem;
+  margin-top: 0.75rem; font-size: 0.8rem;
+}
+.pill {
+  display: inline-flex; align-items: center; padding: 0.2rem 0.55rem; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+}
+.pill-PENDING { background: var(--panel2); color: var(--muted); }
+.pill-IN_PRODUCTION { background: var(--soft); color: var(--accent); border: 1px solid var(--accent); }
+.pill-AWAITING_APPROVAL { background: var(--soft); color: var(--warn); border: 1px solid var(--warn); }
+.pill-APPROVED { background: var(--soft); color: var(--ok); border: 1px solid var(--ok); }
+.pill-COMPLETED { background: var(--soft); color: var(--ok); }
+.pill-FAILED { background: var(--soft); color: var(--err); border: 1px solid var(--err); }
+.pill-REJECTED { background: var(--soft); color: var(--err); }
+.nav-item-unavailable { opacity: 0.55; cursor: not-allowed; }
+.nav-tag { font-size: 0.65rem; padding: 2px 5px; border-radius: 4px; background: var(--panel2); color: var(--muted); margin-left: 6px; }
 """
 
 _SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" '

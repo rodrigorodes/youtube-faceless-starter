@@ -3674,95 +3674,86 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
     sources_card_html = _video_sources_card(view)
     run_card_html = _video_run_card(view)
 
-    html_content = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Faceless Studio — Detalhe do Vídeo</title>
-  <style nonce="{nonce}">{CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#detalhe-heading">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html, nonce=nonce)}
+    from . import shell_v3
 
-    <main class="main-content">
-      <header class="topbar">
-        <div>
-          <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel">&larr; Voltar ao Painel</a></div>
-          <h1 id="detalhe-heading">{e(v.topic)}</h1>
-          <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            {_state_badge(view.stage)}
-            <span class="pill pill-{e(view.stage.value)}">{e(STAGE_LABELS.get(view.stage, view.stage.value))}</span>
-            <span style="font-size: 0.85rem; color: var(--text-muted);">Custo do vídeo: {_cost_html(view.cost_text)}</span>
+    body_html = f"""      <section class="pagina" id="pagina-video" aria-labelledby="detalhe-heading">
+        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos">← Vídeos</a> /
+          <span id="video-situacao">{e(STAGE_LABELS.get(view.stage, view.stage.value))}</span></p>
+        <div class="cab-video">
+          <div>
+            <p class="eyebrow">ESPAÇO DO VÍDEO</p>
+            <h1 class="h1" id="detalhe-heading">{e(v.topic)}</h1>
+            <p class="lead" id="video-resumo" style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              {_state_badge(view.stage)}
+              <span class="pill pill-{e(view.stage.value)}">{e(STAGE_LABELS.get(view.stage, view.stage.value))}</span>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Custo do vídeo: {_cost_html(view.cost_text)}</span>
+            </p>
           </div>
-        </div>
-        <div>{header_action_html}</div>
-      </header>
-
-      <div class="content-body">
-        <div class="layout-detail">
-          <div class="card">
-            <h2>Linha do Tempo dos Passos</h2>
-            <ul class="timeline">
-              {''.join(steps_html)}
-            </ul>
-            {failure_html}
-            {publication_summary_html}
-          </div>
-          {run_card_html}
-          {sources_card_html}
-          {style_card_html}
+          <div class="pilha" id="video-acoes">{header_action_html}</div>
         </div>
 
-        <details class="card advanced" id="advanced-diagnostics">
-          <summary class="advanced-summary">Avançado — diagnóstico</summary>
-          <div class="advanced-body">
-            <p>ID do vídeo: <code>{e(v.id)}</code></p>
-            <div>
-              <h3>Registro de Uso de Modelos</h3>
-              <p class="cost-note">Cada chamada vem rotulada: “Real”, “Estimado”, “Sem custo” ou “Desconhecido”. Real e estimado nunca são fundidos.</p>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Passo</th>
-                    <th scope="col">Provedor</th>
-                    <th scope="col">Modelo</th>
-                    <th scope="col">Custo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {''.join(usage_html)}
-                </tbody>
-              </table>
+        <div class="grade-video">
+          <div>
+            <div class="card">
+              <h2>Linha do Tempo dos Passos</h2>
+              <ul class="timeline">
+                {''.join(steps_html)}
+              </ul>
+              {failure_html}
+              {publication_summary_html}
             </div>
-            {render_err_html}
-            {step_errors_html}
-            {pub_err_html}
-          </div>
-        </details>
-      </div>
-    </main>
+            {run_card_html}
+            {sources_card_html}
+            {style_card_html}
 
-    <aside class="rail" aria-label="Ações do vídeo">
-      <section class="card" aria-labelledby="h-video-nav">
-        <h2 id="h-video-nav">Neste vídeo</h2>
-        <nav class="nav-menu" aria-label="Navegação do vídeo">
-          <ul class="nav-list">
-            <li>
-              <a class="nav-item" href="/studio/videos/{e(v.id)}/roteiro">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="13" x2="14" y2="13"></line></svg>
-                <span>Roteiro</span>
-              </a>
-            </li>
-            {preview_nav_html}
-          </ul>
-        </nav>
-      </section>
-    </aside>
-  </div>
-  <script nonce="{nonce}">
+            <details class="card advanced" id="advanced-diagnostics">
+              <summary class="advanced-summary">Avançado — diagnóstico</summary>
+              <div class="advanced-body">
+                <p>ID do vídeo: <code>{e(v.id)}</code></p>
+                <div>
+                  <h3>Registro de Uso de Modelos</h3>
+                  <p class="cost-note">Cada chamada vem rotulada: “Real”, “Estimado”, “Sem custo” ou “Desconhecido”. Real e estimado nunca são fundidos.</p>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">Passo</th>
+                        <th scope="col">Provedor</th>
+                        <th scope="col">Modelo</th>
+                        <th scope="col">Custo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {''.join(usage_html)}
+                    </tbody>
+                  </table>
+                </div>
+                {render_err_html}
+                {step_errors_html}
+                {pub_err_html}
+              </div>
+            </details>
+          </div>
+
+          <div>
+            <div class="card">
+              <h2>Neste vídeo</h2>
+              <nav class="nav-menu" aria-label="Navegação do vídeo">
+                <ul class="nav-list">
+                  <li>
+                    <a class="nav-item" href="/studio/videos/{e(v.id)}/roteiro">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="13" x2="14" y2="13"></line></svg>
+                      <span>Roteiro</span>
+                    </a>
+                  </li>
+                  {preview_nav_html}
+                </ul>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </section>"""
+
+    page_js = f"""
     function wireRetry(buttonId, url) {{
       const button = document.getElementById(buttonId);
       if (!button) return;
@@ -3828,8 +3819,6 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
       }});
     }}
 
-    // Fontes: registra a fonte e recarrega para a lista refletir o servidor. Com texto, o texto é
-    // a fonte; sem texto, o servidor busca a URL (e devolve o motivo real se recusar).
     const sourcesForm = document.getElementById('video-sources-form');
     if (sourcesForm) {{
       sourcesForm.addEventListener('submit', async (ev) => {{
@@ -3868,10 +3857,6 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
       }});
     }}
 
-    // Produção a partir do vídeo: iniciar (sem run), iniciar nova produção (run terminal) ou
-    // retomar (run em falha). Cada clique gera uma Idempotency-Key nova — uma produção nova é um
-    // run novo, nunca o retry da etapa. Sem botão inerte: quando o estado não permite, a própria
-    // página não oferece o botão.
     const runFeedback = document.getElementById('video-run-feedback');
     document.querySelectorAll('#btn-start-production, #btn-new-production').forEach((startBtn) => {{
       startBtn.addEventListener('click', async () => {{
@@ -3928,8 +3913,6 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
       }});
     }}
 
-    // Sincroniza aria-invalid com o estado visual :user-invalid (Baseline): o erro só aparece
-    // depois da interação; o ARIA acompanha no mesmo instante e o campo referencia a mensagem.
     const flagged = new WeakSet();
     const linkError = (el, shown) => {{
       const errorId = el.dataset ? el.dataset.error : null;
@@ -3957,9 +3940,19 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
     document.addEventListener('input', (ev) => {{ if (ev.target.hasAttribute && ev.target.hasAttribute('aria-invalid')) syncAria(ev.target); }});
     document.addEventListener('change', (ev) => syncAria(ev.target), true);
     document.addEventListener('invalid', (ev) => syncAria(ev.target), true);
-  </script>
-</body>
-</html>"""
+    """
+
+    html_content = shell_v3.render_document(
+        title="Faceless Studio — Detalhe do Vídeo",
+        active="videos",
+        crumb="Vídeos / Detalhe",
+        body_html=body_html,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=page_js,
+    )
     return html_content, _headers(nonce)
 
 
@@ -4085,38 +4078,30 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
         'passa a constar como superada.</p></div>'
     )
 
-    html_content = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Faceless Studio — Roteiro</title>
-  <style nonce="{nonce}">{CSS}</style>
-</head>
-<body>
-  <a class="skip-link" href="#roteiro-heading">Ir para o conteúdo</a>
-  <div class="app-layout">
-    {render_sidebar(active="videos", base_href="/studio/panel", side_card_html=side_card_html, nonce=nonce)}
+    from . import shell_v3
 
-    <main class="main-content">
-      <header class="topbar">
-        <div>
-          <div style="font-size: 0.8rem; margin-bottom: 0.25rem;"><a href="/studio/panel/videos/{e(view.video_id)}">&larr; Voltar ao vídeo</a></div>
-          <h1 id="roteiro-heading">Roteiro — {e(view.topic)}</h1>
-          <p class="section-sub" style="margin:0">Aprovação fica presa a uma versão; editar cria outra.</p>
+    content_page = f"""      <section class="pagina" id="pagina-roteiro" aria-labelledby="roteiro-heading">
+        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos/{e(view.video_id)}">← Voltar ao vídeo</a> /
+          <span>Roteiro</span></p>
+        <div class="cab-video">
+          <div>
+            <p class="eyebrow">ROTEIRO DO VÍDEO</p>
+            <h1 class="h1" id="roteiro-heading">Roteiro — {e(view.topic)}</h1>
+            <p class="lead">Aprovação fica presa a uma versão; editar cria outra.</p>
+          </div>
         </div>
-      </header>
-      <div class="content-body">
-        {body_html}
-      </div>
-    </main>
 
-    <aside class="rail" aria-label="Resumo">
-      {rail_html}
-    </aside>
-  </div>
-  <script nonce="{nonce}">
+        <div class="grade-video">
+          <div>
+            {body_html}
+          </div>
+          <div>
+            {rail_html}
+          </div>
+        </div>
+      </section>"""
+
+    page_js = f"""
     const approveBtn = document.getElementById('btn-approve-script');
     if (approveBtn && !approveBtn.disabled) {{
       approveBtn.addEventListener('click', async () => {{
@@ -4143,9 +4128,19 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
         }}
       }});
     }}
-  </script>
-</body>
-</html>"""
+    """
+
+    html_content = shell_v3.render_document(
+        title="Faceless Studio — Roteiro",
+        active="videos",
+        crumb="Vídeos / Roteiro",
+        body_html=content_page,
+        nonce=nonce,
+        projects=[],
+        project_id="",
+        cost_note="",
+        page_js=page_js,
+    )
     return html_content, _headers(nonce)
 
 

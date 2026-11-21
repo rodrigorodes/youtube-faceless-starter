@@ -37,7 +37,7 @@ def _states(html):
 
 def _nav_items(html):
     """Itens da navegação principal — ou vazio quando a página não tem a casca aprovada."""
-    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    match = re.search(r'<nav(?: class="nav")? aria-label="Principal">(.*?)</nav>', html, re.S)
     if match is None:
         return []
     return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
