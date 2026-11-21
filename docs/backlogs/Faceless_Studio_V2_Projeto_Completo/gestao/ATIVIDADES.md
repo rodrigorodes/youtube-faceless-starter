@@ -40,12 +40,12 @@ Sem push/merge remoto (bloqueado pelo harness).
 | PROD-01 | **Fecha o ciclo de produção pela UI**: Início cria **e inicia**; página do vídeo ganha **Fontes** (URL+texto) e **Iniciar produção** / **Tentar novamente** com o motivo real | 258 focados + 105 UX/nav (re-verificados por mim) | merge `efd697b` |
 | PROD-02 | **Retomar/retentar religa o worker** (o gate humano era intransponível) + run `RUNNING` órfão recuperável pela tela de execução | 104 (re-verificados) + falsificação do teste (sabotei o `_enqueue`: 2 falham) | merge `59c32da` |
 | PROD-03 | **O boot religa produção**: runs em voo órfãos são re-dirigidos no `lifespan` (porta sem N+1, regra pura `orphan_in_flight` reusando `has_live_lease`, mesmo `submit` do `start`; falha na varredura não derruba a subida) | 158 (re-verificados) + falsificação (sabotei a recuperação: o teste de boot falha) + **efeito observado no ambiente real** (2 runs re-dirigidos) | merge `95ac030` |
+| PROD-04 | **A criação carrega o vídeo base** (URL da fonte pré-preenchida por `topic_key`, sem migração), **não inicia produção fadada** ao `SourceRefused` (cria e abre a página do vídeo) e **permite iniciar produção nova** com run terminal | 235 (re-verificados) + falsificação (sabotei a extração: 5 testes falham) + verificação viva (prefill com a URL real, botão só com run terminal, Início sem `/production-runs`) | merge `954b395` |
 | IA-01 | **Início, Produção e Tendências como telas separadas**: rotas de servidor (`/panel`, `/panel/producao`, `/panel/tendencias`), `/panel/videos` → 302, nav sem âncoras; o HTML de uma tela nunca entra na outra | 301 (re-verificados) + verificação viva (3×200, 302, zero vazamento, 1 `aria-current`/página) | merge `1b98ddd` |
 
 ## Em execução (paralelo)
 
-**PROD-04 (em execução):** a criação não pode perder a fonte nem iniciar produção fadada ao
-`SourceRefused`; e um vídeo sempre pode iniciar produção nova. Fundiu o antigo PROD-05 (achado 5).
+— (vazio: nada em execução agora)
 
 ## Na fila
 
@@ -168,6 +168,16 @@ O run ficou **parado no gate humano** — não publica nada sozinho.
 | **YT-05** | Teste ao vivo A/B (dois canais na mesma conta) — valida o **adapter**, não o domínio | Precisa da sua conta Google real e do seu "ok" para rodar |
 
 ## Itens abertos conhecidos (registrados, não escondidos)
+
+- **Piso de qualidade da fonte (política, decidir com o dono)**: o stage de roteiro recusa fonte sem
+  *claims* verificáveis (uma fonte de 1 caractere falhou com `SourceRefused`), mas **100 caracteres de
+  prosa qualquer passam** e geram roteiro — foi assim que um vídeo real nasceu narrando uma frase de
+  chat (achado 6). O `factcheck` é fiel à fonte por construção (`passed = not flagged`), então ele
+  **não** pega fonte sem sentido. Falta um piso (mínimo de caracteres? exigir documento/URL de artigo?).
+  **Não** vou inventar o número: é decisão de produto.
+- **Procedência não é gravada**: a URL do vídeo base é derivada do `topic_key`; se o dono **editar o
+  tema** ao criar, o vínculo se perde e o campo volta a vir vazio. Gravar o id da tendência no vídeo
+  resolveria, mas exige migração (fora do escopo do PROD-04).
 
 - **Voz — "duas verdades"**: **DECIDIDA pelo dono: Opção A** — estilo > projeto > default, com
   `PIPER_VOICE` rebaixado a fallback de deployment/teste, e o **mesmo** valor para síntese e para o
