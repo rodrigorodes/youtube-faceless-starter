@@ -1,0 +1,65 @@
+"""Fixtures compartilhadas para a suíte E2E do Faceless Studio com Playwright."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Generator
+
+import pytest
+from playwright.sync_api import Browser, BrowserContext, Page
+
+
+def _load_env_credentials() -> tuple[str, str, str]:
+    """Lê as credenciais do Studio do ambiente ou do arquivo .env."""
+    user = os.environ.get("STUDIO_BROWSER_USER", "")
+    password = os.environ.get("STUDIO_BROWSER_PASSWORD", "")
+    base_url = os.environ.get("STUDIO_BASE_URL", "http://localhost:8000")
+
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if env_path.is_file() and (not user or not password):
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key == "STUDIO_BROWSER_USER" and not user:
+                user = val
+            elif key == "STUDIO_BROWSER_PASSWORD" and not password:
+                password = val
+
+    user = user or "studio"
+    password = password or "studio-pass-2026"
+    return user, password, base_url
+
+
+@pytest.fixture(scope="session")
+def studio_config() -> dict[str, str]:
+    user, password, base_url = _load_env_credentials()
+    return {
+        "user": user,
+        "password": password,
+        "base_url": base_url,
+    }
+
+
+@pytest.fixture(scope="function")
+def authenticated_context(browser: Browser, studio_config: dict[str, str]) -> Generator[BrowserContext, None, None]:
+    context = browser.new_context(
+        http_credentials={
+            "username": studio_config["user"],
+            "password": studio_config["password"],
+        },
+        viewport={"width": 1280, "height": 800},
+    )
+    yield context
+    context.close()
+
+
+@pytest.fixture(scope="function")
+def auth_page(authenticated_context: BrowserContext, studio_config: dict[str, str]) -> Generator[Page, None, None]:
+    page = authenticated_context.new_page()
+    page.set_default_timeout(10000)
+    yield page
+    page.close()

@@ -148,6 +148,7 @@ details.painel-sanfona[open] > summary .sanfona-seta {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .cartao-provider:hover {
@@ -235,7 +236,8 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 }
 
 .list { display: grid; gap: 0.5rem; }
-.cost { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cost { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.porta-spec code, .cartao-provider-modelo { word-break: break-all; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1.1rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
 .field .hint { color: var(--muted); font-size: 0.72rem; line-height: 1.4; }
@@ -277,7 +279,9 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 .choice input[type="radio"] { margin: 0 8px 0 0; }
 .choice .sample { display: block; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 @media (max-width: 820px) {
-  .grade-providers { grid-template-columns: 1fr; }
+  .grade-providers { grid-template-columns: minmax(0, 1fr); }
+  .cartao-provider { min-width: 0; }
+  .cost { white-space: normal; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .tres-estados { grid-template-columns: minmax(0, 1fr); }
   .estado-bloco .kv > span:last-child { text-align: left; }
