@@ -24,7 +24,9 @@ def styles(conn, dsn):
     migrate(conn)
     conn.commit()
     connect = lambda: psycopg.connect(dsn)
-    return {"repo": PostgresVisualStyleRepository(connect), "dsn": dsn}
+    return {"repo": PostgresVisualStyleRepository(connect), "dsn": dsn, "connect": connect,
+            "channels": PostgresChannelProfileRepository(connect),
+            "videos": PostgresVideoRepository(connect)}
 
 
 def _rows(dsn, query, params=()):
@@ -177,3 +179,102 @@ def test_an_archived_style_never_drives_a_render_even_if_a_link_is_reinserted(st
 
 def test_archive_of_an_unknown_style_returns_none(styles):
     assert styles["repo"].archive("b" * 32) is None
+
+
+# ------------------------------------ patches persistidos e troca de base (F05.T02)
+
+
+def _project(storage, name="Canal História"):
+    return storage["videos"].create_project(name, niche="História", language="pt-BR")
+
+
+def _config(storage, video, channel, *, video_patch=None):
+    from app.studio.domain.effective_config import resolve_effective_config
+
+    return resolve_effective_config(
+        video=video,
+        channel=channel,
+        lookup_style=storage["repo"].get,
+        video_patch=video_patch,
+        channel_patch=channel.style_patch,
+    )
+
+
+def test_switching_the_base_style_keeps_the_patch_applied_and_recomputes_on_read(styles):
+    """A base do vídeo mudou: o patch continua, recalculado sobre a base nova (nada copiado)."""
+    repo, channels, videos = styles["repo"], styles["channels"], styles["videos"]
+    style_a = repo.create("Estilo A", params={"music": {"bpm": 100, "seed": 3}, "motion": ["zoom_in"]})
+    style_b = repo.create("Estilo B", params={"music": {"bpm": 140, "seed": 5}, "motion": ["pan_left"]})
+    project = _project(styles)
+    channel = channels.create(project.id, "História", style_id=style_a.id)
+    channels.set_style_patch(channel.id, 0, {"music": {"bpm": 130}})
+    video = videos.create_video(project.id, "ADE 2026", VideoFormat.short)
+
+    over_a = _config(styles, video, channels.get(channel.id))
+    assert over_a.style.id == style_a.id
+    assert dict(over_a.music) == {"bpm": 130, "seed": 3}  # patch manda no bpm; o seed vem da base
+
+    # troca a base de estilo do canal: o patch não foi copiado nem apagado, só recomposto
+    channels.update(channel.id, channel.version, {"style_id": style_b.id})
+    refreshed = channels.get(channel.id)
+    assert refreshed.style_patch.to_mapping() == {"music": {"bpm": 130}}
+    over_b = _config(styles, video, refreshed)
+    assert over_b.style.id == style_b.id
+    assert dict(over_b.music) == {"bpm": 130, "seed": 5}  # o seed agora é o da base nova
+    assert over_b.provenance["audiovisual.music.bpm"] == "channel"
+    assert over_b.provenance["audiovisual.music.seed"] == "style"
+
+    # o patch guarda só overrides: os parâmetros das bases seguem intactos
+    assert repo.get(style_a.id).params == {"music": {"bpm": 100, "seed": 3}, "motion": ["zoom_in"]}
+    assert repo.get(style_b.id).params == {"music": {"bpm": 140, "seed": 5}, "motion": ["pan_left"]}
+
+
+def test_video_patch_wins_over_the_channel_and_reset_falls_back_to_inheriting(styles):
+    repo, channels, videos = styles["repo"], styles["channels"], styles["videos"]
+    base = repo.create("Estilo", params={"music": {"bpm": 100, "seed": 3}})
+    project = _project(styles)
+    channel = channels.create(project.id, "História", style_id=base.id)
+    channels.set_style_patch(channel.id, 0, {"music": {"bpm": 130}})
+    video = videos.create_video(project.id, "ADE 2026", VideoFormat.short)
+    channel = channels.get(channel.id)
+
+    saved = videos.set_video_style_patch(video.id, 0, {"music": {"bpm": 150}})
+    assert saved.patch.to_mapping() == {"music": {"bpm": 150}}
+    assert dict(_config(styles, video, channel, video_patch=saved.patch).music) == {
+        "bpm": 150, "seed": 3}
+
+    reset = videos.set_video_style_patch(video.id, saved.revision, None)
+    assert reset.patch is None  # voltou a herdar do canal
+    assert dict(_config(styles, video, channel, video_patch=reset.patch).music) == {
+        "bpm": 130, "seed": 3}
+
+
+def test_a_new_base_that_rejects_the_patch_fails_loudly_instead_of_being_swallowed(styles):
+    """Registra o comportamento: o patch válido na base A é inválido quando a base troca.
+
+    O erro **sobe tipado** (não é engolido): a mesclagem do domínio levanta
+    ``VisualStyleParamsInvalid`` — a mesma família de ``StylePatchInvalid`` (que é subclasse) —
+    e o ``effective_config`` o reembala em ``EffectiveConfigInvalid`` com a chave ofensora.
+    """
+    from app.studio.domain.effective_config import EffectiveConfigInvalid
+    from app.studio.domain.visual_style import StylePatch, apply_style_patch
+
+    repo, channels, videos = styles["repo"], styles["channels"], styles["videos"]
+    accepts = repo.create("Fade", params={"transition": {"kind": "fade", "duration_ticks": 8}})
+    rejects = repo.create("Sem transição", params={"transition": {"kind": "none"}})
+    project = _project(styles)
+    channel = channels.create(project.id, "História", style_id=accepts.id)
+    channels.set_style_patch(channel.id, 0, {"transition": {"duration_ticks": 12}})
+    video = videos.create_video(project.id, "ADE 2026", VideoFormat.short)
+    channel = channels.get(channel.id)
+
+    assert dict(_config(styles, video, channel).transition) == {"kind": "fade", "duration_ticks": 12}
+
+    with pytest.raises(VisualStyleParamsInvalid, match="transition"):
+        apply_style_patch(rejects.params, StylePatch.from_mapping(channel.style_patch.to_mapping()))
+
+    channels.update(channel.id, channel.version, {"style_id": rejects.id})
+    with pytest.raises(EffectiveConfigInvalid, match="transition"):
+        _config(styles, videos.get_video(video.id), channels.get(channel.id))
+    # o patch persistido continua lá: a falha é de resolução, não de escrita
+    assert channels.get(channel.id).style_patch.to_mapping() == {"transition": {"duration_ticks": 12}}

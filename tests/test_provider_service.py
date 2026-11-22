@@ -17,9 +17,11 @@ from app.studio.domain.provider import (  # noqa: E402
     Availability,
     CostEstimate,
     EconomicProfile,
+    NoProviderAvailable,
     ProviderImplementation,
     ProviderKind,
     ProviderProbeResult,
+    ProviderStanding,
 )
 
 PID = "a" * 32
@@ -114,11 +116,66 @@ def test_connection_test_without_probe_does_not_pretend():
 
 
 def test_route_selects_by_profile_and_returns_fallbacks():
-    # dois candidatos disponíveis: o configured e um extra injetado
+    # dois candidatos disponíveis na qualidade que o perfil PREMIUM exige
     svc = ProviderService(FakeVideoRepo(), {}, implementations() + [
-        ProviderImplementation(TEXT, "premium", cost=CostEstimate.estimate(Decimal("0.90")),
-                              quality=5, validated=True),
+        ProviderImplementation(TEXT, "premium", capabilities=("text.generate",),
+                               cost=CostEstimate.estimate(Decimal("0.90")), quality=5, validated=True),
+        ProviderImplementation(TEXT, "premium-lite", capabilities=("text.generate",),
+                               cost=CostEstimate.estimate(Decimal("0.10")), quality=3, validated=True),
     ])
     decision = svc.route(PID, TEXT, EconomicProfile.PREMIUM)
     assert decision.primary.name == "premium"
-    assert any(c.name == "demo" for c in decision.fallbacks)
+    # o fallback também respeita o piso do perfil: demo (qualidade 1) fica fora da cadeia.
+    assert [c.name for c in decision.fallbacks] == ["premium-lite"]
+
+
+def test_service_production_flag_keeps_stand_ins_out_of_the_route():
+    impls = implementations() + [
+        ProviderImplementation(TEXT, "bridge", capabilities=("text.generate",),
+                               cost=CostEstimate.estimate(Decimal("0.05")), quality=3, validated=True),
+    ]
+    dev = ProviderService(FakeVideoRepo(), {}, impls)
+    prod = ProviderService(FakeVideoRepo(), {}, impls, production=True)
+    assert dev.route(PID, TEXT, EconomicProfile.ECONOMY).primary.name == "demo"
+    decision = prod.route(PID, TEXT, EconomicProfile.ECONOMY)
+    assert decision.primary.name == "bridge"
+    assert all(c.standing is ProviderStanding.PRODUCTION for c in decision.chain)
+
+
+def test_route_can_override_the_production_flag_explicitly():
+    impls = implementations() + [
+        ProviderImplementation(TEXT, "bridge", capabilities=("text.generate",),
+                               cost=CostEstimate.estimate(Decimal("0.05")), quality=3, validated=True),
+    ]
+    prod = ProviderService(FakeVideoRepo(), {}, impls, production=True)
+    assert prod.route(PID, TEXT, EconomicProfile.ECONOMY, production=False).primary.name == "demo"
+
+
+def test_route_without_an_acceptable_candidate_raises_instead_of_downgrading():
+    # demo é stand-in (excluído) e opencode não foi validado: não há candidato honesto.
+    prod = ProviderService(FakeVideoRepo(), {}, implementations(), production=True)
+    with pytest.raises(NoProviderAvailable):
+        prod.route(PID, TEXT, EconomicProfile.ECONOMY)
+
+
+# -- F06.T02: a decisão carrega modelo/versão e pode ser reavaliada sem candidato excluído ----
+
+
+def test_route_keeps_the_configured_model_and_honours_explicit_exclusions():
+    impls = implementations() + [
+        ProviderImplementation(TEXT, "bridge", capabilities=("text.generate",),
+                               cost=CostEstimate.estimate(Decimal("0.05")), quality=3, validated=True),
+    ]
+    svc = ProviderService(FakeVideoRepo({"text": "bridge:model-x"}), {}, impls,
+                          production=False)
+    # ECONOMY escolheria o demo (grátis); excluí-lo é uma reavaliação explícita, não downgrade.
+    decision = svc.route(PID, TEXT, EconomicProfile.ECONOMY, exclude=("demo",))
+    assert decision.primary.name == "bridge"
+    assert decision.primary.spec == "bridge:model-x"   # o modelo configurado não se perde
+    assert decision.primary.model == "model-x"
+
+
+def test_route_with_every_candidate_excluded_raises_with_the_policy_reason():
+    svc = ProviderService(FakeVideoRepo(), {}, implementations())
+    with pytest.raises(NoProviderAvailable):
+        svc.route(PID, TEXT, EconomicProfile.ECONOMY, exclude=("demo", "opencode"))

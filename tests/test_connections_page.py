@@ -103,9 +103,23 @@ def page_text(html: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", stripped).split())
 
 
+def _without_style_and_script(html: str) -> str:
+    return re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
+
+
 def nav_items(html: str):
-    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    """Itens da navegação principal da casca V3 (`<nav aria-label="Principal">`)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert match is not None, "navegação principal ausente"
+    return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
+
+
+def settings_nav_items(html: str):
+    """Itens da navegação da área de Configurações (Canais/Estilos/Conexões/Equipe)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Seções de configuração">(.*?)</nav>', markup, re.S)
+    assert match is not None, "navegação de configurações ausente"
     return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
 
 
@@ -187,17 +201,24 @@ def test_connections_page_escapes_xss_from_real_data(env):
 def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     html = page(env).text
     items = nav_items(html)
-    active = [item for item in items if 'aria-current="page"' in item]
-    assert len(active) == 1
-    assert "Conexões" in _nav_text(active[0])
-    assert 'href="/studio/panel/conexoes"' in active[0]
-    assert html.count('aria-current="page"') == 1
-    assert "Configuração" in page_text(html)
-    # Estilos e Equipe seguem como destinos reais; nada de "Configurações — em breve".
-    labels = " ".join(_nav_text(item) for item in items)
-    assert "Estilos" in labels and "Equipe" in labels
-    assert "Configurações" not in html and "em breve" not in html
-    assert not any('aria-disabled="true"' in item for item in items)
+    # UX V3: o menu principal tem cinco destinos e nenhum deles é falso-ativo nesta tela.
+    assert [_nav_text(i) for i in items] == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    assert not [item for item in items if 'aria-current="page"' in item]
+    # A entrada ativa é Configurações, no rodapé da casca.
+    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
+    config_active = re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
+    assert config_active is not None
+    # A tela Conexões é o item ativo da navegação de configurações.
+    sections = settings_nav_items(html)
+    section_active = [item for item in sections if 'aria-current="page"' in item]
+    assert len(section_active) == 1 and "Conexões" in _nav_text(section_active[0])
+    assert 'href="/studio/panel/conexoes"' in section_active[0]
+    assert _without_style_and_script(html).count('aria-current="page"') == 2
+    # Estilos, Conexões e Equipe seguem como destinos reais; nada de "Configurações — em breve".
+    labels = " ".join(_nav_text(item) for item in sections)
+    assert "Estilos" in labels and "Conexões" in labels and "Equipe" in labels
+    assert "em breve" not in html
+    assert not any('aria-disabled="true"' in item for item in items + sections)
 
 
 # -------------------------------------------------- confirmação antes do vínculo

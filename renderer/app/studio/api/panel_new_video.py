@@ -60,7 +60,10 @@ NEW_VIDEO_JS = """
       var elFmt = $('#rev-formato');
       if (elFmt) elFmt.textContent = fmt && fmt.value === 'long' ? 'Vídeo (16:9)' : 'Short (9:16)';
       var elEst = $('#rev-estilo');
-      if (elEst) elEst.textContent = est ? est.value : 'Padrão do canal';
+      if (elEst) {
+        var labelEst = est ? (est.closest('label') || est.parentElement) : null;
+        elEst.textContent = labelEst ? labelEst.textContent.trim() : 'Padrão do estúdio';
+      }
       var elCanal = $('#rev-canal');
       if (elCanal) elCanal.textContent = canalNome || 'Canal ativo';
       irParaEtapa(2);
@@ -80,6 +83,14 @@ NEW_VIDEO_JS = """
       var canalSel = $('#canal-ativo');
       if (!tema || !canalSel) return;
       var fmt = $('input[name="formato-novo"]:checked');
+      var est = $('input[name="estilo-novo"]:checked');
+      var payload = {
+        project_id: canalSel.value,
+        topic: tema,
+        format: fmt ? fmt.value : 'short'
+      };
+      // Só envia style_id quando o operador escolheu um estilo de verdade; vazio = herda do canal.
+      if (est && est.value) payload.style_id = est.value;
       btnCriar.disabled = true;
       btnCriar.classList.add('carregando');
       if (window.StudioLoading) window.StudioLoading.start();
@@ -88,11 +99,7 @@ NEW_VIDEO_JS = """
       fetch('/studio/videos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: canalSel.value,
-          topic: tema,
-          format: fmt ? fmt.value : 'short'
-        })
+        body: JSON.stringify(payload)
       }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; }); })
         .then(function (par) {
           var r = par[0], d = par[1];
@@ -135,6 +142,35 @@ NEW_VIDEO_JS = """
 """
 
 
+_LANGUAGES = {"pt-BR": "Português (BR)", "en-US": "Inglês (EUA)", "es-ES": "Espanhol"}
+
+
+def _language_label(code: str | None) -> str:
+    """Rótulo legível do idioma do canal; código desconhecido aparece como veio (sem inventar)."""
+    if not code:
+        return "não definido"
+    return _LANGUAGES.get(code, code)
+
+
+def _style_options(view: NewVideoView, disabled: str) -> str:
+    """Opções reais de estilo (F02.T02/G15).
+
+    "Herdar do canal" é a escolha de não criar override — e mostra o nome real que será herdado.
+    Sem nenhum estilo na biblioteca, não há opção fictícia: só a herança (que é o padrão real do
+    estúdio) e o link para a biblioteca.
+    """
+    if view.inherited_style_name:
+        inherit = f"Herdar do canal — {e(view.inherited_style_name)}"
+    else:
+        inherit = "Padrão do estúdio (canal sem estilo)"
+    options = [f'<label class="pill"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
+               f' {inherit}</label>']
+    for style_id, name in view.styles:
+        options.append(f'<label class="pill"><input type="radio" name="estilo-novo" '
+                       f'value="{e(style_id, quote=True)}"{disabled}> {e(name)}</label>')
+    return "\n              ".join(options)
+
+
 def _cost_note(view: NewVideoView) -> str:
     if view.month.breakdown.calls > 0:
         return f"Custo do mês: {view.month.text}"
@@ -153,6 +189,12 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
     else:
         gate = '<p class="aviso" role="status">Cadastre um canal (botão «+ Novo canal», no topo) para criar vídeos.</p>'
         disabled = " disabled"
+
+    style_options = _style_options(view, disabled)
+    # F02.T04: a predefinição mostra o que o canal define; sem perfil, o estado é explícito.
+    idioma = e(_language_label(view.channel_language)) if view.has_profile else "nenhum idioma definido (canal sem perfil)"
+    voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
+    estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
 
     body = f"""      <section class="pagina" id="pagina-novo-video" aria-labelledby="t-novo">
         <div class="secao-cab">
@@ -193,15 +235,10 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
             </fieldset>
             <fieldset class="pills" style="margin-top:18px">
               <legend>Estilo visual</legend>
-              <label class="pill"><input type="radio" name="estilo-novo" value="Padrão do canal" checked{disabled}>
-                Padrão do canal</label>
-              <label class="pill"><input type="radio" name="estilo-novo" value="Cinemático"{disabled}>
-                Cinemático</label>
-              <label class="pill"><input type="radio" name="estilo-novo" value="Documentário"{disabled}>
-                Documentário</label>
-              <label class="pill"><input type="radio" name="estilo-novo" value="Tech Clean"{disabled}>
-                Tech Clean</label>
+{style_options}
             </fieldset>
+            <p class="micro" style="margin:8px 0 0">
+              <a href="/studio/configuracoes/estilos">Gerenciar estilos da biblioteca →</a></p>
             <div class="acoes">
               <span class="micro">Voz, idioma e identidade vêm do canal.</span>
               <button class="btn btn-primario" type="button" id="btn-para-revisao"{disabled}>Continuar →</button>
@@ -217,7 +254,7 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
               <tr><th scope="row">Formato</th><td id="rev-formato">—</td></tr>
               <tr><th scope="row">Estilo visual</th><td id="rev-estilo">—</td></tr>
               <tr><th scope="row">Canal</th><td id="rev-canal">—</td></tr>
-              <tr><th scope="row">Voz</th><td>Padrão do canal</td></tr>
+              <tr><th scope="row">Voz</th><td>{voz}</td></tr>
             </table>
             <p class="feedback" id="feedback-criar" role="status"></p>
             <div class="acoes">
@@ -245,10 +282,9 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
             <table class="tabela-kv">
               <caption class="sr-only">O que o canal define para cada vídeo</caption>
               <tr><th scope="row">Canal</th><td class="texto-canal">{e(current_channel_name)}</td></tr>
-              <tr><th scope="row">Idioma</th><td>Português (BR)</td></tr>
-              <tr><th scope="row">Voz</th><td>Natural / Narrador</td></tr>
-              <tr><th scope="row">Legendas</th><td>Dinâmicas</td></tr>
-              <tr><th scope="row">Música</th><td>Ambiente</td></tr>
+              <tr><th scope="row">Idioma</th><td>{idioma}</td></tr>
+              <tr><th scope="row">Voz</th><td>{voz}</td></tr>
+              <tr><th scope="row">Estilo</th><td>{estilo}</td></tr>
             </table>
             <p class="micro" style="margin:14px 0 0">
               <a href="/studio/configuracoes/canais">Personalizar identidade do canal →</a></p>

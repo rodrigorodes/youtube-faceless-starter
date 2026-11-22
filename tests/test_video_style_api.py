@@ -21,8 +21,10 @@ from app.studio.adapters.postgres.db import migrate  # noqa: E402
 from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E402
 from app.studio.adapters.postgres.visual_style_repo import PostgresVisualStyleRepository  # noqa: E402
 from app.studio.api.routes import make_router  # noqa: E402
+from app.studio.application.video_style import SetVideoStylePatch, VideoStylePatchConflict  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 from app.studio.domain.contracts import VideoFormat  # noqa: E402
+from app.studio.domain.visual_style import StylePatchInvalid  # noqa: E402
 from test_ux_contract import assert_ux_contract  # noqa: E402
 
 AUTH_HEADER = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-browser-password").decode()}
@@ -226,3 +228,185 @@ def test_build_video_style_view_keeps_an_archived_current_style_representable():
     assert view.inherits_from_channel is False
     # A lista ativa não a traz, mas a opção atual continua representável com o nome real.
     assert any(s.id == archived.id for s in view.styles)
+
+
+# ------------------------------------------- criação com estilo (F02.T02/G15)
+
+
+def test_create_video_persists_the_chosen_style(env):
+    """O estilo escolhido no Create é validado e gravado na mesma criação."""
+    style = env["styles"].create("Cinema Noturno")
+    r = env["client"].post("/studio/videos", headers=POST_HEADER,
+                           json={"project_id": env["project"].id, "topic": "Agentes autônomos",
+                                 "format": "short", "style_id": style.id})
+    assert r.status_code == 201, r.text
+    assert r.json()["style_id"] == style.id
+    assert env["videos"].get_video(r.json()["id"]).style_id == style.id  # persistiu de verdade
+
+
+def test_create_video_without_style_keeps_inheriting_the_channel(env):
+    r = env["client"].post("/studio/videos", headers=POST_HEADER,
+                           json={"project_id": env["project"].id, "topic": "Agentes autônomos",
+                                 "format": "short"})
+    assert r.status_code == 201, r.text
+    assert r.json()["style_id"] is None
+
+
+def _video_count(env) -> int:
+    return env["conn"].execute("SELECT count(*) FROM studio.videos WHERE project_id = %s",
+                               (env["project"].id,)).fetchone()[0]
+
+
+def test_create_video_with_unknown_style_is_404_and_creates_nothing(env):
+    before = _video_count(env)
+    r = env["client"].post("/studio/videos", headers=POST_HEADER,
+                           json={"project_id": env["project"].id, "topic": "Agentes autônomos",
+                                 "format": "short", "style_id": "f" * 32})
+    assert r.status_code == 404, r.text
+    assert "Traceback" not in r.text
+    assert _video_count(env) == before  # nada criado pela metade
+
+
+def test_create_video_with_archived_style_is_refused(env):
+    style = env["styles"].create("Estilo antigo")
+    env["styles"].archive(style.id)
+    r = env["client"].post("/studio/videos", headers=POST_HEADER,
+                           json={"project_id": env["project"].id, "topic": "Agentes autônomos",
+                                 "format": "short", "style_id": style.id})
+    assert r.status_code == 422, r.text
+    assert "archived" in r.json()["detail"]
+
+
+def test_new_video_page_shows_the_real_styles_of_the_selected_channel(env):
+    style = env["styles"].create("Cinema Noturno")
+    env["styles"].create("Clean Tech")
+    _channel(env, env["project"].id, style_id=style.id)
+    html = env["client"].get(f"/studio/panel/novo-video?project_id={env['project'].id}",
+                             headers=AUTH_HEADER).text
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    assert "Cinema Noturno" in bloco and "Clean Tech" in bloco
+    assert "Herdar do canal — Cinema Noturno" in bloco
+    assert 'value="" checked' in bloco
+    for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
+        assert ficticio not in html
+    assert_ux_contract(html, page="painel/novo-video")
+
+
+# ------------------------------------ canal ativo validado no Core (F02.T01)
+
+
+def test_unknown_active_channel_is_404_instead_of_silently_switching(env):
+    r = env["client"].get(f"/studio/panel?project_id={'f' * 32}", headers=AUTH_HEADER)
+    assert r.status_code == 404, r.text
+    assert "project not found" in r.text
+
+
+def test_malformed_active_channel_is_422(env):
+    r = env["client"].get("/studio/panel?project_id=nao-e-id", headers=AUTH_HEADER)
+    assert r.status_code == 422, r.text
+
+
+def test_existing_active_channel_renders_the_channel_context(env):
+    r = env["client"].get(f"/studio/panel?project_id={env['project'].id}", headers=AUTH_HEADER)
+    assert r.status_code == 200, r.text
+    assert f'value="{env["project"].id}" selected' in r.text
+    assert f'/studio/panel/videos?project_id={env["project"].id}' in r.text
+
+
+# --------------------------------- Área Avançado das Configurações (F02.T03)
+
+
+def test_advanced_page_shows_the_real_effective_configuration(env):
+    r = env["client"].get(f"/studio/panel/avancado?project_id={env['project'].id}", headers=AUTH_HEADER)
+    assert r.status_code == 200, r.text
+    assert "Diagnóstico do Estúdio" in r.text
+    assert "Banco de dados: respondendo." in r.text
+    assert "Configuração efetiva do canal" in r.text
+    assert "Providers disponíveis" in r.text
+    assert "demo" in r.text  # spec real deste ambiente de teste, não um placeholder inventado
+
+
+def test_advanced_page_validates_the_active_channel(env):
+    r = env["client"].get(f"/studio/panel/avancado?project_id={'f' * 32}", headers=AUTH_HEADER)
+    assert r.status_code == 404, r.text
+
+
+def test_advanced_page_requires_authentication(env):
+    r = env["client"].get("/studio/panel/avancado")
+    assert r.status_code == 401
+
+
+def test_settings_area_links_to_the_seven_groups(env):
+    for section in ("canais", "estrategia", "estilos", "producao", "conexoes", "equipe", "avancado"):
+        r = env["client"].get(f"/studio/configuracoes/{section}", headers=AUTH_HEADER, follow_redirects=False)
+        assert r.status_code == 302, section
+
+
+def test_new_video_preset_reads_the_channel_language_and_voice(env):
+    _channel(env, env["project"].id, language="en-US", voice="piper:voz-do-canal")
+    html = env["client"].get(f"/studio/panel/novo-video?project_id={env['project'].id}",
+                             headers=AUTH_HEADER).text
+    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
+    assert "Inglês (EUA)" in aside
+    assert "piper:voz-do-canal" in aside
+    assert "Português (BR)" not in aside
+
+
+# ------------------------------------ patch de estilo persistido no vídeo (F05.T02)
+
+
+def test_video_style_patch_persists_and_reset_returns_to_inheriting(env):
+    """O patch do vídeo sobrepõe o canal; reset remove o patch (NULL), não grava `{}`."""
+    videos = env["videos"]
+    video = videos.create_video(env["project"].id, "ADE 2026", VideoFormat.short)
+
+    saved = SetVideoStylePatch(videos).execute(video.id, 0, {"music": {"bpm": 150}})
+    assert saved.revision == 1
+    assert saved.patch.to_mapping() == {"music": {"bpm": 150}}
+    assert videos.get_video_style_patch(video.id) == saved
+
+    reset = SetVideoStylePatch(videos).execute(video.id, saved.revision, None)
+    assert reset.revision == 2 and reset.patch is None
+    stored = env["conn"].execute(
+        "SELECT style_patch, style_patch_revision FROM studio.videos WHERE id = %s", (video.id,)).fetchone()
+    assert stored == (None, 2)  # o patch saiu da linha: o vídeo volta a herdar
+
+
+def test_video_style_patch_is_normalized_before_persisting_and_refuses_unknown_fields(env):
+    """A allowlist vale no banco: normaliza pelo `StylePatch` e nada é gravado no erro."""
+    videos = env["videos"]
+    video = videos.create_video(env["project"].id, "ADE 2026", VideoFormat.short)
+
+    saved = SetVideoStylePatch(videos).execute(video.id, 0, {"voice": {"model": "  piper:pt_BR-x  "}})
+    assert saved.patch.to_mapping() == {"voice": {"model": "piper:pt_BR-x"}}
+    assert env["conn"].execute(
+        "SELECT style_patch FROM studio.videos WHERE id = %s", (video.id,)).fetchone()[0] == {
+            "voice": {"model": "piper:pt_BR-x"}}
+
+    with pytest.raises(StylePatchInvalid):
+        SetVideoStylePatch(videos).execute(video.id, saved.revision, {"colour": "#fff"})
+    assert videos.get_video_style_patch(video.id) == saved
+
+
+def test_video_style_patch_stale_revision_is_a_typed_conflict_without_writing(env):
+    videos = env["videos"]
+    video = videos.create_video(env["project"].id, "ADE 2026", VideoFormat.short)
+    first = SetVideoStylePatch(videos).execute(video.id, 0, {"music": {"bpm": 150}})
+
+    with pytest.raises(VideoStylePatchConflict):
+        SetVideoStylePatch(videos).execute(video.id, 0, {"music": {"bpm": 90}})
+    assert videos.get_video_style_patch(video.id) == first
+
+
+def test_video_style_patch_of_an_unknown_video_returns_none(env):
+    assert SetVideoStylePatch(env["videos"]).execute("a" * 32, 0, {"music": {"bpm": 150}}) is None
+
+
+def test_an_invalid_patch_revision_is_refused_before_touching_the_database(env):
+    videos = env["videos"]
+    video = videos.create_video(env["project"].id, "ADE 2026", VideoFormat.short)
+    for bad in (-1, True, "1"):
+        with pytest.raises(ValueError):
+            SetVideoStylePatch(videos).execute(video.id, bad, {"music": {"bpm": 150}})
+    assert videos.get_video_style_patch(video.id).revision == 0

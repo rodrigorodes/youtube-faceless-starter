@@ -324,3 +324,15 @@ def test_storyboard_scene_requires_an_asset():
     row = StoryboardRow(id="8" * 32, video_id="7" * 32, idx=0, narration="Narração da cena.", image_prompt="prompt de imagem", asset_id=None)
     with pytest.raises(PlanBuildError, match="asset"):
         storyboard_scene(row, speech_seconds=1.0)
+
+# --------------------------------------------------------------------------- builder (F03.T03)
+
+
+def test_builder_carries_the_frozen_config_reference_into_the_plan():
+    from app.studio.domain.render_plan import ConfigSnapshot
+
+    snapshot = ConfigSnapshot(content_hash="c" * 64, schema_version=1,
+                              provenance={"style": "video", "audiovisual.motion": "video"})
+    plan = build(config_snapshot=snapshot)
+    assert plan.config_snapshot == snapshot
+    assert build().config_snapshot is None  # sem referência, o plano é o de antes

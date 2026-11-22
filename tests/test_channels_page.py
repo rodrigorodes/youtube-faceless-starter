@@ -80,9 +80,23 @@ def page_text(html: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", stripped).split())
 
 
+def _without_style_and_script(html: str) -> str:
+    return re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
+
+
 def nav_items(html: str):
-    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    """Itens da navegação principal da casca V3 (`<nav aria-label="Principal">`)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert match is not None, "navegação principal ausente"
+    return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
+
+
+def settings_nav_items(html: str):
+    """Itens da navegação da área de Configurações (Canais/Estilos/Conexões/Equipe)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Seções de configuração">(.*?)</nav>', markup, re.S)
+    assert match is not None, "navegação de configurações ausente"
     return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
 
 
@@ -164,14 +178,16 @@ def test_channels_state_badges_carry_real_text_not_only_an_icon(env):
 def test_channels_page_uses_the_approved_shell(env):
     html = page(env).text
     items = nav_items(html)
-    active = [item for item in items if 'aria-current="page"' in item]
-    assert len(active) == 1
-    assert "Canais" in _nav_text(active[0])
-    assert active[0].lstrip().startswith("<a ")
-    assert 'href="/studio/canais"' in active[0]
-    assert html.count('aria-current="page"') == 1
+    # UX V3: o menu principal não tem item ativo; Configurações é a entrada da área.
+    assert [_nav_text(i) for i in items] == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
+    assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
+    # Canais é a seção ativa dentro de Configurações.
+    section_active = [i for i in settings_nav_items(html) if 'aria-current="page"' in i]
+    assert len(section_active) == 1 and "Canais" in _nav_text(section_active[0])
+    assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert html.count("<h1") == 1
-    assert "<h1" in html and "Canais" in re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S).group(1)
+    assert "Canais" in re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S).group(1)
 
 
 def test_channels_page_marks_unavailable_nav_items_as_non_focusable(env):
@@ -244,7 +260,7 @@ def test_channel_appearance_selects_the_current_style(env):
     assert 'id="canal-estilo"' in html
     assert 'for="canal-estilo"' in html
     assert re.search(rf'<option value="{style["id"]}" selected>Documentário Cinemático</option>', html)
-    assert 'href="/studio/panel/estilos"' in html
+    assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', html)
     assert "Criar novo estilo" in page_text(html)
     assert_ux_contract(html, page="canais/aparencia")
 
@@ -364,7 +380,7 @@ def test_budget_summary_keeps_real_estimate_free_and_unknown_apart(env):
 
 def youtube_segment(html: str) -> str:
     """Trecho do card 'Canal do YouTube', do cabeçalho até a seção avançada."""
-    match = re.search(r'Canal do YouTube.*?(?=<details class="advanced")', html, re.S)
+    match = re.search(r'Canal do YouTube.*?(?=<details class="[^"]*\badvanced\b)', html, re.S)
     assert match is not None, "card do YouTube ausente"
     return match.group(0)
 
@@ -374,7 +390,8 @@ def test_youtube_disconnected_without_server_oauth_is_disabled_with_a_real_reaso
     segment = youtube_segment(html)
     visible = page_text(segment)
     assert "Sem associação" in visible
-    assert "DISCONNECTED" in html
+    # UX V3: o estado aparece em texto humano; o enum cru não vaza para a tela.
+    assert "DISCONNECTED" not in visible
     assert "OAuth" in visible
     # O fluxo existe desde a F8: a copy do card não pode mais negar o consentimento.
     assert "não está implementado" not in visible
@@ -543,7 +560,8 @@ def test_project_config_is_sanitized_and_advanced_details_is_closed(env):
     assert "sk-live-LEAK-VALUE" not in html and "OPENAI_API_KEY" not in html
     assert "demo" in html
     assert "<details open" not in html
-    assert 'class="advanced"' in html
+    # UX V3: a sanfona avançada é `class="card advanced painel-sanfona"`.
+    assert re.search(r'<details class="[^"]*\badvanced\b[^"]*"', html)
 
 
 # ------------------------------------------------------------------ higiene/erros

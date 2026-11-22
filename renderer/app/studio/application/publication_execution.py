@@ -103,6 +103,35 @@ class FallbackTokenProvider:
             return self.fallback.execute(project_id)
 
 
+class TargetChannelTokenProvider:
+    """Escolhe a origem do token pelo destino do projeto — sem fallback cruzado entre canais (F01.T01).
+
+    Com destino configurado (`channel_profiles.youtube_channel_id`), o token vem **exclusivamente**
+    de `targeted` (a autorização daquele canal, renovada pelo grant). Qualquer falha propaga e a
+    publicação bloqueia: nunca se tenta `legacy` nem outro canal.
+
+    Sem destino, permanece o caminho legado **explícito e restrito**: cofre por projeto
+    (`youtube:{project_id}`) e, na ausência de consentimento por projeto, o `token.env` do operador
+    (`FallbackTokenProvider`). Esse caminho só existe enquanto nenhum canal do estúdio aponta para
+    um destino, e não serve de fallback para um canal com destino.
+
+    Projeto com id inválido é tratado como sem destino, a mesma leitura do gate de identidade
+    (`RunPublication._authorization_gate`), para token e gate não divergirem.
+    """
+
+    def __init__(self, channels: ChannelProfileRepository, targeted: TokenProvider, legacy: TokenProvider):
+        self.channels, self.targeted, self.legacy = channels, targeted, legacy
+
+    def execute(self, project_id: str) -> AccessToken:
+        try:
+            channel = self.channels.get_by_project(project_id)
+        except InvalidId:
+            channel = None
+        if channel is not None and channel.youtube_channel_id is not None:
+            return self.targeted.execute(project_id)
+        return self.legacy.execute(project_id)
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -114,7 +143,8 @@ class RunPublication:
                  uploads: YouTubeUploader, tokens: TokenProvider, *, clock: Callable[[], datetime] = _utc_now,
                  retry_policy: RetryPolicy | None = None,
                  channels: ChannelProfileRepository | None = None,
-                 authorizations: ChannelAuthorizationRepository | None = None):
+                 authorizations: ChannelAuthorizationRepository | None = None,
+                 enabled: bool = True):
         self.videos, self.scripts, self.assets, self.jobs, self.snaps = videos, scripts, assets, jobs, snaps
         self.approvals, self.intents, self.pubs, self.files = approvals, intents, pubs, files
         self.uploads, self.tokens = uploads, tokens
@@ -124,6 +154,8 @@ class RunPublication:
         self.channels, self.authorizations = channels, authorizations
         self.clock = clock
         self.policy = retry_policy or RetryPolicy()
+        # F01.T04: desligar a publicação é a contingência explícita — nunca reativa caminho inseguro.
+        self.enabled = bool(enabled)
 
     # -- preparação --------------------------------------------------------
 
@@ -214,6 +246,9 @@ class RunPublication:
 
     def execute(self, lease_seconds: int = 1800, max_attempts: int | None = None,
                 video_id: str | None = None) -> PublicationRun:
+        if not self.enabled:
+            return PublicationRun(PublicationResult.BLOCKED,
+                                  detail="publication is disabled by configuration (STUDIO_PUBLICATION_ENABLED=0)")
         max_attempts = max_attempts or self.policy.max_attempts
         pub = self._claimed(lease_seconds, max_attempts, video_id)
         if pub is None:

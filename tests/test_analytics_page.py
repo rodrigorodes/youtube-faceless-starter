@@ -116,14 +116,11 @@ def test_empty_page_is_explicit_and_satisfies_the_ux_contract(env):
     assert_ux_contract(r.text, page="painel/analytics")
     assert re.search(r"<h1[^>]*>Desempenho</h1>", r.text)
 
-    # Três métricas que dependem de F8: estado vazio com texto, não número.
-    assert r.text.count("Ainda não disponível") >= 4
-    assert "Nenhuma publicação coletada ainda neste canal." in r.text
-    assert "Última coleta" in r.text and ">nunca<" in r.text
-    assert "Escopo de leitura" in r.text and ">concedido<" in r.text
-    assert "Nenhuma recomendação gerada." in r.text
-    assert "Nenhum experimento registrado." in r.text
-    assert "Nenhum insight registrado ainda." in r.text
+    # UX V3: sem medição a tela é um vazio explícito — nunca 0, estimativa ou percentual.
+    assert 'id="desempenho-vazio"' in r.text
+    assert "Sem medição neste período" in r.text
+    assert "Publique um vídeo e conecte o canal" in r.text
+    assert "US$ 0,00" not in r.text
 
 
 def test_page_never_leaks_mockup_text_or_invents_global_origin(env):
@@ -137,15 +134,29 @@ def test_page_never_leaks_mockup_text_or_invents_global_origin(env):
     assert "<details open" not in text
 
 
+def _main_nav(html: str) -> str:
+    """A navegação principal da casca V3 (`<nav aria-label="Principal">`, sem a classe antiga).
+
+    O CSS também cita `aria-current="page"`; a contagem vale para a marcação, então o
+    `<style>`/`<script>` sai antes de contar.
+    """
+    markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
+    match = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
+    assert match is not None, "navegação principal ausente"
+    return match.group(1)
+
+
 def test_page_is_reached_through_the_approved_shell(env):
     create_project(env, videos=VIDEOS[:1])
     r = page(env)
-    assert 'class="app-layout"' in r.text and 'class="sidebar"' in r.text
-    nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', r.text, re.S).group(1)
+    # UX V3: a casca aprovada é `<aside class="side">` + `<main class="main">`.
+    assert '<aside class="side">' in r.text and '<main class="main">' in r.text
+    nav = _main_nav(r.text)
     assert nav.count('aria-current="page"') == 1
-    active = re.search(r'<a class="nav-item active"[^>]*>(.*?)</a>', nav, re.S).group(1)
-    assert "Analytics" in active
-    assert 'href="/studio/panel/analytics"' in nav
+    active = re.search(r'<a href="/studio/panel/analytics[^"]*" aria-current="page">(.*?)</a>',
+                       nav, re.S).group(1)
+    assert "Desempenho" in active
+    assert 'href="/studio/panel/analytics' in nav
 
 
 def test_seeded_measurements_render_real_numbers_and_attribution(env):

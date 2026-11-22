@@ -51,8 +51,28 @@ def budget_db(conn, dsn):
     ), conn
 
 
-def reserve(repo, key, video="b" * 32, amount="0.60", monthly="1", video_limit="1"):
-    return repo.reserve(key, video, Decimal(amount), Decimal(monthly), Decimal(video_limit))
+def reserve(repo, key, video="b" * 32, amount="0.60", monthly="1", video_limit="1",
+            global_monthly=None):
+    return repo.reserve(key, video, Decimal(amount), Decimal(monthly), Decimal(video_limit),
+                        global_monthly_limit_usd=None if global_monthly is None else Decimal(global_monthly))
+
+
+def add_channel(conn, project, video):
+    """Segundo canal com o seu próprio vídeo (o fixture cria o canal A: b/c)."""
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'outro')", (project,))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'topic', 'short')",
+                 (video, project))
+    conn.commit()
+
+
+def spend(conn, video, amount, *, kind="ACTUAL"):
+    conn.execute(
+        "INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd, cost_confirmation_kind, "
+        "cost_confirmed_amount, cost_confirmation_reference, cost_confirmed_by, cost_confirmed_at) "
+        "VALUES (%s, 's', 'p', 'm', %s, %s, %s, 'invoice', 'reviewer', now())",
+        (video, Decimal(amount), kind, Decimal(amount)),
+    )
+    conn.commit()
 
 
 def test_reserve_is_idempotent_and_rejects_conflicting_reuse(budget_db):
@@ -359,3 +379,120 @@ def test_invalid_amount_is_rejected(budget_db, amount):
     repo, _ = budget_db
     with pytest.raises(ValueError):
         repo.reserve("bad", "b" * 32, amount, Decimal("1"), Decimal("1"))
+
+
+# ---------------------------------------------------- F01.T03: teto global x canal
+
+B_PROJECT, B_VIDEO = "d" * 32, "e" * 32
+
+
+def test_channel_spend_does_not_consume_another_channel_ceiling(budget_db):
+    """Aceite F01.T03: o gasto do canal A não pode bloquear o canal B pelo teto de B."""
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+    spend(conn, "b" * 32, "0.8")  # canal A já gastou 0.8 do próprio teto de 1
+    # B tem teto 1 e gasto zero: cabe, mesmo que o global seja 10
+    assert reserve(repo, "b-first", video=B_VIDEO, amount="1", monthly="1",
+                   video_limit="10", global_monthly="10") == "CREATED"
+    # A continua limitado pelo próprio gasto (0.8 + 0.21 > 1)
+    assert reserve(repo, "a-over", video="b" * 32, amount="0.21", monthly="1",
+                   video_limit="10", global_monthly="10") == "DENIED"
+
+
+def test_global_ceiling_still_applies_across_channels(budget_db):
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+    spend(conn, "b" * 32, "0.5")
+    spend(conn, B_VIDEO, "0.4")
+    # global 1: 0.9 já gastos; 0.2 passa do global mesmo dentro do teto do canal
+    assert reserve(repo, "over", video=B_VIDEO, amount="0.2", monthly="10",
+                   video_limit="10", global_monthly="1") == "DENIED"
+    assert reserve(repo, "fits", video=B_VIDEO, amount="0.1", monthly="10",
+                   video_limit="10", global_monthly="1") == "CREATED"
+
+
+def test_active_reservation_of_one_channel_does_not_block_another_channel(budget_db):
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+    assert reserve(repo, "a", video="b" * 32, amount="0.6", monthly="1",
+                   video_limit="10", global_monthly="10") == "CREATED"
+    assert reserve(repo, "b", video=B_VIDEO, amount="0.6", monthly="1",
+                   video_limit="10", global_monthly="10") == "CREATED"
+    assert conn.execute("SELECT count(*) FROM studio.budget_reservations").fetchone()[0] == 2
+
+
+def test_concurrent_channels_respect_channel_and_global_ceilings(budget_db):
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+
+    def race(global_monthly):
+        barrier = Barrier(2)
+
+        def worker(index):
+            barrier.wait()
+            video = "b" * 32 if index == 0 else B_VIDEO
+            return reserve(repo, f"k{index}", video=video, amount="1", monthly="1",
+                           video_limit="10", global_monthly=global_monthly)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            return sorted(pool.map(worker, range(2)))
+
+    # cada canal no próprio teto e o global com folga: as duas reservas cabem
+    assert race("10") == ["CREATED", "CREATED"]
+    conn.execute("DELETE FROM studio.budget_reservations")
+    conn.commit()
+    # global apertado: só uma das duas cabe, mesmo com teto de canal para ambas
+    assert race("1.5") == ["CREATED", "DENIED"]
+    assert conn.execute("SELECT count(*) FROM studio.budget_reservations").fetchone()[0] == 1
+
+
+def test_reservation_records_the_project_attribution_of_the_video(budget_db):
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+    assert reserve(repo, "a", video="b" * 32, global_monthly="10") == "CREATED"
+    assert reserve(repo, "b", video=B_VIDEO, global_monthly="10") == "CREATED"
+    rows = dict(conn.execute("SELECT idempotency_key, project_id FROM studio.budget_reservations").fetchall())
+    assert rows == {"a": "a" * 32, "b": B_PROJECT}
+
+
+def test_reservation_without_video_is_explicitly_the_global_scope(budget_db):
+    """Operação sem vídeo não pertence a canal nenhum: consome só o teto global."""
+    repo, conn = budget_db
+    add_channel(conn, B_PROJECT, B_VIDEO)
+    assert repo.reserve("global-op", None, Decimal("0.6"), Decimal("1"), Decimal("10"),
+                        global_monthly_limit_usd=Decimal("10")) == "CREATED"
+    assert conn.execute("SELECT project_id FROM studio.budget_reservations "
+                        "WHERE idempotency_key = 'global-op'").fetchone() == (None,)
+    # a reserva global não consome o teto do canal A
+    assert reserve(repo, "a-op", video="b" * 32, amount="1", monthly="1",
+                   video_limit="10", global_monthly="10") == "CREATED"
+
+
+def test_migration_backfills_legacy_attribution_and_keeps_it_explicit(conn, dsn, tmp_path):
+    """Migração aditiva: linhas antigas ganham o projeto do vídeo; sem vídeo continua global."""
+    for path in MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql"):
+        if path.name < "0038":
+            (tmp_path / path.name).write_bytes(path.read_bytes())
+    migrate(conn, tmp_path)
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'test')", ("a" * 32,))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'topic', 'short')",
+                 ("b" * 32, "a" * 32))
+    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd) "
+                 "VALUES (%s, 'text', 'legacy', 'm', 0.5)", ("b" * 32,))
+    conn.execute("INSERT INTO studio.usage_ledger(step, provider, model, cost_usd) "
+                 "VALUES ('text', 'legacy', 'm', 0.2)")
+    conn.execute("INSERT INTO studio.budget_reservations"
+                 "(idempotency_key, video_id, amount_usd, monthly_limit_usd, video_limit_usd) "
+                 "VALUES ('old', %s, 0.1, 1, 1)", ("b" * 32,))
+    conn.commit()
+    applied = migrate(conn)
+    assert "0038_budget_scope_attribution" in applied
+    assert conn.execute("SELECT project_id FROM studio.usage_ledger WHERE video_id IS NOT NULL").fetchone() == ("a" * 32,)
+    assert conn.execute("SELECT project_id FROM studio.usage_ledger WHERE video_id IS NULL").fetchone() == (None,)
+    assert conn.execute("SELECT project_id FROM studio.budget_reservations "
+                        "WHERE idempotency_key = 'old'").fetchone() == ("a" * 32,)
+    # e a atribuição é mantida para toda escrita nova, sem depender do chamador
+    conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd) "
+                 "VALUES (%s, 'text', 'legacy', 'm', 0.1)", ("b" * 32,))
+    assert conn.execute("SELECT project_id FROM studio.usage_ledger ORDER BY id DESC LIMIT 1").fetchone() == ("a" * 32,)
+    conn.commit()

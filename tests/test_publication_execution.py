@@ -219,7 +219,7 @@ def authorization(channel_id=TARGET, status=OAuthStatus.CONNECTED):
 
 
 def use(tmp_path, *, videos=None, intents=None, approvals=None, pubs=None, uploads=None, tokens=None, retry=None,
-        exists=True, policy=None, channels=None, authorizations=None):
+        exists=True, policy=None, channels=None, authorizations=None, enabled=True):
     videos = videos or Videos()
     intents = intents if intents is not None else Intents()
     approvals = approvals or Approvals()
@@ -228,7 +228,7 @@ def use(tmp_path, *, videos=None, intents=None, approvals=None, pubs=None, uploa
     tokens = tokens or Tokens()
     run = RunPublication(videos, Scripts(), Assets(), Jobs(), Snaps(), approvals, intents, pubs, Files(tmp_path, exists),
                          uploads, tokens, clock=lambda: NOW, retry_policy=policy,
-                         channels=channels, authorizations=authorizations)
+                         channels=channels, authorizations=authorizations, enabled=enabled)
     return run, pubs, uploads, tokens
 
 
@@ -397,6 +397,18 @@ def test_a_target_without_a_connected_authorization_is_blocked(tmp_path):
     assert uploads.uploads == [] and pubs.calls[-1][0] == "dead_letter"
 
 
+def test_a_grant_failure_blocks_the_publication_without_uploading(tmp_path):
+    """F01.T01: quando o grant do destino não serve, o executor bloqueia — nunca cai no legado."""
+    from app.studio.application.channel_grant import ChannelGrantMissing
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(authorization()),
+                                tokens=Tokens(error=ChannelGrantMissing(
+                                    f"no connected authorization for the expected YouTube channel {TARGET}")))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and TARGET in result.detail
+    assert "reconnected" in result.detail and uploads.uploads == []
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
 def test_an_unknown_token_channel_is_blocked_when_a_target_is_configured(tmp_path):
     run, _, uploads, _ = use(tmp_path, channels=Channels(TARGET), authorizations=Authorizations(authorization()),
                              tokens=Tokens(channel_id=None))
@@ -446,3 +458,37 @@ def test_reconcile_requires_reconnect_instead_of_guessing(tmp_path):
     pubs = Pubs(pub=_unknown_pub())
     result = ReconcilePublication(Videos(), pubs, Uploads(), Tokens(error=OAuthReconnectRequired("invalid_grant"))).execute(PUB)
     assert result.result is PublicationResult.BLOCKED and pubs.calls[-1] == ("resolve_ambiguous", False, "PERMANENT")
+
+
+# ------------------------------- F01.T04: contingência explícita da publicação
+
+
+def test_disabled_publication_blocks_before_claim_and_never_uploads(tmp_path):
+    """Desligar por configuração é a contingência: bloqueia antes do claim, sem token nem upload."""
+    run, pubs, uploads, tokens = use(tmp_path, enabled=False)
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED
+    assert "STUDIO_PUBLICATION_ENABLED" in (result.detail or "")
+    assert pubs.calls == [] and uploads.uploads == [] and tokens.calls == 0
+
+
+def test_disabled_publication_does_not_mark_anything_as_sent(tmp_path):
+    """O bloqueio não deixa rastro de sucesso: nada vira UPLOADED e nada é reconciliado."""
+    run, pubs, uploads, _ = use(tmp_path, enabled=False)
+    run.execute(video_id=V)
+    assert pubs.uploaded is None and uploads.reconciliations == []
+
+
+def test_enabled_by_default_preserves_the_existing_behavior(tmp_path):
+    run, pubs, uploads, tokens = use(tmp_path)
+    assert run.enabled is True
+    assert run.execute().result is PublicationResult.UPLOADED
+    assert len(uploads.uploads) == 1 and tokens.calls == 1
+
+
+def test_publication_flag_is_read_from_the_environment():
+    from app.studio.composition import Settings
+    assert Settings.from_env({}).publication_enabled is True
+    assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "1"}).publication_enabled is True
+    assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "0"}).publication_enabled is False
+    assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "false"}).publication_enabled is False

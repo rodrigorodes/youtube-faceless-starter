@@ -63,32 +63,25 @@ def test_wizard_page_renders_real_channel_and_honest_fields(env):
     assert r.status_code == 200
     assert_ux_contract(r.text, page="painel/novo-video")
 
+    # UX V3: o canal real aparece na topbar e na predefinição; o formulário é o do conceito.
     assert "Canal Produção" in r.text
-    assert 'id="wiz-tema"' in r.text and 'id="btn-produzir-video"' in r.text
-    for control in ("wiz-publico", "wiz-duracao", "wiz-estilo", "wiz-idioma", "wiz-teto"):
-        match = re.search(rf'<[^>]*id="{control}"[^>]*>', r.text)
-        assert match is not None and "disabled" in match.group(0), control
-        assert "Motivo:" in r.text
-
-
-def test_wizard_page_marks_only_the_truly_unavailable_stage_with_a_reason(env):
-    """F8: a publicação deixou de ser indisponível; só a pesquisa continua sem backend."""
-    client = env["client"]
-    r = client.get("/studio/panel/novo-video", headers=AUTH_HEADER)
-    assert r.status_code == 200
-    assert "indisponível" in r.text and "research automático não existe" in r.text
-    assert "Publicação" in r.text
-    # o "F8" (motivo antigo da publicação indisponível) não pode continuar na tela
-    assert "F8" not in r.text
+    assert "Predefinição do canal" in r.text
+    assert 'id="tema-novo"' in r.text and 'id="btn-para-revisao"' in r.text
+    assert 'name="estilo-novo"' in r.text and 'name="formato-novo"' in r.text
+    # O que o canal não define é dito como ausência, não inventado nem oferecido como controle morto.
+    assert "canal sem perfil" in r.text and "nenhum idioma definido" in r.text
+    assert " disabled" not in r.text
 
 
 def test_wizard_page_marks_its_nav_as_the_production_screen(env):
     client = env["client"]
     r = client.get("/studio/panel/novo-video", headers=AUTH_HEADER)
-    nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', r.text, re.S).group(1)
+    markup = re.sub(r"<(style|script)\b.*?</\1>", "", r.text, flags=re.S)
+    nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S).group(1)
     assert nav.count('aria-current="page"') == 1
-    active = re.search(r'<a class="nav-item active"[^>]*>(.*?)</a>', nav, re.S).group(1)
-    assert "Produção" in active
+    active = re.search(r'<a href="/studio/panel/novo-video[^"]*" aria-current="page">(.*?)</a>',
+                       nav, re.S).group(1)
+    assert "Novo vídeo" in active
 
 
 def test_wizard_page_never_leaks_illustrative_mockup_text(env):

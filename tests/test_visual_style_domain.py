@@ -8,12 +8,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.domain.render_plan import Motion, StyleSnapshot  # noqa: E402
 from app.studio.domain.visual_style import (  # noqa: E402
+    KNOWN_PARAMS,
     MOTIONS,
+    PATCH_GROUP_FIELDS,
     ResolvedStyle,
+    StylePatch,
+    StylePatchInvalid,
     VisualStyle,
     VisualStyleNameInvalid,
     VisualStyleParamsInvalid,
     VisualStyleVersionInvalid,
+    apply_style_patch,
     clean_params,
     resolve_style,
 )
@@ -183,3 +188,122 @@ def test_resolve_style_treats_an_archived_style_as_absent():
                                    params={"motion": ["pan_left"]})
     assert resolve_style(None, archived_channel) is None
     assert resolve_style(None, archived_channel, override=archived_override) is None
+
+
+# ---------- F05.T01: patch de estilo tipado (allowlist, herdar, reset, lista substitui) ----------
+
+
+def test_the_patch_allowlist_is_the_same_contract_as_the_style_params():
+    # A allowlist do patch não inventa grupos: é a mesma lista de `params` (uma fonte só).
+    assert set(PATCH_GROUP_FIELDS) == set(KNOWN_PARAMS)
+    assert PATCH_GROUP_FIELDS["motion"] == ()  # grupo de lista: sem chaves internas
+    assert PATCH_GROUP_FIELDS["music"] == ("bpm", "seed")
+    assert PATCH_GROUP_FIELDS["transition"] == ("kind", "duration_ticks")
+    assert PATCH_GROUP_FIELDS["caption"] == ("font_size", "bottom")
+    assert PATCH_GROUP_FIELDS["palette"] == ("caption_text", "caption_box", "accent")
+    assert PATCH_GROUP_FIELDS["voice"] == ("model",)
+    assert PATCH_GROUP_FIELDS["extra"] is None  # bag aberto: qualquer chave de extensão
+
+
+PATCH_CASES = [
+    # (caso, camada de baixo, patch, resultado esperado)
+    ("patch vazio herda tudo", {}, {}, {}),
+    ("campo ausente herda", {"music": {"bpm": 100, "seed": 3}}, {},
+     {"music": {"bpm": 100, "seed": 3}}),
+    ("campo presente sobrescreve só ele",
+     {"music": {"bpm": 100, "seed": 3}}, {"music": {"bpm": 130}},
+     {"music": {"bpm": 130, "seed": 3}}),
+    ("nulo na chave remove o patch daquela chave",
+     {"music": {"bpm": 100, "seed": 3}}, {"music": {"bpm": None}},
+     {"music": {"seed": 3}}),
+    ("nulo no grupo remove a camada inteira",
+     {"music": {"bpm": 100}, "motion": ["zoom_in"]}, {"music": None},
+     {"motion": ["zoom_in"]}),
+    ("lista substitui, nunca concatena",
+     {"motion": ["zoom_in"]}, {"motion": ["pan_left"]}, {"motion": ["pan_left"]}),
+    ("mapa mescla chave a chave",
+     {"caption": {"font_size": 40, "bottom": 1500}}, {"caption": {"bottom": 1400}},
+     {"caption": {"font_size": 40, "bottom": 1400}}),
+    ("transição declarada por partes",
+     {"transition": {"kind": "fade", "duration_ticks": 8}}, {"transition": {"duration_ticks": 12}},
+     {"transition": {"kind": "fade", "duration_ticks": 12}}),
+]
+
+
+@pytest.mark.parametrize("base,patch,expected", [case[1:] for case in PATCH_CASES],
+                         ids=[case[0] for case in PATCH_CASES])
+def test_style_patch_semantics_are_tabulated(base, patch, expected):
+    assert apply_style_patch(base, patch) == expected
+    # o patch tipado é a entrada canônica; o mesmo patch, já tipado, dá o mesmo resultado
+    assert apply_style_patch(base, StylePatch.from_mapping(patch)) == expected
+
+
+PATTERN_CASES = [
+    # (caso, payload, trecho do erro)
+    ("grupo fora da allowlist", {"colour": "#fff"}, "unknown style patch key"),
+    ("seleção de estilo inteiro não é patch", {"style_id": "a" * 32}, "unknown style patch key"),
+    ("campo fora da allowlist do grupo", {"music": {"tempo": 130}}, "unknown style patch.music key"),
+    ("campo aninhado em motion não existe", {"motion": {"zoom_in": 1}}, "motion must be a list"),
+    ("nulo em campo não resetável", {"extra": {"lut": None}}, "cannot be reset"),
+    ("grupo de mapa vazio é ambíguo", {"music": {}}, "at least one key"),
+    ("lista vazia de motion", {"motion": []}, "motion"),
+    ("lista com movimento desconhecido", {"motion": ["nope"]}, "motion item"),
+    ("mapa declarado como escalar", {"music": "loud"}, "must be an object"),
+    ("bpm fora da faixa", {"music": {"bpm": 10}}, "music.bpm"),
+    ("cor que não é hex", {"palette": {"accent": "red"}}, "palette.accent"),
+    ("voz vazia", {"voice": {"model": "  "}}, "voice.model"),
+    ("transição desconhecida", {"transition": {"kind": "wipe"}}, "transition.kind"),
+    ("patch que não é objeto", ["not-a-mapping"], "must be an object"),
+]
+
+
+@pytest.mark.parametrize("payload,message", [case[1:] for case in PATTERN_CASES],
+                         ids=[case[0] for case in PATTERN_CASES])
+def test_style_patch_refuses_invalid_input_with_a_clear_error(payload, message):
+    with pytest.raises(StylePatchInvalid, match=message):
+        StylePatch.from_mapping(payload)
+
+
+def test_a_null_is_accepted_only_where_reset_is_documented():
+    patch = StylePatch.from_mapping({"music": None, "motion": None, "voice": {"model": None}})
+    assert patch.groups["music"] is None and patch.groups["motion"] is None
+    assert patch.groups["voice"] == {"model": None}  # reset de campo tipado: documentado
+    with pytest.raises(StylePatchInvalid, match="reset"):
+        StylePatch.from_mapping({"extra": {"lut": None}})  # bag aberto: sem reset por chave
+    with pytest.raises(StylePatchInvalid, match="unknown style patch"):
+        StylePatch.from_mapping({"unknown": None})  # nulo não inventa grupo
+
+
+def test_the_final_result_is_validated_by_the_same_clean_params():
+    # Cada campo isolado é válido para o patch, mas o resultado não é: a mesma validação do
+    # estilo recusa (não existe merge "mais frouxo" que o da biblioteca).
+    with pytest.raises(VisualStyleParamsInvalid, match="transition"):
+        apply_style_patch({"transition": {"kind": "fade", "duration_ticks": 8}},
+                          {"transition": {"kind": "none"}})
+
+
+def test_reset_of_every_key_of_a_group_leaves_the_engine_to_decide():
+    # resetar todas as chaves declaradas remove o grupo; o default do motor decide depois.
+    assert apply_style_patch({"music": {"bpm": 100, "seed": 3}},
+                             {"music": {"bpm": None, "seed": None}}) == {}
+
+
+def test_the_typed_patch_is_immutable_and_isolated_from_the_caller():
+    raw = {"motion": ["zoom_in"], "music": {"bpm": 130}, "extra": {"nested": {"x": 1}}}
+    patch = StylePatch.from_mapping(raw)
+    raw["motion"].append("pan_left")
+    raw["music"]["bpm"] = 999
+    raw["extra"]["nested"]["x"] = 999
+    assert patch.to_mapping() == {"motion": ["zoom_in"], "music": {"bpm": 130},
+                                  "extra": {"nested": {"x": 1}}}
+    exported = patch.to_mapping()
+    exported["motion"].append("pan_left")
+    exported["extra"]["nested"]["x"] = 2
+    assert patch.to_mapping()["motion"] == ["zoom_in"]
+    assert patch.to_mapping()["extra"] == {"nested": {"x": 1}}
+
+
+def test_an_absent_patch_is_an_empty_patch_that_changes_nothing():
+    assert StylePatch.from_mapping(None) == StylePatch()
+    assert StylePatch().groups == {}
+    assert apply_style_patch({"music": {"bpm": 100}}, None) == {"music": {"bpm": 100}}

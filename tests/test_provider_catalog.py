@@ -12,7 +12,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.domain.provider import (  # noqa: E402
+    PROFILE_POLICIES,
+    REQUIRED_CAPABILITY,
     Availability,
+    Capability,
     CostEstimate,
     CostKind,
     EconomicProfile,
@@ -21,12 +24,18 @@ from app.studio.domain.provider import (  # noqa: E402
     ProviderKind,
     ProviderImplementation,
     ProviderSpecInvalid,
+    ProviderStanding,
+    RankingOrder,
     RouteRequest,
     RoutingDecision,
+    capability_gaps,
     card_for,
     parse_spec,
+    policy_for,
+    provider_standing,
     registered_names,
     route_provider,
+    satisfies_capability,
 )
 
 TEXT = ProviderKind.TEXT
@@ -181,8 +190,12 @@ def test_balanced_balances_quality_without_overpaying():
 def test_cost_cap_excludes_estimate_above_cap_and_unknown_costs():
     cards = _cards() + [card_for(TEXT, "misterio:x", [impl(TEXT, "misterio", validated=True, quality=5,
                                                        cost=CostEstimate.unknown())])]
+    # `min_quality=1` isola a regra do teto: o piso do perfil PREMIUM é coberto em
+    # `test_profile_quality_floor_is_enforced` e o custo desconhecido em
+    # `test_unknown_cost_is_refused_by_economy_and_balanced`.
     decision = route_provider(
-        RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM, max_cost_usd=Decimal("0.05")), cards)
+        RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM, max_cost_usd=Decimal("0.05"),
+                     min_quality=1), cards)
     assert decision.primary.name == "opencode"
     assert all(c.name != "premium" for c in decision.fallbacks)
     assert all(c.name != "misterio" for c in decision.fallbacks)  # custo desconhecido não é ilimitado
@@ -198,3 +211,182 @@ def test_unavailable_providers_never_enter_the_fallback_chain():
 def test_no_candidate_raises_instead_of_pretending():
     with pytest.raises(NoProviderAvailable):
         route_provider(RouteRequest(kind=VOICE, profile=EconomicProfile.ECONOMY), _cards())
+
+
+# ---------------------------------------------------------------- capabilities (F06.T01)
+
+
+def test_every_port_declares_the_capability_it_requires():
+    assert set(REQUIRED_CAPABILITY) == set(ProviderKind)
+    assert REQUIRED_CAPABILITY[TEXT] is Capability.TEXT_GENERATE
+    assert REQUIRED_CAPABILITY[IMAGE] is Capability.IMAGE_GENERATE
+    assert REQUIRED_CAPABILITY[VOICE] is Capability.VOICE_SPEAK
+    assert REQUIRED_CAPABILITY[ProviderKind.RENDERER] is Capability.RENDER_VIDEO
+
+
+def test_a_declared_capability_set_must_include_the_port_capability():
+    assert satisfies_capability(TEXT, ("text.generate", "text.json"))
+    assert satisfies_capability(TEXT, (Capability.TEXT_GENERATE.value,))
+    assert not satisfies_capability(TEXT, ("text.json",))          # declarou, mas não a da porta
+    assert not satisfies_capability(IMAGE, ("text.generate",))
+    # Metadados ausentes são legado (o adaptador ainda não declarou): não bloqueiam.
+    assert satisfies_capability(TEXT, ())
+
+
+def test_capability_gaps_reports_only_declared_divergences():
+    impls = [
+        impl(TEXT, "ok", validated=True, capabilities=("text.generate",)),
+        impl(TEXT, "wrong", validated=True, capabilities=("image.generate",)),
+        impl(IMAGE, "legacy", validated=True),  # sem metadados: legado, não é divergência
+    ]
+    assert capability_gaps(impls) == (("text", "wrong"),)
+
+
+def test_a_card_without_the_port_capability_never_routes():
+    cards = [
+        card_for(TEXT, "sojson", [impl(TEXT, "sojson", validated=True, quality=5,
+                                       capabilities=("text.json",), cost=CostEstimate.free())]),
+        card_for(TEXT, "bom", [impl(TEXT, "bom", validated=True, quality=3,
+                                    capabilities=("text.generate",), cost=CostEstimate.free())]),
+    ]
+    decision = route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.ECONOMY), cards)
+    assert decision.primary.name == "bom"
+    assert all(c.name != "sojson" for c in decision.chain)
+
+
+# ---------------------------------------------------------------- demo/placeholder (F06.T01)
+
+
+def test_standing_comes_from_the_canonical_names_or_an_explicit_declaration():
+    assert provider_standing("demo") is ProviderStanding.DEMO
+    assert provider_standing("Placeholder") is ProviderStanding.PLACEHOLDER
+    assert provider_standing("opencode") is ProviderStanding.PRODUCTION
+    assert impl(TEXT, "demo", validated=True).standing is ProviderStanding.DEMO
+    explicit = impl(TEXT, "acme", validated=True, standing=ProviderStanding.PLACEHOLDER)
+    assert explicit.standing is ProviderStanding.PLACEHOLDER
+    # o cartão carrega o mesmo veredito do catálogo
+    assert card_for(TEXT, "demo", [impl(TEXT, "demo", validated=True)]).standing is ProviderStanding.DEMO
+
+
+def _stand_in_cards():
+    return [
+        card_for(TEXT, "demo", [impl(TEXT, "demo", validated=True, quality=5, cost=CostEstimate.free())]),
+        card_for(TEXT, "placeholder", [impl(TEXT, "placeholder", validated=True, quality=5,
+                                            cost=CostEstimate.free())]),
+        card_for(TEXT, "serio:top", [impl(TEXT, "serio", validated=True, quality=4,
+                                          cost=CostEstimate.estimate(Decimal("0.30")))]),
+    ]
+
+
+def test_production_never_chooses_demo_or_placeholder():
+    # Qualidade propositalmente alta nos stand-ins: a exclusão é por origem, não por nota.
+    decision = route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.ECONOMY, production=True),
+                              _stand_in_cards())
+    assert decision.primary.name == "serio"
+    assert all(c.standing is ProviderStanding.PRODUCTION for c in decision.chain)
+    assert "produção" in decision.reason
+
+
+def test_production_with_only_stand_ins_fails_instead_of_pretending():
+    cards = [card_for(TEXT, "demo", [impl(TEXT, "demo", validated=True, quality=5,
+                                          cost=CostEstimate.free())])]
+    with pytest.raises(NoProviderAvailable) as excinfo:
+        route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.ECONOMY, production=True), cards)
+    assert "production" in str(excinfo.value)
+
+
+def test_development_keeps_stand_ins_available_until_the_wiring_says_otherwise():
+    decision = route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.ECONOMY), _stand_in_cards())
+    assert decision.primary.name == "demo"
+
+
+# ---------------------------------------------------------------- política por perfil (F06.T01)
+
+
+def test_each_profile_has_a_declared_and_coherent_policy():
+    assert set(PROFILE_POLICIES) == set(EconomicProfile)
+    for profile, policy in PROFILE_POLICIES.items():
+        assert policy.profile is profile
+        assert isinstance(policy.min_quality, int) and 1 <= policy.min_quality <= 5
+        assert isinstance(policy.allows_unknown_cost, bool)
+        assert isinstance(policy.ranking, RankingOrder)
+    assert policy_for("ECONOMY") is PROFILE_POLICIES[EconomicProfile.ECONOMY]  # aceita o valor do enum
+    assert PROFILE_POLICIES[EconomicProfile.ECONOMY].ranking is RankingOrder.COST_FIRST
+    assert PROFILE_POLICIES[EconomicProfile.BALANCED].ranking is RankingOrder.COST_SWEET_SPOT
+    assert PROFILE_POLICIES[EconomicProfile.PREMIUM].ranking is RankingOrder.QUALITY_FIRST
+    # o perfil mais caro nunca aceita menos qualidade que o mais barato
+    floors = [PROFILE_POLICIES[p].min_quality
+              for p in (EconomicProfile.ECONOMY, EconomicProfile.BALANCED, EconomicProfile.PREMIUM)]
+    assert floors == sorted(floors)
+    assert [PROFILE_POLICIES[p].allows_unknown_cost
+            for p in (EconomicProfile.ECONOMY, EconomicProfile.BALANCED)] == [False, False]
+
+
+def _basic_only():
+    return [card_for(TEXT, "basico", [impl(TEXT, "basico", validated=True, quality=1,
+                                            cost=CostEstimate.free())])]
+
+
+def test_profile_quality_floor_is_enforced():
+    # ECONOMY aceita o básico; BALANCED e PREMIUM recusam catálogo só de nota 1.
+    assert route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.ECONOMY),
+                          _basic_only()).primary.name == "basico"
+    for profile in (EconomicProfile.BALANCED, EconomicProfile.PREMIUM):
+        with pytest.raises(NoProviderAvailable) as excinfo:
+            route_provider(RouteRequest(kind=TEXT, profile=profile), _basic_only())
+        assert "quality" in str(excinfo.value).lower()
+
+
+def test_quality_floor_override_is_explicit_and_validated():
+    decision = route_provider(
+        RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM, min_quality=1), _basic_only())
+    assert decision.primary.name == "basico"
+    for bad in (0, 6, True, 2.5):
+        with pytest.raises(ValueError):
+            RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM, min_quality=bad)
+
+
+def test_unknown_cost_is_refused_by_economy_and_balanced_but_allowed_in_premium():
+    cards = [
+        card_for(TEXT, "conhecido", [impl(TEXT, "conhecido", validated=True, quality=2,
+                                           cost=CostEstimate.estimate(Decimal("0.01")))]),
+        card_for(TEXT, "misterio", [impl(TEXT, "misterio", validated=True, quality=5,
+                                          cost=CostEstimate.unknown())]),
+    ]
+    for profile in (EconomicProfile.ECONOMY, EconomicProfile.BALANCED):
+        decision = route_provider(RouteRequest(kind=TEXT, profile=profile), cards)
+        assert [c.name for c in decision.chain] == ["conhecido"]
+    assert route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM),
+                          cards).primary.name == "misterio"
+
+
+def test_unknown_cost_can_be_allowed_explicitly_but_never_above_a_cap():
+    unknown = [card_for(TEXT, "misterio", [impl(TEXT, "misterio", validated=True, quality=5,
+                                                 cost=CostEstimate.unknown())])]
+    assert route_provider(
+        RouteRequest(kind=TEXT, profile=EconomicProfile.BALANCED, allow_unknown_cost=True),
+        unknown).primary.name == "misterio"
+
+    cards = unknown + [card_for(TEXT, "solido", [impl(TEXT, "solido", validated=True, quality=3,
+                                                      cost=CostEstimate.estimate(Decimal("0.01")))])]
+    decision = route_provider(
+        RouteRequest(kind=TEXT, profile=EconomicProfile.PREMIUM, max_cost_usd=Decimal("0.05")), cards)
+    assert decision.primary.name == "solido"
+    assert all(c.name != "misterio" for c in decision.chain)  # desconhecido não é ilimitado
+
+
+def test_no_candidate_reason_names_the_rule_that_excluded_the_catalog():
+    unknown = [card_for(TEXT, "misterio", [impl(TEXT, "misterio", validated=True, quality=4,
+                                                 cost=CostEstimate.unknown())])]
+    with pytest.raises(NoProviderAvailable) as excinfo:
+        route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.BALANCED), unknown)
+    assert "unknown cost" in str(excinfo.value).lower()
+
+    stand_ins = [card_for(TEXT, "demo", [impl(TEXT, "demo", validated=True, quality=4,
+                                              cost=CostEstimate.free())])]
+    with pytest.raises(NoProviderAvailable) as excinfo:
+        route_provider(RouteRequest(kind=TEXT, profile=EconomicProfile.BALANCED, production=True),
+                       stand_ins)
+    message = str(excinfo.value)
+    assert "non-production" in message
+    assert "demo" not in message  # o motivo é a regra, não o nome de um candidato

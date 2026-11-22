@@ -446,6 +446,7 @@ class PlanFfmpegRenderer:
             music=spec.music,
             motions=self._motions([row.id for row in rows], cycle),
             music_params=(spec.style.music if spec.style is not None else None),
+            config_snapshot=spec.config_snapshot,
         )
 
     def _motions(self, scene_ids: list[str], cycle: tuple[Motion, ...] | None = None) -> dict[str, Motion]:

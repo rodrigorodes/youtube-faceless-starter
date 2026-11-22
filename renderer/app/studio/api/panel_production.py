@@ -129,6 +129,14 @@ class NewVideoView:
     month: MonthCost
     pipeline: tuple[PipelineStage, ...]
     selected_project_id: str = ""
+    # F02.T02/G15: a biblioteca real de estilos (id, nome) — nunca nomes fixos no HTML.
+    styles: tuple[tuple[str, str], ...] = ()
+    # Nome do estilo que o canal selecionado herda (None = canal sem estilo definido).
+    inherited_style_name: str | None = None
+    # F02.T04: o que o canal realmente define (idioma/voz). None = canal sem perfil.
+    channel_language: str | None = None
+    channel_voice: str | None = None
+    has_profile: bool = False
 
 
 @dataclass(frozen=True)

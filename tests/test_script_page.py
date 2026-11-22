@@ -163,24 +163,25 @@ def test_roteiro_escapes_xss_in_chapter_title(env):
 
 
 def test_roteiro_page_uses_the_shared_shell(env):
-    """A tela de Roteiro entra pela casca aprovada, não por uma <aside> própria.
+    """A tela de Roteiro entra pela casca aprovada (UX V3), não por uma <aside> própria.
 
     Antes ela hardcodava a barra lateral (marca + nav reduzida). Agora usa
-    `api.panel.render_sidebar`, a mesma casca de todas as telas.
+    `api.shell_v3.render_document`, a mesma casca de todas as telas.
     """
     video = seed_video(env)
     r = env["client"].get(f"/studio/videos/{video.id}/roteiro", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert '<aside class="sidebar" aria-label="Barra lateral">' in r.text
-    assert "Faceless Studio V2" in r.text and "YouTube Automation" in r.text
+    assert '<aside class="side">' in r.text and '<main class="main">' in r.text
+    assert "Faceless Studio" in r.text and "ESTÚDIO DO CANAL" in r.text
 
-    nav = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', r.text, re.S)
+    markup = re.sub(r"<(style|script)\b.*?</\1>", "", r.text, flags=re.S)
+    nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert nav is not None, "roteiro sem a navegação principal da casca"
     labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
-    for expected in ("Início", "Produção", "Tendências", "Vídeos", "Analytics", "Canais", "Equipe"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
         assert expected in labels, f"roteiro: '{expected}' fora da casca"
 
-    assert r.text.count('aria-current="page"') == 1
+    assert markup.count('aria-current="page"') == 1
     videos_item = next(li for li in re.findall(r"<li>(.*?)</li>", nav.group(1), re.S) if "Vídeos" in li)
     assert 'aria-current="page"' in videos_item
 

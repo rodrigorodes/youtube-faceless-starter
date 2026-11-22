@@ -354,3 +354,106 @@ def test_deleting_the_youtube_channel_detaches_the_studio_channel(chan_env):
     # ON DELETE SET NULL: apagar a identidade do YouTube destaca o canal, não o apaga nem bloqueia
     detached = chan_env["repo"].get(created.id)
     assert detached is not None and detached.youtube_channel_id is None and detached.version == 1
+
+
+# --------------------------------------- patch de estilo persistido (F05.T02)
+
+
+def test_channel_style_patch_is_scoped_to_its_own_channel(chan_env):
+    """Personalizar o canal A não toca no canal B: a leitura é escopada por perfil."""
+    from app.studio.domain.visual_style import StylePatch
+
+    repo = chan_env["repo"]
+    other_project = chan_env["videos"].create_project("Canal Finanças").id
+    channel_a = repo.create(chan_env["project_id"], "Canal A")
+    channel_b = repo.create(other_project, "Canal B")
+
+    patched = repo.set_style_patch(
+        channel_a.id, 0, {"voice": {"model": "piper:pt_BR-faber-medium"}})
+
+    assert patched.style_patch == StylePatch.from_mapping(
+        {"voice": {"model": "piper:pt_BR-faber-medium"}})
+    assert patched.style_patch_revision == 1
+    assert repo.get(channel_a.id).style_patch.to_mapping() == {
+        "voice": {"model": "piper:pt_BR-faber-medium"}}
+    assert repo.get_by_project(chan_env["project_id"]).style_patch.to_mapping() == {
+        "voice": {"model": "piper:pt_BR-faber-medium"}}
+
+    untouched = repo.get(channel_b.id)
+    assert untouched.style_patch is None and untouched.style_patch_revision == 0
+
+
+def test_channel_style_patch_is_normalized_by_the_domain_before_persisting(chan_env):
+    """A allowlist vale no banco: o mapping cru é normalizado por `StylePatch` antes do INSERT."""
+    from app.studio.domain.visual_style import StylePatchInvalid
+
+    repo, conn = chan_env["repo"], chan_env["conn"]
+    created = repo.create(chan_env["project_id"], "História")
+
+    patched = repo.set_style_patch(
+        created.id, 0, {"voice": {"model": "  piper:pt_BR-x  "}, "music": {"bpm": 130}})
+    stored = conn.execute(
+        "SELECT style_patch FROM studio.channel_profiles WHERE id = %s", (created.id,)).fetchone()[0]
+    assert stored == {"music": {"bpm": 130}, "voice": {"model": "piper:pt_BR-x"}}
+    assert patched.style_patch.to_mapping() == {"music": {"bpm": 130},
+                                                "voice": {"model": "piper:pt_BR-x"}}
+
+    with pytest.raises(StylePatchInvalid):
+        repo.set_style_patch(created.id, patched.style_patch_revision, {"music": {"tempo": 130}})
+    assert repo.get(created.id) == patched  # nada foi gravado
+
+
+def test_channel_style_patch_reset_removes_the_override_instead_of_storing_an_empty_object(chan_env):
+    repo, conn = chan_env["repo"], chan_env["conn"]
+    created = repo.create(chan_env["project_id"], "História")
+
+    patched = repo.set_style_patch(created.id, 0, {"motion": ["zoom_in"]})
+    reset = repo.set_style_patch(created.id, patched.style_patch_revision, None)
+    assert reset.style_patch is None and reset.style_patch_revision == 2
+    assert conn.execute(
+        "SELECT style_patch FROM studio.channel_profiles WHERE id = %s", (created.id,)).fetchone()[0] is None
+
+    # um patch vazio também é reset: não se grava `{}` com semântica inventada
+    empty = repo.set_style_patch(created.id, reset.style_patch_revision, {})
+    assert empty.style_patch is None and empty.style_patch_revision == 3
+
+
+def test_channel_style_patch_stale_revision_is_a_typed_conflict_without_writing(chan_env):
+    repo = chan_env["repo"]
+    created = repo.create(chan_env["project_id"], "História")
+    first = repo.set_style_patch(created.id, 0, {"music": {"bpm": 130}})
+
+    with pytest.raises(ChannelVersionConflict):
+        repo.set_style_patch(created.id, 0, {"music": {"bpm": 90}})
+    assert repo.get(created.id) == first  # a escrita perdedora não gravou nada
+
+
+def test_channel_style_patch_of_an_unknown_profile_returns_none(chan_env):
+    assert chan_env["repo"].set_style_patch("0" * 32, 0, {"music": {"bpm": 130}}) is None
+
+
+def test_channel_profile_validates_the_patch_in_the_domain():
+    """Mesmo sem banco, o agregado recusa um patch fora da allowlist (falha alto)."""
+    from app.studio.domain.visual_style import StylePatchInvalid
+
+    with pytest.raises(StylePatchInvalid):
+        ChannelProfile(id="a" * 32, project_id="b" * 32, name="Canal", style_patch={"colour": {}})
+    profile = ChannelProfile(id="a" * 32, project_id="b" * 32, name="Canal",
+                             style_patch={"voice": {"model": "  x  "}})
+    assert profile.style_patch.to_mapping() == {"voice": {"model": "x"}}
+    assert profile.style_patch_revision == 0
+
+
+def test_database_refuses_a_style_patch_that_is_not_a_non_empty_object(chan_env):
+    repo, conn = chan_env["repo"], chan_env["conn"]
+    created = repo.create(chan_env["project_id"], "História")
+
+    for payload in ("[]", '"{}"', "{}"):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("UPDATE studio.channel_profiles SET style_patch = %s::jsonb WHERE id = %s",
+                         (payload, created.id))
+        conn.rollback()
+    # controle positivo: um objeto com overrides é aceito pelo CHECK
+    conn.execute("UPDATE studio.channel_profiles SET style_patch = %s::jsonb WHERE id = %s",
+                 ('{"music": {"bpm": 130}}', created.id))
+    conn.rollback()

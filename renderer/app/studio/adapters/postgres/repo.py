@@ -12,11 +12,25 @@ from pydantic import ValidationError
 
 from ...application.errors import VisualStyleNotFound
 from ...application.use_cases import InvalidInput, ServiceUnavailable
+from ...application.video_style import VideoStylePatch, VideoStylePatchConflict
 from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
 from ...domain.qa_report import QaCoverage, QaFinding, QaReport
 from ...domain.ids import check_id
 from ...domain.schema import SCHEMA_VERSION
 from ...domain.states import assert_transition
+from ...domain.visual_style import StylePatch
+
+
+def normalize_style_patch(patch: object) -> dict | None:
+    """Normaliza um patch pela allowlist do domínio e devolve o JSONB a gravar (F05.T02).
+
+    Ponto único de persistência do patch, compartilhado pelos repositórios de canal e vídeo: o
+    mapping cru passa por ``StylePatch`` (a mesma allowlist da API, com ``StylePatchInvalid``
+    apontando a chave) e um patch vazio vira ``None`` — no banco, NULL, "herdar", nunca ``{}``
+    com semântica inventada. Puro: não toca o banco.
+    """
+    typed = patch if isinstance(patch, StylePatch) else StylePatch.from_mapping(patch)
+    return typed.to_mapping() or None
 
 
 @contextmanager
@@ -101,6 +115,10 @@ def _video(row: dict) -> Video:
     return Video.model_validate(row)
 
 
+def _video_style_patch(row: dict) -> VideoStylePatch:
+    return VideoStylePatch(revision=row["style_patch_revision"], patch=row["style_patch"])
+
+
 class PostgresVideoRepository:
     def __init__(self, connect: Callable[[], psycopg.Connection]):
         self._connect = connect  # uma conexão por operação: simples e seguro entre threads
@@ -139,13 +157,26 @@ class PostgresVideoRepository:
             row["budget_usd_month"] = float(row["budget_usd_month"])
             return Project.model_validate(row)
 
-    def create_video(self, project_id: str, topic: str, fmt: VideoFormat) -> Video:
+    def create_video(self, project_id: str, topic: str, fmt: VideoFormat,
+                     style_id: str | None = None) -> Video:
+        """Cria o vídeo já com o estilo escolhido (F02.T02), numa única transação.
+
+        O estilo é validado no caso de uso (existe e está ativo); a FK do banco é a última
+        barreira contra um vínculo quebrado.
+        """
         with _translated():
             video_id = uuid.uuid4().hex
+            sid = check_id(style_id) if style_id is not None else None
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, %s, %s) "
-                            "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
-                            (video_id, check_id(project_id), topic, fmt.value))
+                try:
+                    cur.execute("INSERT INTO studio.videos(id, project_id, topic, format, style_id) "
+                                "VALUES (%s, %s, %s, %s, %s) "
+                                "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
+                                (video_id, check_id(project_id), topic, fmt.value, sid))
+                except psycopg.errors.ForeignKeyViolation as exc:
+                    # corrida com o arquivamento entre a validação e o INSERT: falha fechado,
+                    # sem deixar vídeo com vínculo quebrado
+                    raise VisualStyleNotFound(f"visual style {style_id!r} does not exist") from exc
                 return _video(cur.fetchone())
 
     def get_video(self, video_id: str) -> Video | None:
@@ -155,6 +186,49 @@ class PostgresVideoRepository:
                             "FROM studio.videos WHERE id = %s", (check_id(video_id),))
                 row = cur.fetchone()
             return _video(row) if row else None
+
+    def get_video_style_patch(self, video_id: str) -> VideoStylePatch | None:
+        """Lê o override de estilo do vídeo (F05.T02); ``None`` se o vídeo não existe.
+
+        Sem patch, devolve ``VideoStylePatch(revision=0, patch=None)``: o vídeo herda. A leitura é
+        escopada por vídeo — o patch de um vídeo nunca aparece em outro.
+        """
+        with _translated():
+            with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT style_patch, style_patch_revision FROM studio.videos WHERE id = %s",
+                            (check_id(video_id),))
+                row = cur.fetchone()
+            return _video_style_patch(row) if row else None
+
+    def set_video_style_patch(self, video_id: str, expected_revision: int,
+                              patch: object) -> VideoStylePatch | None:
+        """Grava (ou remove, com None) o override tipado do vídeo, com controle otimista.
+
+        O patch é normalizado pela allowlist do domínio antes do UPDATE (``StylePatchInvalid``
+        sobe sem gravar) e um patch vazio vira NULL: reset **remove** o patch, o vídeo volta a
+        herdar do canal. ``expected_revision`` divergente é ``VideoStylePatchConflict`` — a
+        comparação e a escrita acontecem sob o mesmo ``SELECT ... FOR UPDATE`` (uma operação só).
+        """
+        vid = check_id(video_id)
+        stored = normalize_style_patch(patch)  # StylePatchInvalid antes de qualquer SQL
+        with _translated():
+            with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT style_patch_revision FROM studio.videos WHERE id = %s FOR UPDATE",
+                            (vid,))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                current = row["style_patch_revision"]
+                if current != expected_revision:
+                    raise VideoStylePatchConflict(
+                        f"expected style patch revision {expected_revision}, found {current}")
+                cur.execute(
+                    "UPDATE studio.videos SET style_patch = %s, "
+                    "style_patch_revision = style_patch_revision + 1, updated_at = now() "
+                    "WHERE id = %s RETURNING style_patch, style_patch_revision",
+                    (Jsonb(stored) if stored is not None else None, vid),
+                )
+                return _video_style_patch(cur.fetchone())
 
     def transition_video(self, video_id: str, expected: VideoStatus, new: VideoStatus) -> bool:
         with _translated():

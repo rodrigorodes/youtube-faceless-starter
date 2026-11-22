@@ -447,6 +447,24 @@ class Provenance(_PlanModel):
     created_at: datetime | None = None
 
 
+class ConfigSnapshot(_PlanModel):
+    """Referência da **configuração efetiva congelada** que governou voz e render (F03.T03).
+
+    O plano grava a identidade (`content_hash` + `schema_version`) e a proveniência criativa
+    relevante ao render (``style`` e ``audiovisual.*``). O documento completo da configuração
+    continua sendo o snapshot do run (F03.T02); aqui só entra a prova de qual revisão foi usada,
+    para auditar um plano sem copiar nem credencial nem política operacional.
+
+    Campo **aditivo**: planos persistidos antes desta fatia não o têm e continuam válidos
+    (``None``). Ele não participa dos fingerprints do cache (``domain.render_cache``), então
+    também não invalida artefatos já registrados.
+    """
+
+    content_hash: Hex64
+    schema_version: DurationTick
+    provenance: dict[str, str] = Field(default_factory=dict)
+
+
 class RenderPlan(_Model):
     """Raiz do documento audiovisual canônico, versionado por ``schema_version``."""
 
@@ -462,6 +480,9 @@ class RenderPlan(_Model):
     generated_audio: list[GeneratedAudioSource] = Field(default_factory=list)
     style_snapshot: StyleSnapshot
     provenance: Provenance
+    # F03.T03: identidade da configuração efetiva lida no início do render. Opcional para que
+    # documentos versionados antes da fatia continuem legíveis (o campo tem default).
+    config_snapshot: ConfigSnapshot | None = None
 
     @model_validator(mode="after")
     def _references_and_output(self):

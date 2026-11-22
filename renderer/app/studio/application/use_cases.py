@@ -10,6 +10,8 @@ from .render import Rendering
 from .render_cache import PlanRegeneration
 from .panel import BuildPanel
 from .ports import CategoryRepository, ChannelProfileRepository, TrendRepository, VideoRepository
+from ..domain.visual_style import VisualStyleArchived
+from .errors import VisualStyleNotFound
 from .trends import IngestTrends
 from .analytics import Analytics
 from .analytics_collection import CollectMetrics
@@ -37,6 +39,8 @@ if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que
     from .script_view import BuildScriptView
     from .channels_page import BuildChannelsPage
     from .styles_page import BuildStylesPage
+    from .advanced_page import BuildAdvancedView
+    from .ports import VisualStyleRepository
 
 
 from .errors import InvalidInput, ProjectNotFound, ServiceUnavailable  # noqa: F401  (reexportado: adaptadores e API importam daqui)
@@ -51,13 +55,28 @@ class CreateProject:
 
 
 class CreateVideo:
-    def __init__(self, repo: VideoRepository):
+    def __init__(self, repo: VideoRepository, styles: "VisualStyleRepository | None" = None):
         self.repo = repo
+        # F02.T02/G15: com a biblioteca injetada, o estilo escolhido é validado antes de gravar
+        # (existe e está ativo). Sem ela o caso de uso mantém o comportamento legado (sem estilo).
+        self.styles = styles
 
-    def execute(self, project_id: str, topic: str, fmt: VideoFormat) -> Video:
+    def execute(self, project_id: str, topic: str, fmt: VideoFormat,
+                style_id: str | None = None) -> Video:
         if self.repo.get_project(project_id) is None:
             raise ProjectNotFound(project_id)
-        return self.repo.create_video(project_id, topic, fmt)
+        if style_id is None:
+            return self.repo.create_video(project_id, topic, fmt)
+        if self.styles is None:
+            # sem biblioteca não há como provar que o estilo existe: falha fechado
+            raise VisualStyleNotFound(style_id)
+        sid = style_id
+        style = self.styles.get(sid)
+        if style is None:
+            raise VisualStyleNotFound(style_id)
+        if style.archived:
+            raise VisualStyleArchived(f"visual style {style.name!r} is archived")
+        return self.repo.create_video(project_id, topic, fmt, style_id=style.id)
 
 
 class GetVideo:
@@ -156,6 +175,8 @@ class UseCases:
     # VS-05b (UI/API): o override de estilo por vídeo (o canal herda, o vídeo pode sobrepor).
     set_video_style: SetVideoStyle | None = None
     video_style_view: BuildVideoStyleView | None = None
+    # F02.T03: view model da tela Avançado (diagnóstico read-only).
+    advanced_page: "BuildAdvancedView | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -216,8 +237,10 @@ class UseCases:
                   visual_style_usage: VisualStyleUsage | None = None,
                   styles_page: "BuildStylesPage | None" = None,
                   set_video_style: SetVideoStyle | None = None,
-                  video_style_view: BuildVideoStyleView | None = None) -> "UseCases":
-        return cls(CreateProject(repo), CreateVideo(repo), GetVideo(repo), TransitionVideo(repo),
+                  video_style_view: BuildVideoStyleView | None = None,
+                  style_repo: "VisualStyleRepository | None" = None,
+                  advanced_page: "BuildAdvancedView | None" = None) -> "UseCases":
+        return cls(CreateProject(repo), CreateVideo(repo, style_repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
                    channel_profiles_repo, create_channel_profile, get_channel_profile, update_channel_profile,
@@ -234,4 +257,5 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    resolve_actor, invite_member, change_member_role, remove_member,
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
-                   archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view)
+                   archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view,
+                   advanced_page)

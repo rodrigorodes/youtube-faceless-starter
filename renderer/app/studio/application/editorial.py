@@ -1,14 +1,20 @@
 """Casos de uso editoriais: fontes, roteiro restrito a claims e checagem factual (gate determinístico)."""
+from __future__ import annotations
+
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from decimal import Decimal
+from types import MappingProxyType
 from typing import TYPE_CHECKING
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
+from ..domain.channel import clean_pillars, validate_duration, validate_language
 from ..domain.claims import extract_claims
-from ..domain.contracts import Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem, VideoStatus
+from ..domain.contracts import (Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem,
+                                Video, VideoStatus)
+from ..domain.effective_config import EDITORIAL_DEFAULTS, EDITORIAL_FIELDS, EffectiveConfig
 from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
@@ -21,6 +27,132 @@ from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotR
 MAX_SOURCE_CHARS = 200_000
 MIN_SCENES, MAX_SCENES = 2, 20
 MAX_PROMPT_CHARS = 3900  # o bridge recusa prompt acima de 4000 caracteres
+
+# Defaults legados: os mesmos do motor em `domain/effective_config` (`EDITORIAL_DEFAULTS`), para
+# que "sem perfil" continue sendo exatamente o comportamento anterior (F04).
+DEFAULT_LANGUAGE = EDITORIAL_DEFAULTS["language"]
+DEFAULT_DURATION_S = EDITORIAL_DEFAULTS["duration_s"]
+
+# Rótulo legível só para o idioma padrão: os demais códigos entram como vieram do canal. Assim o
+# prompt sem perfil continua idêntico ao de hoje, e um canal em outro idioma pede outro texto.
+_LANGUAGE_LABELS = {"pt-br": "português do Brasil"}
+# O bloco editorial divide o limite do prompt com os fatos: o que não couber é cortado aqui, nunca
+# a exigência de citar claims.
+_CONTEXT_TEXT_LIMIT = 300
+_CONTEXT_PILLARS_LIMIT = 300
+_CONTEXT_NARRATIVE_LIMIT = 600
+
+
+def language_label(language: str) -> str:
+    """Nome legível do idioma declarado pelo canal; sem tradução conhecida, o próprio código."""
+    cleaned = language.strip()
+    return _LANGUAGE_LABELS.get(cleaned.lower(), cleaned)
+
+
+@dataclass(frozen=True)
+class EditorialContext:
+    """Contexto editorial tipado, derivado da configuração efetiva (F04.T01). Puro.
+
+    É um **retrato** de ``EffectiveConfig.editorial``: não relê fonte paralela (o perfil já está
+    congelado na configuração) e não persiste nada. Cada campo preserva a proveniência de origem
+    (``channel``/``engine_default``); ``legacy`` diz que o retrato é o default do motor, o que
+    mantém prompts e durações de hoje quando não há perfil.
+    """
+
+    language: str = DEFAULT_LANGUAGE
+    audience: str = ""
+    pillars: tuple[str, ...] = ()
+    narrative: str = ""
+    cta: str = ""
+    duration_s: int = DEFAULT_DURATION_S
+    provenance: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "language", validate_language(self.language))
+        for name in ("audience", "narrative", "cta"):
+            value = getattr(self, name)
+            if not isinstance(value, str):
+                raise ValueError(f"{name} must be a string")
+            object.__setattr__(self, name, value.strip())
+        object.__setattr__(self, "pillars", clean_pillars(self.pillars))
+        object.__setattr__(self, "duration_s", validate_duration(self.duration_s))
+        object.__setattr__(self, "provenance", MappingProxyType(
+            {str(key): str(value) for key, value in self.provenance.items()}))
+
+    @property
+    def legacy(self) -> bool:
+        """Sem perfil: todos os campos vieram do default do motor (proveniência completa)."""
+        return len(self.provenance) == len(EDITORIAL_FIELDS) and all(
+            self.provenance.get(f"editorial.{name}") == "engine_default" for name in EDITORIAL_FIELDS)
+
+    @property
+    def declared_duration_s(self) -> int | None:
+        """Duração declarada por um perfil; ``None`` no retrato legado (default do motor)."""
+        return None if self.legacy else self.duration_s
+
+    @classmethod
+    def from_effective_config(cls, config: EffectiveConfig) -> "EditorialContext":
+        """Único caminho de derivação: lê o editorial congelado e mantém a proveniência por campo."""
+        if not isinstance(config, EffectiveConfig):
+            raise TypeError("config must be an EffectiveConfig")
+        return cls(
+            language=config.language,
+            audience=config.audience,
+            pillars=tuple(config.pillars),
+            narrative=config.narrative,
+            cta=config.cta,
+            duration_s=config.duration_s,
+            provenance={f"editorial.{name}": config.provenance.get(f"editorial.{name}", "engine_default")
+                        for name in EDITORIAL_FIELDS},
+        )
+
+    @classmethod
+    def coerce(cls, value: EffectiveConfig | "EditorialContext" | None) -> "EditorialContext | None":
+        """Aceita o já derivado ou a configuração efetiva; ``None`` continua "sem perfil"."""
+        if value is None or isinstance(value, cls):
+            return value
+        if isinstance(value, EffectiveConfig):
+            return cls.from_effective_config(value)
+        raise TypeError("editorial source must be an EffectiveConfig, an EditorialContext or null")
+
+
+def context_for_video(source: EffectiveConfig | EditorialContext | None, video: Video) -> "EditorialContext | None":
+    """Normaliza a fonte de contexto do vídeo atual e recusa configuração de outro vídeo.
+
+    A configuração efetiva carrega ``video_id``/``project_id``; aplicá-la a outro vídeo seria um
+    vazamento silencioso de canal, então a fiação errada falha em vez de gerar com o perfil errado.
+    """
+    if isinstance(source, EffectiveConfig) and (source.video_id != video.id
+                                                or source.project_id != video.project_id):
+        raise ValueError("the effective configuration belongs to another video")
+    return EditorialContext.coerce(source)
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def context_guidance(context: EditorialContext | None) -> str:
+    """Bloco de orientação editorial para o prompt; vazio sem perfil (texto legado intacto).
+
+    Orienta estilo e idioma, mas nunca substitui a instrução de usar SOMENTE os fatos: a
+    exigência de claims e fontes continua no mesmo lugar do prompt.
+    """
+    if context is None:
+        return ""
+    lines: list[str] = []
+    if context.declared_duration_s is not None:
+        lines.append(f"Duração alvo ~{context.duration_s}s.")
+    if context.audience:
+        lines.append(f"Público-alvo: {_clip(context.audience, _CONTEXT_TEXT_LIMIT)}.")
+    if context.narrative:
+        lines.append(f"Linha narrativa: {_clip(context.narrative, _CONTEXT_NARRATIVE_LIMIT)}.")
+    if context.pillars:
+        lines.append(f"Pilares editoriais: {_clip('; '.join(context.pillars), _CONTEXT_PILLARS_LIMIT)}.")
+    if context.cta:
+        lines.append(f"Encerre com o CTA: {_clip(context.cta, _CONTEXT_TEXT_LIMIT)}.")
+    return "".join(f"{line}\n" for line in lines)
 
 
 def _usd(value) -> Decimal:
@@ -147,10 +279,13 @@ _SCHEMA = {"type": "object", "required": ["scenes"], "properties": {"scenes": {"
                    "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}}}}}}}
 
 
-def build_prompt(topic: str, claims: list[Claim], scene_count: int) -> str:
+def build_prompt(topic: str, claims: list[Claim], scene_count: int, *,
+                 context: EditorialContext | None = None) -> str:
     facts = "\n".join(f"[{c.id}] {c.text}" for c in claims)
+    language = language_label(context.language if context is not None else DEFAULT_LANGUAGE)
     return (
-        f"Escreva o roteiro de um vídeo curto em português do Brasil sobre: {topic}.\n"
+        f"Escreva o roteiro de um vídeo curto em {language} sobre: {topic}.\n"
+        f"{context_guidance(context)}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares. Evento encerrado: escreva no passado.\n"
         f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n\nFATOS:\n{facts}\n\n"
         f"Responda apenas com JSON: {{\"scenes\": [{{\"narration\": str (5-400 caracteres), \"caption\": str (até 110), "
@@ -195,11 +330,12 @@ def parse_scene_drafts(raw: str, valid_ids: set[str], *, min_scenes: int, max_sc
     return drafts
 
 
-def _fit_prompt(topic: str, claims: list[Claim], scene_count: int) -> list[Claim]:
+def _fit_prompt(topic: str, claims: list[Claim], scene_count: int,
+                context: EditorialContext | None = None) -> list[Claim]:
     """Mantém, na ordem, as claims que cabem no limite de prompt (só elas valem como claim_ids)."""
     kept: list[Claim] = []
     for claim in claims:
-        if len(build_prompt(topic, kept + [claim], scene_count)) > MAX_PROMPT_CHARS:
+        if len(build_prompt(topic, kept + [claim], scene_count, context=context)) > MAX_PROMPT_CHARS:
             break
         kept.append(claim)
     return kept
@@ -208,12 +344,21 @@ def _fit_prompt(topic: str, claims: list[Claim], scene_count: int) -> list[Claim
 class GenerateScript:
     def __init__(self, videos: VideoRepository, snaps: SnapshotRepository, scripts: ScriptRepository,
                  text_model: TextModel | None, guard: CostGuard, usage: UsageRepository,
-                 model_for: Callable[[str], TextModel] | None = None, paid: PaidOperationGuard | None = None):
+                 model_for: Callable[[str], TextModel] | None = None, paid: PaidOperationGuard | None = None,
+                 editorial_for: Callable[[Video], EffectiveConfig | EditorialContext | None] | None = None):
         """`model_for(project_id)` escolhe o modelo pela configuração do projeto; sem ele vale `text_model`.
-        Com `paid`, a chamada paga só acontece sob reserva de orçamento e o custo é confirmado pelo guard."""
+        Com `paid`, a chamada paga só acontece sob reserva de orçamento e o custo é confirmado pelo guard.
+        `editorial_for(video)` traz o contexto derivado da configuração efetiva; sem ele o roteiro mantém
+        o comportamento legado (pt-BR), sem segunda leitura nem persistência."""
         self.videos, self.snaps, self.scripts = videos, snaps, scripts
         self.text_model, self.guard, self.usage, self.model_for = text_model, guard, usage, model_for
         self.paid = paid
+        self.editorial_for = editorial_for
+
+    def _editorial_context(self, video: Video) -> EditorialContext | None:
+        if self.editorial_for is None:
+            return None
+        return context_for_video(self.editorial_for(video), video)
 
     def execute(self, video_id: str, scene_count: int = 6) -> Script:
         if not MIN_SCENES <= scene_count <= MAX_SCENES:
@@ -221,13 +366,14 @@ class GenerateScript:
         video = _require_video(self.videos, video_id)
         if video.status not in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
             raise StateConflict(f"cannot write a script in state {video.status.value}")
+        context = self._editorial_context(video)
         claims = _claims(self.snaps.list(video_id))
         if not claims:
             raise SourceRefused("no sources with checkable claims: add sources first")
-        claims = _fit_prompt(video.topic, claims, scene_count)
+        claims = _fit_prompt(video.topic, claims, scene_count, context)
         if not claims:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
-        prompt = build_prompt(video.topic, claims, scene_count)
+        prompt = build_prompt(video.topic, claims, scene_count, context=context)
         model = self.model_for(video.project_id) if self.model_for else self.text_model
         estimate = model.cost_estimate(prompt)
         if self.paid is None:

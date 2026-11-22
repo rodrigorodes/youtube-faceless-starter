@@ -14,7 +14,8 @@ from app.studio.domain.claims import extract_claims  # noqa: E402
 from app.studio.domain.contracts import FactCheckReport, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus  # noqa: E402
 from app.studio.domain.policy import CostRefused  # noqa: E402
 
-V, P = "v" * 32, "p" * 32
+# IDs hexadecimais: a configuração efetiva valida id/projeto, então os stubs seguem o contrato.
+V, P = "b" * 32, "a" * 32
 SOURCE = ("Amsterdam Dance Event celebrates 30 years with more than 3,600 artists, 1,300 events and 300 venues across the city.\n"
           "Jean-Michel Jarre opens the festival with a concert at AFAS Live on 21 October to mark 50 years of Oxygène.\n")
 ALLOW = ("amsterdam-dance-event.nl", "loveland.nl")
@@ -411,3 +412,141 @@ def test_per_video_cap_accumulates_through_generate(world):
     assert gen.text_model.calls == 0
     ok = generator(world, good_payload(), cost=0.05, cap_video=1.0)
     assert ok.execute(V, 4).version == 1
+
+
+# ---------- F04: contexto editorial derivado da configuração efetiva ----------
+from app.studio.application.editorial import (  # noqa: E402
+    DEFAULT_DURATION_S,
+    DEFAULT_LANGUAGE,
+    EditorialContext,
+    build_prompt,
+    language_label,
+)
+from app.studio.domain.channel import ChannelProfile  # noqa: E402
+from app.studio.domain.effective_config import EDITORIAL_FIELDS, resolve_effective_config  # noqa: E402
+
+
+def video() -> Video:
+    return Video(id=V, project_id=P, topic="ADE 2026", format=VideoFormat.short, status=VideoStatus.IDEA)
+
+
+def channel(**kw) -> ChannelProfile:
+    base = {"id": "c" * 32, "project_id": P, "name": "História"}
+    base.update(kw)
+    return ChannelProfile(**base)
+
+
+def prompt_claims():
+    return extract_claims("s" * 32, SOURCE)
+
+
+def test_editorial_context_derives_from_the_effective_config_with_provenance():
+    config = resolve_effective_config(video=video(), channel=channel(
+        language="en-US", audience="produtores de eventos", narrative="documental em três atos",
+        pillars=["trilha", "palco"], cta="inscreva-se no canal", target_duration_s=90))
+    context = EditorialContext.from_effective_config(config)
+
+    assert (context.language, context.audience, context.narrative, context.cta) == \
+        ("en-US", "produtores de eventos", "documental em três atos", "inscreva-se no canal")
+    assert context.pillars == ("trilha", "palco") and context.duration_s == 90
+    assert context.provenance == {f"editorial.{name}": "channel" for name in EDITORIAL_FIELDS}
+    assert not context.legacy
+
+
+def test_absence_of_a_profile_keeps_the_legacy_editorial_defaults():
+    context = EditorialContext.from_effective_config(resolve_effective_config(video=video()))
+
+    assert (context.language, context.audience, context.pillars, context.narrative) == \
+        (DEFAULT_LANGUAGE, "", (), "")
+    assert (context.cta, context.duration_s) == ("", DEFAULT_DURATION_S)
+    assert context.legacy
+    assert set(context.provenance.values()) == {"engine_default"}
+
+
+def test_default_prompt_text_is_unchanged_without_a_profile():
+    claims = prompt_claims()
+    legacy = build_prompt("ADE 2026", claims, 4)
+    context = EditorialContext.from_effective_config(resolve_effective_config(video=video()))
+
+    assert "português do Brasil" in legacy and "Duração alvo" not in legacy
+    assert build_prompt("ADE 2026", claims, 4, context=context) == legacy
+    assert language_label(DEFAULT_LANGUAGE) == "português do Brasil"
+    assert language_label("en-US") == "en-US"  # sem tradução conhecida, o próprio código
+
+
+def test_channel_language_changes_the_short_prompt():
+    claims = prompt_claims()
+    pt = EditorialContext.from_effective_config(resolve_effective_config(video=video(), channel=channel(language="pt-BR")))
+    en = EditorialContext.from_effective_config(resolve_effective_config(video=video(), channel=channel(language="en-US")))
+
+    pt_prompt, en_prompt = build_prompt("ADE 2026", claims, 4, context=pt), build_prompt("ADE 2026", claims, 4, context=en)
+    assert "português do Brasil" in pt_prompt
+    assert "en-US" in en_prompt and "português do Brasil" not in en_prompt
+    assert pt_prompt != en_prompt
+
+
+def test_channel_editorial_fields_reach_the_short_prompt():
+    context = EditorialContext.from_effective_config(resolve_effective_config(video=video(), channel=channel(
+        audience="produtores de eventos", narrative="documental em três atos", pillars=["trilha", "palco"],
+        cta="inscreva-se no canal", target_duration_s=90)))
+
+    prompt = build_prompt("ADE 2026", prompt_claims(), 4, context=context)
+    for expected in ("Duração alvo ~90s", "produtores de eventos", "documental em três atos", "trilha; palco",
+                     "inscreva-se no canal"):
+        assert expected in prompt
+
+
+def test_generate_script_uses_the_context_from_the_injected_resolver(world):
+    seed(world)
+    config = resolve_effective_config(video=video(), channel=channel(
+        language="en-US", audience="produtores de eventos", target_duration_s=90))
+    seen: list[str] = []
+    gen = GenerateScript(world["videos"], world["snaps"], world["scripts"], Text(good_payload()),
+                         CostGuard(world["usage"], 0.0, 15.0), world["usage"],
+                         editorial_for=lambda v: seen.append(v.project_id) or config)
+
+    gen.execute(V, 4)
+    prompt = gen.text_model.prompts[0]
+    assert seen == [P]
+    assert "en-US" in prompt and "Duração alvo ~90s" in prompt and "produtores de eventos" in prompt
+
+
+def test_profile_context_never_relaxes_the_source_requirement(world):
+    config = resolve_effective_config(video=video(), channel=channel(language="en-US"))
+    gen = GenerateScript(world["videos"], world["snaps"], world["scripts"], Text(good_payload()),
+                         CostGuard(world["usage"], 0.0, 15.0), world["usage"],
+                         editorial_for=lambda v: config)
+
+    with pytest.raises(SourceRefused):
+        gen.execute(V, 4)  # sem fontes: o perfil não inventa fatos
+    assert gen.text_model.calls == 0
+
+
+def test_profile_context_never_relaxes_claim_citation(world):
+    seed(world)
+    config = resolve_effective_config(video=video(), channel=channel(language="en-US"))
+    payload = good_payload()
+    for scene in payload["scenes"]:
+        scene["claim_ids"] = []
+    gen = GenerateScript(world["videos"], world["snaps"], world["scripts"], Text(payload),
+                         CostGuard(world["usage"], 0.0, 15.0), world["usage"],
+                         editorial_for=lambda v: config)
+
+    with pytest.raises(ScriptRejected, match="claim_ids is required"):
+        gen.execute(V, 4)
+    assert world["scripts"].saved == []
+
+
+def test_a_context_from_another_video_is_refused_instead_of_leaking_the_channel(world):
+    seed(world)
+    other = Video(id="d" * 32, project_id="c" * 32, topic="Outro vídeo", format=VideoFormat.short,
+                  status=VideoStatus.IDEA)
+    config = resolve_effective_config(video=other, channel=ChannelProfile(
+        id="c" * 32, project_id="c" * 32, name="Canal B", language="en-US"))
+    gen = GenerateScript(world["videos"], world["snaps"], world["scripts"], Text(good_payload()),
+                         CostGuard(world["usage"], 0.0, 15.0), world["usage"],
+                         editorial_for=lambda v: config)
+
+    with pytest.raises(ValueError, match="another video"):
+        gen.execute(V, 4)
+    assert gen.text_model.calls == 0

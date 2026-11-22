@@ -46,7 +46,7 @@ class FakeLedger:
         self.attempts = {}
         self.deny = deny
 
-    def begin(self, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd):
+    def begin(self, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd, **_scopes):
         self.events.append(("begin", key, estimate_usd, video_id))
         if self.deny:
             return BeginResult.DENIED

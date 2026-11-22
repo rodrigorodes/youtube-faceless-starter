@@ -9,13 +9,38 @@ snapshot auditável por versão — o mesmo padrão de `channel_profile_revision
 entende (motion · music · transition · caption · palette · voice). O que o render ainda não
 aplica vai em `extra` — versionado e carregado desde o dia 1, ignorado pelo renderer até o
 knob existir. É o "conforme o uso vamos melhorando" com contrato, não com promessa.
+
+## Patch tipado (F05.T01)
+
+Personalizar um canal/vídeo **não** edita o estilo da biblioteca: é um `StylePatch`, um override
+por camada com allowlist e semântica determinística (ADR fs31-004):
+
+- **allowlist**: só os grupos de `params`; dentro de cada grupo, só as chaves que o render
+  entende (`PATCH_GROUP_FIELDS`). `extra` é o bag aberto. Campo desconhecido é recusado com a
+  chave no erro — nunca ignorado em silêncio.
+- **ausência = herdar**: a chave que o patch não menciona continua vindo da camada de baixo.
+- **`null` = reset explícito**, só onde é documentado: no grupo inteiro (`"music": null`) ou numa
+  chave tipada (`"music": {"bpm": null}`). Numa chave de `extra` (bag sem schema) é recusado —
+  reset ali é ambíguo. Reset remove o patch daquela chave, não força o default do motor.
+- **lista substitui**: `motion` é um valor inteiro; nunca concatena com a camada de baixo.
+- **validação final**: o resultado mesclado passa pelo **mesmo** `clean_params` do estilo. O
+  patch valida cada campo isoladamente (para o erro apontar o campo), mas a consistência entre
+  campos/camadas (ex.: `fade` precisa de duração) só é conhecida depois da mesclagem.
+- **seleção de estilo inteiro** (`video.style_id > channel.style_id > default`) é outra etapa,
+  fora do patch: `style_id` não é campo de patch.
+
+`StylePatch` é a **entrada canônica** de `effective_config.resolve_effective_config` (que aceita
+o mapping cru e o normaliza por aqui, sem duplicar allowlist). Este módulo não persiste nada
+(F05.T02) nem faz I/O.
 """
 from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any, get_args
 
 from .channel import ChannelProfile
@@ -56,6 +81,14 @@ class VisualStyleFieldInvalid(VisualStyleError, ValueError):
     """Campo de atualização desconhecido (fora de `UPDATABLE_FIELDS`)."""
 
 
+class VisualStyleArchived(VisualStyleError, ValueError):
+    """Estilo arquivado não pode ser escolhido para uso novo (F02.T02/G15).
+
+    O arquivado continua legível para o histórico (runs e vídeos que já o referenciavam), mas
+    não entra como opção de criação nem como override novo.
+    """
+
+
 class VisualStyleVersionInvalid(VisualStyleError, ValueError):
     """Versão inválida (precisa ser inteiro >= 1)."""
 
@@ -66,6 +99,14 @@ class VisualStyleVersionConflict(VisualStyleError, ValueError):
 
 class DuplicateVisualStyle(VisualStyleError, ValueError):
     """Já existe um estilo ativo com este nome."""
+
+
+class StylePatchInvalid(VisualStyleParamsInvalid):
+    """Patch de estilo fora da allowlist, `null` sem reset documentado ou valor inválido (F05.T01).
+
+    Subclasse de ``VisualStyleParamsInvalid`` de propósito: quem já traduz parâmetro inválido para
+    o erro do seu contrato continua funcionando; quem trata patch pode ser mais específico.
+    """
 
 
 def validate_name(name: object) -> str:
@@ -218,6 +259,199 @@ def clean_params(raw: object) -> dict[str, Any]:
         if key in raw:
             out[key] = _CLEANERS[key](raw[key])
     return copy.deepcopy(out)
+
+
+# ---------- F05.T01: patch tipado (allowlist, herdar, reset, lista substitui) ----------
+
+# Allowlist do patch: os mesmos grupos de `params` e, dentro de cada grupo, só as chaves que o
+# render entende. `()` = grupo de valor inteiro (lista); `None` = bag aberto (`extra`).
+PATCH_GROUP_FIELDS: Mapping[str, tuple[str, ...] | None] = MappingProxyType({
+    "motion": (),
+    "music": ("bpm", "seed"),
+    "transition": ("kind", "duration_ticks"),
+    "caption": ("font_size", "bottom"),
+    "palette": ("caption_text", "caption_box", "accent"),
+    "voice": ("model",),
+    "extra": None,
+})
+# `motion` é um valor inteiro: a lista do patch substitui a de baixo, nunca concatena.
+PATCH_LIST_GROUPS = frozenset({"motion"})
+
+
+def _patch_int(value: object, where: str, *, minimum: int | None = None,
+               maximum: int | None = None) -> int:
+    try:
+        return _int(value, where, minimum=minimum, maximum=maximum)
+    except VisualStyleParamsInvalid as exc:  # o erro do patch tem o tipo do patch
+        raise StylePatchInvalid(str(exc)) from None
+
+
+def _patch_motion(value: object, where: str) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise StylePatchInvalid(f"{where}.motion must be a list of motions")
+    motions: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or item not in MOTIONS:
+            raise StylePatchInvalid(f"{where}.motion item must be one of {sorted(MOTIONS)}")
+        if item not in motions:
+            motions.append(item)
+    if not motions:
+        raise StylePatchInvalid(f"{where}.motion cannot be empty")
+    return tuple(motions)
+
+
+def _patch_field(group: str, key: str, value: object, where: str) -> Any:
+    """Valida **um** campo do patch, sem as regras que dependem das outras camadas."""
+    path = f"{where}.{group}.{key}"
+    if group == "music":
+        if key == "bpm":
+            return _patch_int(value, path, minimum=MIN_BPM, maximum=MAX_BPM)
+        return _patch_int(value, path, minimum=_MIN_SEED, maximum=_MAX_SEED)
+    if group == "transition":
+        if key == "kind":
+            if not isinstance(value, str) or value not in TRANSITION_KINDS:
+                raise StylePatchInvalid(
+                    f"{path} must be one of {sorted(TRANSITION_KINDS)}")
+            return value
+        return _patch_int(value, path, minimum=0)
+    if group == "caption":
+        if key == "font_size":
+            return _patch_int(value, path, minimum=8, maximum=400)
+        return _patch_int(value, path, minimum=0)
+    if group == "palette":
+        if not isinstance(value, str) or not _HEX_COLOR.match(value):
+            raise StylePatchInvalid(
+                f"{path} must be a hex color like #RRGGBB or #RRGGBBAA")
+        return value
+    if group == "voice" and key == "model":
+        if not isinstance(value, str) or not value.strip() \
+                or len(value.strip()) > MAX_VOICE_MODEL_LENGTH:
+            raise StylePatchInvalid(
+                f"{path} must be a non-empty string of at most "
+                f"{MAX_VOICE_MODEL_LENGTH} characters")
+        return value.strip()
+    raise StylePatchInvalid(f"unknown {path} field")  # allowlist desalinhada: falha alto
+
+
+def _patch_map(group: str, value: object, where: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise StylePatchInvalid(f"{where}.{group} must be an object")
+    if not value:
+        # `{}` seria idêntico a "herdar"; a intenção se escreve omitindo o grupo ou com null.
+        raise StylePatchInvalid(
+            f"{where}.{group} must declare at least one key or use null to reset the group")
+    allowed = PATCH_GROUP_FIELDS[group]
+    cleaned: dict[str, Any] = {}
+    if allowed is None:  # `extra`: bag aberto, sem reset por chave
+        if len(value) > MAX_EXTRA_KEYS:
+            raise StylePatchInvalid(
+                f"{where}.{group} accepts at most {MAX_EXTRA_KEYS} keys")
+        for key, item in value.items():
+            if item is None:
+                raise StylePatchInvalid(
+                    f"{where}.{group}.{key} cannot be reset with null: it is not a resettable "
+                    "field (reset the whole group instead)")
+            cleaned[str(key)] = copy.deepcopy(item)
+        return MappingProxyType(cleaned)
+    unknown = sorted(set(value) - set(allowed), key=str)
+    if unknown:
+        raise StylePatchInvalid(f"unknown {where}.{group} key(s): {unknown}")
+    for key, item in value.items():
+        # `null` = reset explícito e documentado de um campo tipado: remove o patch daquela chave.
+        cleaned[key] = None if item is None else _patch_field(group, key, item, where)
+    return MappingProxyType(cleaned)
+
+
+def _normalize_style_patch(raw: object, where: str) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise StylePatchInvalid(f"{where} must be an object of style overrides")
+    unknown = sorted(set(raw) - set(KNOWN_PARAMS), key=str)
+    if unknown:
+        raise StylePatchInvalid(f"unknown {where} key(s): {unknown}")
+    normalized: dict[str, Any] = {}
+    for group in KNOWN_PARAMS:  # ordem determinística, independente da ordem do JSON
+        if group not in raw:
+            continue
+        value = raw[group]
+        if value is None:
+            normalized[group] = None  # reset do grupo inteiro
+        elif group in PATCH_LIST_GROUPS:
+            normalized[group] = _patch_motion(value, where)
+        else:
+            normalized[group] = _patch_map(group, value, where)
+    return normalized
+
+
+def _thaw_patch(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_patch(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw_patch(item) for item in value]
+    return copy.deepcopy(value)
+
+
+@dataclass(frozen=True)
+class StylePatch:
+    """Override tipado de estilo de uma camada (vídeo ou canal). Imutável, sem I/O.
+
+    ``groups`` guarda, por grupo, ``None`` (reset do grupo), uma tupla (``motion``, valor inteiro)
+    ou um mapa chave→valor onde ``None`` significa reset daquela chave. A allowlist e a semântica
+    de reset vivem aqui; a mesclagem entre camadas e a validação final continuam em
+    ``apply_style_patch``/``effective_config``.
+    """
+
+    groups: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "groups",
+                           MappingProxyType(_normalize_style_patch(self.groups, "style patch")))
+
+    @classmethod
+    def from_mapping(cls, raw: object, *, where: str = "style patch") -> "StylePatch":
+        """Entrada canônica: valida a allowlist e normaliza resets. ``None`` é patch ausente."""
+        return cls(_normalize_style_patch(raw, where))
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.groups
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Forma de transporte (JSON-ável), em cópia profunda: o patch não vaza estrutura."""
+        return {group: (None if value is None else _thaw_patch(value))
+                for group, value in self.groups.items()}
+
+
+def apply_style_patch(base: Mapping[str, Any] | None,
+                      patch: StylePatch | Mapping[str, Any] | None) -> dict[str, Any]:
+    """Mescla o patch sobre **uma** camada de base e valida o resultado com ``clean_params``.
+
+    A base é o que as camadas de baixo já resolveram (ex.: `effective_config.AUDIOVISUAL_DEFAULTS`
+    ou o `params` do estilo). Ausência herda, ``null`` remove o patch (chave ou grupo) e a lista
+    substitui. O resultado passa pelo **mesmo** `clean_params` do estilo — a mesclagem nunca é
+    mais frouxa que a biblioteca. Puro.
+    """
+    typed = patch if isinstance(patch, StylePatch) else StylePatch.from_mapping(patch)
+    result = clean_params(dict(base) if base else {})
+    for group, declared in typed.groups.items():
+        if declared is None:
+            result.pop(group, None)
+            continue
+        if group in PATCH_LIST_GROUPS:
+            result[group] = list(declared)
+            continue
+        merged = dict(result.get(group) or {})
+        for key, value in declared.items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = copy.deepcopy(value)
+        if merged:
+            result[group] = merged
+        else:
+            result.pop(group, None)
+    return clean_params(result)
 
 
 @dataclass(frozen=True)

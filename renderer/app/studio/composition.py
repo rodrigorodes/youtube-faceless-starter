@@ -76,18 +76,21 @@ from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisua
                                  UpdateVisualStyle, VisualStyleUsage)
 from .application.styles_page import BuildStylesPage
 from .application.video_style import BuildVideoStyleView, SetVideoStyle
-from .application.channel_budget import GetChannelBudget, SetChannelBudget
+from .application.channel_budget import ChannelBudgetFloor, GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
 from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
 from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
                                            GetYouTubeChannel)
-from .domain.provider import CostEstimate, ProviderImplementation, ProviderKind
+from .domain.effective_config import resolve_effective_config
+from .domain.provider import (CostEstimate, NoProviderAvailable, ProviderImplementation, ProviderKind,
+                              ProviderSpecInvalid)
 from .domain.visual_style import resolve_style
-from .application.observability import BridgeAlerts, Resume
+from .application.observability import BridgeAlerts, Resume, record_provider_decision
 from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
 from .application.publication_execution import (FallbackTokenProvider, MissingTokenProvider, ReconcilePublication,
-                                                RunPublication)
+                                                RunPublication, TargetChannelTokenProvider)
+from .application.channel_grant import EnsureGrantAccessToken
 from .application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAccessToken, GetChannelStatus,
                                         RefreshYouTubeChannel, RevokeConsent)
 from .application.connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel,
@@ -102,6 +105,7 @@ from .application.script_view import BuildScriptView
 from .application.budget import PaidOperationGuard
 from .application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers)
+from .application.advanced_page import BuildAdvancedView
 from .application.use_cases import ServiceUnavailable, UseCases
 
 DEFAULT_ALLOWLIST = ("amsterdam-dance-event.nl",)
@@ -130,29 +134,6 @@ def _production_mode(value: str | None) -> ProductionMode:
         return ProductionMode((value or ProductionMode.INTERACTIVE.value).strip().upper())
     except ValueError:
         return ProductionMode.INTERACTIVE
-
-
-class _ChannelBudgetFloor:
-    """Teto soft do canal para o modo guardado do coordenador (F10-05).
-
-    O limite hard é do guard de operação paga; aqui o soft decide a pausa humana. O gasto medido é
-    global (piso conservador — superestimar é seguro): sem budget de canal, vale o teto das settings.
-    """
-
-    def __init__(self, usage, videos, budgets, default_ceiling_usd: Decimal):
-        self.usage = usage
-        self.videos = videos
-        self.budgets = budgets
-        self.default_ceiling_usd = default_ceiling_usd
-
-    def project(self, run, next_stage) -> BudgetProjection:
-        ceiling = self.default_ceiling_usd
-        video = self.videos.get_video(run.video_id) if run.video_id else None
-        if video is not None:
-            limits = self.budgets.get(video.project_id)
-            if limits is not None:
-                ceiling = limits.soft_monthly_usd
-        return BudgetProjection(projected_usd=Decimal(str(self.usage.spent_month())), ceiling_usd=ceiling)
 
 
 def channel_guard_limits(videos, budgets):
@@ -210,6 +191,29 @@ def _style_for_video(video, channels, styles):
     return resolve_style(profile, channel_style, override=video_style)
 
 
+def _effective_config_for(video, channels, styles, videos=None):
+    """F03.T02/F05.T02: resolvedor da configuração efetiva ligado na composição.
+
+    Recebe o `Video` já carregado (o coordenador entrega o agregado), resolve o canal do projeto
+    (a mesma relação usada pelo render/estilo) e a biblioteca de estilos. Os overrides tipados de
+    estilo entram aqui: o patch do canal vem do perfil e o do vídeo da sua própria linha
+    (`get_video_style_patch`), sempre normalizados por `StylePatch`. A leitura é injetada e pura no
+    domínio; nada aqui executa efeito nem grava: o snapshot só entra no banco dentro do
+    `create_run`, na transação do run.
+    """
+    try:
+        profile = channels.get_by_project(video.project_id)
+    except InvalidId:
+        profile = None
+    video_patch = None
+    if videos is not None:
+        stored = videos.get_video_style_patch(video.id)
+        video_patch = stored.patch if stored is not None else None
+    return resolve_effective_config(video=video, channel=profile, lookup_style=styles.get,
+                                    video_patch=video_patch,
+                                    channel_patch=profile.style_patch if profile is not None else None)
+
+
 def _voice_model(style) -> str | None:
     """O modelo de voz que o estilo declara (``params.voice.model``), ou None. Puro."""
     model = style.voice.get("model") if style is not None else None
@@ -237,6 +241,110 @@ def _voice_for_video(video, channels, styles, fallback, build_provider):
         return fallback(video.project_id)
     spec = model if ":" in model else f"piper:{model}"
     return build_provider("voice", spec)
+
+
+def _voice_for_config(video, config, fallback, build_provider):
+    """F03.T03: a voz sai da **configuração efetiva congelada**, não de uma nova leitura de estilo.
+
+    ``config.voice.model`` é o modelo já mesclado pelas camadas criativas (patch do vídeo >
+    canal > estilo) e congelado no snapshot do run. Sem voz declarada, o projeto decide
+    (``fallback`` → ``provider_for("voice", ...)``) — o mesmo legado de antes. A composição é a
+    única que conhece o registro de providers; o core só recebe o ``Voice`` resolvido.
+    """
+    model = config.voice.get("model") if config is not None else None
+    model = model.strip() if isinstance(model, str) and model.strip() else None
+    if model is None:
+        return fallback(video.project_id)
+    spec = model if ":" in model else f"piper:{model}"
+    return build_provider("voice", spec)
+
+
+def _configured_provider_spec(videos, environ: Mapping[str, str], kind: str,
+                              project_id: str | None) -> str:
+    """Spec efetivo do projeto (comportamento legado, preservado byte a byte sem perfil).
+
+    Projeto ausente cai no padrão do ambiente, como antes; chave desconhecida vira
+    ``ProviderNotFound`` (o erro que a execução já publicava).
+    """
+    project = videos.get_project(project_id) if project_id else None
+    try:
+        return getattr(ProjectConfig.resolve(project.config if project else {}, environ), kind)
+    except ValueError as exc:
+        raise ProviderNotFound(str(exc)) from exc
+
+
+class ProviderRouting:
+    """Resolve o provider que a execução usa, consumindo a decisão econômica (F06.T02).
+
+    Sem perfil persistido (`limits_for` devolve None) mantém o comportamento legado: constrói
+    exatamente o spec configurado, sem rotear. Com perfil, a decisão de `ProviderService.route`
+    é executada; se o provider decidido não construir, a avaliação é refeita **explicitamente**
+    excluindo o candidato, e cada tentativa fica auditada. Sem candidato aceitável, o erro de
+    política (`NoProviderAvailable`) sobe — nunca há troca silenciosa nem demo/placeholder
+    inventado.
+    """
+
+    def __init__(self, service, build, configured_spec, limits_for=None, *, production=False):
+        self.service = service
+        self.build = build
+        self.configured_spec = configured_spec
+        self.limits_for = limits_for or (lambda project_id: None)
+        self.production = bool(production)
+
+    def __call__(self, kind: str, project_id: str | None):
+        kind_enum = kind if isinstance(kind, ProviderKind) else ProviderKind(kind)
+        limits = self.limits_for(project_id) if project_id else None
+        profile = getattr(limits, "economic_profile", None) if limits is not None else None
+        if profile is None:
+            return self._legacy(kind_enum, project_id)
+        return self._routed(kind_enum, project_id, profile,
+                            getattr(limits, "hard_video_usd", None))
+
+    def _legacy(self, kind: ProviderKind, project_id: str | None):
+        spec = self.configured_spec(kind.value, project_id)
+        provider = self.build(kind.value, spec)
+        self._audit(kind, None, spec, provider, "no economic profile: configured spec", attempt=1)
+        return provider
+
+    def _routed(self, kind: ProviderKind, project_id: str | None, profile, max_cost_usd):
+        excluded: tuple[str, ...] = ()
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                decision = self.service.route(project_id, kind, profile, max_cost_usd=max_cost_usd,
+                                              production=self.production, exclude=excluded)
+            except NoProviderAvailable as exc:
+                reason = str(exc)
+                if excluded:
+                    reason = f"explicit re-evaluation after unavailable {sorted(excluded)}: {reason}"
+                self._audit(kind, profile, None, None, reason, attempt=attempt)
+                raise
+            try:
+                provider = self.build(kind.value, decision.primary.spec)
+            except (ProviderNotFound, ProviderSpecInvalid) as exc:
+                # o provider decidido não constrói: reavaliar é explícito (auditado) e a política
+                # continua valendo na próxima tentativa; nunca cair calado no spec configurado.
+                reason = (f"decided provider {decision.primary.spec!r} unavailable: "
+                          f"{type(exc).__name__}: {exc}")
+                self._audit(kind, profile, decision.primary.spec, None, reason, attempt=attempt)
+                excluded = (*excluded, decision.primary.name)
+                continue
+            self._audit(kind, profile, decision.primary.spec, provider, decision.reason,
+                        attempt=attempt)
+            return provider
+
+    def _audit(self, kind: ProviderKind, profile, candidate, provider, reason, *, attempt):
+        name, model = None, ""
+        if provider is not None:
+            name = getattr(provider, "name", None)
+            model = getattr(provider, "model", "")
+            name = name if isinstance(name, str) else None
+            model = model if isinstance(model, str) else ""
+        record_provider_decision(kind=kind.value,
+                                 profile=getattr(profile, "value", profile) if profile else None,
+                                 candidate=candidate, effective=name, model=model, reason=reason,
+                                 attempt=attempt, production=self.production)
 
 
 def build_google_oauth(settings: "Settings",
@@ -327,6 +435,11 @@ class Settings:
     # RP-032: disponibilidade do caminho baseado em plano. Não é um dispatch dual (o legado
     # foi removido): desligar recusa o render e a volta é o redeploy da imagem anterior.
     render_plan_enabled: bool = True
+    # F01.T04 (contingência): desliga a publicação sem alterar código nem credencial.
+    publication_enabled: bool = True
+    # F06.T02: habilita o roteamento de provider em modo produção (exclui demo/placeholder).
+    # Desligado no padrão preserva o painel/dev; só uma instalação real deve ligar (STUDIO_PROVIDER_PRODUCTION=1).
+    provider_production: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -344,7 +457,9 @@ class Settings:
                    Path(secrets_root) if secrets_root else None,
                    Path(env["STUDIO_GOOGLE_CLIENT_SECRET_FILE"]) if env.get("STUDIO_GOOGLE_CLIENT_SECRET_FILE") else None,
                    env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback",
-                   _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")))
+                   _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")),
+                   _flag(env.get("STUDIO_PUBLICATION_ENABLED", "1")),
+                   _flag(env.get("STUDIO_PROVIDER_PRODUCTION")))
 
 
 RETRY_SECONDS = 5.0
@@ -453,6 +568,10 @@ class Studio:
         return self._quality_evaluator
 
     def _build_provider(self, kind: str, spec: str):
+        # Um candidato roteado pode chegar sem modelo (o catálogo só conhece o nome): o registro
+        # exige o separador para escolher a factory e usa o modelo padrão do adaptador.
+        if ":" not in spec:
+            spec = f"{spec}:"
         name, sep, model = spec.partition(":")
         if sep and name == "opencode":
             if kind == "text":
@@ -467,19 +586,35 @@ class Studio:
         repo, snaps, scripts = PostgresVideoRepository(connect), PostgresSnapshotRepository(connect), PostgresScriptRepository(connect)
         usage, checks = PostgresUsageRepository(connect), PostgresFactCheckRepository(connect)
 
-        def provider_for(kind: str, project_id: str | None):
-            project = repo.get_project(project_id) if project_id else None
+        budget_repo = PostgresChannelBudgetRepository(connect)
+        implementations = _provider_implementations(s)
+        probes = _provider_probes(s, implementations)
+        providers_service = ProviderService(repo, self.environ, implementations, probes,
+                                            production=s.provider_production)
+
+        def budget_limits(project_id):
+            if not project_id:
+                return None
             try:
-                spec = getattr(ProjectConfig.resolve(project.config if project else {}, self.environ), kind)
-            except ValueError as exc:
-                raise ProviderNotFound(str(exc)) from exc
-            return self._build_provider(kind, spec)
+                return budget_repo.get(project_id)
+            except InvalidId:
+                return None  # vínculo inválido não inventa perfil: mantém o caminho legado
+
+        # F06.T02: a execução consome a decisão econômica do canal (perfil -> candidato, motivo,
+        # modelo/versão, tentativa). Sem perfil persistido, `provider_for` continua byte a byte
+        # como antes. A auditoria usa a trilha de observabilidade existente (`studio.providers`).
+        provider_routing = ProviderRouting(
+            providers_service, self._build_provider,
+            lambda kind, project_id: _configured_provider_spec(repo, self.environ, kind, project_id),
+            budget_limits, production=s.provider_production)
+
+        def provider_for(kind: str, project_id: str | None):
+            return provider_routing(kind, project_id)
 
         def text_for(project_id: str | None):
             return provider_for("text", project_id)
 
         guard = CostGuard(usage, s.max_cost_video, s.max_cost_month)
-        budget_repo = PostgresChannelBudgetRepository(connect)
         usage_repo = PostgresChannelUsageRepository(connect)
         youtube_repo = PostgresYouTubeChannelRepository(connect)
         # RP-016: o perfil do canal é a identidade versionada do render. Uma instância só,
@@ -500,15 +635,23 @@ class Studio:
             paid_guard = PaidOperationGuard(PostgresPaidOperationRepository(connect),
                                             Decimal(str(s.max_cost_month)), Decimal(str(s.max_cost_video)),
                                             limits_for=channel_guard_limits(repo, budget_repo))
+        # F04: o contexto editorial (idioma, público, narrativa, pilares, CTA e duração) vem da
+        # configuração efetiva do canal — a mesma resolução do run, sem segunda leitura nem cópia.
+        # Sem canal/perfil, `EditorialContext` é o retrato legado e o prompt não muda.
+        def editorial_for(video):
+            return _effective_config_for(video, channel_repo, style_repo, repo)
+
         editorial = Editorial(
             ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
-            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for, paid=paid_guard),
+            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for,
+                                    paid=paid_guard, editorial_for=editorial_for),
             get_script=GetScript(repo, scripts),
             fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
             score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard),
             long_generate=GenerateLongScript(repo, snaps, scripts, None, guard, usage, scripts,
                                              model_for=text_for, paid=paid_guard,
-                                             allow_names=frozenset(s.allow_names)),
+                                             allow_names=frozenset(s.allow_names),
+                                             editorial_for=editorial_for),
             edit_script=EditScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
             approve_script=ApproveScriptVersion(repo, snaps, scripts, scripts, checks=checks,
                                                 allow_names=frozenset(s.allow_names)),
@@ -533,13 +676,24 @@ class Studio:
             files.sweep_work()
         except OSError:
             pass
+        # F03.T02/T03: o repositório do run é a leitura do snapshot congelado (e a escrita da
+        # criação). Ele é construído aqui porque o `RunRender` precisa da MESMA porta: job de run
+        # existente lê o snapshot, nunca re-resolve canal/estilo.
+        run_repo = build_postgres_production_run_repository(connect, dag=COORDINATOR_DAG)
         run = RunRender(repo, scripts, assets, jobs, files,
                          voice_for=lambda video: _voice_for_video(video, channel_repo, style_repo,
                                                                   lambda project_id: provider_for("voice", project_id),
                                                                   self._build_provider),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
                          paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
-                         style_for=lambda video: _style_for_video(video, channel_repo, style_repo))
+                         style_for=lambda video: _style_for_video(video, channel_repo, style_repo),
+                         # F03.T03: no run existente vale o snapshot; no render avulso a config é
+                         # resolvida UMA vez no início e alimenta voz e plano.
+                         effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo),
+                         config_store=run_repo,
+                         voice_for_config=lambda video, config: _voice_for_config(
+                             video, config, lambda project_id: provider_for("voice", project_id),
+                             self._build_provider))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
@@ -550,8 +704,14 @@ class Studio:
             complete_oauth = CompleteConsent(oauth_client, youtube_repo, secret_store, redirect_uri=s.google_oauth_redirect_uri)
             refresh_channel = RefreshYouTubeChannel(EnsureAccessToken(oauth_client, youtube_repo, secret_store), get_channel_status)
             revoke_channel = RevokeConsent(oauth_client, youtube_repo, secret_store)
-            tokens = FallbackTokenProvider(EnsureAccessToken(oauth_client, youtube_repo, secret_store),
-                                           EnvRefreshTokenProvider(oauth_client, s.token_env_path))
+            # F01.T01: com destino configurado, o token da publicação vem da autorização (grant) do
+            # canal do projeto. Sem destino, mantém-se o caminho legado explícito e restrito (cofre
+            # por projeto → token.env), nunca como fallback de um canal com destino.
+            legacy_tokens = FallbackTokenProvider(EnsureAccessToken(oauth_client, youtube_repo, secret_store),
+                                                  EnvRefreshTokenProvider(oauth_client, s.token_env_path))
+            grant_tokens = EnsureGrantAccessToken(channel_repo, channel_authorizations, oauth_grants,
+                                                  secret_store, oauth_client)
+            tokens = TargetChannelTokenProvider(channel_repo, grant_tokens, legacy_tokens)
             begin_account_consent = BeginAccountConsent(oauth_client, secret_store,
                                                         redirect_uri=s.google_oauth_redirect_uri)
             complete_account_consent = CompleteAccountConsent(
@@ -566,12 +726,14 @@ class Studio:
             revoke_authorization = RevokeAuthorization(oauth_grants, channel_authorizations, youtube_identities,
                                                        secret_store, None)
             tokens = MissingTokenProvider()
+            grant_tokens = None
         uploader = GoogleYouTubeUploader()
         # YT-03: o gate de identidade compara o canal do token com o destino do canal do projeto,
         # resolvendo a autorização validada (channel_authorizations). Wiring só aqui.
         publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens,
                                  channels=channel_repo,
-                                 authorizations=channel_authorizations)
+                                 authorizations=channel_authorizations,
+                                 enabled=s.publication_enabled)
         reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
             approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),
@@ -586,8 +748,6 @@ class Studio:
         list_categories = ListCategories(category_repo, repo)
         save_category = SaveCategory(category_repo, repo)
         delete_category = DeleteCategory(category_repo)
-        implementations = _provider_implementations(s)
-        probes = _provider_probes(s, implementations)
         refresh_trends = RefreshTrends(
             repo=category_repo,
             ingest=ingest_trends,
@@ -597,24 +757,32 @@ class Studio:
             popular_fetcher=self._youtube_popular_fetcher or fetch_popular_trends,
             environ=self.environ,
         )
-        run_repo = build_postgres_production_run_repository(connect, dag=COORDINATOR_DAG)
         # O coordenador roda o render em linha (enqueue no-op); a fila de render HTTP continua a mesma.
         coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
                                         publish=publish)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
-        # pode dispensar a pausa intermediária; o teto é o soft do canal (fallback: settings).
-        budget = _ChannelBudgetFloor(usage, repo, budget_repo, Decimal(str(s.max_cost_month))) if s.budget_guard else None
-        coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget)
+        # pode dispensar a pausa intermediária.
+        # F01.T03: piso medido no ESCOPO DO CANAL (não no gasto global) e com o teto das settings
+        # como limite superior. O guard hard recebe os dois escopos via `channel_guard_limits`.
+        budget = ChannelBudgetFloor(usage_repo, repo, budget_repo,
+                                    default_ceiling_usd=Decimal(str(s.max_cost_month))) if s.budget_guard else None
+        coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget,
+                                            videos=repo, config_store=run_repo)
         worker = ProductionWorker(coordinator)
+        # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma
+        # transação). A leitura para retomada/retry/painel vem da mesma porta (`run_config`).
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id),
-                                in_flight=run_repo)
+                                in_flight=run_repo,
+                                effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo),
+                                config_store=run_repo)
         analytics_learning_repo = PostgresAnalyticsLearningRepository(connect)
         analytics_dashboard = BuildAnalyticsDashboard(analytics_learning_repo)
         analytics_collection = CollectMetrics(
-            ChannelAnalyticsAdapter(youtube_repo, secret_store), analytics_learning_repo)
+            ChannelAnalyticsAdapter(youtube_repo, secret_store, targets=channel_repo,
+                                    grant_tokens=grant_tokens), analytics_learning_repo)
         analytics_decide = DecideRecommendation(analytics_learning_repo)
         analytics_register_experiment = RegisterExperiment(analytics_learning_repo)
         panel_repo = PostgresPanelRepository(connect)
@@ -623,7 +791,6 @@ class Studio:
         saas_clock = lambda: datetime.now(timezone.utc)
         team_view = BuildTeamView(saas_repo, saas_clock)
         script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
-        providers_service = ProviderService(repo, self.environ, implementations, probes)
         channel_budget = GetChannelBudget(
             budget_repo, repo, usage_repo,
             default_hard_monthly=Decimal(str(s.max_cost_month)),
@@ -694,7 +861,9 @@ production=production, script_view=script_view,
                                   visual_style_usage=VisualStyleUsage(style_repo),
                                   styles_page=styles_page,
                                   set_video_style=SetVideoStyle(repo),
-                                  video_style_view=video_style_view)
+                                  video_style_view=video_style_view,
+                                  style_repo=style_repo,
+                                  advanced_page=BuildAdvancedView(providers_service, panel_repo))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

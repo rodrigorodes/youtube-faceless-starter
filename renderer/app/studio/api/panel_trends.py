@@ -21,56 +21,6 @@ TRENDS_JS = """
   var canalSel = $('#canal-ativo');
   var canalId = canalSel ? canalSel.value : '';
 
-  // ---- Filtro de chips ----
-  var barra = $('#barra-tendencias');
-  var lista = $('#lista-tendencias');
-  var vazio = $('#tendencias-vazio');
-  var cards = lista ? $$('.cartao-tendencia', lista) : [];
-
-  function aplicarFiltro(filtro) {
-    var visiveis = 0;
-    cards.forEach(function (c) {
-      var reg = c.getAttribute('data-regiao') || 'UNKNOWN';
-      var pil = c.getAttribute('data-pilar') || '';
-      var bate = false;
-      if (filtro === 'todas') bate = true;
-      else if (filtro.indexOf('regiao:') === 0) bate = reg === filtro.slice(7);
-      else if (filtro.indexOf('pilar:') === 0) bate = pil === filtro.slice(6);
-      if (bate) {
-        c.hidden = false;
-        c.style.display = '';
-        visiveis++;
-      } else {
-        c.hidden = true;
-        c.style.display = 'none';
-      }
-    });
-
-    if (vazio) {
-      if (visiveis === 0 && cards.length > 0) {
-        vazio.hidden = false;
-        vazio.style.display = '';
-        vazio.textContent = 'Nenhuma tendência encontrada para este filtro.';
-      } else if (cards.length > 0) {
-        vazio.hidden = true;
-        vazio.style.display = 'none';
-      }
-    }
-
-    if (barra) {
-      $$('.chip-filtro', barra).forEach(function (btn) {
-        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-filtro') === filtro));
-      });
-    }
-  }
-
-  if (barra) {
-    barra.addEventListener('click', function (ev) {
-      var btn = ev.target.closest('[data-filtro]');
-      if (btn) aplicarFiltro(btn.getAttribute('data-filtro') || 'todas');
-    });
-  }
-
   // ---- Diálogo de Pilares ----
   var dlg = $('#dialog-pilares');
   var btnGerenciar = $('#btn-gerenciar-pilares');
@@ -163,6 +113,54 @@ TRENDS_JS = """
     });
   }
 
+  // ---- Scroll infinito (o botão é o caminho acessível; o observer só antecipa) ----
+  var mais = $('#mais-tendencias');
+  var listaCartoes = $('#lista-tendencias');
+
+  function carregarMais() {
+    if (!mais || mais.getAttribute('data-carregando') === '1') return;
+    var url = mais.getAttribute('data-proximo');
+    if (!url) return;
+    var btn = $('#btn-carregar-mais');
+    var st = $('#status-carregar-mais');
+    mais.setAttribute('data-carregando', '1');
+    if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
+    fetch(url, { headers: { 'Accept': 'text/html' } })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var lote = doc.querySelector('.lote-tendencias');
+        if (!lote || !listaCartoes) return;
+        Array.prototype.slice.call(lote.querySelectorAll('.cartao-tendencia')).forEach(function (c) {
+          listaCartoes.appendChild(c);
+        });
+        if (lote.getAttribute('data-tem-mais') === 'true') {
+          mais.setAttribute('data-proximo', lote.getAttribute('data-proximo') || '');
+          mais.removeAttribute('data-carregando');
+          if (btn) { btn.disabled = false; btn.textContent = 'Carregar mais tendências'; }
+          if (st) st.textContent = 'Mostrando ' + (lote.getAttribute('data-mostrados') || '') +
+            ' de ' + (lote.getAttribute('data-total') || '') + '.';
+        } else {
+          mais.remove();
+        }
+      })
+      .catch(function () {
+        mais.removeAttribute('data-carregando');
+        if (btn) { btn.disabled = false; btn.textContent = 'Tentar novamente'; }
+        if (st) st.textContent = 'Não foi possível carregar mais tendências. Tente novamente.';
+      });
+  }
+
+  if (mais) {
+    var btnMais = $('#btn-carregar-mais');
+    if (btnMais) btnMais.addEventListener('click', carregarMais);
+    if (typeof IntersectionObserver === 'function') {
+      new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) { if (e.isIntersecting) carregarMais(); });
+      }, { rootMargin: '600px 0px' }).observe(mais);
+    }
+  }
+
   // ---- Criar vídeo deste tema ----
   document.addEventListener('click', function (ev) {
     var alvo = ev.target.closest ? ev.target.closest('[data-usar-tendencia]') : null;
@@ -172,6 +170,73 @@ TRENDS_JS = """
   });
 })();
 """
+
+
+TRENDS_PAGE_SIZE = 24
+_FILTRO_TODAS = "todas"
+
+
+def _trend_matches(trend: TrendItemView, filtro: str) -> bool:
+    """O filtro é resolvido no servidor: mesma regra para a contagem e para a página."""
+    if filtro == _FILTRO_TODAS:
+        return True
+    if filtro.startswith("regiao:"):
+        return (trend.region or "UNKNOWN") == filtro.split(":", 1)[1]
+    if filtro.startswith("pilar:"):
+        return (trend.category_id or "") == filtro.split(":", 1)[1]
+    return False
+
+
+def _trends_url(view: PanelView, filtro: str) -> str:
+    """Link estável: preserva o canal e o período; só o filtro muda."""
+    from urllib.parse import urlencode
+
+    params = {"filtro": filtro}
+    if view.project_id:
+        params["project_id"] = view.project_id
+    params["days"] = view.days
+    return "/studio/panel/tendencias?" + urlencode(params)
+
+
+def _trends_cards_url(view: PanelView, filtro: str, offset: int) -> str:
+    """Próximo lote do scroll infinito: mesma lista filtrada, a partir de `offset`."""
+    from urllib.parse import urlencode
+
+    params = {"filtro": filtro, "offset": offset, "limite": TRENDS_PAGE_SIZE}
+    if view.project_id:
+        params["project_id"] = view.project_id
+    params["days"] = view.days
+    return "/studio/panel/tendencias/cartoes?" + urlencode(params)
+
+
+def _chip(href: str, valor: str, rotulo: str, ativo: bool) -> str:
+    marca = ' aria-current="true"' if ativo else ""
+    return (f'<a class="chip-filtro" href="{e(href, quote=True)}" data-filtro="{e(valor, quote=True)}"'
+            f'{marca}>{rotulo}</a>')
+
+
+def _mais_html(view: PanelView, filtro: str, mostrados: int, total: int) -> str:
+    """Scroll infinito com controle real: o botão é o caminho sem JS e o alvo do observer."""
+    if mostrados >= total:
+        return ""
+    proximo = _trends_cards_url(view, filtro, mostrados)
+    return (f'<div class="mais-tendencias" id="mais-tendencias"\n'
+            f'             data-proximo="{e(proximo, quote=True)}">\n'
+            f'          <button class="btn" type="button" id="btn-carregar-mais">Carregar mais tendências</button>\n'
+            f'          <p class="micro" role="status" id="status-carregar-mais">Mostrando {mostrados} de {total}.</p>\n'
+            f'        </div>')
+
+
+def _lote_html(view: PanelView, filtro: str, offset: int, limite: int, itens: list[TrendItemView],
+               total: int) -> str:
+    """Lote de cartões + o próximo offset: a resposta que o scroll consome."""
+    fim = offset + len(itens)
+    tem_mais = fim < total
+    proximo = _trends_cards_url(view, filtro, fim) if tem_mais else ""
+    cards = "".join(_trend_card(t) for t in itens)
+    return (f'<div class="lote-tendencias" data-tem-mais="{str(tem_mais).lower()}"\n'
+            f'     data-proximo="{e(proximo, quote=True)}" data-mostrados="{fim}"\n'
+            f'     data-total="{total}">\n{cards}</div>')
 
 
 def _trend_card(trend: TrendItemView) -> str:
@@ -249,7 +314,24 @@ def _dialog_pilares(view: PanelView) -> str:
   </dialog>"""
 
 
-def render_tendencias_v3(view: PanelView) -> tuple[str, dict[str, str]]:
+def render_tendencias_cartoes(view: PanelView, filtro: str = _FILTRO_TODAS, offset: int = 0,
+                              limite: int = TRENDS_PAGE_SIZE) -> tuple[str, dict[str, str]]:
+    """Fragmento HTML do próximo lote: mesma lista filtrada, sem casca e sem script.
+
+    `offset` inválido (negativo ou além do fim) não inventa cartão: começa do início ou devolve
+    lote vazio com `data-tem-mais="false"`.
+    """
+    filtro = filtro if isinstance(filtro, str) and filtro else _FILTRO_TODAS
+    offset = max(0, offset if isinstance(offset, int) else 0)
+    limite = max(1, min(limite if isinstance(limite, int) else TRENDS_PAGE_SIZE, 96))
+    selecionadas = [t for t in view.trends if _trend_matches(t, filtro)]
+    lote = selecionadas[offset:offset + limite]
+    nonce = secrets.token_urlsafe(16)
+    return _lote_html(view, filtro, offset, limite, lote, len(selecionadas)), legacy._headers(nonce)
+
+
+def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
+                         limite: int = TRENDS_PAGE_SIZE) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     project_id = view.project_id or (view.projects[0][0] if view.projects else "")
 
@@ -257,29 +339,38 @@ def render_tendencias_v3(view: PanelView) -> tuple[str, dict[str, str]]:
     count_br = sum(1 for t in view.trends if t.region == "BR")
     count_us = sum(1 for t in view.trends if t.region == "US")
 
-    cat_chips = []
+    filtro = filtro if isinstance(filtro, str) and filtro else _FILTRO_TODAS
+    selecionadas = [t for t in view.trends if _trend_matches(t, filtro)]
+    limite = max(1, limite if isinstance(limite, int) else TRENDS_PAGE_SIZE)
+    do_lote = selecionadas[:limite]
+
+    chips = [
+        _chip(_trends_url(view, _FILTRO_TODAS), _FILTRO_TODAS, f"Todas ({count_total})",
+              filtro == _FILTRO_TODAS),
+        _chip(_trends_url(view, "regiao:BR"), "regiao:BR", f"Em Alta Brasil ({count_br})",
+              filtro == "regiao:BR"),
+        _chip(_trends_url(view, "regiao:US"), "regiao:US", f"Em Alta EUA ({count_us})",
+              filtro == "regiao:US"),
+    ]
     for c in view.categories:
+        valor = f"pilar:{c.id}"
         c_count = sum(1 for t in view.trends if t.category_id == c.id)
-        cat_chips.append(
-            f'<button class="chip-filtro" type="button" data-filtro="pilar:{e(c.id)}" aria-pressed="false">'
-            f'{e(c.name)} ({c_count})</button>'
-        )
+        chips.append(_chip(_trends_url(view, valor), valor, f"{e(c.name)} ({c_count})", filtro == valor))
+    chips_html = "".join(chips) + (
+        '<button class="chip-filtro novo" type="button" id="btn-novo-pilar">+ Novo pilar</button>')
 
-    chips_html = (
-        f'<button class="chip-filtro" type="button" data-filtro="todas" aria-pressed="true">Todas ({count_total})</button>'
-        f'<button class="chip-filtro" type="button" data-filtro="regiao:BR" aria-pressed="false">Em Alta Brasil ({count_br})</button>'
-        f'<button class="chip-filtro" type="button" data-filtro="regiao:US" aria-pressed="false">Em Alta EUA ({count_us})</button>'
-        + "".join(cat_chips)
-        + '<button class="chip-filtro novo" type="button" id="btn-novo-pilar">+ Novo pilar</button>'
-    )
-
-    if view.trends:
-        cards_html = "".join(_trend_card(t) for t in view.trends)
+    if view.trends and not selecionadas:
+        cards_html = ""
+        vazio_msg = ('<p class="vazio" id="tendencias-vazio">Nenhuma tendência encontrada para este filtro.</p>')
+    elif view.trends:
+        cards_html = "".join(_trend_card(t) for t in do_lote)
         vazio_msg = '<p class="vazio" id="tendencias-vazio" hidden style="display:none;"></p>'
     else:
         cards_html = ""
         vazio_msg = ('<p class="vazio" id="tendencias-vazio">Ainda não há tendências coletadas para este período. '
                      'Clique em <strong>Buscar agora</strong> para atualizar.</p>')
+
+    mais_html = _mais_html(view, filtro, len(do_lote), len(selecionadas))
 
     coleta_info = (
         f"Última coleta: {view.last_collected_at.strftime('%d/%m às %H:%M')}."
@@ -310,6 +401,7 @@ def render_tendencias_v3(view: PanelView) -> tuple[str, dict[str, str]]:
         <div class="grade-tendencias" id="lista-tendencias">
           {cards_html}
         </div>
+        {mais_html}
         {vazio_msg}
       </section>
       {_dialog_pilares(view)}"""

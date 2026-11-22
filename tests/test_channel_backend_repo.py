@@ -127,3 +127,23 @@ def test_usage_summary_without_rows_is_empty(env):
     assert summary.has_usage is False
     assert summary.real_usd == Decimal("0")
     assert summary.labels()["real"] == "Sem registro de uso"
+
+
+def test_usage_summary_separates_the_global_scope_from_the_channel(env):
+    """F01.T03: gasto global (sem projeto) não entra no resumo do canal nem o contamina."""
+    conn, p_id = env["conn"], env["project_id"]
+    video = env["videos"].create_video(p_id, "tema", VideoFormat.short)
+    insert = ("INSERT INTO studio.usage_ledger(video_id, step, provider, model, cost_usd, "
+              "cost_confirmation_kind, cost_confirmed_amount, cost_confirmation_reference, "
+              "cost_confirmed_by, cost_confirmed_at) "
+              "VALUES (%s, 's', 'p', 'm', %s, 'ACTUAL', %s, 'ref', 'tester', now())")
+    conn.execute(insert, (video.id, 1.0, 1.0))
+    conn.execute(insert, (None, 2.0, 2.0))  # escopo GLOBAL explícito (sem vídeo/projeto)
+    conn.commit()
+    usage = PostgresChannelUsageRepository(env["connect"])
+    summary = usage.month_summary(p_id)
+    assert summary.real_usd == Decimal("1.0")
+    assert summary.unattributed_calls == 0
+    overall = usage.global_month_summary()
+    assert overall.real_usd == Decimal("3.0")
+    assert overall.unattributed_calls == 1

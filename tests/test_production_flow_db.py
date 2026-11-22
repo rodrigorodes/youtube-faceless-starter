@@ -92,3 +92,33 @@ def test_production_run_of_another_video_is_404(studio, client, video_id):
     run_id = _start(studio, video_id, "flow-4").run.run_id
     # Outro vídeo (inexistente) com o mesmo run_id não confunde o roteador: o run não é dele.
     assert client.get(f"/studio/videos/{'9' * 32}/production-runs/{run_id}").status_code == 404
+
+
+# -- F03.T02: a subida real (composition) congela a configuração no start ---------
+
+
+def test_composition_start_persists_an_immutable_effective_config(studio, video_id):
+    """A fiação única resolve a config e grava o snapshot junto do run, antes de qualquer efeito."""
+    from app.studio.domain.run_config import RunConfigStatus
+
+    uc = studio.use_cases()
+    production = uc.production
+    assert production is not None and production.effective_config_for is not None
+    creation = production.coordinator.start(
+        video_id, "flow-cfg-1",
+        effective_config_for=production.effective_config_for, config_store=production.config_store)
+
+    stored = production.config_for(creation.run.run_id)
+    assert stored is not None and stored.status is RunConfigStatus.RESOLVED
+    assert stored.config is not None
+    assert stored.config.project_id and stored.config.video_id == video_id
+    # Sem canal/estilo no projeto, valem os defaults explícitos do motor (não um snapshot vazio).
+    assert stored.config.language == "pt-BR"
+    assert stored.config.provenance["editorial.language"] == "engine_default"
+    assert stored.config.provenance["style"] == "engine_default"
+
+    replay = production.coordinator.start(
+        video_id, "flow-cfg-1",
+        effective_config_for=production.effective_config_for, config_store=production.config_store)
+    assert replay.result.value == "EXISTING"
+    assert production.config_for(replay.run.run_id).config.content_hash == stored.config.content_hash

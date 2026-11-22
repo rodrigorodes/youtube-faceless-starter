@@ -62,7 +62,7 @@ def test_analytics_uses_v3_shell_and_nav():
     assert "Acompanhe o resultado sem perder o foco na criação." in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
-    assert 'href="/studio/panel/analytics" aria-current="page"' in main
+    assert re.search(r'href="/studio/panel/analytics(?:\?project_id=[^"]+)?" aria-current="page"', main)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1
 

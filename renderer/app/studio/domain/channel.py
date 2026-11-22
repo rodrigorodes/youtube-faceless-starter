@@ -15,10 +15,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from .ids import check_id
 from .youtube_channel import OAuthStatus
 from .youtube_identity import ChannelAuthorization, validate_youtube_channel_id
+
+if TYPE_CHECKING:  # `visual_style` importa este módulo no topo; o import real é local (F05.T02)
+    from .visual_style import StylePatch
 
 MAX_NAME_LENGTH = 120
 MAX_STRATEGY_LENGTH = 500
@@ -194,6 +198,14 @@ class ChannelProfile:
     # VS-02: o estilo visual que este canal segue (biblioteca compartilhada). None = sem estilo;
     # o render cai no bundle neutro. A referência é por chave — o plano grava (style_id, version).
     style_id: str | None = None
+    # F05.T02: override tipado deste canal sobre o estilo selecionado (ADR fs31-004). None =
+    # herda o estilo inteiro. Só overrides: personalizar o canal **não** copia nem edita `params`
+    # do estilo. A escrita é dedicada (`set_style_patch`), com revisão própria — fora de
+    # `UPDATABLE_FIELDS` de propósito.
+    style_patch: "StylePatch | None" = None
+    # Revisão do patch (0 = nunca personalizado). É o token do controle otimista da escrita do
+    # patch: um cliente com revisão velha recebe `ChannelVersionConflict` e não grava.
+    style_patch_revision: int = 0
     # YT-02: o canal do YouTube **em que** este canal publica (identidade oficial, `UC...`).
     # None = destino não escolhido; a publicação segue pelo caminho antigo até a YT-03.
     youtube_channel_id: str | None = None
@@ -221,6 +233,15 @@ class ChannelProfile:
             if not isinstance(self.style_id, str):
                 raise ChannelFieldInvalid("style_id must be a string or null")
             check_id(self.style_id)
+        if self.style_patch is not None:
+            from .visual_style import StylePatch  # import local: `visual_style` importa este módulo
+            patch = (self.style_patch if isinstance(self.style_patch, StylePatch)
+                     else StylePatch.from_mapping(self.style_patch, where="channel style patch"))
+            # Patch vazio é ausência de override: o agregado nunca carrega `{}` sem semântica.
+            object.__setattr__(self, "style_patch", None if patch.is_empty else patch)
+        if isinstance(self.style_patch_revision, bool) or not isinstance(self.style_patch_revision, int) \
+                or self.style_patch_revision < 0:
+            raise ChannelFieldInvalid("style_patch_revision must be an integer >= 0")
         if self.youtube_channel_id is not None:
             if not isinstance(self.youtube_channel_id, str):
                 raise ChannelFieldInvalid("youtube_channel_id must be a string or null")

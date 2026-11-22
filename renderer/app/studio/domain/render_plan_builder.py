@@ -43,6 +43,7 @@ from .render_plan import (
     AssetMediaType,
     AssetReference,
     Composition,
+    ConfigSnapshot,
     Effects,
     GeneratedAudioSource,
     Motion,
@@ -177,6 +178,7 @@ def build_render_plan(
     motions: Mapping[str, Motion] | None = None,
     music_params: Mapping[str, Any] | None = None,
     created_at: datetime | None = None,
+    config_snapshot: ConfigSnapshot | None = None,
 ) -> RenderPlan:
     """Constrói um ``RenderPlan`` v1 válido a partir do storyboard medido.
 
@@ -187,6 +189,10 @@ def build_render_plan(
     ``music_params`` são os parâmetros **do estilo** para a trilha (bpm/seed): quando
     presentes, sobrepõem o default do sistema (``DEFAULT_MUSIC_PARAMS`` — bpm 122, seed 7);
     ausentes/parciais caem no default por chave (o executor lê cada chave com fallback).
+
+    ``config_snapshot`` é a identidade da configuração efetiva congelada (F03.T03) que governou
+    voz e render. É opcional e não entra em nenhum fingerprint de cache: um plano antigo, sem a
+    referência, continua válido e reusável.
     """
     timebase = timebase or Timebase(ticks_per_second=DEFAULT_TICKS_PER_SECOND)
     tps = timebase.ticks_per_second
@@ -301,6 +307,7 @@ def build_render_plan(
         generated_audio=generated,
         style_snapshot=style_snapshot,
         provenance=Provenance(builder_version=builder_version, created_at=created_at),
+        config_snapshot=config_snapshot,
     )
 
 

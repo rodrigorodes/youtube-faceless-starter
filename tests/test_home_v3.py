@@ -53,9 +53,11 @@ def test_home_navigation_is_the_approved_ia():
     labels = [re.sub(r"<[^>]+>", "", li).strip() for li in re.findall(r"<li>(.*?)</li>", main, re.S)]
     assert labels == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
     assert main.count('aria-current="page"') == 1
-    assert re.search(r'<a href="/studio/panel" aria-current="page">', main)
+    # F02.T01: o item ativo pode carregar o canal ativo (?project_id=)
+    assert re.search(r'<a href="/studio/panel(?:\?project_id=[^"]+)?" aria-current="page">', main)
     cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert "Configurações" in cfg and 'href="/studio/configuracoes/canais"' in cfg
+    assert "Configurações" in cfg
+    assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1
 

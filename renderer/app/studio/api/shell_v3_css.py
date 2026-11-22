@@ -279,9 +279,13 @@ code,kbd,samp {
   border-radius:30px; padding:8px 13px; font-size:12px; font-weight:600; cursor:pointer; }
 .chip-filtro:hover { background:var(--panel2); }
 /* pressionado: fundo + borda + PESO (não só cor) e aria-pressed para o leitor de tela */
-.chip-filtro[aria-pressed="true"] { background:var(--soft); border-color:var(--accentfill);
-  color:var(--accent); font-weight:750; }
+.chip-filtro[aria-pressed="true"], .chip-filtro[aria-current="true"] {
+  background:var(--soft); border-color:var(--accentfill); color:var(--accent); font-weight:750; }
 .chip-filtro.novo { border-style:dashed; color:var(--accent); }
+/* paginação da lista: página atual em texto, borda indisponível desabilitada (não focável) */
+.mais-tendencias { display:flex; flex-direction:column; align-items:center; gap:8px;
+  margin:22px 0 8px; }
+.mais-tendencias .btn { min-width:220px; }
 .chip-pilar { display:inline-block; border:1px solid var(--line); background:var(--panel2);
   color:var(--accent); border-radius:5px; padding:4px 7px; font-size:10px; font-weight:700; }
 
@@ -542,6 +546,7 @@ select option:checked {
   }
   .barra { background:Highlight; forced-color-adjust:none; }
   .btn, .btn-primario { border-color:ButtonText; }
-  .chip-filtro[aria-pressed="true"] { border-color:Highlight; color:Highlight; forced-color-adjust:none; }
+  .chip-filtro[aria-pressed="true"], .chip-filtro[aria-current="true"] {
+    border-color:Highlight; color:Highlight; forced-color-adjust:none; }
 }
 """

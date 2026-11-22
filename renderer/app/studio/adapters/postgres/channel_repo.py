@@ -28,12 +28,13 @@ from ...domain.channel import (
     validate_version,
 )
 from ...domain.ids import check_id
+from ...domain.visual_style import StylePatch
 from .editorial_repo import _Base
-from .repo import _translated
+from .repo import _translated, normalize_style_patch
 
 _COLS = ("id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s, "
-         "visual_identity, voice, audio, thumbnail, cta, style_id, youtube_channel_id, version, archived, "
-         "created_at, updated_at")
+         "visual_identity, voice, audio, thumbnail, cta, style_id, style_patch, style_patch_revision, "
+         "youtube_channel_id, version, archived, created_at, updated_at")
 
 
 def _profile(row: dict) -> ChannelProfile:
@@ -50,8 +51,16 @@ def _snapshot(profile: ChannelProfile) -> dict:
             value = value.isoformat()
         elif isinstance(value, tuple):
             value = list(value)
+        elif isinstance(value, StylePatch):
+            value = value.to_mapping()
         snapshot[field.name] = value
     return snapshot
+
+
+def _patch_revision(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ChannelFieldInvalid("style patch revision must be an integer >= 0")
+    return value
 
 
 class PostgresChannelProfileRepository(_Base):
@@ -149,6 +158,42 @@ class PostgresChannelProfileRepository(_Base):
                     return _profile(new_row)
             except psycopg.errors.LockNotAvailable as exc:
                 raise ChannelLockTimeout(f"timed out acquiring the channel profile lock for '{pid}'") from exc
+
+    def set_style_patch(self, profile_id: str, expected_revision: int, patch: object) -> ChannelProfile | None:
+        """Grava o override de estilo do canal, de forma otimista e escopada (F05.T02).
+
+        - O patch é normalizado por `StylePatch` **antes** do UPDATE (a allowlist vale no banco,
+          não só na API); patch vazio/reset vira NULL — o canal volta a herdar, nunca `{}`.
+        - `expected_revision` é a `style_patch_revision` que o cliente leu: se divergiu, outra
+          escrita venceu a corrida e `ChannelVersionConflict` sobe **sem gravar**.
+        - Só as colunas do patch mudam: a `version` editorial e o resto do perfil ficam intactos
+          (personalizar estilo não é editar o perfil). Devolve o perfil como ficou no banco.
+        """
+        pid = check_id(profile_id)
+        revision = _patch_revision(expected_revision)
+        stored = normalize_style_patch(patch)  # falha alto (StylePatchInvalid) antes de qualquer SQL
+        with _translated(), self._connect() as conn:
+            try:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(f"SELECT {_COLS} FROM studio.channel_profiles WHERE id = %s FOR UPDATE", (pid,))
+                    row = cur.fetchone()
+                    if row is None:
+                        return None
+                    current = _profile(row)
+                    if current.style_patch_revision != revision:
+                        raise ChannelVersionConflict(
+                            f"expected style patch revision {revision}, "
+                            f"found {current.style_patch_revision}")
+                    cur.execute(
+                        f"""UPDATE studio.channel_profiles SET style_patch = %s,
+                            style_patch_revision = style_patch_revision + 1, updated_at = now()
+                            WHERE id = %s RETURNING {_COLS}""",
+                        (Jsonb(stored) if stored is not None else None, pid),
+                    )
+                    return _profile(cur.fetchone())
+            except psycopg.errors.LockNotAvailable as exc:
+                raise ChannelLockTimeout(
+                    f"timed out acquiring the channel profile lock for '{pid}'") from exc
 
     @staticmethod
     def _insert(cur, profile: ChannelProfile) -> dict:

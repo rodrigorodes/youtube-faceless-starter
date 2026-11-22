@@ -224,3 +224,16 @@ def test_verification_blocks_a_target_without_a_connected_authorization():
     assert not verdict.allowed and "UCabc123" in verdict.reason
     revoked = _authorization("UCabc123", OAuthStatus.REVOKED)
     assert not verify_publication_authorization(chan, [revoked], token_channel_id="UCabc123").allowed
+
+
+def test_channel_defaults_match_the_effective_config_editorial_defaults():
+    """O default do perfil e o default do motor são o mesmo retrato legado (sem duas verdades)."""
+    from app.studio.domain.effective_config import EDITORIAL_DEFAULTS
+
+    p = profile()
+    assert p.language == EDITORIAL_DEFAULTS["language"]
+    assert p.audience == EDITORIAL_DEFAULTS["audience"]
+    assert p.pillars == EDITORIAL_DEFAULTS["pillars"]
+    assert p.narrative == EDITORIAL_DEFAULTS["narrative"]
+    assert p.target_duration_s == EDITORIAL_DEFAULTS["duration_s"]
+    assert p.cta == EDITORIAL_DEFAULTS["cta"]

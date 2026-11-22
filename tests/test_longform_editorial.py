@@ -25,7 +25,8 @@ from app.studio.domain.contracts import (  # noqa: E402
 from app.studio.domain.ids import check_id  # noqa: E402
 from app.studio.domain.longform import approval_is_current  # noqa: E402
 
-V, P = "v" * 32, "p" * 32
+# IDs hexadecimais: a configuração efetiva valida id/projeto, então os stubs seguem o contrato.
+V, P = "b" * 32, "a" * 32
 SOURCE = "O canal cresceu 42 por cento no ano passado e esse crescimento mudou o mercado inteiro."
 
 
@@ -272,3 +273,71 @@ def test_edit_requires_the_latest_version():
     editor = EditScriptScene(w["videos"], w["snaps"], w["repo"], w["repo"])
     with pytest.raises(ScriptVersionStale):
         editor.execute(V, 0, narration("x"), expected_version=result.script.version + 1)
+
+
+# ---------- F04: idioma, duração e contexto editorial do canal ----------
+from app.studio.application.editorial import EditorialContext  # noqa: E402
+from app.studio.application.longform import DEFAULT_WORDS_PER_MINUTE  # noqa: E402
+from app.studio.domain.channel import ChannelProfile  # noqa: E402
+from app.studio.domain.effective_config import resolve_effective_config  # noqa: E402
+
+
+def video() -> Video:
+    return Video(id=V, project_id=P, topic="Como o dinheiro entra", format=VideoFormat.long, status=VideoStatus.IDEA)
+
+
+def channel(**kw) -> ChannelProfile:
+    base = {"id": "c" * 32, "project_id": P, "name": "História"}
+    base.update(kw)
+    return ChannelProfile(**base)
+
+
+def context(**kw) -> EditorialContext:
+    return EditorialContext.from_effective_config(resolve_effective_config(video=video(), channel=channel(**kw)))
+
+
+def test_long_prompts_keep_the_legacy_language_without_a_profile():
+    claims = extract_claims("s" * 32, SOURCE)
+    outline = build_long_outline_prompt("tema", claims, 480, 150)
+    assert "português do Brasil" in outline and "Duração alvo ~480s" in outline
+    assert "Público-alvo" not in outline and "Pilares editoriais" not in outline
+
+
+def test_long_prompts_use_the_profile_language_and_editorial_fields():
+    claims = extract_claims("s" * 32, SOURCE)
+    ctx = context(language="en-US", audience="produtores de eventos", narrative="documental em três atos",
+                  pillars=["trilha", "palco"], cta="inscreva-se no canal")
+    outline = build_long_outline_prompt("tema", claims, 480, 150, context=ctx)
+
+    assert "en-US" in outline and "português do Brasil" not in outline
+    for expected in ("produtores de eventos", "documental em três atos", "trilha; palco", "inscreva-se no canal"):
+        assert expected in outline
+
+
+def test_long_generation_applies_the_declared_profile_duration_and_language():
+    w = world()
+    ctx = context(language="en-US", target_duration_s=500)
+    w["generator"].editorial_for = lambda v: ctx
+
+    result = w["generator"].execute(V)
+    assert result.plan.target_seconds == 500 and result.review.passed
+    assert "~500s" in w["text"].prompts[0] and "en-US" in w["text"].prompts[0]
+    assert "en-US" in w["text"].prompts[1]
+
+
+def test_unconfigured_channel_does_not_shrink_the_long_format_to_60s():
+    w = world()
+    w["generator"].editorial_for = lambda v: context()  # perfil existe, mas com o alvo padrão de 60 s
+
+    result = w["generator"].execute(V)
+    assert result.plan.target_seconds == 480 and "~480s" in w["text"].prompts[0]
+
+
+def test_words_per_minute_stays_the_measured_value_and_is_not_a_channel_field():
+    ctx = context(language="en-US", target_duration_s=500)
+    assert not hasattr(ctx, "words_per_minute")
+
+    w = world()
+    w["generator"].editorial_for = lambda v: ctx
+    result = w["generator"].execute(V)
+    assert result.plan.words_per_minute == DEFAULT_WORDS_PER_MINUTE

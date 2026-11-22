@@ -16,6 +16,17 @@ _LOCK = 726002  # pg_advisory_xact_lock: serializa reservas e escritas do ledger
 
 
 def _lock_budget(conn: psycopg.Connection) -> None:
+    """Serializa reservas e escritas do ledger. Ordem de locks (estável, F01.T03):
+
+    1. `pg_advisory_xact_lock(726002)` — sempre o primeiro, antes de qualquer leitura de orçamento;
+    2. `studio.paid_operations` pela PK (`FOR UPDATE`), quando a chave existe;
+    3. `studio.budget_reservations` pela PK (leitura, INSERT, DELETE);
+    4. `studio.usage_ledger` em INSERT (o trigger `usage_ledger_budget_lock` retoma o MESMO advisory
+       lock; dentro da transação a reaquisição do lock de transação é no-op).
+
+    Como o lock 726002 é único e tomado antes de qualquer linha, duas transações de orçamento nunca
+    seguram linha em ordem inversa — não há ciclo possível. Não adquirir outro lock antes dele.
+    """
     if conn.autocommit:
         raise ValueError("autocommit is unsafe for budget reservations")
     # Uma conexão nova precisa de snapshot atualizado após aguardar o lock.
@@ -24,27 +35,48 @@ def _lock_budget(conn: psycopg.Connection) -> None:
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK,))
 
 
+def _scope_project(conn: psycopg.Connection, video_id: str | None) -> str | None:
+    """Projeto (canal) dono da operação; `None` é o escopo GLOBAL explícito.
+
+    O vídeo é autoritativo: o projeto nunca vem do chamador. Operação sem vídeo (ex.: pontuar ideias)
+    pertence ao escopo global e consome só o teto global — decisão registrada no ADR-002/F01.T03.
+    """
+    if video_id is None:
+        return None
+    row = conn.execute("SELECT project_id FROM studio.videos WHERE id = %s", (video_id,)).fetchone()
+    if row is None:
+        raise ValueError("unknown video for budget reservation")
+    return row[0]
+
+
 def _validate_amounts(*values) -> None:
     for value in values:
         if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
             raise ValueError("budget values must be finite non-negative Decimal")
 
 
-def _reserve_within(conn: psycopg.Connection, key: str, video_id: str | None, amount: Decimal,
-                    monthly_limit: Decimal, video_limit: Decimal) -> ReservationResult:
-    """Insere a reserva se couber no orçamento; assume que o lock da transação já foi adquirido.
+def _reserve_within(conn: psycopg.Connection, key: str, video_id: str | None, project_id: str | None,
+                    amount: Decimal, monthly_limit: Decimal, video_limit: Decimal,
+                    global_monthly_limit: Decimal | None = None) -> ReservationResult:
+    """Insere a reserva se couber nos tetos; pressupõe o lock de `_lock_budget` já adquirido.
 
-    O teto mensal soma gasto confirmado/estimado do mês corrente e reservas do mês corrente. Reservas
-    de meses anteriores não consomem o mês atual (ficam em `pending_reconciliation`). Só custo `NaN`
-    torna o valor realmente desconhecido; linha legada finita conta pelo valor gravado. Reserva sem
-    vídeo (None) só é limitada pelo teto mensal.
+    Três escopos independentes, todos verificados:
+    - GLOBAL: gasto + reservas do mês corrente (todas as linhas) contra `global_monthly_limit`;
+    - CANAL: gasto + reservas do mês do projeto do vídeo contra `monthly_limit`;
+    - VÍDEO: gasto + reservas vitalícios do vídeo contra `video_limit`.
+
+    Reservas de meses anteriores não consomem o mês atual (ficam em `pending_reconciliation`). Só custo
+    `NaN` torna o valor realmente desconhecido; linha legada finita conta pelo valor gravado. Operação
+    sem vídeo é escopo global explícito (`project_id IS NULL`): só o teto global a limita.
+    `global_monthly_limit=None` recai em `monthly_limit` (compatível e nunca mais frouxo).
     """
+    global_limit = monthly_limit if global_monthly_limit is None else global_monthly_limit
     previous = conn.execute(
-        "SELECT video_id, amount_usd, monthly_limit_usd, video_limit_usd "
+        "SELECT video_id, amount_usd, monthly_limit_usd, video_limit_usd, project_id "
         "FROM studio.budget_reservations WHERE idempotency_key = %s", (key,)
     ).fetchone()
     if previous is not None:
-        if previous != (video_id, amount, monthly_limit, video_limit):
+        if tuple(previous) != (video_id, amount, monthly_limit, video_limit, project_id):
             raise IdempotencyConflict("idempotency key already used")
         return ReservationResult.EXISTING
     permitted = conn.execute(
@@ -52,31 +84,44 @@ def _reserve_within(conn: psycopg.Connection, key: str, video_id: str | None, am
             SELECT date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start,
                    (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC' AS finish
         ), spent AS (
-            SELECT COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
-                   COALESCE(SUM(cost_usd) FILTER (WHERE video_id = %(video)s), 0) AS video,
+            SELECT COALESCE(SUM(ul.cost_usd) FILTER (
+                       WHERE ul.created_at >= b.start AND ul.created_at < b.finish), 0) AS month,
+                   COALESCE(SUM(ul.cost_usd) FILTER (
+                       WHERE ul.project_id = %(project)s
+                         AND ul.created_at >= b.start AND ul.created_at < b.finish), 0) AS project,
+                   COALESCE(SUM(ul.cost_usd) FILTER (WHERE ul.video_id = %(video)s), 0) AS video,
                    COALESCE(BOOL_OR(
-                       cost_usd = 'NaN'::numeric
-                       AND (video_id = %(video)s OR (created_at >= b.start AND created_at < b.finish))
+                       ul.cost_usd = 'NaN'::numeric
+                       AND ((ul.created_at >= b.start AND ul.created_at < b.finish)
+                            OR ul.video_id = %(video)s)
                    ), false) AS unknown
-            FROM studio.usage_ledger, bounds b
+            FROM studio.usage_ledger ul, bounds b
         ), reserved AS (
-            SELECT COALESCE(SUM(amount_usd) FILTER (WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
+            SELECT COALESCE(SUM(amount_usd) FILTER (
+                       WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
+                   COALESCE(SUM(amount_usd) FILTER (
+                       WHERE project_id = %(project)s
+                         AND created_at >= b.start AND created_at < b.finish), 0) AS project,
                    COALESCE(SUM(amount_usd) FILTER (WHERE video_id = %(video)s), 0) AS video
             FROM studio.budget_reservations, bounds b
         )
         SELECT NOT spent.unknown
-           AND spent.month + reserved.month + %(amount)s <= %(monthly)s
-           AND (%(video)s::text IS NULL OR spent.video + reserved.video + %(amount)s <= %(video_limit)s)
+           AND spent.month + reserved.month + %(amount)s <= %(global)s
+           AND (%(project)s::text IS NULL
+                OR spent.project + reserved.project + %(amount)s <= %(monthly)s)
+           AND (%(video)s::text IS NULL
+                OR spent.video + reserved.video + %(amount)s <= %(video_limit)s)
         FROM spent, reserved""",
-        {"video": video_id, "amount": amount, "monthly": monthly_limit, "video_limit": video_limit},
+        {"video": video_id, "project": project_id, "amount": amount, "global": global_limit,
+         "monthly": monthly_limit, "video_limit": video_limit},
     ).fetchone()[0]
     if not permitted:
         return ReservationResult.DENIED
     conn.execute(
         "INSERT INTO studio.budget_reservations "
-        "(idempotency_key, video_id, amount_usd, monthly_limit_usd, video_limit_usd) "
-        "VALUES (%s, %s, %s, %s, %s)",
-        (key, video_id, amount, monthly_limit, video_limit),
+        "(idempotency_key, video_id, project_id, amount_usd, monthly_limit_usd, video_limit_usd) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (key, video_id, project_id, amount, monthly_limit, video_limit),
     )
     return ReservationResult.CREATED
 
@@ -85,15 +130,21 @@ class PostgresBudgetRepository:
     def __init__(self, connect: Callable[[], psycopg.Connection]):
         self._connect = connect
 
-    def reserve(self, key: str, video_id: str, amount: Decimal,
-                monthly_limit: Decimal, video_limit: Decimal) -> ReservationResult:
+    def reserve(self, key: str, video_id: str | None, amount: Decimal,
+                monthly_limit: Decimal, video_limit: Decimal,
+                *, global_monthly_limit_usd: Decimal | None = None) -> ReservationResult:
         if not isinstance(key, str) or not key.strip():
             raise ValueError("idempotency key is required")
-        check_id(video_id)
+        if video_id is not None:
+            check_id(video_id)
         _validate_amounts(amount, monthly_limit, video_limit)
+        if global_monthly_limit_usd is not None:
+            _validate_amounts(global_monthly_limit_usd)
         with _translated(), self._connect() as conn:
             _lock_budget(conn)
-            return _reserve_within(conn, key, video_id, amount, monthly_limit, video_limit)
+            project_id = _scope_project(conn, video_id)
+            return _reserve_within(conn, key, video_id, project_id, amount, monthly_limit, video_limit,
+                                   global_monthly_limit_usd)
 
 
 class PostgresPaidOperationRepository:
@@ -103,26 +154,30 @@ class PostgresPaidOperationRepository:
         self._connect = connect
 
     def begin(self, key: str, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
-              video_limit_usd: Decimal) -> BeginResult:
+              video_limit_usd: Decimal, *, global_monthly_limit_usd: Decimal | None = None) -> BeginResult:
         if not isinstance(key, str) or not key.strip():
             raise ValueError("idempotency key is required")
         if video_id is not None:
             check_id(video_id)
         _validate_amounts(estimate_usd, monthly_limit_usd, video_limit_usd)
+        if global_monthly_limit_usd is not None:
+            _validate_amounts(global_monthly_limit_usd)
         with _translated(), self._connect() as conn:
             _lock_budget(conn)
+            project_id = _scope_project(conn, video_id)
             previous = conn.execute(
-                "SELECT state, video_id, estimate_usd, monthly_limit_usd, video_limit_usd "
+                "SELECT state, video_id, estimate_usd, monthly_limit_usd, video_limit_usd, project_id "
                 "FROM studio.paid_operations WHERE idempotency_key = %s FOR UPDATE", (key,)
             ).fetchone()
             if previous is not None:
-                if previous[1:] != (video_id, estimate_usd, monthly_limit_usd, video_limit_usd):
+                if previous[1:] != (video_id, estimate_usd, monthly_limit_usd, video_limit_usd, project_id):
                     raise IdempotencyConflict("idempotency key already used")
                 state = previous[0]
                 if state == "RELEASED":
                     # Nenhum efeito externo comprovado: seguro repetir. Reabre como nova tentativa,
                     # com nova reserva, preservando as mesmas entradas (a chave é por conteúdo).
-                    result = _reserve_within(conn, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd)
+                    result = _reserve_within(conn, key, video_id, project_id, estimate_usd, monthly_limit_usd,
+                                             video_limit_usd, global_monthly_limit_usd)
                     if result is ReservationResult.DENIED:
                         return BeginResult.DENIED
                     if result is ReservationResult.EXISTING:
@@ -133,7 +188,8 @@ class PostgresPaidOperationRepository:
                     )
                     return BeginResult.CREATED
                 return _begin_result(state)
-            result = _reserve_within(conn, key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd)
+            result = _reserve_within(conn, key, video_id, project_id, estimate_usd, monthly_limit_usd,
+                                     video_limit_usd, global_monthly_limit_usd)
             if result is ReservationResult.DENIED:
                 return BeginResult.DENIED
             if result is ReservationResult.EXISTING:
@@ -141,9 +197,9 @@ class PostgresPaidOperationRepository:
                 return BeginResult.IN_PROGRESS
             conn.execute(
                 "INSERT INTO studio.paid_operations "
-                "(idempotency_key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd, state) "
-                "VALUES (%s, %s, %s, %s, %s, 'RESERVED')",
-                (key, video_id, estimate_usd, monthly_limit_usd, video_limit_usd),
+                "(idempotency_key, video_id, project_id, estimate_usd, monthly_limit_usd, video_limit_usd, state) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'RESERVED')",
+                (key, video_id, project_id, estimate_usd, monthly_limit_usd, video_limit_usd),
             )
             return BeginResult.CREATED
 

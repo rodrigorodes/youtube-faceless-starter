@@ -19,6 +19,10 @@ duração exata de cada síntese. O ritmo padrão é o **medido** na voz do prod
 (``piper:pt_BR-faber-medium``): 172 palavras/minuto efetivas, contra a hipótese
 antiga de 150. O ritmo e o alvo continuam configuráveis; para a estimativa com
 pausas medidas do Piper use ``estimate_voice_durations`` (domínio).
+
+F04: idioma e orientação editorial vêm do ``EditorialContext`` derivado da
+configuração efetiva; o alvo pode vir da duração declarada pelo canal (acima do
+default curto), mas o ritmo continua o medido — não é campo do canal.
 """
 from __future__ import annotations
 
@@ -27,7 +31,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from ..domain.contracts import Scene, Script, VideoStatus
+from ..domain.contracts import Scene, Script, Video, VideoStatus
+from ..domain.effective_config import EffectiveConfig
 from ..domain.longform import (
     MAX_LONG_SCENES,
     MIN_LONG_SCENES,
@@ -46,8 +51,11 @@ from ..domain.narration_duration import (
 )
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import (
+    DEFAULT_DURATION_S,
+    DEFAULT_LANGUAGE,
     MAX_PROMPT_CHARS,
     CostGuard,
+    EditorialContext,
     ScriptRejected,
     SourceRefused,
     StateConflict,
@@ -55,6 +63,9 @@ from .editorial import (
     _require_video,
     _usd,
     build_prompt,
+    context_for_video,
+    context_guidance,
+    language_label,
     parse_scene_drafts,
 )
 from .ports import (
@@ -124,12 +135,15 @@ def _facts_block(claims) -> str:
     return "\n".join(f"[{c.id}] {c.text}" for c in claims)
 
 
-def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_per_minute: float) -> str:
+def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_per_minute: float, *,
+                              context: EditorialContext | None = None) -> str:
     """Passagem 1: plano de capítulos por blocos narrativos."""
+    language = language_label(context.language if context is not None else DEFAULT_LANGUAGE)
     return (
-        f"Você planeja o roteiro de um vídeo LONGO em português do Brasil sobre: {topic}.\n"
+        f"Você planeja o roteiro de um vídeo LONGO em {language} sobre: {topic}.\n"
         f"Duração alvo ~{int(target_seconds)}s, ritmo ~{words_per_minute:.0f} palavras/minuto.\n"
         f"Organize em 3 a 6 capítulos cobrindo, nesta ordem, gancho, contexto, desenvolvimento e payoff/CTA.\n"
+        f"{context_guidance(context)}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares.\n\n"
         f"FATOS:\n{_facts_block(claims)}\n\n"
         f"Responda apenas com JSON: {{\"chapters\": [{{\"title\": str, \"block\": "
@@ -138,15 +152,18 @@ def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_p
     )
 
 
-def build_long_scenes_prompt(topic: str, plan: ScriptPlan, claims) -> str:
+def build_long_scenes_prompt(topic: str, plan: ScriptPlan, claims, *,
+                             context: EditorialContext | None = None) -> str:
     """Passagem 2: cenas do roteiro seguindo o plano de capítulos, com citações."""
     summary = "; ".join(
         f"{index + 1}. {chapter.title} ({block_label(chapter.block)}), {chapter.scene_count} cenas"
         for index, chapter in enumerate(plan.chapters)
     )
+    language = language_label(context.language if context is not None else DEFAULT_LANGUAGE)
     return (
-        f"Escreva as cenas do roteiro longo em português do Brasil sobre: {topic}.\n"
+        f"Escreva as cenas do roteiro longo em {language} sobre: {topic}.\n"
         f"Siga o plano de capítulos: {summary}.\n"
+        f"{context_guidance(context)}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares. Evento encerrado: escreva no passado.\n"
         f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n\n"
         f"FATOS:\n{_facts_block(claims)}\n\n"
@@ -157,11 +174,12 @@ def build_long_scenes_prompt(topic: str, plan: ScriptPlan, claims) -> str:
 
 
 def build_prompt_for_format(fmt, topic: str, claims, scene_count: int, *, target_seconds: float = DEFAULT_TARGET_SECONDS,
-                            words_per_minute: float = DEFAULT_WORDS_PER_MINUTE) -> str:
-    """Separa explicitamente o prompt curto do longo (F4-02)."""
+                            words_per_minute: float = DEFAULT_WORDS_PER_MINUTE,
+                            context: EditorialContext | None = None) -> str:
+    """Separa explicitamente o prompt curto do longo (F4-02); o contexto editorial é o do canal."""
     if getattr(fmt, "value", fmt) == "long":
-        return build_long_outline_prompt(topic, claims, target_seconds, words_per_minute)
-    return build_prompt(topic, claims, scene_count)
+        return build_long_outline_prompt(topic, claims, target_seconds, words_per_minute, context=context)
+    return build_prompt(topic, claims, scene_count, context=context)
 
 
 # ---------------------------------------------------------------------------
@@ -244,13 +262,36 @@ class GenerateLongScript:
                  text_model: TextModel | None, guard: CostGuard, usage: UsageRepository,
                  longform: LongFormScriptRepository, model_for: Callable[[str], TextModel] | None = None,
                  paid: PaidOperationGuard | None = None, words_per_minute: float = DEFAULT_WORDS_PER_MINUTE,
-                 target_seconds: float = DEFAULT_TARGET_SECONDS, tolerance: float = DEFAULT_DURATION_TOLERANCE,
-                 allow_names: frozenset[str] = frozenset()):
+                 target_seconds: float | None = None, tolerance: float = DEFAULT_DURATION_TOLERANCE,
+                 allow_names: frozenset[str] = frozenset(),
+                 editorial_for: Callable[[Video], EffectiveConfig | EditorialContext | None] | None = None):
+        """`target_seconds` explícito (construtor ou chamada) vence o perfil; sem nenhum dos dois o
+        alvo longo continua 480 s. `editorial_for(video)` traz idioma e contexto da configuração
+        efetiva; `words_per_minute` continua o **medido** da voz, nunca um campo do canal."""
         self.videos, self.snaps, self.scripts, self.text_model = videos, snaps, scripts, text_model
         self.guard, self.usage, self.longform = guard, usage, longform
         self.model_for, self.paid = model_for, paid
         self.words_per_minute, self.target_seconds, self.tolerance = words_per_minute, target_seconds, tolerance
         self.allow_names = allow_names
+        self.editorial_for = editorial_for
+
+    def _editorial_context(self, video: Video) -> EditorialContext | None:
+        if self.editorial_for is None:
+            return None
+        return context_for_video(self.editorial_for(video), video)
+
+    def _target_for(self, context: EditorialContext | None, target_seconds: float | None) -> float:
+        """Precedência: chamada > construtor > duração declarada pelo canal > 480 s do formato longo."""
+        if target_seconds is not None:
+            return target_seconds
+        if self.target_seconds is not None:
+            return self.target_seconds
+        declared = context.declared_duration_s if context is not None else None
+        # O perfil grava 60 s por default: um alvo de 60 s é indistinguível de "não configurado para
+        # longo" e não pode encolher o formato. Só uma duração acima do default curto governa o longo.
+        if declared is not None and declared > DEFAULT_DURATION_S:
+            return float(declared)
+        return DEFAULT_TARGET_SECONDS
 
     def execute(self, video_id: str, *, target_seconds: float | None = None,
                 words_per_minute: float | None = None) -> LongScriptResult:
@@ -261,24 +302,27 @@ class GenerateLongScript:
         claims = _claims(snapshots)
         if not claims:
             raise SourceRefused("no sources with checkable claims: add sources first")
+        context = self._editorial_context(video)
         wpm = self.words_per_minute if words_per_minute is None else words_per_minute
-        target = self.target_seconds if target_seconds is None else target_seconds
+        target = self._target_for(context, target_seconds)
         claim_ids = {c.id for c in claims}
         model = self.model_for(video.project_id) if self.model_for else self.text_model
 
         outline_claims = _fit_claims(video.topic, claims,
-                                     lambda kept: build_long_outline_prompt(video.topic, kept, target, wpm))
+                                     lambda kept: build_long_outline_prompt(video.topic, kept, target, wpm,
+                                                                            context=context))
         if not outline_claims:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
-        outline_prompt = build_long_outline_prompt(video.topic, outline_claims, target, wpm)
+        outline_prompt = build_long_outline_prompt(video.topic, outline_claims, target, wpm, context=context)
         outline, outline_cost = self._call(model, video_id, "longform-outline", outline_prompt,
                                            validate=lambda res: parse_outline(res.text, target_seconds=target,
                                                                               words_per_minute=wpm,
                                                                               valid_claim_ids=claim_ids))
 
         scenes_claims = _fit_claims(video.topic, outline_claims,
-                                    lambda kept: build_long_scenes_prompt(video.topic, outline, kept))
-        scenes_prompt = build_long_scenes_prompt(video.topic, outline, scenes_claims)
+                                    lambda kept: build_long_scenes_prompt(video.topic, outline, kept,
+                                                                          context=context))
+        scenes_prompt = build_long_scenes_prompt(video.topic, outline, scenes_claims, context=context)
         drafts, scenes_cost = self._call(model, video_id, "longform-scenes", scenes_prompt,
                                          validate=lambda res: parse_scene_drafts(
                                              res.text, {c.id for c in scenes_claims},

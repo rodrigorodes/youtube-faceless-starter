@@ -18,11 +18,15 @@ from app.main import app  # noqa: E402
 
 AUTH = ("test-user", "test-browser-password")
 
+# F02.T03: as sete áreas. Estratégia/Produção vivem na tela de Canais (sanfonas reais).
 SECTIONS = {
     "canais": "/studio/canais",
+    "estrategia": "/studio/canais#painel-perfil",
     "estilos": "/studio/panel/estilos",
+    "producao": "/studio/canais#painel-providers",
     "conexoes": "/studio/panel/conexoes",
     "equipe": "/studio/panel/equipe",
+    "avancado": "/studio/panel/avancado",
 }
 
 

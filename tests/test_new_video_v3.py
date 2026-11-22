@@ -14,7 +14,8 @@ from app.studio.domain.production_run import ProductionStage
 from test_ux_contract import assert_ux_contract
 
 
-def _view(*, projects=None, selected_project_id="p1"):
+def _view(*, projects=None, selected_project_id="p1", styles=(), inherited_style_name=None,
+          has_profile=False, channel_language=None, channel_voice=None):
     if projects is None:
         projects = [("p1", "Canal Gamer"), ("p2", "Tech News")]
     month = MonthCost(cap_usd=15.0, known_usd=0.0, unknown_calls=0, percent=None,
@@ -28,6 +29,11 @@ def _view(*, projects=None, selected_project_id="p1"):
         month=month,
         pipeline=pipeline,
         selected_project_id=selected_project_id,
+        styles=tuple(styles),
+        inherited_style_name=inherited_style_name,
+        has_profile=has_profile,
+        channel_language=channel_language,
+        channel_voice=channel_voice,
     )
 
 
@@ -41,7 +47,7 @@ def test_new_video_uses_v3_shell_and_nav():
     assert "Estúdio &nbsp;/&nbsp; <b>Novo vídeo</b>" in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
-    assert 'href="/studio/panel/novo-video" aria-current="page"' in main
+    assert re.search(r'href="/studio/panel/novo-video(?:\?project_id=[^"]+)?" aria-current="page"', main)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1
 
@@ -110,3 +116,83 @@ def test_new_video_satisfies_ux_contract():
     html, _ = render_new_video_v3(_view())
     assert_ux_contract(html, page="painel/novo-video")
     assert not re.search(r"\son[a-z]+=", html)
+
+
+def test_new_video_style_options_are_the_real_library():
+    """G15/F02.T02: as opções de estilo são a biblioteca real — nunca nomes fictícios."""
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno"), ("s2", "Clean Tech")],
+                                        inherited_style_name="Cinema Noturno"))
+    opcoes = re.search(r'<fieldset class="pills"[^>]*>(.*?)</fieldset>', html, re.S)
+    assert opcoes, "o campo de estilo precisa existir"
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    assert 'name="estilo-novo"' in bloco
+    assert 'value="s1"' in bloco and "Cinema Noturno" in bloco
+    assert 'value="s2"' in bloco and "Clean Tech" in bloco
+    assert re.search(r'name="estilo-novo"[^>]*value=""[^>]*checked', bloco), "herdar vem marcado"
+    assert "Herdar do canal" in bloco
+    # nenhum resíduo fictício
+    for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
+        assert ficticio not in bloco
+
+
+def test_new_video_style_inherit_shows_the_channel_style_name():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno")],
+                                        inherited_style_name="Cinema Noturno"))
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    assert "Herdar do canal" in bloco
+    assert "Cinema Noturno" in bloco
+    assert "nenhum estilo" not in bloco.lower()
+
+
+def test_new_video_without_styles_sends_to_the_library_and_does_not_fake_options():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=(), inherited_style_name="Cinema Noturno"))
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    # sem biblioteca: herdar continua sendo uma escolha real; sem rádios inventados
+    assert 'name="estilo-novo"' in bloco
+    assert 'value=""' in bloco and 'checked' in bloco
+    assert "Cinema Noturno" in bloco  # o canal tem estilo: herdar aponta o nome real
+    assert re.search(r'href="/studio/configuracoes/estilos(?:\?project_id=[^"]+)?"', html)
+    for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
+        assert ficticio not in html
+
+
+def test_new_video_payload_carries_the_chosen_style():
+    """O JS envia `style_id` quando há escolha e não envia quando herda (o Core resolve o canal)."""
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno")]))
+    assert "style_id" in html
+    assert "estilo-novo" in html
+
+
+def test_channel_preset_shows_what_the_channel_really_defines():
+    """F02.T04: idioma/voz saem do perfil do canal; nada de "Português (BR)" fixo."""
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(has_profile=True, channel_language="en-US",
+                                        channel_voice="piper:pt_BR-faber-medium"))
+    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
+    assert "Inglês (EUA)" in aside
+    assert "piper:pt_BR-faber-medium" in aside
+    assert "Português (BR)" not in aside
+    # as linhas fictícias (legendas/música) saíram
+    assert "Legendas" not in aside and "Música" not in aside
+
+
+def test_channel_preset_without_a_profile_says_so_instead_of_inventing():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(has_profile=False))
+    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
+    assert "canal sem perfil" in aside
+    assert "padrão do estúdio" in aside
+    assert "Português (BR)" not in aside

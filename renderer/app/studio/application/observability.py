@@ -71,6 +71,33 @@ def retry_transient(operation, *, attempts=3, sleep=time.sleep, random_value=ran
             sleep(min(30.0, 2**attempt) * random_value())
 
 
+def record_provider_decision(*, kind, profile, candidate, effective, reason, model="",
+                             attempt, production=False, logger=None):
+    """Registra a decisão de provider que a execução vai seguir (F06.T02).
+
+    Trilha única de observabilidade (log JSON `studio.providers`), sem segunda persistência:
+    candidato decidido, provider realmente construído, motivo da política, modelo/versão e a
+    tentativa (1 = decisão original; >1 = reavaliação explícita após indisponibilidade). Nomes e
+    motivos são categorias do catálogo — nunca token, chave ou resposta crua do provedor.
+    """
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+        raise ValueError("attempt must be a positive integer")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("reason is required to audit a provider decision")
+    payload = {
+        "event": "provider_decision",
+        "kind": str(kind),
+        "profile": None if profile is None else str(getattr(profile, "value", profile)),
+        "candidate": candidate,
+        "effective": effective,
+        "model": model or "",
+        "reason": reason,
+        "attempt": attempt,
+        "production": bool(production),
+    }
+    (logger or logging.getLogger("studio.providers")).info(json.dumps(payload, ensure_ascii=False))
+
+
 def run_step(repo, video_id, step, input_hash, operation, *, reusable=True):
     """Run an independently reusable step; operation must persist its own output."""
     guard = repo.render_guard(video_id) if step == "render" else nullcontext()

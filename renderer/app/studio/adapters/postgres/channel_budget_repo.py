@@ -66,26 +66,36 @@ class PostgresChannelBudgetRepository(_Base):
 
 
 class PostgresChannelUsageRepository(_Base):
-    def month_summary(self, project_id: str) -> CostSummary:
-        p_id = check_id(project_id)
+    """Resumo do mês por escopo, com a MESMA atribuição que o ledger usa para o teto.
+
+    O escopo do canal é `usage_ledger.project_id` (preenchido pelo vídeo na escrita — ver migração
+    0038), não um join na leitura: o painel mede exatamente o que a reserva desconta. Linhas sem
+    projeto são do escopo GLOBAL e aparecem em `global_month_summary`, nunca no canal.
+    O mês é o mesmo do teto (UTC), não o fuso da sessão.
+    """
+
+    _BOUNDS = (
+        "WITH bounds AS ("
+        " SELECT date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start,"
+        " (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month')"
+        " AT TIME ZONE 'UTC' AS finish)"
+    )
+    _COLUMNS = """
+        SELECT
+            COALESCE(SUM(CASE WHEN ul.cost_confirmation_kind = 'ACTUAL'
+                              THEN ul.cost_usd ELSE 0 END), 0) AS real_usd,
+            COALESCE(SUM(CASE WHEN ul.cost_confirmation_kind = 'ESTIMATE'
+                              THEN ul.cost_usd ELSE 0 END), 0) AS estimate_usd,
+            COUNT(*) FILTER (WHERE ul.cost_confirmation_kind = 'FREE') AS free_calls,
+            COUNT(*) FILTER (WHERE ul.cost_confirmation_kind IS NULL) AS unknown_calls,
+            COUNT(*) FILTER (WHERE {unattributed}) AS unattributed_calls
+        FROM studio.usage_ledger ul, bounds b
+        WHERE {where} AND ul.created_at >= b.start AND ul.created_at < b.finish
+    """
+
+    def _summary(self, *, where: str, params: tuple, unattributed: str) -> CostSummary:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                SELECT
-                    COALESCE(SUM(CASE WHEN ul.cost_confirmation_kind = 'ACTUAL'
-                                      THEN ul.cost_usd ELSE 0 END), 0) AS real_usd,
-                    COALESCE(SUM(CASE WHEN ul.cost_confirmation_kind = 'ESTIMATE'
-                                      THEN ul.cost_usd ELSE 0 END), 0) AS estimate_usd,
-                    COUNT(*) FILTER (WHERE ul.cost_confirmation_kind = 'FREE') AS free_calls,
-                    COUNT(*) FILTER (WHERE ul.cost_confirmation_kind IS NULL) AS unknown_calls,
-                    (SELECT COUNT(*) FROM studio.usage_ledger
-                      WHERE video_id IS NULL AND created_at >= date_trunc('month', now())) AS unattributed_calls
-                FROM studio.usage_ledger ul
-                JOIN studio.videos v ON v.id = ul.video_id
-                WHERE v.project_id = %s AND ul.created_at >= date_trunc('month', now())
-                """,
-                (p_id,),
-            )
+            cur.execute(self._BOUNDS + self._COLUMNS.format(where=where, unattributed=unattributed), params)
             row = cur.fetchone()
         return CostSummary(
             real_usd=Decimal(row["real_usd"]),
@@ -94,3 +104,11 @@ class PostgresChannelUsageRepository(_Base):
             unknown_calls=int(row["unknown_calls"]),
             unattributed_calls=int(row["unattributed_calls"]),
         )
+
+    def month_summary(self, project_id: str) -> CostSummary:
+        return self._summary(where="ul.project_id = %s", params=(check_id(project_id),),
+                             unattributed="ul.video_id IS NULL")
+
+    def global_month_summary(self) -> CostSummary:
+        """Escopo global: todo o gasto do mês, com as chamadas sem projeto em `unattributed_calls`."""
+        return self._summary(where="true", params=(), unattributed="ul.project_id IS NULL")

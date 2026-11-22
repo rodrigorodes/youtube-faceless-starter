@@ -12,6 +12,8 @@ Regras que atravessam todas as telas V3:
 
 from __future__ import annotations
 
+from .active_channel import propagate, with_channel
+
 from html import escape as e
 
 from .shell_v3_css import V3_CSS
@@ -450,9 +452,11 @@ def _nav_item(key: str, label: str, href: str, active: str) -> str:
     return f'<li><a href="{e(href)}"{current}>{_ICONS[key]}{e(label)}</a></li>'
 
 
-def render_sidebar(*, active: str, cost_note: str = "") -> str:
+def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") -> str:
     active = _ALIASES.get(active, active)
-    items = "".join(_nav_item(k, label, href, active) for k, label, href in NAV_OPERACAO)
+    # F02.T01/G11: a navegação leva o canal ativo; sem ele a próxima tela voltaria ao primeiro canal.
+    items = "".join(_nav_item(k, label, with_channel(href, project_id), active)
+                    for k, label, href in NAV_OPERACAO)
     cost = f'<p class="nota-custo">{e(cost_note)}</p>' if cost_note else ""
     return f"""<aside class="side">
     <div class="brand">
@@ -465,7 +469,7 @@ def render_sidebar(*, active: str, cost_note: str = "") -> str:
     </nav>
     <div class="side-bottom">
       <nav aria-label="Configuração">
-        <ul class="nav-list">{_nav_item("configuracoes", "Configurações", CONFIG_HREF, active)}</ul>
+        <ul class="nav-list">{_nav_item("configuracoes", "Configurações", with_channel(CONFIG_HREF, project_id), active)}</ul>
       </nav>
       {cost}
       <div class="side-note"><span class="avatar" aria-hidden="true">E</span>
@@ -686,11 +690,11 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
 <div id="indicador-carregando" class="indicador-carregando" aria-live="polite" aria-hidden="true"><span class="indicador-spinner"></span><span id="indicador-texto">Carregando…</span></div>
 <a class="skip" href="#conteudo">Ir para o conteúdo</a>
 <div class="app">
-  {render_sidebar(active=active, cost_note=cost_note)}
+  {render_sidebar(active=active, cost_note=cost_note, project_id=project_id)}
   <main class="main">
     {render_topbar(crumb=crumb, projects=projects, project_id=project_id)}
     <div class="content" id="conteudo">
-{body_html}
+{propagate(body_html, project_id)}
     </div>
   </main>
 </div>

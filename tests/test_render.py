@@ -19,7 +19,7 @@ from app.studio.domain.qa_report import (  # noqa: E402
 from app.studio.domain.render import MAX_SECONDS, scene_length  # noqa: E402
 
 S = VideoStatus
-V, P = "v" * 32, "p" * 32
+V, P = "1" * 32, "2" * 32  # ids hexadecimais válidos: a configuração efetiva (F03) os valida
 TEXTS = ["Primeira narração do vídeo curto.", "Segunda narração, um pouco mais longa que a anterior.", "Terceira e última narração."]
 
 
@@ -485,3 +485,234 @@ def test_file_is_resolved_from_the_latest_output_asset_not_from_a_fixed_name(tmp
     for status in (S.ASSETS_READY, S.FAILED, S.IDEA):
         w["videos"].status = status
         assert reader.execute(V, "mp4") is None
+
+
+# ---------- F03.T03: uma configuração efetiva congelada governa voz e plano ----------
+
+STYLE_ID = "a" * 32
+
+
+def frozen_config(style_id=STYLE_ID, params=None, with_style=True):
+    """Configuração efetiva real (F03.T01) para o vídeo destes testes — sem canal/perfil."""
+    from app.studio.domain.effective_config import resolve_effective_config
+    from app.studio.domain.visual_style import VisualStyle
+
+    video = Video(id=V, project_id=P, topic="ADE 2026", format=VideoFormat.short,
+                  status=S.ASSETS_READY, style_id=style_id if with_style else None)
+    styles = {STYLE_ID: VisualStyle(id=STYLE_ID, name="F03", params=dict(params or {}))}
+    return resolve_effective_config(video=video, channel=None,
+                                    lookup_style=lambda sid: styles.get(sid))
+
+
+class ModelVoice(Voice):
+    name = "piper"
+
+
+class ConfigStore:
+    """Leitura do snapshot do run (a porta `ProductionRunConfigStore`, em memória)."""
+
+    def __init__(self, configs):
+        self.configs, self.reads = dict(configs), []
+
+    def run_config(self, run_id):
+        self.reads.append(run_id)
+        return self.configs.get(run_id)
+
+
+def test_the_same_frozen_config_feeds_the_voice_and_the_render_plan(tmp_path):
+    w = world(tmp_path)
+    config = frozen_config(params={"voice": {"model": "pt_BR-jeff-medium"},
+                                   "music": {"bpm": 90},
+                                   "motion": ["zoom_in", "pan_right"],
+                                   "caption": {"font_size": 62},
+                                   "palette": {"accent": "#ff00aa"}})
+    job = starter(w).execute(V)
+    seen_voice, seen_style, calls = [], [], []
+
+    def voice_for_config(video, cfg):
+        from app.studio.application.render import _voice_identity
+        seen_voice.append(cfg)
+        voice = ModelVoice()
+        voice.model = cfg.voice["model"]
+        return voice
+
+    def style_for_config(cfg):
+        from app.studio.application.render import style_from_effective_config
+        seen_style.append(cfg)
+        return style_from_effective_config(cfg)
+
+    run, _, renderer = runner(w)
+    run.effective_config_for = lambda video: calls.append(video) or config
+    run.voice_for_config = voice_for_config
+    run.style_for_config = style_for_config
+    run.execute(job.id)
+    spec = renderer.specs[0]
+
+    # uma resolução por execução, e a MESMA configuração alimenta voz e plano
+    assert len(calls) == 1 and calls[0].id == V
+    assert seen_voice == [config] and seen_style == [config]
+    assert spec.voice_id == "piper:pt_BR-jeff-medium"
+    assert spec.style.snapshot.style_id == STYLE_ID and spec.style.snapshot.version == 1
+    assert spec.style.motion == ("zoom_in", "pan_right") and spec.style.music == {"bpm": 90}
+    assert spec.style.caption == {"font_size": 62} and spec.style.palette == {"accent": "#ff00aa"}
+    # o plano carrega a identidade e a proveniência criativa do snapshot
+    assert spec.config_snapshot.content_hash == config.content_hash
+    assert spec.config_snapshot.schema_version == config.schema_version
+    assert spec.config_snapshot.provenance["style"] == "video"
+    assert "audiovisual.music.bpm" in spec.config_snapshot.provenance
+    assert not any(key.startswith("editorial.") for key in spec.config_snapshot.provenance)
+
+
+def test_changing_the_style_during_tts_does_not_change_the_render_in_progress(tmp_path):
+    w = world(tmp_path)
+    first = frozen_config(params={"music": {"bpm": 90}})
+    second = frozen_config(params={"music": {"bpm": 140}})
+    current = {"config": first}
+    calls = []
+    job = starter(w).execute(V)
+    run, voice, renderer = runner(w)
+    run.effective_config_for = lambda video: calls.append(video) or current["config"]
+
+    def speak_during_a_style_change(text, out_path):
+        current["config"] = second  # o estilo muda no meio do TTS
+        voice.calls.append(text)
+        Path(out_path).write_bytes(b"wav")
+        return 2.0
+
+    voice.speak = speak_during_a_style_change
+    run.execute(job.id)
+    spec = renderer.specs[0]  # com duas resoluções, este seria o estilo novo
+
+    assert len(calls) == 1
+    assert spec.style.music == {"bpm": 90}
+    assert spec.config_snapshot.content_hash == first.content_hash
+
+
+def test_a_retry_reads_the_run_snapshot_and_a_new_run_adopts_the_new_revision(tmp_path):
+    from app.studio.domain.run_config import RunConfigStatus, StoredRunConfig
+
+    w = world(tmp_path)
+    old = frozen_config(params={"music": {"bpm": 90}})
+    new = frozen_config(params={"music": {"bpm": 140}})
+    run_id, new_run_id = "r" * 32, "n" * 32
+    store = ConfigStore({run_id: StoredRunConfig(RunConfigStatus.RESOLVED, old)})
+
+    def never_resolve(video):
+        raise AssertionError("um run com snapshot não pode ser re-resolvido")
+
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w)
+    run.config_store = store
+    run.effective_config_for = never_resolve
+    run.execute(job.id, run_id=run_id)
+
+    # retry: novo job, o MESMO run — snapshot lido de novo, nunca re-resolvido
+    w["videos"].status = S.ASSETS_READY
+    retry = starter(w).execute(V)
+    run.execute(retry.id, run_id=run_id)
+
+    # execução nova: outro run, que já nasceu com a revisão nova
+    store.configs[new_run_id] = StoredRunConfig(RunConfigStatus.RESOLVED, new)
+    w["videos"].status = S.ASSETS_READY
+    fresh = starter(w).execute(V)
+    run.execute(fresh.id, run_id=new_run_id)
+
+    hashes = [spec.config_snapshot.content_hash for spec in renderer.specs]
+    assert hashes == [old.content_hash, old.content_hash, new.content_hash]
+    assert store.reads == [run_id, run_id, new_run_id]
+
+
+def test_a_legacy_run_stays_legacy_and_is_never_re_resolved(tmp_path):
+    from app.studio.domain.render_plan import StyleSnapshot
+    from app.studio.domain.run_config import RunConfigStatus, StoredRunConfig
+    from app.studio.domain.visual_style import ResolvedStyle
+
+    w = world(tmp_path)
+    legacy_style = ResolvedStyle(snapshot=StyleSnapshot(style_id="canal-1", version=3),
+                                 music={"bpm": 90})
+    store = ConfigStore({"l" * 32: StoredRunConfig(RunConfigStatus.LEGACY)})
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w)
+    run.config_store = store
+    run.effective_config_for = lambda video: (_ for _ in ()).throw(
+        AssertionError("run legado não ganha snapshot depois do fato"))
+    run.style_for = lambda video: legacy_style
+    run.execute(job.id, run_id="l" * 32)
+    spec = renderer.specs[0]
+    assert spec.style == legacy_style and spec.config_snapshot is None
+
+
+def test_without_a_channel_profile_the_render_matches_the_legacy_path(tmp_path):
+    """Sem canal/perfil, a configuração é o retrato legado: estilo neutro e voz do projeto."""
+    w = world(tmp_path)
+    empty = frozen_config(with_style=False)
+    job = starter(w).execute(V)
+    run, voice, renderer = runner(w)
+    seen_voice, seen_style = [], []
+    run.effective_config_for = lambda video: empty
+    run.voice_for = lambda video: seen_voice.append(video) or voice
+    run.style_for = lambda video: seen_style.append(video) or "não deveria ser lido"
+    run.execute(job.id)
+    configured = renderer.specs[0]
+
+    legacy_world = world(tmp_path / "legacy")
+    legacy_job = starter(legacy_world).execute(V)
+    legacy_run, legacy_voice, legacy_renderer = runner(legacy_world)
+    legacy_run.execute(legacy_job.id)
+    legacy = legacy_renderer.specs[0]
+
+    # a voz do projeto continua sendo a mesma (fallback legado), e o estilo é o neutro
+    assert len(seen_voice) == 1 and seen_voice[0].id == V
+    assert seen_style == [] and configured.style is None
+    assert configured.voice_id == legacy.voice_id
+    assert configured.music is legacy.music and configured.disclosure == legacy.disclosure
+    assert configured.scene_seconds == legacy.scene_seconds
+    assert [(c.start, c.end, c.text) for c in configured.cues] == \
+        [(c.start, c.end, c.text) for c in legacy.cues]
+    # o único acréscimo é a identidade da configuração no plano
+    assert configured.config_snapshot is not None and legacy.config_snapshot is None
+    assert configured.config_snapshot.provenance["style"] == "engine_default"
+
+
+def test_availability_and_budget_are_still_dynamic_under_a_frozen_config(tmp_path):
+    """O snapshot congela o criativo; assets e orçamento são checados em cada execução."""
+    from app.studio.domain.run_config import RunConfigStatus, StoredRunConfig
+
+    class Paid:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, key, video_id, amount, *, call, settle, allow_free_replay=False):
+            self.calls.append(key)
+            return call()
+
+    w = world(tmp_path)
+    config = frozen_config()
+    run_id = "r" * 32
+    store = ConfigStore({run_id: StoredRunConfig(RunConfigStatus.RESOLVED, config)})
+    job = starter(w).execute(V)
+    run, _, renderer = runner(w)
+    run.config_store = store
+    paid = Paid()
+    run.paid = paid
+    run.execute(job.id, run_id=run_id)
+    assert len(paid.calls) == len(TEXTS)  # orçamento/comprovante por cena, por execução
+
+    # disponibilidade do asset é relida: some depois do snapshot e o render recusa
+    w["videos"].status = S.ASSETS_READY
+    retry = starter(w).execute(V)
+    w["scripts"].linked = False
+    run.execute(retry.id, run_id=run_id)
+    assert w["jobs"].jobs[retry.id].status == JobStatus.FAILED
+    assert "asset" in w["jobs"].jobs[retry.id].error and len(renderer.specs) == 1
+
+
+def test_the_style_projection_uses_only_the_declared_values_of_the_config():
+    """A projeção não inventa valores: o que o motor decide continua decidido no motor."""
+    from app.studio.application.render import style_from_effective_config
+
+    declared = frozen_config(params={"music": {"bpm": 90}})
+    style = style_from_effective_config(declared)
+    assert style.music == {"bpm": 90}  # o seed default (7) não é materializado no plano
+    assert style.motion == () and style.voice == {} and style.transition == {}
+    assert style_from_effective_config(frozen_config(with_style=False)) is None

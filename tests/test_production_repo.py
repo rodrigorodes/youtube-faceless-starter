@@ -912,3 +912,156 @@ def test_resume_revocation_events_are_atomic(production_db):
     conn.execute("DROP TRIGGER reject_outbox ON studio.production_outbox")
     conn.commit()
     assert repo.resume_run(RUN, RunState.WAITING_HUMAN).result is RunTransitionResult.APPLIED
+
+
+# -- F03.T02: snapshot da configuração efetiva na mesma transação do run ----------
+
+
+def effective_config(video_id=VIDEO, **options):
+    """Configuração efetiva real do contrato (F03.T01), sem banco: defaults do motor."""
+    from app.studio.domain.contracts import Video, VideoFormat
+    from app.studio.domain.effective_config import resolve_effective_config
+
+    video = Video(id=video_id, project_id=PROJECT, topic="tema", format=VideoFormat.short)
+    return resolve_effective_config(video=video, **options)
+
+
+def config_columns(conn, run_id=RUN):
+    return conn.execute(
+        "SELECT config_status, config_snapshot, config_hash, config_provenance, config_schema_version "
+        "FROM studio.production_runs WHERE run_id = %s", (run_id,)).fetchone()
+
+
+def test_create_run_persists_the_effective_config_snapshot_with_its_hash(production_db):
+    from app.studio.domain.run_config import RunConfigStatus
+
+    repo, conn = production_db
+    config = effective_config()
+    created = create(repo, config=config)
+    assert created.result.value == "CREATED"
+
+    status, snapshot, digest, provenance, schema_version = config_columns(conn)
+    assert status == RunConfigStatus.RESOLVED.value
+    assert snapshot == config.canonical_document()  # documento canônico, não o objeto
+    assert digest == config.content_hash
+    assert provenance == dict(config.provenance)
+    assert schema_version == config.schema_version
+
+    stored = repo.run_config(RUN)
+    assert stored is not None and stored.status is RunConfigStatus.RESOLVED
+    assert stored.config is not None
+    assert stored.config.content_hash == config.content_hash
+    assert stored.config.canonical_json() == config.canonical_json()
+
+
+def test_replay_returns_the_same_snapshot_and_a_divergent_config_is_a_conflict(production_db):
+    from app.studio.domain.run_config import RunConfigConflict, RunConfigStatus
+
+    repo, conn = production_db
+    first = effective_config()
+    assert create(repo, config=first).result.value == "CREATED"
+    replay = create(repo, config=first)
+    assert replay.result.value == "EXISTING"
+    stored = repo.run_config(RUN)
+    assert stored is not None and stored.status is RunConfigStatus.RESOLVED
+    assert stored.config.content_hash == first.content_hash
+
+    with pytest.raises(RunConfigConflict):
+        create(repo, config=effective_config(provider_profile="PREMIUM"))
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+    # O snapshot original permanece intacto: conflito nunca sobrescreve.
+    assert config_columns(conn)[2] == first.content_hash
+
+
+def test_a_legacy_run_stays_readable_and_is_never_re_resolved(production_db):
+    from app.studio.domain.run_config import RunConfigConflict, RunConfigStatus
+
+    repo, conn = production_db
+    assert create(repo).result.value == "CREATED"
+    status, snapshot, digest, provenance, schema_version = config_columns(conn)
+    assert (status, snapshot, digest, provenance, schema_version) == ("legacy", None, None, None, None)
+    stored = repo.run_config(RUN)
+    assert stored is not None and stored.status is RunConfigStatus.LEGACY and stored.config is None
+
+    # Um run legado não ganha snapshot depois: o replay com config é conflito explícito.
+    with pytest.raises(RunConfigConflict):
+        create(repo, config=effective_config())
+    assert config_columns(conn) == ("legacy", None, None, None, None)
+    # Sem config, o replay legado continua idempotente (comportamento preservado).
+    assert create(repo).result.value == "EXISTING"
+
+
+def test_config_snapshot_is_written_and_rolled_back_with_the_run(production_db):
+    """Se a gravação seguinte da mesma transação falha, o run (e o snapshot) não existem."""
+    repo, conn = production_db
+    conn.execute(
+        "CREATE FUNCTION studio.reject_resolved_stage() RETURNS trigger LANGUAGE plpgsql AS "
+        "$$ BEGIN IF EXISTS (SELECT 1 FROM studio.production_runs "
+        "WHERE run_id = NEW.run_id AND config_status = 'resolved') THEN "
+        "RAISE EXCEPTION USING ERRCODE = '23514'; END IF; RETURN NEW; END $$")
+    conn.execute("CREATE TRIGGER reject_resolved_stage BEFORE INSERT ON studio.stage_executions "
+                 "FOR EACH ROW EXECUTE FUNCTION studio.reject_resolved_stage()")
+    conn.commit()
+    try:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            create(repo, config=effective_config())
+    finally:
+        conn.rollback()
+        conn.execute("DROP TRIGGER IF EXISTS reject_resolved_stage ON studio.stage_executions")
+        conn.execute("DROP FUNCTION IF EXISTS studio.reject_resolved_stage()")
+        conn.commit()
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM studio.stage_executions").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM studio.production_outbox").fetchone()[0] == 0
+    # A configuração não é o bloqueio: sem o gatilho o mesmo start grava run, etapas e snapshot.
+    assert create(repo, config=effective_config()).result.value == "CREATED"
+    assert config_columns(conn)[0] == "resolved"
+
+
+def test_the_database_enforces_the_config_snapshot_contract(conn):
+    migrate(conn)
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'p')", (PROJECT,))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'tema', 'short')",
+                 (VIDEO, PROJECT))
+    conn.commit()
+    from psycopg.types.json import Jsonb
+
+    insert = ("INSERT INTO studio.production_runs(run_id, video_id, idempotency_key, config_status, "
+              "config_snapshot, config_hash, config_provenance, config_schema_version) "
+              "VALUES (%s, %s, 'key', %s, %s, %s, %s, %s)")
+    # `resolved` exige snapshot, hash e schema; `legacy` exige que estejam vazios.
+    for index, values in enumerate((
+            ("resolved", None, None, None, None),
+            ("resolved", Jsonb({"schema_version": 1}), "0" * 64, None, None),
+            ("legacy", Jsonb({"schema_version": 1}), "0" * 64, Jsonb({}), 1),
+            ("resolved", Jsonb({"schema_version": 1}), "0" * 64, Jsonb({}), 0),
+            ("unknown", None, None, None, None))):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(insert, (f"{index + 1:032x}", VIDEO, *values))
+        conn.rollback()
+    conn.execute(insert, (RUN, VIDEO, "legacy", None, None, None, None))
+    conn.commit()
+
+
+def test_create_run_rejects_a_config_from_another_video(production_db):
+    repo, conn = production_db
+    with pytest.raises(ValueError):
+        create(repo, config=effective_config(video_id=OTHER_VIDEO))
+    # A recusa acontece antes da transação: nenhum run nem snapshot parcial.
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+
+
+def test_postgres_adapter_matches_the_config_store_port(production_db):
+    import inspect
+
+    from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+    from app.studio.application.ports import ProductionRunConfigStore
+
+    repo, _ = production_db
+    assert callable(repo.run_config)
+
+    def shape(function):
+        return [(parameter.name, parameter.kind, parameter.default)
+                for parameter in inspect.signature(function).parameters.values()]
+
+    assert shape(PostgresProductionRunRepository.run_config) == shape(ProductionRunConfigStore.run_config)

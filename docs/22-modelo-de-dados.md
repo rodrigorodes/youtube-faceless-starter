@@ -1,8 +1,8 @@
 # Modelo de dados (gerado)
 
 > Gerado por `scripts/export_schema.py`. Não edite à mão.
-> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 32 migrações
-> (`0001_init` … `0037_channel_youtube_target`).
+> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 35 migrações
+> (`0001_init` … `0040_style_patches`).
 > DDL consolidado e executável: `docs/schema/studio.sql`.
 > As colunas, chaves e índices abaixo vêm da **introspecção do banco real** após aplicar
 > as migrações — não de leitura de texto —, para não documentar algo que o banco não tem.
@@ -10,8 +10,8 @@
 ## Visão geral
 
 - Tabelas: **48**
-- Chaves estrangeiras: **64**
-- Índices: **100**
+- Chaves estrangeiras: **67**
+- Índices: **103**
 
 ## Diagrama de relacionamentos
 
@@ -43,6 +43,7 @@ erDiagram
     budget_reservations {
         text idempotency_key PK
         text video_id FK
+        text project_id FK
     }
     byok_key_audit {
         bigint id PK
@@ -113,6 +114,7 @@ erDiagram
         text idempotency_key PK
         text video_id FK
         bigint ledger_id FK
+        text project_id FK
     }
     plan_artifacts {
         text content_sha256 PK
@@ -202,6 +204,7 @@ erDiagram
         text video_id FK
         text organization_id FK
         text member_id FK
+        text project_id FK
     }
     users {
         text id PK
@@ -235,6 +238,7 @@ erDiagram
     projects ||--|{ analytics_recommendation_decisions : "analytics_recommendation_decisions_project_id_fkey"
     assets ||--o{ approvals : "approvals_output_asset_id_fkey"
     videos ||--|{ approvals : "approvals_video_id_fkey"
+    projects ||--o{ budget_reservations : "budget_reservations_project_id_fkey"
     videos ||--o{ budget_reservations : "budget_reservations_video_id_fkey"
     users ||--o{ byok_key_audit : "byok_key_audit_actor_user_id_fkey"
     byok_keys ||--|{ byok_key_audit : "byok_key_audit_key_id_fkey"
@@ -262,6 +266,7 @@ erDiagram
     videos ||--|{ metric_observations : "metric_observations_video_id_fkey"
     google_accounts ||--|{ oauth_grants : "oauth_grants_account_id_fkey"
     usage_ledger ||--o{ paid_operations : "paid_operations_ledger_id_fkey"
+    projects ||--o{ paid_operations : "paid_operations_project_id_fkey"
     videos ||--o{ paid_operations : "paid_operations_video_id_fkey"
     production_runs ||--|{ production_outbox : "production_outbox_run_id_fkey"
     channel_profiles ||--o{ production_runs : "production_runs_channel_id_fkey"
@@ -287,6 +292,7 @@ erDiagram
     projects ||--|{ trend_topics : "trend_topics_project_id_fkey"
     users ||--o{ usage_ledger : "usage_ledger_member_id_fkey"
     organizations ||--o{ usage_ledger : "usage_ledger_organization_id_fkey"
+    projects ||--o{ usage_ledger : "usage_ledger_project_id_fkey"
     videos ||--o{ usage_ledger : "usage_ledger_video_id_fkey"
     videos ||--|{ video_metrics : "video_metrics_video_id_fkey"
     projects ||--|{ videos : "videos_project_id_fkey"
@@ -305,6 +311,7 @@ erDiagram
 | `analytics_recommendation_decisions` (project_id) | → | `projects` (id) | obrigatória | `analytics_recommendation_decisions_project_id_fkey` |
 | `approvals` (output_asset_id) | → | `assets` (id) | opcional | `approvals_output_asset_id_fkey` |
 | `approvals` (video_id) | → | `videos` (id) | obrigatória | `approvals_video_id_fkey` |
+| `budget_reservations` (project_id) | → | `projects` (id) | opcional | `budget_reservations_project_id_fkey` |
 | `budget_reservations` (video_id) | → | `videos` (id) | opcional | `budget_reservations_video_id_fkey` |
 | `byok_key_audit` (actor_user_id) | → | `users` (id) | opcional | `byok_key_audit_actor_user_id_fkey` |
 | `byok_key_audit` (key_id) | → | `byok_keys` (id) | obrigatória | `byok_key_audit_key_id_fkey` |
@@ -332,6 +339,7 @@ erDiagram
 | `metric_observations` (video_id) | → | `videos` (id) | obrigatória | `metric_observations_video_id_fkey` |
 | `oauth_grants` (account_id) | → | `google_accounts` (id) | obrigatória | `oauth_grants_account_id_fkey` |
 | `paid_operations` (ledger_id) | → | `usage_ledger` (id) | opcional | `paid_operations_ledger_id_fkey` |
+| `paid_operations` (project_id) | → | `projects` (id) | opcional | `paid_operations_project_id_fkey` |
 | `paid_operations` (video_id) | → | `videos` (id) | opcional | `paid_operations_video_id_fkey` |
 | `production_outbox` (run_id) | → | `production_runs` (run_id) | obrigatória | `production_outbox_run_id_fkey` |
 | `production_runs` (channel_id) | → | `channel_profiles` (id) | opcional | `production_runs_channel_id_fkey` |
@@ -357,6 +365,7 @@ erDiagram
 | `trend_topics` (project_id) | → | `projects` (id) | obrigatória | `trend_topics_project_id_fkey` |
 | `usage_ledger` (member_id) | → | `users` (id) | opcional | `usage_ledger_member_id_fkey` |
 | `usage_ledger` (organization_id) | → | `organizations` (id) | opcional | `usage_ledger_organization_id_fkey` |
+| `usage_ledger` (project_id) | → | `projects` (id) | opcional | `usage_ledger_project_id_fkey` |
 | `usage_ledger` (video_id) | → | `videos` (id) | opcional | `usage_ledger_video_id_fkey` |
 | `video_metrics` (video_id) | → | `videos` (id) | obrigatória | `video_metrics_video_id_fkey` |
 | `videos` (project_id) | → | `projects` (id) | obrigatória | `videos_project_id_fkey` |
@@ -556,6 +565,7 @@ erDiagram
 | `monthly_limit_usd` | `numeric` | não | — |
 | `video_limit_usd` | `numeric` | não | — |
 | `created_at` | `timestamp with time zone` | não | `now()` |
+| `project_id` | `text` | sim | — |
 
 **Chave primária:** `idempotency_key`
 
@@ -569,15 +579,17 @@ erDiagram
 
 **Chaves estrangeiras:**
 
+- `budget_reservations_project_id_fkey`: (project_id) → `projects` (id)
 - `budget_reservations_video_id_fkey`: (video_id) → `videos` (id)
 
 **Índices:**
 
 - `budget_reservations_created_at_idx`: `CREATE INDEX budget_reservations_created_at_idx ON studio.budget_reservations USING btree (created_at)`
 - `budget_reservations_pkey`: `CREATE UNIQUE INDEX budget_reservations_pkey ON studio.budget_reservations USING btree (idempotency_key)`
+- `budget_reservations_project_created_idx`: `CREATE INDEX budget_reservations_project_created_idx ON studio.budget_reservations USING btree (project_id, created_at)`
 - `budget_reservations_video_idx`: `CREATE INDEX budget_reservations_video_idx ON studio.budget_reservations USING btree (video_id)`
 
-**Migrações que citam esta tabela:** 0013_budget_reservations, 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes
+**Migrações que citam esta tabela:** 0013_budget_reservations, 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0038_budget_scope_attribution
 
 ### `studio.byok_key_audit`
 
@@ -765,6 +777,8 @@ erDiagram
 | `updated_at` | `timestamp with time zone` | não | `now()` |
 | `style_id` | `text` | sim | — |
 | `youtube_channel_id` | `text` | sim | — |
+| `style_patch` | `jsonb` | sim | — |
+| `style_patch_revision` | `integer` | não | `0` |
 
 **Chave primária:** `id`
 
@@ -780,6 +794,8 @@ erDiagram
 - `channel_profiles_pillars_check` (check): `CHECK ((cardinality(pillars) <= 20))`
 - `channel_profiles_pillars_not_null_check` (check): `CHECK ((array_position(pillars, NULL::text) IS NULL))`
 - `channel_profiles_strategy_check` (check): `CHECK ((length(strategy) <= 500))`
+- `channel_profiles_style_patch_object` (check): `CHECK (((style_patch IS NULL) OR ((jsonb_typeof(style_patch) = 'object'::text) AND (style_patch <> '{}'::jsonb))))`
+- `channel_profiles_style_patch_revision_check` (check): `CHECK ((style_patch_revision >= 0))`
 - `channel_profiles_target_duration_s_check` (check): `CHECK (((target_duration_s >= 1) AND (target_duration_s <= 36000)))`
 - `channel_profiles_thumbnail_check` (check): `CHECK ((length(thumbnail) <= 2000))`
 - `channel_profiles_version_check` (check): `CHECK ((version >= 1))`
@@ -802,7 +818,7 @@ erDiagram
 - `channel_profiles_style_idx`: `CREATE INDEX channel_profiles_style_idx ON studio.channel_profiles USING btree (style_id) WHERE (style_id IS NOT NULL)`
 - `channel_profiles_youtube_channel_idx`: `CREATE INDEX channel_profiles_youtube_channel_idx ON studio.channel_profiles USING btree (youtube_channel_id) WHERE (youtube_channel_id IS NOT NULL)`
 
-**Migrações que citam esta tabela:** 0016_channel_profiles, 0018_production_runs, 0021_channel_pillars_constraints, 0034_channel_style, 0037_channel_youtube_target
+**Migrações que citam esta tabela:** 0016_channel_profiles, 0018_production_runs, 0021_channel_pillars_constraints, 0034_channel_style, 0037_channel_youtube_target, 0040_style_patches
 
 ### `studio.channel_youtube_channels`
 
@@ -1097,6 +1113,7 @@ erDiagram
 | `created_at` | `timestamp with time zone` | não | `now()` |
 | `updated_at` | `timestamp with time zone` | não | `now()` |
 | `attempt` | `integer` | não | `1` |
+| `project_id` | `text` | sim | — |
 
 **Chave primária:** `idempotency_key`
 
@@ -1115,16 +1132,18 @@ erDiagram
 **Chaves estrangeiras:**
 
 - `paid_operations_ledger_id_fkey`: (ledger_id) → `usage_ledger` (id)
+- `paid_operations_project_id_fkey`: (project_id) → `projects` (id)
 - `paid_operations_video_id_fkey`: (video_id) → `videos` (id)
 
 **Índices:**
 
 - `paid_operations_pkey`: `CREATE UNIQUE INDEX paid_operations_pkey ON studio.paid_operations USING btree (idempotency_key)`
+- `paid_operations_project_idx`: `CREATE INDEX paid_operations_project_idx ON studio.paid_operations USING btree (project_id)`
 - `paid_operations_state_idx`: `CREATE INDEX paid_operations_state_idx ON studio.paid_operations USING btree (state)`
 - `paid_operations_state_updated_at_idx`: `CREATE INDEX paid_operations_state_updated_at_idx ON studio.paid_operations USING btree (state, updated_at)`
 - `paid_operations_video_idx`: `CREATE INDEX paid_operations_video_idx ON studio.paid_operations USING btree (video_id)`
 
-**Migrações que citam esta tabela:** 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes
+**Migrações que citam esta tabela:** 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0038_budget_scope_attribution
 
 ### `studio.plan_artifacts`
 
@@ -1202,11 +1221,19 @@ erDiagram
 | `schema_version` | `integer` | não | `1` |
 | `created_at` | `timestamp with time zone` | não | `now()` |
 | `updated_at` | `timestamp with time zone` | não | `now()` |
+| `config_status` | `text` | não | `'legacy'::text` |
+| `config_snapshot` | `jsonb` | sim | — |
+| `config_hash` | `text` | sim | — |
+| `config_provenance` | `jsonb` | sim | — |
+| `config_schema_version` | `integer` | sim | — |
 
 **Chave primária:** `run_id`
 
 **Restrições:**
 
+- `production_runs_config_schema_version_check` (check): `CHECK (((config_schema_version IS NULL) OR (config_schema_version >= 1)))`
+- `production_runs_config_snapshot_check` (check): `CHECK ((((config_status = 'legacy'::text) AND (config_snapshot IS NULL) AND (config_hash IS NULL) AND (config_provenance IS NULL) AND (config_schema_version IS NULL)) OR ((config_status = 'resolved'::text) AND (config_snapshot IS NOT NULL) AND (jsonb_typeof(config_snapshot) = 'object'::text) AND (config_hash ~ '^[0-9a-f]{64}$'::text) AND (config_provenance IS NOT NULL) AND (jsonb_typeof(config_provenance) = 'object'::text) AND (config_schema_version IS NOT NULL))))`
+- `production_runs_config_status_check` (check): `CHECK ((config_status = ANY (ARRAY['legacy'::text, 'resolved'::text])))`
 - `production_runs_idempotency_key_check` (check): `CHECK ((((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 200)) AND (idempotency_key ~ '^[a-z0-9._:-]+$'::text)))`
 - `production_runs_reason_check` (check): `CHECK (((reason IS NULL) OR (((length(reason) >= 1) AND (length(reason) <= 2000)) AND (btrim(reason) <> ''::text))))`
 - `production_runs_run_id_check` (check): `CHECK ((run_id ~ '^[0-9a-f]{32}$'::text))`
@@ -1226,7 +1253,7 @@ erDiagram
 - `production_runs_idempotency_key_key`: `CREATE UNIQUE INDEX production_runs_idempotency_key_key ON studio.production_runs USING btree (idempotency_key)`
 - `production_runs_pkey`: `CREATE UNIQUE INDEX production_runs_pkey ON studio.production_runs USING btree (run_id)`
 
-**Migrações que citam esta tabela:** 0018_production_runs
+**Migrações que citam esta tabela:** 0018_production_runs, 0039_production_run_config
 
 ### `studio.project_categories`
 
@@ -1291,7 +1318,7 @@ erDiagram
 - `projects_organization_idx`: `CREATE INDEX projects_organization_idx ON studio.projects USING btree (organization_id)`
 - `projects_pkey`: `CREATE UNIQUE INDEX projects_pkey ON studio.projects USING btree (id)`
 
-**Migrações que citam esta tabela:** 0001_init, 0011_trends, 0012_categories, 0016_channel_profiles, 0022_channel_management, 0026_analytics_learning, 0027_saas_multiuser_byok
+**Migrações que citam esta tabela:** 0001_init, 0011_trends, 0012_categories, 0016_channel_profiles, 0022_channel_management, 0026_analytics_learning, 0027_saas_multiuser_byok, 0038_budget_scope_attribution
 
 ### `studio.publication_intents`
 
@@ -1558,7 +1585,7 @@ erDiagram
 
 - `schema_migrations_pkey`: `CREATE UNIQUE INDEX schema_migrations_pkey ON studio.schema_migrations USING btree (version)`
 
-**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache
+**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config
 
 ### `studio.script_approvals`
 
@@ -1834,6 +1861,7 @@ erDiagram
 | `cost_confirmed_at` | `timestamp with time zone` | sim | — |
 | `organization_id` | `text` | sim | — |
 | `member_id` | `text` | sim | — |
+| `project_id` | `text` | sim | — |
 
 **Chave primária:** `id`
 
@@ -1852,6 +1880,7 @@ erDiagram
 
 - `usage_ledger_member_id_fkey`: (member_id) → `users` (id)
 - `usage_ledger_organization_id_fkey`: (organization_id) → `organizations` (id)
+- `usage_ledger_project_id_fkey`: (project_id) → `projects` (id)
 - `usage_ledger_video_id_fkey`: (video_id) → `videos` (id)
 
 **Índices:**
@@ -1859,9 +1888,10 @@ erDiagram
 - `usage_ledger_created_at_idx`: `CREATE INDEX usage_ledger_created_at_idx ON studio.usage_ledger USING btree (created_at)`
 - `usage_ledger_organization_idx`: `CREATE INDEX usage_ledger_organization_idx ON studio.usage_ledger USING btree (organization_id, created_at)`
 - `usage_ledger_pkey`: `CREATE UNIQUE INDEX usage_ledger_pkey ON studio.usage_ledger USING btree (id)`
+- `usage_ledger_project_created_idx`: `CREATE INDEX usage_ledger_project_created_idx ON studio.usage_ledger USING btree (project_id, created_at)`
 - `usage_ledger_video_id_idx`: `CREATE INDEX usage_ledger_video_id_idx ON studio.usage_ledger USING btree (video_id)`
 
-**Migrações que citam esta tabela:** 0001_init, 0013_budget_reservations, 0014_ledger_cost_evidence, 0015_ledger_cost_confirmation, 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0027_saas_multiuser_byok
+**Migrações que citam esta tabela:** 0001_init, 0013_budget_reservations, 0014_ledger_cost_evidence, 0015_ledger_cost_confirmation, 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0027_saas_multiuser_byok, 0038_budget_scope_attribution
 
 ### `studio.users`
 
@@ -1938,6 +1968,8 @@ erDiagram
 | `created_at` | `timestamp with time zone` | não | `now()` |
 | `updated_at` | `timestamp with time zone` | não | `now()` |
 | `style_id` | `text` | sim | — |
+| `style_patch` | `jsonb` | sim | — |
+| `style_patch_revision` | `integer` | não | `0` |
 
 **Chave primária:** `id`
 
@@ -1947,6 +1979,8 @@ erDiagram
 - `videos_id_check` (check): `CHECK ((id ~ '^[0-9a-f]{32}$'::text))`
 - `videos_privacy_check` (check): `CHECK ((privacy = ANY (ARRAY['private'::text, 'unlisted'::text, 'public'::text])))`
 - `videos_status_check` (check): `CHECK ((status = ANY (ARRAY['IDEA'::text, 'SCRIPTED'::text, 'FACT_CHECKED'::text, 'STORYBOARDED'::text, 'ASSETS_READY'::text, 'RENDERED'::text, 'AWAITING_APPROVAL'::text, 'APPROVED'::text, 'PUBLISHED'::text, 'REJECTED'::text, 'FAILED'::text])))`
+- `videos_style_patch_object` (check): `CHECK (((style_patch IS NULL) OR ((jsonb_typeof(style_patch) = 'object'::text) AND (style_patch <> '{}'::jsonb))))`
+- `videos_style_patch_revision_check` (check): `CHECK ((style_patch_revision >= 0))`
 - `videos_topic_check` (check): `CHECK (((length(topic) >= 3) AND (length(topic) <= 300)))`
 - `videos_pkey` (PK): `PRIMARY KEY (id)`
 
@@ -1961,7 +1995,7 @@ erDiagram
 - `videos_status_idx`: `CREATE INDEX videos_status_idx ON studio.videos USING btree (status)`
 - `videos_style_idx`: `CREATE INDEX videos_style_idx ON studio.videos USING btree (style_id) WHERE (style_id IS NOT NULL)`
 
-**Migrações que citam esta tabela:** 0001_init, 0002_editorial, 0007_publish, 0013_budget_reservations, 0017_paid_operations, 0018_production_runs, 0026_analytics_learning, 0028_publication_resilience, 0032_render_plan_cache, 0036_video_style
+**Migrações que citam esta tabela:** 0001_init, 0002_editorial, 0007_publish, 0013_budget_reservations, 0017_paid_operations, 0018_production_runs, 0026_analytics_learning, 0028_publication_resilience, 0032_render_plan_cache, 0036_video_style, 0038_budget_scope_attribution, 0040_style_patches
 
 ### `studio.visual_style_revisions`
 
@@ -2110,6 +2144,9 @@ Tabelas citadas por cada migração (busca literal por `studio.<tabela>`).
 | `0035_youtube_identity` | `channel_authorizations`, `google_accounts`, `oauth_grants`, `youtube_channels` |
 | `0036_video_style` | `videos`, `visual_styles` |
 | `0037_channel_youtube_target` | `channel_profiles`, `youtube_channels` |
+| `0038_budget_scope_attribution` | `budget_reservations`, `paid_operations`, `projects`, `usage_ledger`, `videos` |
+| `0039_production_run_config` | `production_runs`, `schema_migrations` |
+| `0040_style_patches` | `channel_profiles`, `videos` |
 
 ## Como regenerar
 

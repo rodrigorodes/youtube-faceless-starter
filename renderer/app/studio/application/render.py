@@ -10,16 +10,19 @@ from decimal import Decimal
 from pathlib import Path
 
 from ..domain.contracts import Asset, AssetKind, RenderJob, UsageEntry, Video, VideoStatus
+from ..domain.effective_config import ConfigSource, EffectiveConfig
 from ..domain.qa_report import QaReport
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, make_cues, scene_length, split_chunks, to_srt
 from ..domain.render_cache import NodeId, narration_fingerprint
+from ..domain.render_plan import ConfigSnapshot, StyleSnapshot
+from ..domain.run_config import RunConfigStatus
 from ..domain.visual_style import ResolvedStyle
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
-from .ports import (AssetRepository, QualityEvaluator, RenderJobRepository, RenderPlanRepository, Renderer, RenderSpec,
-                    RenderStorage, ScriptRepository, VideoRepository, Voice)
+from .ports import (AssetRepository, ProductionRunConfigStore, QualityEvaluator, RenderJobRepository, RenderPlanRepository,
+                    Renderer, RenderSpec, RenderStorage, ScriptRepository, VideoRepository, Voice)
 
 
 class RenderRefused(ValueError):
@@ -77,6 +80,55 @@ def _scenes_with_assets(videos: VideoRepository, scripts: ScriptRepository, asse
     return found
 
 
+def style_from_effective_config(config: EffectiveConfig) -> ResolvedStyle | None:
+    """Projeta a configuração efetiva congelada no estilo que o renderer consome (F03.T03). Puro.
+
+    O plano e a voz saem do **mesmo** ``EffectiveConfig`` lido no início da execução: não há
+    segunda leitura de canal/estilo no meio do TTS. Só os valores **declarados** por uma camada
+    criativa (vídeo/canal/estilo) entram no ``ResolvedStyle``; o que a proveniência marca como
+    ``engine_default`` continua sendo decisão do motor (ciclo de Ken Burns, layout, bpm/seed
+    default), exatamente como antes desta fiação. Sem estilo selecionado, devolve ``None`` — o
+    bundle neutro do renderer.
+    """
+    if not isinstance(config, EffectiveConfig):
+        raise TypeError("style_from_effective_config expects an EffectiveConfig")
+    if config.style is None:
+        return None
+    provenance = config.provenance
+
+    def declared(group: str) -> dict:
+        values = getattr(config, group)
+        return {str(key): value for key, value in values.items()
+                if provenance.get(f"audiovisual.{group}.{key}") != ConfigSource.ENGINE_DEFAULT.value}
+
+    motion = (tuple(config.motion)
+              if provenance.get("audiovisual.motion") != ConfigSource.ENGINE_DEFAULT.value else ())
+    return ResolvedStyle(
+        snapshot=StyleSnapshot(style_id=config.style.id, version=config.style.version),
+        motion=motion,
+        music=declared("music"),
+        transition=declared("transition"),
+        caption=declared("caption"),
+        palette=declared("palette"),
+        voice=declared("voice"),
+    )
+
+
+def config_snapshot_for(config: EffectiveConfig) -> ConfigSnapshot:
+    """Identidade da configuração efetiva que o plano grava (F03.T03). Puro.
+
+    Só o que governa o render viaja no plano: ``style`` e ``audiovisual.*``. Editorial e
+    política de provedor ficam de fora (não são consumo do renderer), e o documento completo
+    continua sendo o snapshot do run (F03.T02).
+    """
+    if not isinstance(config, EffectiveConfig):
+        raise TypeError("config_snapshot_for expects an EffectiveConfig")
+    relevant = {key: source for key, source in config.provenance.items()
+                if key == "style" or key.startswith("audiovisual.")}
+    return ConfigSnapshot(content_hash=config.content_hash, schema_version=config.schema_version,
+                          provenance=dict(sorted(relevant.items())))
+
+
 class StartRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository,
                  jobs: RenderJobRepository, enqueue: Callable[[str], None]):
@@ -105,7 +157,11 @@ class RunRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  files: RenderStorage, voice_for: Callable[[Video], Voice], renderer_for: Callable[[str], Renderer], quality: QualityEvaluator,
                  steps=None, paid: PaidOperationGuard | None = None, plans: RenderPlanRepository | None = None,
-                 narration_reuse: bool = True, style_for: Callable[[Video], ResolvedStyle | None] | None = None):
+                 narration_reuse: bool = True, style_for: Callable[[Video], ResolvedStyle | None] | None = None,
+                 effective_config_for: Callable[[Video], EffectiveConfig] | None = None,
+                 config_store: ProductionRunConfigStore | None = None,
+                 voice_for_config: Callable[[Video, EffectiveConfig], Voice] | None = None,
+                 style_for_config: Callable[[EffectiveConfig], ResolvedStyle | None] | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
         # VS-06: a voz efetiva é resolvida por **vídeo** (o estilo do canal/override decide),
@@ -121,10 +177,25 @@ class RunRender:
         # TTS de uma cena inalterada. Sem repositório (unidade), o comportamento é o de antes.
         self.plans = plans
         self.narration_reuse = narration_reuse
+        # F03.T03: UMA configuração efetiva por execução, lida no início, governa voz e plano.
+        # O run já existente entrega o snapshot congelado (`config_store`); o render avulso
+        # (sem run) resolve uma vez com `effective_config_for`. Sem nenhum dos dois, o caminho
+        # legado (`voice_for`/`style_for`) é preservado byte a byte.
+        self.effective_config_for = effective_config_for
+        self.config_store = config_store
+        # Projeções do snapshot: a voz é construída pela composição (provider) e o estilo é puro
+        # (`style_from_effective_config` como default). Ausentes = fallback legado.
+        self.voice_for_config = voice_for_config
+        self.style_for_config = style_for_config
 
-    def execute(self, job_id: str) -> None:
+    def execute(self, job_id: str, run_id: str | None = None) -> None:
         """Roda um job. Nunca levanta (a exceção iria para um Future que ninguém lê): qualquer falha vira job FAILED
-        com a causa e o vídeo continua no estado anterior. Se nem o banco responder, o reaper do `enqueue` encerra o job parado."""
+        com a causa e o vídeo continua no estado anterior. Se nem o banco responder, o reaper do `enqueue` encerra o job parado.
+
+        ``run_id`` é o run de produção dono do job (quando existe): o snapshot congelado da
+        configuração efetiva é lido dele e nunca re-resolvido. Sem run, o render avulso resolve a
+        configuração **uma vez** no início da execução.
+        """
         work = None
         try:
             job = self.jobs.get(job_id)
@@ -136,9 +207,10 @@ class RunRender:
                     video = _require_video(self.videos, job.video_id)
                     if video.status not in (VideoStatus.ASSETS_READY, VideoStatus.RENDERED):
                         raise RenderRefused(f"video state changed to {video.status.value}")
+                    config = self._effective_config(video, run_id)
                     pairs = _scenes_with_assets(self.videos, self.scripts, self.assets, job.video_id)
                     work = self.files.work_dir(video.project_id, video.id, job_id)
-                    self._render(job, video, pairs, work)
+                    self._render(job, video, pairs, work, config)
                 if self.steps is None:
                     render()
                 else:
@@ -155,6 +227,27 @@ class RunRender:
                     self.files.cleanup(work)
                 except Exception:
                     pass
+
+    def _effective_config(self, video: Video, run_id: str | None) -> EffectiveConfig | None:
+        """Lê o snapshot do run (se houver) ou resolve uma vez; ``None`` = caminho legado.
+
+        Run `resolved` devolve a configuração congelada sem recalcular nada (retry/replay leem o
+        mesmo hash). Run `legacy` devolve ``None`` de propósito: nunca ganha snapshot depois do
+        fato (F03.T02). Sem run/job, o render avulso resolve **neste instante** — a única leitura
+        de canal/estilo da execução.
+        """
+        if run_id is not None and self.config_store is not None:
+            stored = self.config_store.run_config(run_id)
+            if stored is not None:
+                return stored.config if stored.status is RunConfigStatus.RESOLVED else None
+        if self.effective_config_for is None:
+            return None
+        config = self.effective_config_for(video)
+        if not isinstance(config, EffectiveConfig):
+            raise TypeError("effective_config_for must return an EffectiveConfig")
+        if config.video_id != video.id:
+            raise ValueError("the effective config belongs to another video")
+        return config
 
     def _fail(self, job_id: str, error: str, work) -> None:
         if work is not None:
@@ -187,8 +280,24 @@ class RunRender:
             return None
         return path
 
-    def _render(self, job: RenderJob, video, pairs, work) -> None:
-        voice, renderer = self.voice_for(video), self.renderer_for(video.project_id)
+    def _voice(self, video, config: EffectiveConfig | None) -> Voice:
+        """Voz da execução: do snapshot (projeção da composição) ou o resolvedor legado."""
+        if config is not None and self.voice_for_config is not None:
+            return self.voice_for_config(video, config)
+        return self.voice_for(video)
+
+    def _style(self, video, config: EffectiveConfig | None) -> ResolvedStyle | None:
+        """Estilo da execução: do snapshot (uma projeção) ou o resolvedor legado."""
+        if config is not None:
+            if self.style_for_config is not None:
+                return self.style_for_config(config)
+            return style_from_effective_config(config)
+        return self.style_for(video) if self.style_for is not None else None
+
+    def _render(self, job: RenderJob, video, pairs, work, config: EffectiveConfig | None = None) -> None:
+        # F03.T03: voz e estilo saem da MESMA configuração, projetada no início — nenhuma leitura
+        # de canal/estilo acontece depois deste ponto (o TTS pode demorar; o snapshot não muda).
+        voice, renderer, style = self._voice(video, config), self.renderer_for(video.project_id), self._style(video, config)
         voice_id = _voice_identity(voice)
         # Uma consulta ao índice por render (não uma por cena): o reúso da narração inteira.
         entries = self.plans.entries(f"plan:{video.id}") if (self.plans is not None and self.narration_reuse) else {}
@@ -226,11 +335,11 @@ class RunRender:
             cues += make_cues(scene.narration, offset, speech)
             offset += length
         stock = any(a.provider == "stock" for _, a in pairs)
-        style = self.style_for(video) if self.style_for is not None else None
         spec = RenderSpec(scenes=[s for s, _ in pairs], images=[self.files.image_path(a.path) for _, a in pairs], speech_wavs=wavs,
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
                           disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id,
-                          style=style)
+                          style=style,
+                          config_snapshot=(config_snapshot_for(config) if config is not None else None))
         mp4 = renderer.render(spec, work / "final.mp4")
         # A identidade do render nasce antes do QA: é o mesmo checksum que a publicação reutiliza
         # (o asset de saída), então o relatório já sai vinculado à versão que será aprovada.

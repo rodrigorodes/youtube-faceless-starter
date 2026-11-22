@@ -172,3 +172,35 @@ def test_deciding_on_an_already_committed_revision_compares_against_its_parent()
     decision = regeneration.decide(two_scene_plan())
     assert decision.previous_revision is None
     assert FINAL in decision.invalidated
+
+
+# --------------------------------------------------------------------------- F03.T03
+
+
+def test_the_config_snapshot_does_not_change_cache_fingerprints():
+    """Aditivo: a referência da configuração não é conteúdo de mídia nem muda o cache."""
+    from app.studio.domain.render_plan import ConfigSnapshot
+
+    snapshot = ConfigSnapshot(content_hash="c" * 64, schema_version=1,
+                              provenance={"style": "channel"})
+    plans = [
+        build_render_plan(plan_id="plan-01", revision=1, project_id="project-01", video_id="video-01",
+                          format=VideoFormat.short,
+                          scenes=[StoryboardScene(scene_id="scene-01", asset_id="asset-01",
+                                                  narration="Primeira cena.", speech_seconds=2.0)],
+                          assets=[asset_reference_for(Asset(id="asset-01", kind=AssetKind.image, cache_key="k" * 64,
+                                                            path="img/a.png", provider="placeholder", model="g",
+                                                            license="CC0"), content_sha256=SHA_A)],
+                          style_snapshot=StyleSnapshot(style_id="channel-01", version=3)),
+        build_render_plan(plan_id="plan-01", revision=1, project_id="project-01", video_id="video-01",
+                          format=VideoFormat.short,
+                          scenes=[StoryboardScene(scene_id="scene-01", asset_id="asset-01",
+                                                  narration="Primeira cena.", speech_seconds=2.0)],
+                          assets=[asset_reference_for(Asset(id="asset-01", kind=AssetKind.image, cache_key="k" * 64,
+                                                            path="img/a.png", provider="placeholder", model="g",
+                                                            license="CC0"), content_sha256=SHA_A)],
+                          style_snapshot=StyleSnapshot(style_id="channel-01", version=3),
+                          config_snapshot=snapshot),
+    ]
+    first, second = (plan_graph(item) for item in plans)
+    assert second == first

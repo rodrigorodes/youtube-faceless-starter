@@ -664,10 +664,11 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
         ("Desempenho", "/studio/panel/analytics"),
     ):
         item = next(item for item in items if label in _nav_text(item))
-        assert f'href="{href}"' in item
+        # F02.T01: a navegação carrega o canal ativo (?project_id=)
+        assert re.search(rf'href="{re.escape(href)}(?:\?project_id=[^"]+)?"', item)
 
     cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert 'href="/studio/configuracoes/canais"' in cfg
+    assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
     assert "Configurações" in cfg
 
 
@@ -681,7 +682,7 @@ def test_render_panel_shell_nav_targets_exist_in_the_page():
     items = _primary_nav(html)
 
     videos = next(item for item in items if "Vídeos" in _nav_text(item))
-    assert 'href="/studio/panel/videos"' in videos
+    assert re.search(r'href="/studio/panel/videos(?:\?project_id=[^"]+)?"', videos)
     assert 'id="videos"' in html
 
     for item in items:
@@ -698,7 +699,7 @@ def test_render_panel_shell_has_no_disabled_nav_items_and_estilos_is_a_real_link
     assert not any('aria-disabled="true"' in item for item in items)
     cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
     assert 'aria-disabled="true"' not in cfg
-    assert 'href="/studio/configuracoes/canais"' in cfg
+    assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
 
 
 def test_render_panel_has_one_h1_section_ids_and_no_invented_product_state():

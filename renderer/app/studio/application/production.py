@@ -29,11 +29,13 @@ from enum import Enum
 from typing import Protocol
 
 from ..domain.contracts import JobStatus, RenderJob, Video, VideoFormat, VideoStatus
+from ..domain.effective_config import EffectiveConfig
 from ..domain.ids import check_id
 from ..domain.production_run import (
     Checkpoint,
     OutboxEvent,
     ProductionRun,
+    ProductionRunReferencedEntityNotFound,
     ProductionStage,
     RunCreation,
     RunState,
@@ -53,12 +55,14 @@ from ..domain.qa_report import (
     approve as approve_qa,
     blocking_evidence,
 )
+from ..domain.run_config import RunConfigConflict, StoredRunConfig
 from .editorial import Editorial
 from .media import Media
 from .publication_execution import PublicationResult, RunPublication
 from .ports import (
     ApprovalRepository,
     AssetRepository,
+    ProductionRunConfigStore,
     ProductionRunInFlightReader,
     ProductionRunRepository,
     ProductionRunStageReader,
@@ -280,7 +284,8 @@ class RenderHandler(_AvailableHandler):
 
     def execute(self, context: StageContext) -> StageOutcome:
         job = self.start.execute(context.run.video_id)
-        self.run.execute(job.id)  # o worker do coordenador roda o render em linha
+        # F03.T03: o job do run lê a configuração **congelada** do run (nunca re-resolve).
+        self.run.execute(job.id, context.run.run_id)  # o worker do coordenador roda o render em linha
         finished = self.jobs.get(job.id)
         if finished is None or finished.status is not JobStatus.SUCCEEDED:
             raise StageExecutionFailed("the render did not finish successfully")
@@ -524,7 +529,8 @@ class ProductionCoordinator:
     def __init__(self, runs: ProductionRunRepository & ProductionRunStageReader, *,
                  handlers: Mapping[ProductionStage, StageHandler], mode: ProductionMode = ProductionMode.INTERACTIVE,
                  lease_seconds: int = 300, budget: ProductionBudget | None = None,
-                 pipeline: StageDag = COORDINATOR_DAG):
+                 pipeline: StageDag = COORDINATOR_DAG, videos: VideoRepository | None = None,
+                 config_store: ProductionRunConfigStore | None = None):
         if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool) or not 1 <= lease_seconds <= 86_400:
             raise ValueError("lease_seconds must be an integer between 1 and 86400")
         missing = [stage for stage in pipeline.stages if stage not in handlers]
@@ -536,6 +542,10 @@ class ProductionCoordinator:
         self.lease_seconds = lease_seconds
         self.budget = budget
         self.pipeline = pipeline
+        # F03.T02: leitura do snapshot congelado (a escrita é do `create_run`, na mesma transação
+        # do run) e leitura do vídeo para entregar o agregado ao resolvedor.
+        self.videos = videos
+        self.config_store = config_store
 
     # -- criação e consulta ------------------------------------------------
 
@@ -551,18 +561,69 @@ class ProductionCoordinator:
                      if stage in self.handlers and not self.handlers[stage].available)
 
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
-              stages: Sequence[ProductionStage] | None = None) -> RunCreation:
-        """Cria (ou reusa, pela chave) a execução. Não executa nada: o worker pega as etapas prontas."""
+              stages: Sequence[ProductionStage] | None = None,
+              effective_config_for: Callable[[Video], EffectiveConfig] | None = None,
+              config_store: ProductionRunConfigStore | None = None) -> RunCreation:
+        """Cria (ou reusa, pela chave) a execução. Não executa nada: o worker pega as etapas prontas.
+
+        F03.T02: com `effective_config_for`, a configuração efetiva é resolvida **antes** de gravar
+        o run e o snapshot vai para o mesmo INSERT (`create_run` grava run + etapas + snapshot ou
+        nada). Sem resolvedor, o comportamento anterior é preservado e o run nasce `legacy` de
+        forma explícita — nunca re-resolvido depois. O replay devolve o run existente com a config
+        que ele já tinha; um snapshot divergente é `RunConfigConflict`, não sobrescrita.
+        """
         video_id = check_id(video_id)
         if channel_id is not None:
             channel_id = check_id(channel_id)
         requested = self.default_pipeline() if stages is None else tuple(stages)
         self._require_available(requested)
         ordered = self.pipeline.validate_stages(requested)
+        store = config_store if config_store is not None else self.config_store
+        config = self._resolve_config(video_id, effective_config_for)
         # `run_id` determinístico pela chave: o replay apresenta a mesma identidade, então o
         # repositório devolve EXISTING em vez de conflito — chamada repetida não duplica run.
         run_id = uuid.uuid5(uuid.NAMESPACE_URL, f"studio-production-run:{video_id}:{idempotency_key}").hex
-        return self.runs.create_run(run_id, video_id, idempotency_key, channel_id=channel_id, stages=ordered)
+        creation = self.runs.create_run(run_id, video_id, idempotency_key, channel_id=channel_id,
+                                        stages=ordered, config=config)
+        # O repositório real já recusa divergência dentro da transação; aqui conferimos a referência
+        # devolvida para que um repositório sem a coluna não devolva "sucesso" com outro snapshot.
+        if store is not None and config is not None:
+            persisted = store.run_config(creation.run.run_id)
+            if persisted is None or persisted.config is None \
+                    or persisted.config.content_hash != config.content_hash:
+                raise RunConfigConflict(
+                    "the stored run config does not match the requested effective config")
+        return creation
+
+    def _resolve_config(self, video_id: str,
+                        effective_config_for: Callable[[Video], EffectiveConfig] | None
+                        ) -> EffectiveConfig | None:
+        """Resolve antes do INSERT: erro aqui não cria run nem deixa efeito pela metade."""
+        if effective_config_for is None:
+            return None
+        if not callable(effective_config_for):
+            raise TypeError("effective_config_for must be callable or None")
+        if self.videos is None:
+            raise ValueError("resolving the effective config requires a video repository")
+        video = self.videos.get_video(video_id)
+        if video is None:
+            raise ProductionRunReferencedEntityNotFound(f"video {video_id} does not exist")
+        config = effective_config_for(video)
+        if not isinstance(config, EffectiveConfig):
+            raise TypeError("effective_config_for must return an EffectiveConfig")
+        if config.video_id != video_id:
+            raise ValueError("the effective config belongs to another video")
+        return config
+
+    def config_for(self, run_id: str) -> StoredRunConfig | None:
+        """Lê a configuração congelada do run; nunca resolve de novo.
+
+        `None` sem porta de leitura ou para run inexistente; run legado vem com o marcador
+        explícito (`status=LEGACY`, `config=None`).
+        """
+        if self.config_store is None:
+            return None
+        return self.config_store.run_config(check_id(run_id))
 
     def get(self, run_id: str) -> ProductionProjection | None:
         run = self.runs.get_run(run_id)
@@ -750,12 +811,23 @@ class Production:
     worker: ProductionWorker
     submit: Callable[[str], None] | None = None
     in_flight: ProductionRunInFlightReader | None = None
+    # F03.T02: resolvedor e leitura do snapshot. Ausentes = caminho legado explícito (sem snapshot).
+    effective_config_for: Callable[[Video], EffectiveConfig] | None = None
+    config_store: ProductionRunConfigStore | None = None
 
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None) -> RunCreation:
-        creation = self.coordinator.start(video_id, idempotency_key, channel_id=channel_id, stages=stages)
+        creation = self.coordinator.start(
+            video_id, idempotency_key, channel_id=channel_id, stages=stages,
+            effective_config_for=self.effective_config_for, config_store=self.config_store)
         self._enqueue(creation.run.run_id)
         return creation
+
+    def config_for(self, run_id: str) -> StoredRunConfig | None:
+        """Configuração congelada do run (retomada, retry e painel leem; nunca re-resolvem)."""
+        if self.config_store is None:
+            return None
+        return self.config_store.run_config(check_id(run_id))
 
     def resume(self, run_id: str, *, expected_state: RunState | None = None) -> RunTransition:
         """Transpõe um gate humano: retoma o run e **relança o worker**.

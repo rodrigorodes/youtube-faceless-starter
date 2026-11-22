@@ -30,10 +30,10 @@ def test_videos_uses_v3_shell_and_nav():
     assert "Estúdio &nbsp;/&nbsp; <b>Vídeos</b>" in html
     assert "SEU CONTEÚDO" in html
     assert "Todos os vídeos do canal, em um só lugar." in html
-    assert 'href="/studio/panel/novo-video"' in html
+    assert re.search(r'href="/studio/panel/novo-video(?:\?project_id=[^"]+)?"', html)
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
-    assert 'href="/studio/panel/videos" aria-current="page"' in main
+    assert re.search(r'href="/studio/panel/videos(?:\?project_id=[^"]+)?" aria-current="page"', main)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1
 

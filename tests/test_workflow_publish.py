@@ -1,5 +1,11 @@
-"""Estrutura do workflow 03 e comportamento dos nós Code (executados no Node, se existir)."""
+"""Contrato do workflow 03 (F01.T02): o Core executa a publicação; o n8n só orquestra.
+
+O workflow não carrega credencial do YouTube nem faz PUT no `upload_uri`: ele chama
+`POST /studio/publications/execute`, que roda claim + token do grant + gate de identidade +
+upload + settle no Core. Resultado ambíguo nunca é tratado como sucesso.
+"""
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -7,9 +13,13 @@ from pathlib import Path
 
 import pytest
 
+os.environ.setdefault("OUTPUT_DIR", "/tmp/yfs-test/output")
+os.environ.setdefault("JOB_DIR", "/tmp/yfs-test/jobs")
+
 ROOT = Path(__file__).resolve().parents[1]
 WF = json.loads((ROOT / "workflows" / "03-publish-approved.json").read_text(encoding="utf-8"))
 NODES = {n["name"]: n for n in WF["nodes"]}
+node = shutil.which("node")
 
 
 def test_every_connection_points_to_real_nodes_and_every_node_is_reachable():
@@ -26,149 +36,89 @@ def test_every_connection_points_to_real_nodes_and_every_node_is_reachable():
     assert reachable == set(NODES), set(NODES) - reachable
 
 
-def test_no_secrets_and_only_known_hosts():
+def test_no_secrets_and_only_the_renderer_host():
     text = json.dumps(WF)
-    assert not re.search(r"(?i)(client_secret|refresh_token|access_token|bearer\s+[a-z0-9._-]{10,}|AIza[0-9A-Za-z_-]{20,}|ya29\.)", text)
+    assert not re.search(
+        r"(?i)(client_secret|refresh_token|access_token|bearer\s+[a-z0-9._-]{10,}|AIza[0-9A-Za-z_-]{20,}|ya29\.)", text)
     for url in re.findall(r"https?://[^\s'\"+}]+", text):
-        assert url.startswith(("http://renderer:8000", "https://www.googleapis.com/upload/youtube/v3/")), url
+        assert url.startswith("http://renderer:8000"), url
 
 
-def test_workflow_ships_inactive_with_a_private_youtube_body_coming_from_the_renderer():
+def test_workflow_ships_inactive():
     assert WF["active"] is False
-    assert "youtube_body" not in json.dumps(NODES["New session"]["parameters"])  # o corpo vem do contexto, montado pelo renderer
-    assert NODES["New session"]["parameters"]["jsonBody"] == "={{ JSON.stringify($json.body) }}"
-    assert "privacyStatus" not in json.dumps(WF)  # a privacidade é decidida no renderer (sempre private), não no workflow
 
 
-def test_youtube_and_renderer_use_separate_credentials():
-    oauth = {n for n, v in NODES.items() if "youTubeOAuth2Api" in v.get("credentials", {})}
-    assert oauth == {"Check session", "New session", "Upload", "Set thumbnail"}
-    renderer = {"Claim", "Save session", "Download MP4", "Mark uploaded",
-                "Download thumbnail", "Mark thumbnail", "Report failure"}
-    for name in renderer:
-        params = NODES[name]["parameters"]
-        assert params["authentication"] == "genericCredentialType"
-        assert params["genericAuthType"] == "httpHeaderAuth"
-        assert params["options"]["redirect"]["redirect"]["followRedirects"] is False
-        assert NODES[name]["credentials"]["httpHeaderAuth"]["name"] == "studio_worker"
-    assert {n for n, v in NODES.items() if "httpHeaderAuth" in v.get("credentials", {})} == renderer
-    for name in ("Check session", "Upload"):  # 308 = "incompleto", não redirecionamento
-        assert NODES[name]["parameters"]["options"]["redirect"]["redirect"]["followRedirects"] is False
+def test_no_node_carries_a_youtube_credential():
+    """O gate de identidade do Core não pode ser contornado por credencial própria no n8n."""
+    for name, cfg in NODES.items():
+        creds = cfg.get("credentials", {})
+        assert "youTubeOAuth2Api" not in creds, name
+        assert cfg.get("parameters", {}).get("nodeCredentialType") != "youTubeOAuth2Api", name
+    assert "googleapis.com" not in json.dumps(WF)
 
 
-def test_recording_the_id_is_retried_and_thumbnail_failure_is_not_fatal():
-    assert NODES["Mark uploaded"]["retryOnFail"] is True and NODES["Mark uploaded"]["maxTries"] >= 3
-    assert NODES["Set thumbnail"]["onError"] == "continueRegularOutput" and NODES["Set thumbnail"]["maxTries"] == 3
-    assert NODES["Report failure"]["onError"] == "continueRegularOutput"
+def test_the_only_execution_path_is_the_core_endpoint():
+    execute = NODES["Execute (Core)"]
+    params = execute["parameters"]
+    assert params["method"] == "POST"
+    assert params["url"] == "http://renderer:8000/studio/publications/execute"
+    assert params["authentication"] == "genericCredentialType"  # credencial do worker, não do YouTube
 
 
-def test_expired_session_route_cannot_create_another_session():
-    routes = WF["connections"]["Session state?"]["main"]
-    assert routes[2][0]["node"] == "Report failure"
+def test_config_ignores_untrusted_parameters_and_caps_attempts():
+    if node is None:
+        pytest.skip("node unavailable")
+    script = ("const code = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))"
+              ".nodes.find(n=>n.name==='Config').parameters.jsCode;"
+              "console.log(JSON.stringify(new Function('$input', code)"
+              "({first: () => ({json: JSON.parse(process.argv[2])})})))")
 
-
-node = shutil.which("node")
-pytestmark_node = pytest.mark.skipif(node is None, reason="node not installed")
-
-HARNESS = r"""
-const [, name, ctxJson, inputJson, file] = process.argv;
-const nodes = JSON.parse(require('fs').readFileSync(file, 'utf8')).nodes;
-const code = nodes.find((n) => n.name === name).parameters.jsCode;
-const ctx = JSON.parse(ctxJson), input = JSON.parse(inputJson);
-const ref = (n) => ({ first: () => ({ json: n === 'Config' ? { debug_wait_after: '' } : ctx }) });
-const fn = new Function('$input', '$', code);
-console.log(JSON.stringify(fn({ first: () => ({ json: input }) }, ref)));
-"""
-CTX = {"pid": "p" * 32, "attempt": 2, "upload_uri": "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=a", "size": 5000, "offset": 0}
-
-
-def run(name, input_, ctx=CTX):
-    out = subprocess.run([node, "-e", HARNESS, name, json.dumps(ctx), json.dumps(input_), str(ROOT / "workflows" / "03-publish-approved.json")],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)[0]["json"]
-
-
-@pytestmark_node
-@pytest.mark.parametrize("response,state,extra", [
-    ({"statusCode": 200, "body": {"id": "oNQ2KN37sfQ"}}, "done", {"youtube_id": "oNQ2KN37sfQ"}),
-    ({"statusCode": 201, "body": {"id": "oNQ2KN37sfQ"}}, "done", {"youtube_id": "oNQ2KN37sfQ"}),
-    ({"statusCode": 308, "headers": {"range": "bytes=0-1999"}}, "partial", {"offset": 2000}),
-    ({"statusCode": 308, "headers": {}}, "partial", {"offset": 0}),
-    ({"statusCode": 404, "body": ""}, "fatal", {"retryable": False}),
-    ({"statusCode": 410, "body": ""}, "fatal", {"retryable": False}),
-    ({"statusCode": 503, "body": "x"}, "retry", {"retryable": True}),
-    ({"statusCode": 429, "body": "x"}, "retry", {"retryable": True}),
-    ({"error": {"message": "socket hang up"}}, "retry", {"retryable": True}),
-    ({"statusCode": 403, "body": {"error": {"message": "quotaExceeded"}}}, "fatal", {"retryable": False}),
-    ({"statusCode": 401, "body": "unauthorized"}, "fatal", {"retryable": False}),
-    ({"statusCode": 200, "body": {"kind": "outra coisa"}}, "fatal", {"retryable": False}),
-    ({"statusCode": 200, "body": {"id": "curto"}}, "fatal", {}),
-])
-def test_session_state_classification(response, state, extra):
-    out = run("Session state", response)
-    assert out["state"] == state and all(out[k] == v for k, v in extra.items())
-    assert out["pid"] == CTX["pid"] and out["attempt"] == 2  # o contexto segue adiante
-
-
-@pytestmark_node
-def test_partial_offset_at_file_size_stops_for_reconciliation():
-    out = run("Session state", {"statusCode": 308, "headers": {"range": "bytes=0-4999"}})
-    assert out["state"] == "fatal" and out["retryable"] is False
-
-
-@pytestmark_node
-@pytest.mark.parametrize("response,state", [
-    ({"statusCode": 200, "headers": {"location": "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=x"}}, "ok"),
-    ({"statusCode": 200, "headers": {}}, "fatal"),
-    ({"statusCode": 400, "body": "bad"}, "fatal"), ({"statusCode": 403, "body": "forbidden"}, "fatal"),
-    ({"statusCode": 500, "body": "x"}, "retry"), ({"error": {"message": "timeout"}}, "retry"), ({"statusCode": 404, "body": ""}, "fatal"),
-])
-def test_session_created_classification(response, state):
-    out = run("Session created", response)
-    assert out["state"] == state
-    if state == "ok":
-        assert out["upload_uri"].startswith("https://www.googleapis.com/upload/") and out["offset"] == 0
-    else:
-        assert out["upload_uri"] == "" and "error" in out
-
-
-@pytestmark_node
-@pytest.mark.parametrize("response,state,retryable", [
-    ({"statusCode": 200, "body": {"id": "oNQ2KN37sfQ"}}, "ok", None), ({"statusCode": 201, "body": {"id": "oNQ2KN37sfQ"}}, "ok", None),
-    ({"statusCode": 500, "body": "x"}, "retry", True), ({"statusCode": 308, "headers": {}}, "retry", True), ({"error": {"message": "ECONNRESET"}}, "retry", True),
-    ({"statusCode": 400, "body": {"error": "invalid"}}, "fatal", False), ({"statusCode": 403, "body": "quota"}, "fatal", False),
-    ({"statusCode": 200, "body": ""}, "fatal", False),
-])
-def test_upload_result_classification(response, state, retryable):
-    out = run("Upload result", response)
-    assert out["state"] == state and (retryable is None or out["retryable"] is retryable)
-    if state == "ok":
-        assert out["youtube_id"] == "oNQ2KN37sfQ"
-    else:
-        assert len(out["error"]) <= 300
-
-
-@pytestmark_node
-def test_config_ignores_untrusted_debug_and_lease_parameters():
     def cfg(body):
-        out = subprocess.run([node, "-e", "const code = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).nodes.find(n=>n.name==='Config').parameters.jsCode;"
-                              "console.log(JSON.stringify(new Function('$input', code)({first: () => ({json: JSON.parse(process.argv[2])})})))",
-                              str(ROOT / "workflows" / "03-publish-approved.json"), json.dumps(body)], capture_output=True, text=True, check=True).stdout
+        out = subprocess.run([node, "-e", script, str(ROOT / "workflows" / "03-publish-approved.json"),
+                              json.dumps(body)], capture_output=True, text=True, check=True).stdout
         return json.loads(out)[0]["json"]
-    expected = {"lease_seconds": 5400, "debug_wait_after": ""}
+
+    expected = {"lease_seconds": 5400, "max_attempts": 3}
     assert cfg({}) == expected
-    assert cfg({"body": {"lease_seconds": 20, "debug_wait_after": "upload"}}) == expected
-    assert cfg({"body": {"lease_seconds": 99999}}) == expected
+    assert cfg({"body": {"lease_seconds": 20, "max_attempts": 99}}) == expected
 
 
-def test_f8_07_keeps_the_automatic_workflow_disabled_until_it_uses_the_native_gated_path():
-    """F8-07: só reabilita depois de migrar para o caminho nativo e provar falha/concorrência.
+def test_result_switch_covers_every_outcome_and_defaults_to_blocked():
+    """O switch tem que separar publicado, nada a fazer e reconciliação — e nunca cair em sucesso."""
+    rules = NODES["Result"]["parameters"]["rules"]["values"]
+    values = [rule["conditions"]["conditions"][0]["rightValue"] for rule in rules]
+    assert values == ["UPLOADED", "IDLE", "RECONCILE"]
+    # a saída de fallback é a de bloqueio/DLQ
+    fallback = NODES["Result"]["parameters"]["options"]["fallbackOutput"]
+    targets = WF["connections"]["Result"]["main"]
+    blocked = targets[fallback][0]["node"]
+    assert blocked == "Bloqueado ou DLQ"
+    assert targets[0][0]["node"] == "Set thumbnail"
+    assert targets[1][0]["node"] == "Nada a publicar"
+    assert targets[2][0]["node"] == "Reconciliação necessária"
 
-    O workflow legado usa o claim antigo, que não exige a intenção F8 (render_id/checksum/QA).
-    Enquanto isso, ele continua inativo — ativar agora burlaria o gate de publicação.
-    """
-    assert WF["active"] is False
-    assert "/publication/publish" not in json.dumps(WF)  # ainda não fala com o executor nativo
+
+def test_thumbnail_is_non_fatal_and_uses_the_core():
+    thumb = NODES["Set thumbnail"]["parameters"]
+    assert thumb["url"].startswith("={{ 'http://renderer:8000/studio/publications/'")
+    assert "/thumbnail-set" in thumb["url"]
+    assert thumb["authentication"] == "genericCredentialType"
+    code = NODES["Thumbnail outcome"]["parameters"]["jsCode"]
+    assert "thumbnail_ok" in code
+
+
+def test_execute_endpoint_requires_the_worker_credential():
+    from fastapi.testclient import TestClient
+    import sys
+
+    sys.path.insert(0, str(ROOT / "renderer"))
+    from app.main import app
+
+    r = TestClient(app).post("/studio/publications/execute", json={"lease_seconds": 60})
+    assert r.status_code == 401
+
+
+def test_readme_documents_that_the_core_executes_the_upload():
     readme = (ROOT / "workflows" / "README-publish-approval.md").read_text(encoding="utf-8")
-    assert "active\": false" in readme or "`\"active\": false`" in readme
-    assert "/publication/publish" in readme and "concorrência" in readme
+    assert "\"active\": false" in readme or "`\"active\": false`" in readme
+    assert "/studio/publications/execute" in readme

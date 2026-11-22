@@ -7,17 +7,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
-from ..domain.render_plan import AssetReference, RenderPlan
+from ..domain.render_plan import AssetReference, ConfigSnapshot, RenderPlan
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
-from ..domain.visual_style import ResolvedStyle
+from ..domain.visual_style import ResolvedStyle, StylePatch
 from ..domain.channel_budget import BudgetLimits, CostSummary
 from ..domain.provider import ProviderKind, ProviderProbeResult
 from ..domain.youtube_channel import OAuthStatus, YouTubeChannel
@@ -26,9 +26,14 @@ from ..domain.saas import ByokKey, KeyAuditAction, MembershipStatus, Role
 from ..domain.youtube_oauth import OAuthIdentity, OAuthTokenResponse
 from ..domain.publication_policy import PublicationIntentEvidence
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.effective_config import EffectiveConfig
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
+from ..domain.run_config import StoredRunConfig
 from ..domain.longform import ScriptApproval, ScriptPlan
+
+if TYPE_CHECKING:  # só para a anotação da porta; evita ciclo `ports` ↔ `video_style`
+    from .video_style import VideoStylePatch
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,9 @@ class RenderSpec:
     # resolvido a montante. Carrega o snapshot versionado **e** os parâmetros que o render
     # aplica (motion/music). ``None`` = não há canal/estilo a referenciar; o renderer usa o default.
     style: ResolvedStyle | None = None
+    # F03.T03: identidade da configuração efetiva congelada que governou voz e render. O plano a
+    # grava (aditivo); ``None`` = render legado, sem snapshot (o plano é o de antes).
+    config_snapshot: ConfigSnapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -86,10 +94,23 @@ class VideoRepository(Protocol):
     def create_project(self, name: str, niche: str = "", language: str = "pt-BR") -> Project: ...
     def get_project(self, project_id: str) -> Project | None: ...
     def set_project_config(self, project_id: str, config: dict[str, str]) -> Project | None: ...
-    def create_video(self, project_id: str, topic: str, fmt: VideoFormat) -> Video: ...
+    def create_video(self, project_id: str, topic: str, fmt: VideoFormat,
+                     style_id: str | None = None) -> Video: ...
     def get_video(self, video_id: str) -> Video | None: ...
     def set_video_style(self, video_id: str, style_id: str | None) -> "Video | None":
         """VS-02b: fixa (ou limpa) o estilo que sobrepõe o do canal; None se o vídeo não existe."""
+    def get_video_style_patch(self, video_id: str) -> "VideoStylePatch | None":
+        """F05.T02: o patch tipado persistido do vídeo (``None`` = vídeo inexistente).
+
+        Sem override devolve ``VideoStylePatch(revision=0, patch=None)`` — o vídeo herda.
+        """
+    def set_video_style_patch(self, video_id: str, expected_revision: int,
+                              patch: StylePatch | dict | None) -> "VideoStylePatch | None":
+        """F05.T02: grava/remove o override tipado do vídeo, com controle otimista.
+
+        ``None`` = vídeo inexistente; ``StylePatchInvalid`` = patch fora da allowlist (nada
+        gravado); ``VideoStylePatchConflict`` = ``expected_revision`` divergente (nada gravado).
+        """
     def transition_video(self, video_id: str, expected: VideoStatus, new: VideoStatus) -> bool: ...
 
 
@@ -508,6 +529,14 @@ class ChannelProfileRepository(Protocol):
     def list(self, include_archived: bool = False) -> list[ChannelProfile]: ...
     def update(self, profile_id: str, expected_version: int, changes: dict[str, object]) -> ChannelProfile | None:
         """Atualiza de forma otimista: None se o perfil não existe; `ChannelVersionConflict` se a versão divergiu."""
+    def set_style_patch(self, profile_id: str, expected_revision: int,
+                        patch: StylePatch | dict | None) -> ChannelProfile | None:
+        """F05.T02: grava/remove o override tipado de estilo do canal, com revisão própria.
+
+        Só as colunas do patch mudam (o resto do perfil fica intacto); ``None`` = perfil
+        inexistente, ``StylePatchInvalid`` = patch fora da allowlist (nada gravado) e
+        ``ChannelVersionConflict`` = revisão de patch divergente (nada gravado).
+        """
 
 
 class VisualStyleRepository(Protocol):
@@ -622,6 +651,8 @@ class AccessToken:
 
     token: str = field(repr=False)
     youtube_channel_id: str | None = None
+    # F01.T02: escopos efetivamente autorizados (para decidir se serve à coleta de analytics).
+    scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -723,8 +754,14 @@ class ProductionRunRepository(Protocol):
 
     def create_run(self, run_id: str, video_id: str, idempotency_key: str, *,
                    channel_id: str | None = None,
-                   stages: Sequence[ProductionStage] | None = None) -> RunCreation:
-        """Cria o run e as etapas PENDING numa transação; replay da chave devolve `EXISTING`.
+                   stages: Sequence[ProductionStage] | None = None,
+                   config: EffectiveConfig | None = None) -> RunCreation:
+        """Cria o run, as etapas PENDING e o snapshot da config **na mesma transação**.
+
+        `config` é a configuração efetiva já resolvida (F03.T01); `None` cria um run legado
+        explícito, sem snapshot e sem re-resolução posterior. Replay da chave devolve `EXISTING`
+        com a configuração que o run já tinha; snapshot divergente é `RunConfigConflict`, nunca
+        sobrescrita.
 
         A chave é identidade byte-a-byte canônica: ASCII minúsculo em `[a-z0-9._:-]`. Variantes
         (caixa, Unicode/NFC, espaço ou invisível) são recusadas, nunca normalizadas. A mesma chave
@@ -771,6 +808,20 @@ class ProductionRunRepository(Protocol):
 
     def ack_outbox(self, event_id: int) -> AckResult:
         """Confirma um evento; repetir não falha e não apaga histórico."""
+
+
+class ProductionRunConfigStore(Protocol):
+    """Leitura do snapshot imutável da configuração efetiva de um run (F03.T02).
+
+    A **escrita** é do `ProductionRunRepository.create_run`, na mesma transação do run e das
+    etapas — por isso esta porta é só de leitura: retomada, retry, replay e painel leem a
+    referência persistida em vez de resolver de novo. Porta separada da de escrita para que a
+    projeção/consulta não ganhe métodos de mutação; o mesmo objeto do repositório satisfaz as duas.
+    Run inexistente devolve `None`; run legado devolve `StoredRunConfig(status=LEGACY, config=None)`.
+    """
+
+    def run_config(self, run_id: str) -> StoredRunConfig | None:
+        """Configuração congelada do run (`resolved`) ou o marcador explícito de legado."""
 
 
 class ProductionRunStageReader(Protocol):

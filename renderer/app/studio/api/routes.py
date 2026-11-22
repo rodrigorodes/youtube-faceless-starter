@@ -25,8 +25,9 @@ from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailabl
 from ..domain.youtube_channel import YouTubeChannelInvalid
 from ..domain.youtube_identity import (ChannelAuthorizationInvalid, GoogleAccountInvalid, OAuthGrantInvalid,
                                        YouTubeChannelIdentityInvalid)
-from ..domain.visual_style import (DuplicateVisualStyle, VisualStyleFieldInvalid, VisualStyleNameInvalid,
-                                   VisualStyleParamsInvalid, VisualStyleVersionConflict, VisualStyleVersionInvalid)
+from ..domain.visual_style import (DuplicateVisualStyle, VisualStyleArchived, VisualStyleFieldInvalid,
+                                   VisualStyleNameInvalid, VisualStyleParamsInvalid, VisualStyleVersionConflict,
+                                   VisualStyleVersionInvalid)
 from ..application.analytics import DailyMetric
 from ..application.analytics_collection import (AnalyticsPillarNotFound, AnalyticsVideoNotFound,
                                                  CollectionRequest)
@@ -70,8 +71,10 @@ from .panel_production import (
     render_new_video,
 )
 from .panel_new_video import render_new_video_v3
+from .active_channel import with_channel as _with_channel
+from .panel_advanced import render_advanced
 from .panel_videos import render_videos
-from .panel_trends import render_tendencias_v3
+from .panel_trends import render_tendencias_cartoes, render_tendencias_v3
 from ..application.errors import VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import ModelUnavailable
@@ -155,6 +158,8 @@ class VideoIn(BaseModel):
     project_id: str
     topic: str = Field(min_length=3, max_length=300)
     format: VideoFormat = VideoFormat.short
+    # F02.T02/G15: estilo escolhido no Create; ausente = herda o do canal (comportamento antigo).
+    style_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SourceIn(BaseModel):
@@ -944,6 +949,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "visual style not found") from exc
         except (DuplicateVisualStyle, VisualStyleVersionConflict) as exc:
             raise HTTPException(409, str(exc)) from exc
+        except VisualStyleArchived as exc:
+            raise HTTPException(422, str(exc)) from exc
         except (VisualStyleNameInvalid, VisualStyleParamsInvalid, VisualStyleFieldInvalid,
                 VisualStyleVersionInvalid) as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -1026,7 +1033,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.post("/videos", status_code=201, response_model=Video)
     def create_video(body: VideoIn):
-        return run(lambda uc: uc.create_video.execute(check_id(body.project_id), body.topic, body.format))
+        return run(lambda uc: uc.create_video.execute(check_id(body.project_id), body.topic, body.format,
+                                                      body.style_id))
 
     @router.get("/videos/{video_id}", response_model=Video)
     def get_video(video_id: str):
@@ -1233,7 +1241,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
-            p_id = check_id(project_id) if project_id else None
+            p_id = _active_channel(uc, project_id)
             view = uc.panel.execute(days=days, project_id=p_id)
             # `topic` pré-preenche o tema (vindo de "Criar Vídeo deste Tema" na tela Tendências).
             return render_panel(view, topic=(topic or "")[:300])
@@ -1246,18 +1254,38 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
-            p_id = check_id(project_id) if project_id else None
+            p_id = _active_channel(uc, project_id)
             return render_producao(uc.panel.execute(days=days, project_id=p_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/panel/tendencias", response_class=HTMLResponse)
-    def panel_tendencias_html(days: int = 7, project_id: str | None = None):
+    def panel_tendencias_html(days: int = 7, project_id: str | None = None,
+                              filtro: str = "todas"):
+        """O filtro vem da URL (link compartilhável); a lista cresce por scroll infinito."""
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
-            p_id = check_id(project_id) if project_id else None
-            return render_tendencias_v3(uc.panel.execute(days=days, project_id=p_id))
+            p_id = _active_channel(uc, project_id)
+            return render_tendencias_v3(uc.panel.execute(days=days, project_id=p_id), filtro=filtro)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/tendencias/cartoes", response_class=HTMLResponse)
+    def panel_tendencias_cartoes_html(days: int = 7, project_id: str | None = None,
+                                      filtro: str = "todas", offset: int = 0,
+                                      limite: int = 24):
+        """Próximo lote do scroll infinito (fragmento HTML, sem casca).
+
+        É aditivo: a página completa continua sendo a fonte da verdade e o botão
+        "Carregar mais" usa este mesmo caminho quando o observer não dispara.
+        """
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            p_id = _active_channel(uc, project_id)
+            return render_tendencias_cartoes(uc.panel.execute(days=days, project_id=p_id),
+                                             filtro=filtro, offset=offset, limite=limite)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1266,30 +1294,49 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
-            p_id = check_id(project_id) if project_id else None
+            p_id = _active_channel(uc, project_id)
             return render_videos(uc.panel.execute(days=days, project_id=p_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     # UX-02: Configurações como área de rotas reais. Cada seção leva à tela que já existe; a
     # tela continua sendo a rota canônica (seus formulários publicam nela), sem duplicar página.
+    # F02.T03: sete áreas de Configurações. As que já existem dentro da tela de Canais levam
+    # à sanfona certa (âncora real), em vez de duplicar formulário/persistência.
     _SETTINGS_SECTIONS = {
         "canais": "/studio/canais",
+        "estrategia": "/studio/canais#painel-perfil",
         "estilos": "/studio/panel/estilos",
+        "producao": "/studio/canais#painel-providers",
         "conexoes": "/studio/panel/conexoes",
         "equipe": "/studio/panel/equipe",
+        "avancado": "/studio/panel/avancado",
     }
 
     @router.get("/configuracoes")
-    def settings_root_redirect():
-        return RedirectResponse(url=_SETTINGS_SECTIONS["canais"], status_code=302)
+    def settings_root_redirect(project_id: str | None = None):
+        # F02.T01/G11: o redirect não pode trocar o canal ativo.
+        target = _with_channel(_SETTINGS_SECTIONS["canais"], project_id)
+        return RedirectResponse(url=target, status_code=302)
 
     @router.get("/configuracoes/{section}")
-    def settings_section_redirect(section: str):
+    def settings_section_redirect(section: str, project_id: str | None = None):
         target = _SETTINGS_SECTIONS.get(section)
         if target is None:
             raise HTTPException(404, "unknown settings section")
-        return RedirectResponse(url=target, status_code=302)
+        return RedirectResponse(url=_with_channel(target, project_id), status_code=302)
+
+    @router.get("/panel/avancado", response_class=HTMLResponse)
+    def panel_advanced_html(project_id: str | None = None):
+        """F02.T03: diagnóstico read-only do Estúdio (saúde, providers, configuração efetiva)."""
+        def get_page(uc):
+            if uc.advanced_page is None:
+                raise HTTPException(503, "diagnostic services unavailable")
+            p_id = _active_channel(uc, project_id)
+            view = uc.advanced_page.execute(p_id, database_ok=bool(ping()))
+            return render_advanced(view)
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
 
     @router.get("/panel/equipe", response_class=HTMLResponse)
     def panel_team_html(org_id: str | None = None):
@@ -1396,7 +1443,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.channels_page is None:
                 raise HTTPException(503, "channel services unavailable")
-            return render_channels(uc.channels_page.execute(check_id(project_id) if project_id else None))
+            return render_channels(uc.channels_page.execute(_active_channel(uc, project_id)))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1574,6 +1621,25 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def retry_publication(video_id: str):
         return run(lambda uc: publishing(uc).retry.execute(check_id(video_id)))
 
+    @router.post("/publications/execute", response_model=PublicationRunOut,
+                 response_model_exclude={"publication": {"upload_uri"}})
+    def execute_publication(body: PublishIn | None = None):
+        """F01.T02: executa a publicação no Core (claim + token do grant + upload + settle).
+
+        É este o único caminho de upload: o n8n orquestra e não carrega credencial do YouTube.
+        Devolve IDLE quando não há nada devido, e nunca presume sucesso de resultado ambíguo.
+        """
+        body = body or PublishIn()
+
+        def go(uc):
+            executor = publishing(uc).publish
+            if executor is None:
+                raise HTTPException(503, "publication executor unavailable")
+            outcome = executor.execute(body.lease_seconds, body.max_attempts)
+            return PublicationRunOut(result=outcome.result.value, publication=outcome.publication,
+                                     youtube_video_id=outcome.youtube_video_id, detail=outcome.detail)
+        return run(go)
+
     @router.post("/publications/claim", response_model=ClaimResult)
     def claim(body: ClaimIn | None = None):
         item = run(lambda uc: publishing(uc).claim.execute((body or ClaimIn()).lease_seconds))
@@ -1749,11 +1815,32 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "panel services unavailable")
             if uc.production is None:
                 raise HTTPException(503, "production services unavailable")
+            p_id = _active_channel(uc, project_id) or ""
+            # F02.T02/G15: estilos reais da biblioteca + o nome que o canal selecionado herda.
+            styles: list[tuple[str, str]] = []
+            inherited = None
+            channel_language = None
+            channel_voice = None
+            has_profile = False
+            if uc.list_visual_styles is not None:
+                styles = [(s.id, s.name) for s in uc.list_visual_styles.execute()]
+            if p_id and uc.get_channel_profile is not None:
+                profile = uc.get_channel_profile.execute(p_id)
+                if profile is not None:
+                    has_profile = True
+                    channel_language, channel_voice = profile.language, profile.voice
+                    if profile.style_id:
+                        inherited = next((name for sid, name in styles if sid == profile.style_id), None)
             view = NewVideoView(
                 projects=uc.panel.repo.projects(),
                 month=uc.panel.month_cost(),
                 pipeline=_wizard_pipeline(uc),
-                selected_project_id=check_id(project_id) if project_id else "",
+                selected_project_id=p_id,
+                styles=tuple(styles),
+                inherited_style_name=inherited,
+                channel_language=channel_language,
+                channel_voice=channel_voice,
+                has_profile=has_profile,
             )
             return render_new_video_v3(view)
         page, headers = run(get_page)
@@ -1794,6 +1881,22 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if service is None:
             raise HTTPException(503, message)
         return service
+
+    def _active_channel(uc, project_id: str | None) -> str | None:
+        """Canal ativo da página (F02.T01/G11), validado no Core.
+
+        - ausente: sem canal ativo (comportamento antigo, primeiro canal);
+        - id malformado: `check_id` → 422;
+        - id válido que não existe: 404 explícito, em vez de trocar de canal em silêncio.
+        """
+        if not project_id:
+            return None
+        p_id = check_id(project_id)
+        repo = getattr(getattr(uc, "panel", None), "repo", None)
+        existing = repo.projects() if repo is not None else []
+        if all(pid != p_id for pid, _ in existing):
+            raise ProjectNotFound(p_id)
+        return p_id
 
     @router.post("/projects/{project_id}/channels", status_code=201, response_model=ChannelProfileOut)
     def create_channel(project_id: str, body: ChannelProfileIn):

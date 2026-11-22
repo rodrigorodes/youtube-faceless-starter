@@ -1,27 +1,45 @@
-# Workflow 03 (`03-publish-approved.json`) — por que continua inativo (F8-07)
+# Workflow 03 (`03-publish-approved.json`) — o Core executa; o n8n orquestra
 
-**Estado: `"active": false`.** O workflow automático **não** foi reabilitado nesta fatia.
+**Estado: `"active": false`.** O workflow automático ainda **não** foi reabilitado.
 
-## Motivos verificados no código, não suposições
+## O que mudou (F01.T02)
 
-1. **Ele contorna o gate novo de publicação.** O workflow usa `POST /studio/publications/claim`
-   (o caminho legado do F6), não o executor nativo F8. O `claim` antigo não exige a
-   `publication_intents` (render_id/checksum imutáveis) nem o gate de QA acoplado à publicação.
-   Ativá-lo agora permitiria publicar sem a prova que a F8 passou a exigir.
-2. **A credencial OAuth do YouTube dentro do n8n não foi validada.** O contrato de credenciais
-   (`youtube_videos_app`) e os nós de upload/thumb não foram exercitados contra o YouTube real.
-   Ativar "para ficar pronto" seria exatamente o que a fatia proíbe.
-3. **A publicação real agora tem caminho nativo.** `POST /studio/videos/{id}/publication/publish`
-   + reconciliação usam a porta `YouTubeUploader`, o cofre de tokens e o executor testado
-   (`test_publication_execution.py`, `test_publication_resilience_repo.py`,
-   `test_youtube_publisher.py`). O n8n deixa de ser necessário para publicar e permanece como
-   legado até ser migrado.
+O n8n não sobe mais o vídeo: a credencial `youTubeOAuth2Api` saiu do workflow e o nó `Upload`
+deixou de existir. O único caminho de publicação agora é
+
+```
+POST /studio/publications/execute
+```
+
+que roda, no Core: claim por lease → preparação (gate de QA, intenção, arquivo) → token do
+**grant** do canal de destino → gate de identidade → upload → settle (`UPLOADED` / `RETRY` /
+`RECONCILE` / `DEAD_LETTER` / `BLOCKED`). O workflow só decide o que fazer com o resultado:
+
+| Resultado | Caminho no workflow |
+|---|---|
+| `UPLOADED` | `Set thumbnail` (Core, `/publications/{id}/thumbnail-set`) → `Thumbnail outcome` (falha não é fatal) |
+| `IDLE` | `Nada a publicar` |
+| `RECONCILE` | `Reconciliação necessária` (o Core já marcou `UNKNOWN`; humano/reconciliação decide) |
+| qualquer outro (inclusive `BLOCKED`, `DEAD_LETTER`) | `Bloqueado ou DLQ` |
+
+## Por que continua inativo
+
+1. O caminho nativo (Core) está testado (`test_publication_execution.py`,
+   `test_publication_resilience_repo.py`, `test_youtube_publisher.py`, `test_channel_grant_token.py`),
+   mas o **workflow em si** ainda não foi exercitado numa instância n8n real com falha,
+   concorrência e lease vencido.
+2. Ativar sem essa prova seria declarar operação que não foi medida.
 
 ## Condições para reabilitar (ordem obrigatória)
 
-1. Migrar os nós de upload para chamar o endpoint nativo `.../publication/publish` e
-   `.../publications/{id}/reconcile`, **sem** credencial YouTube no n8n.
-2. Rodar os testes de falha/concorrência do n8n contra uma instância real (dois workers no mesmo
-   vídeo, lease vencido, timeout depois do envio, callback atrasado) e registrar a evidência.
-3. Só então mudar `"active"` para `true` num PR próprio e com revisão. **Nunca** ativar para
+1. Importar este workflow numa instância n8n de teste e exercitar: dois workers no mesmo vídeo,
+   lease vencido, timeout depois do envio e callback atrasado — registrando a evidência.
+2. Confirmar que nenhum nó carrega credencial do YouTube (o teste
+   `test_no_node_carries_a_youtube_credential` já protege o JSON).
+3. Só então mudar `"active"` para `true`, em mudança própria e revisada. **Nunca** ativar para
    "deixar pronto".
+
+## Credenciais
+
+- `studio_worker` (header do worker) para todas as chamadas ao Core.
+- Nenhuma credencial do YouTube vive no n8n.

@@ -213,10 +213,13 @@ def provider_settlement(entry: UsageEntry, *, settled_by: str, charge: ChargeEvi
 
 class PaidOperationRepository(Protocol):
     def begin(self, key: str, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
-              video_limit_usd: Decimal) -> BeginResult:
+              video_limit_usd: Decimal, *, global_monthly_limit_usd: Decimal | None = None) -> BeginResult:
         """Reserva + registra a intenção atomicamente. Só `CREATED` autoriza a execução externa.
 
-        `video_id` pode ser `None` (operação de projeto, ex.: pontuar ideias): só o teto mensal se aplica.
+        `monthly_limit_usd`/`video_limit_usd` são os tetos do **canal** do vídeo; `global_monthly_limit_usd`
+        é o teto **global**, independente do canal. `None` recai no teto do canal (compatível com o
+        comportamento anterior e nunca mais frouxo). Uma operação sem vídeo é explicitamente do escopo
+        GLOBAL: só o teto global se aplica, e a atribuição persistida é nula.
         """
         ...
 
@@ -261,11 +264,14 @@ class PaidOperationRepository(Protocol):
 
 class BudgetReservationRepository(Protocol):
     def reserve(
-        self, key: str, video_id: str, amount: Decimal,
+        self, key: str, video_id: str | None, amount: Decimal,
         monthly_limit: Decimal, video_limit: Decimal,
+        *, global_monthly_limit_usd: Decimal | None = None,
     ) -> ReservationResult:
         """Reserva atomicamente; DENIED indica limite ou custo desconhecido.
 
+        Mesmo contrato de escopos do `PaidOperationRepository.begin`: `monthly_limit`/`video_limit` são
+        do canal; `global_monthly_limit_usd` é o teto global (None → usa `monthly_limit`).
         Uma repetição idêntica retorna EXISTING; reutilização divergente falha.
         CREATED não garante exclusividade nem estado da operação externa:
         execução, retry e reconciliação exigem o protocolo de operação paga.
@@ -297,7 +303,9 @@ class PaidOperationGuard:
             if override is not None:
                 monthly = _require_amount(override[0], "monthly limit")
                 video = _require_amount(override[1], "video limit")
-        result = self.repo.begin(key, video_id, estimate_usd, monthly, video)
+        # Os dois escopos sempre chegam ao repositório: o teto do canal não substitui o global.
+        result = self.repo.begin(key, video_id, estimate_usd, monthly, video,
+                                 global_monthly_limit_usd=self.monthly_limit_usd)
         if result is BeginResult.CREATED:
             return result
         if result is BeginResult.DENIED:

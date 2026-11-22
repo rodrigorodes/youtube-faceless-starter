@@ -429,3 +429,151 @@ def test_boot_recovery_is_idempotent_and_skips_a_run_with_a_live_lease(db):
     assert submitted == []
     assert service.recover_in_flight() == ()  # idempotente
     assert submitted == []
+
+
+# -- F03.T02: resolução antes do efeito e snapshot imutável do run ---------------
+
+
+class _Videos:
+    """Leitura de vídeo injetada no coordenador (a resolução recebe o agregado já carregado)."""
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.calls = 0
+
+    def get_video(self, video_id):
+        self.calls += 1
+        return self.mapping.get(video_id)
+
+
+def _video(video_id=VIDEO, project_id=PROJECT):
+    from app.studio.domain.contracts import Video, VideoFormat
+
+    return Video(id=video_id, project_id=project_id, topic="tema", format=VideoFormat.short)
+
+
+def _config(video_id=VIDEO, **options):
+    from app.studio.domain.effective_config import resolve_effective_config
+
+    return resolve_effective_config(video=_video(video_id), **options)
+
+
+def _resolving_coordinator(db, *, config=None):
+    repo, _ = db
+    videos = _Videos({VIDEO: _video()})
+    coordinator = ProductionCoordinator(repo, handlers=handlers(), videos=videos, config_store=repo)
+    frozen = config or _config()
+    calls = []
+
+    def resolver(video):
+        calls.append(video.id)
+        return frozen
+
+    return coordinator, repo, resolver, calls, frozen
+
+
+def test_start_resolves_the_config_and_persists_the_snapshot_before_any_effect(db):
+    from app.studio.domain.run_config import RunConfigStatus
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    creation = coordinator.start(VIDEO, "run-config-1", effective_config_for=resolver, config_store=repo)
+    assert creation.result is CreateRunResult.CREATED
+    assert calls == [VIDEO]
+
+    stored = coordinator.config_for(creation.run.run_id)
+    assert stored is not None and stored.status is RunConfigStatus.RESOLVED
+    assert stored.config is not None and stored.config.content_hash == frozen.content_hash
+    # Nada executou: as etapas continuam PENDING e a config já está congelada.
+    repo2, conn = db
+    assert set(_stages(conn, creation.run.run_id).values()) == {"PENDING"}
+
+
+def test_replay_with_the_same_key_returns_the_same_run_and_snapshot(db):
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    first = coordinator.start(VIDEO, "run-config-2", effective_config_for=resolver, config_store=repo)
+    replay = coordinator.start(VIDEO, "run-config-2", effective_config_for=resolver, config_store=repo)
+    assert replay.result is CreateRunResult.EXISTING
+    assert replay.run.run_id == first.run.run_id
+    assert len(calls) == 2  # a segunda chamada resolve só para comparar; não sobrescreve
+    stored = coordinator.config_for(first.run.run_id)
+    assert stored.config.content_hash == frozen.content_hash
+    _, conn = db
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+
+
+def test_replay_with_a_divergent_config_is_a_conflict_without_a_second_run(db):
+    from app.studio.domain.run_config import RunConfigConflict
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    first = coordinator.start(VIDEO, "run-config-3", effective_config_for=resolver, config_store=repo)
+    divergent = _config(provider_profile="PREMIUM")
+    with pytest.raises(RunConfigConflict):
+        coordinator.start(VIDEO, "run-config-3",
+                          effective_config_for=lambda video: divergent, config_store=repo)
+    _, conn = db
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+    assert coordinator.config_for(first.run.run_id).config.content_hash == frozen.content_hash
+
+
+def test_a_legacy_run_is_marked_and_is_never_silently_re_resolved(db):
+    from app.studio.domain.run_config import RunConfigConflict, RunConfigStatus
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    legacy = coordinator.start(VIDEO, "run-config-4")  # sem resolvedor: comportamento preservado
+    stored = coordinator.config_for(legacy.run.run_id)
+    assert stored is not None and stored.status is RunConfigStatus.LEGACY and stored.config is None
+    with pytest.raises(RunConfigConflict):
+        coordinator.start(VIDEO, "run-config-4", effective_config_for=resolver, config_store=repo)
+    assert coordinator.config_for(legacy.run.run_id).status is RunConfigStatus.LEGACY
+    assert calls == [VIDEO]  # resolveu só para comparar; nada foi adotado nem sobrescrito
+    _, conn = db
+    assert conn.execute("SELECT config_snapshot FROM studio.production_runs "
+                        "WHERE run_id = %s", (legacy.run.run_id,)).fetchone()[0] is None
+
+
+def test_resume_and_retry_read_the_persisted_snapshot_and_never_re_resolve(db):
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    run_id = coordinator.start(VIDEO, "run-config-5",
+                               effective_config_for=resolver, config_store=repo).run.run_id
+    before = coordinator.config_for(run_id).config.content_hash
+    ProductionWorker(coordinator, owner="w").work(run_id)  # pausa após o roteiro
+    assert coordinator.resume(run_id).result is RunTransitionResult.APPLIED
+    _, conn = db
+    conn.execute("UPDATE studio.production_runs SET state = 'FAILED', reason = 'x' WHERE run_id = %s",
+                 (run_id,))
+    conn.commit()
+    assert coordinator.retry(run_id).result is RunTransitionResult.APPLIED
+    assert coordinator.config_for(run_id).config.content_hash == before
+    assert calls == [VIDEO]  # resolver rodou só no start; retomada/retry só leem
+
+
+def test_start_with_a_resolver_requires_an_existing_video(db):
+    from app.studio.domain.production_run import ProductionRunReferencedEntityNotFound
+
+    repo, conn = db
+    coordinator = ProductionCoordinator(repo, handlers=handlers(), videos=_Videos({}), config_store=repo)
+    with pytest.raises(ProductionRunReferencedEntityNotFound):
+        coordinator.start(VIDEO, "run-config-6", effective_config_for=lambda video: _config(),
+                          config_store=repo)
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+
+
+def test_start_with_a_resolver_requires_a_video_reader(db):
+    repo, conn = db
+    coordinator = ProductionCoordinator(repo, handlers=handlers())
+    with pytest.raises(ValueError):
+        coordinator.start(VIDEO, "run-config-7", effective_config_for=lambda video: _config())
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 0
+
+
+def test_the_service_forwards_the_resolver_and_exposes_the_stored_config(db):
+    from app.studio.domain.run_config import RunConfigStatus
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    service = Production(coordinator=coordinator, worker=ProductionWorker(coordinator, owner="w"),
+                         effective_config_for=resolver, config_store=repo)
+    creation = service.start(VIDEO, "run-config-8")
+    stored = service.config_for(creation.run.run_id)
+    assert stored.status is RunConfigStatus.RESOLVED
+    assert stored.config.content_hash == frozen.content_hash
+    assert calls == [VIDEO]

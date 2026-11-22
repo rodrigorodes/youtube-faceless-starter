@@ -51,9 +51,23 @@ def page_text(html: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", stripped).split())
 
 
+def _without_style_and_script(html: str) -> str:
+    return re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
+
+
 def nav_items(html: str):
-    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    """Itens da navegação principal da casca V3 (`<nav aria-label="Principal">`)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert match is not None, "navegação principal ausente"
+    return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
+
+
+def settings_nav_items(html: str):
+    """Itens da navegação da área de Configurações (Canais/Estilos/Conexões/Equipe)."""
+    markup = _without_style_and_script(html)
+    match = re.search(r'<nav aria-label="Seções de configuração">(.*?)</nav>', markup, re.S)
+    assert match is not None, "navegação de configurações ausente"
     return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
 
 
@@ -132,18 +146,23 @@ def test_styles_page_escapes_xss_from_real_data(env):
 def test_styles_page_menu_has_estilos_active_and_no_dead_configuracoes(env):
     html = page(env).text
     items = nav_items(html)
-    active = [item for item in items if 'aria-current="page"' in item]
-    assert len(active) == 1
-    assert "Estilos" in _nav_text(active[0])
-    assert 'href="/studio/panel/estilos"' in active[0]
-    assert html.count('aria-current="page"') == 1
-    assert "Configurações" not in html
+    # UX V3: o menu principal tem cinco destinos e nenhum é falso-ativo nesta tela.
+    assert [_nav_text(i) for i in items] == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    assert not [item for item in items if 'aria-current="page"' in item]
+    # A entrada ativa é Configurações, no rodapé da casca.
+    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
+    assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
+    # A tela Estilos é o item ativo da navegação de configurações.
+    sections = settings_nav_items(html)
+    section_active = [item for item in sections if 'aria-current="page"' in item]
+    assert len(section_active) == 1 and "Estilos" in _nav_text(section_active[0])
+    assert 'href="/studio/panel/estilos"' in section_active[0]
+    assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert "em breve" not in html
-    # nenhum item indisponível na casca: "Configurações — em breve" virou tela real
-    assert not any('aria-disabled="true"' in item for item in items)
+    # nenhum item indisponível na casca: "Configurações — em breve" virou área real
+    assert not any('aria-disabled="true"' in item for item in items + sections)
     # a seção "Indisponível nesta versão" não existe vazia
     assert "Indisponível nesta versão" not in html
-    assert "Configuração" in page_text(html)
 
 
 # ------------------------------------------------------------- acessibilidade

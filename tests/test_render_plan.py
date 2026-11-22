@@ -312,3 +312,31 @@ def test_transition_duration_is_consistent_with_kind():
     with pytest.raises(ValidationError):
         Transition(kind="fade", duration_ticks=0)
     assert Transition(kind="fade", duration_ticks=6).duration_ticks == 6
+
+
+# --------------------------------------------------------------------------- #
+# F03.T03: referência da configuração efetiva (aditiva e compatível)
+# --------------------------------------------------------------------------- #
+
+def test_the_config_snapshot_is_optional_and_records_hash_version_and_provenance():
+    from app.studio.domain.render_plan import ConfigSnapshot
+
+    assert plan().config_snapshot is None  # plano sem a referência continua válido
+
+    snapshot = ConfigSnapshot(content_hash=SHA_B, schema_version=1,
+                              provenance={"style": "channel", "audiovisual.music.bpm": "style"})
+    documented = plan(config_snapshot=snapshot)
+    assert documented.config_snapshot.content_hash == SHA_B
+    assert documented.config_snapshot.schema_version == 1
+    assert documented.config_snapshot.provenance["audiovisual.music.bpm"] == "style"
+    restored = RenderPlan.model_validate_json(documented.model_dump_json())
+    assert restored == documented
+
+
+def test_a_plan_persisted_before_the_config_snapshot_still_loads():
+    """Compatibilidade de leitura: documento antigo (sem o campo) valida com a referência nula."""
+    old_document = plan().model_dump(mode="json")
+    old_document.pop("config_snapshot")
+    restored = RenderPlan.model_validate(old_document)
+    assert restored.config_snapshot is None
+    assert restored.schema_version == 1

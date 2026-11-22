@@ -360,3 +360,82 @@ def test_channel_adapter_maps_vault_failure_to_unavailable_not_a_crash():
     with pytest.raises(AnalyticsUnavailable, match="cofre"):
         channel_adapter(secrets=FakeSecrets(error=RuntimeError("vault down"))).collect(
             channel_query())
+
+
+# ------------------------------------- F01.T02: coleta pelo grant do canal de destino
+
+
+class FakeTargets:
+    def __init__(self, target):
+        self.target = target
+
+    def get_by_project(self, project_id):
+        return self.target
+
+
+def _profile(target):
+    class P:
+        youtube_channel_id = target
+    return P()
+
+
+class FakeGrantTokens:
+    def __init__(self, token=None, scopes=None, error=None):
+        self.token, self.scopes, self.error = token, scopes, error
+        self.asked = []
+
+    def execute(self, project_id):
+        from app.studio.application.ports import AccessToken
+        self.asked.append(project_id)
+        if self.error:
+            raise self.error
+        return AccessToken("token-do-grant", "UCgrantedchannel0000000", tuple(self.scopes or ()))
+
+
+def test_collection_uses_the_grant_of_the_destination_channel():
+    """Canal com destino: o token e o canal vêm do grant, não do cofre legado por projeto."""
+    from app.studio.application.channel_grant import ChannelGrantMissing
+
+    captured = []
+
+    def http_get(url, headers):
+        captured.append((url, headers))
+        return {"columnHeaders": [{"name": "views"}], "rows": [[7]]}
+
+    secrets = FakeSecrets({"access_token": "token-legado"})
+    grants = FakeGrantTokens(scopes=[ANALYTICS_READONLY_SCOPE])
+    adapter = channel_adapter(secrets=secrets, http_get=http_get,
+                              targets=FakeTargets(_profile("UCgrantedchannel0000000")),
+                              grant_tokens=grants)
+    points = adapter.collect(channel_query())
+    assert points and points[0].metric == "views"
+    assert grants.asked == [PROJECT]                      # resolveu pelo grant
+    assert not secrets.asked                              # não tocou no cofre legado
+    assert "UCgrantedchannel0000000" in captured[0][0]    # consultou o canal do destino
+    assert "token-do-grant" not in repr(adapter)          # nunca exposto
+
+
+def test_collection_refuses_when_the_grant_lacks_the_analytics_scope():
+    grants = FakeGrantTokens(scopes=["https://www.googleapis.com/auth/youtube.upload"])
+    adapter = channel_adapter(targets=FakeTargets(_profile("UCgrantedchannel0000000")),
+                              grant_tokens=grants)
+    with pytest.raises(AnalyticsNotAuthorized, match="analytics"):
+        adapter.collect(channel_query())
+
+
+def test_collection_refuses_when_the_grant_is_unusable_instead_of_falling_back():
+    from app.studio.application.channel_grant import ChannelGrantMissing
+
+    grants = FakeGrantTokens(error=ChannelGrantMissing("no grant"))
+    adapter = channel_adapter(targets=FakeTargets(_profile("UCgrantedchannel0000000")),
+                              grant_tokens=grants)
+    with pytest.raises(AnalyticsNotAuthorized):
+        adapter.collect(channel_query())
+
+
+def test_channel_without_a_destination_keeps_the_legacy_vault_path():
+    secrets = FakeSecrets({"access_token": "token-legado"})
+    adapter = channel_adapter(secrets=secrets, targets=FakeTargets(_profile(None)),
+                              grant_tokens=FakeGrantTokens(scopes=[ANALYTICS_READONLY_SCOPE]))
+    assert adapter.collect(channel_query())
+    assert secrets.asked                              # legado preservado para quem não tem destino

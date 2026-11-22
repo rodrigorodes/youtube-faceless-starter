@@ -87,22 +87,31 @@ def test_channel_guard_limits_resolve_from_the_channel_budget():
 
 
 def test_channel_budget_floor_uses_soft_limit_and_falls_back():
+    """F01.T03: o piso do modo guardado vive na aplicação (`ChannelBudgetFloor`), medindo o canal.
+
+    O teste original cobria a classe que morava na composição; a composição agora só injeta a
+    dependência, e as mesmas duas garantias seguem verificadas aqui (soft do canal; fallback das
+    settings). O escopo global x canal tem cobertura própria em `test_channel_budget_service`.
+    """
     from decimal import Decimal
 
-    from app.studio.composition import _ChannelBudgetFloor
+    from app.studio.application.channel_budget import ChannelBudgetFloor
     from app.studio.domain.channel_budget import BudgetLimits
 
     class Usage:
-        def spent_month(self):
-            return 4.0
+        def month_summary(self, project_id):
+            return type("S", (), {"spent_usd": Decimal("4.0")})()
+
+        def global_month_summary(self):
+            return type("S", (), {"spent_usd": Decimal("44.0")})()
 
     limits = BudgetLimits(project_id="a" * 32, hard_monthly_usd=Decimal("9"), soft_monthly_usd=Decimal("5"),
                           hard_video_usd=Decimal("2"), soft_video_usd=Decimal("1"))
-    floor = _ChannelBudgetFloor(Usage(), _Videos({"b" * 32: _Video("a" * 32)}), _Budgets([limits]),
-                                Decimal("15"))
+    floor = ChannelBudgetFloor(Usage(), _Videos({"b" * 32: _Video("a" * 32)}), _Budgets([limits]),
+                               Decimal("15"))
     projection = floor.project(type("R", (), {"video_id": "b" * 32}), None)
     assert projection.ceiling_usd == Decimal("5")  # soft do canal, não o padrão
-    assert projection.projected_usd == Decimal("4.0")
+    assert projection.projected_usd == Decimal("4.0")  # gasto do canal, não o global
     default = floor.project(type("R", (), {"video_id": "c" * 32}), None)
     assert default.ceiling_usd == Decimal("15")  # sem budget de canal: teto das settings
 
@@ -145,6 +154,13 @@ def test_settings_read_the_oauth_file_path_from_env():
                                   "STUDIO_GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:8000/cb"})
     assert settings.google_client_secret_file == Path("/tmp/synthetic-oauth.json")
     assert settings.google_oauth_redirect_uri == "http://localhost:8000/cb"
+
+
+def test_provider_production_is_off_by_default_and_only_enabled_explicitly():
+    """F06.T02: produção é sinal explícito; o padrão dev preserva stand-ins no roteamento."""
+    assert Settings().provider_production is False
+    assert Settings.from_env({}).provider_production is False
+    assert Settings.from_env({"STUDIO_PROVIDER_PRODUCTION": "1"}).provider_production is True
 
 
 # -- VS-03/VS-05c: o estilo do render é resolvido de verdade (fakes, sem banco) --
@@ -314,3 +330,369 @@ def test_the_resolved_voice_synthesizes_and_registers_the_same_model():
     project_identity = _voice_identity(build("voice", "piper:pt_BR-faber-medium"))
     assert narration_fingerprint("texto da cena", "voice:cena", {"voice": identity}) != \
         narration_fingerprint("texto da cena", "voice:cena", {"voice": project_identity})
+
+
+# -- F01.T01: o token da publicação vem do grant do canal de destino ----------
+
+
+def test_publish_wiring_takes_the_token_from_the_target_channel_grant(conn, dsn, tmp_path):
+    """A fiação real (sem rede): projeto com destino → token do grant daquele canal no cofre."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    import psycopg
+
+    from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepository
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.adapters.postgres.youtube_identity_repo import (
+        PostgresChannelAuthorizationRepository, PostgresGoogleAccountRepository,
+        PostgresOAuthGrantRepository, PostgresYouTubeChannelIdentityRepository,
+    )
+    from app.studio.adapters.secret_store import FileSecretStore
+    from app.studio.application.channel_grant import EnsureGrantAccessToken
+    from app.studio.application.connections import grant_scope
+    from app.studio.application.publication_execution import (
+        FallbackTokenProvider, TargetChannelTokenProvider,
+    )
+    from app.studio.domain.youtube_channel import OAuthStatus
+    from app.studio.domain.youtube_identity import (
+        ChannelAuthorization, GoogleAccount, OAuthGrant, YouTubeChannelIdentity,
+    )
+    from app.studio.domain.youtube_oauth import DEFAULT_SCOPES
+
+    migrate(conn)
+    conn.commit()
+    connect = lambda: psycopg.connect(dsn)
+    project = PostgresVideoRepository(connect).create_project("Canal", niche="Geral", language="pt-BR")
+    PostgresYouTubeChannelIdentityRepository(connect).upsert(
+        YouTubeChannelIdentity(youtube_channel_id="UCtargetA", title="Canal A"))
+    PostgresChannelProfileRepository(connect).create(project.id, "Canal", youtube_channel_id="UCtargetA")
+    aid, gid = "a" * 32, "b" * 32
+    PostgresGoogleAccountRepository(connect).upsert(GoogleAccount(id=aid, email="EU@gmail.com"))
+    now = datetime.now(timezone.utc)
+    PostgresOAuthGrantRepository(connect).create(OAuthGrant(
+        id=gid, account_id=aid, scopes=DEFAULT_SCOPES, status=OAuthStatus.CONNECTED,
+        token_expires_at=now + timedelta(hours=1)))
+    PostgresChannelAuthorizationRepository(connect).link(ChannelAuthorization(
+        grant_id=gid, youtube_channel_id="UCtargetA", status=OAuthStatus.CONNECTED, validated_at=now))
+    vault = FileSecretStore(tmp_path / "secrets")
+    vault.set(grant_scope(gid), "access_token", "ya29.SYNTHETIC_grant_access")
+    vault.set(grant_scope(gid), "refresh_token", "1//SYNTHETIC_grant_refresh")
+    vault.set(grant_scope(gid), "token_expires_at", (now + timedelta(hours=1)).isoformat())
+
+    secret = tmp_path / "client-secret-synthetic.json"
+    secret.write_text(json.dumps({"web": {
+        "client_id": "client-id.apps.googleusercontent.com",
+        "client_secret": "your_client_secret",
+        "redirect_uris": ["http://localhost:8000/studio/oauth/callback"]}}), encoding="utf-8")
+    settings = Settings(database_url=dsn, storage_root=tmp_path, secrets_root=tmp_path / "secrets",
+                        google_client_secret_file=secret,
+                        google_oauth_redirect_uri="http://localhost:8000/studio/oauth/callback")
+    tokens = Studio(settings).use_cases().publishing.publish.tokens
+
+    assert isinstance(tokens, TargetChannelTokenProvider)
+    assert isinstance(tokens.targeted, EnsureGrantAccessToken)
+    assert isinstance(tokens.legacy, FallbackTokenProvider)
+    access = tokens.execute(project.id)
+    assert access.token == "ya29.SYNTHETIC_grant_access" and access.youtube_channel_id == "UCtargetA"
+    assert "SYNTHETIC_grant_access" not in repr(access)
+
+
+def test_publish_wiring_keeps_the_legacy_path_restricted_to_projects_without_a_target(conn, dsn, tmp_path):
+    """Projeto sem destino não toca o caminho do grant: segue o legado (cofre por projeto)."""
+    import psycopg
+
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.adapters.secret_store import FileSecretStore
+
+    migrate(conn)
+    conn.commit()
+    connect = lambda: psycopg.connect(dsn)
+    project = PostgresVideoRepository(connect).create_project("Canal Legado", niche="Geral", language="pt-BR")
+    vault = FileSecretStore(tmp_path / "secrets")
+    vault.set(f"youtube:{project.id}", "access_token", "ya29.SYNTHETIC_legacy_access")
+    from datetime import datetime, timedelta, timezone
+    vault.set(f"youtube:{project.id}", "token_expires_at",
+              (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+    import json
+    secret = tmp_path / "client-secret-synthetic.json"
+    secret.write_text(json.dumps({"web": {
+        "client_id": "client-id.apps.googleusercontent.com",
+        "client_secret": "your_client_secret",
+        "redirect_uris": ["http://localhost:8000/studio/oauth/callback"]}}), encoding="utf-8")
+
+    tokens = Studio(Settings(database_url=dsn, storage_root=tmp_path, secrets_root=tmp_path / "secrets",
+                             google_client_secret_file=secret,
+                             google_oauth_redirect_uri="http://localhost:8000/studio/oauth/callback")
+                    ).use_cases().publishing.publish.tokens
+
+    access = tokens.execute(project.id)
+    assert access.token == "ya29.SYNTHETIC_legacy_access"  # caminho legado preservado, sem destino
+
+
+# -- F03.T02: a composição resolve a configuração efetiva antes de criar o run ----
+
+
+def test_production_wiring_resolves_the_channel_defaults_into_the_run(conn, dsn, tmp_path):
+    import psycopg
+
+    from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepository
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.domain.contracts import VideoFormat
+    from app.studio.domain.run_config import RunConfigStatus
+
+    migrate(conn)
+    conn.commit()
+    connect = lambda: psycopg.connect(dsn)
+    project = PostgresVideoRepository(connect).create_project("Canal", niche="Geral", language="en-US")
+    channel = PostgresChannelProfileRepository(connect).create(project.id, "Canal", language="en-US")
+    video = PostgresVideoRepository(connect).create_video(project.id, "Um tema de história", VideoFormat.short)
+
+    production = Studio(Settings(database_url=dsn, storage_root=tmp_path)).use_cases().production
+    creation = production.coordinator.start(
+        video.id, "cfg-composition-1",
+        effective_config_for=production.effective_config_for, config_store=production.config_store)
+    stored = production.config_for(creation.run.run_id)
+    assert stored is not None and stored.status is RunConfigStatus.RESOLVED
+    assert stored.config.language == "en-US"                       # camada do canal, não default
+    assert stored.config.channel_profile.id == channel.id
+    assert stored.config.provenance["editorial.language"] == "channel"
+
+
+# -- F03.T03: a voz sai da configuração efetiva congelada (sem segunda leitura de estilo) --
+
+
+class _Config:
+    def __init__(self, voice=None):
+        self.voice = voice or {}
+
+
+def test_voice_for_config_uses_the_frozen_voice_model_without_reading_the_style_again():
+    from app.studio.composition import _voice_for_config
+
+    built = []
+    voice = _voice_for_config(_Video(P), _Config({"model": "pt_BR-jeff-medium"}),
+                              fallback=lambda project_id: built.append(("fallback", project_id)) or "VOZ DO PROJETO",
+                              build_provider=lambda kind, spec: built.append((kind, spec)) or "VOZ DO SNAPSHOT")
+    assert voice == "VOZ DO SNAPSHOT"
+    assert built == [("voice", "piper:pt_BR-jeff-medium")]
+
+
+def test_voice_for_config_falls_back_to_the_project_when_the_snapshot_has_no_voice():
+    from app.studio.composition import _voice_for_config
+
+    def never(kind, spec):
+        raise AssertionError("não deveria construir voz de estilo")
+
+    assert _voice_for_config(_Video(P), _Config(), lambda pid: f"projeto:{pid}", never) == f"projeto:{P}"
+
+
+# -- F06.T02: a execução consome a decisão de roteamento (perfil econômico), com auditoria ----
+
+
+class _Project:
+    def __init__(self, config):
+        self.id, self.config = P, config
+
+
+class _Projects:
+    def __init__(self, config=None):
+        self.config = config or {}
+
+    def get_project(self, project_id):
+        return _Project(self.config) if project_id == P else None
+
+
+class _BuiltProvider:
+    def __init__(self, spec):
+        self.name, _, self.model = spec.partition(":")
+        self.spec = spec
+
+
+def _routing(*, config=None, implementations=(), build=None, profile=..., production=False,
+             max_cost=None):
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.studio.application.providers import ProviderService
+    from app.studio.composition import ProviderRouting
+
+    service = ProviderService(_Projects(config), {}, list(implementations))
+    built = []
+
+    def default_build(kind, spec):
+        built.append(spec)
+        return _BuiltProvider(spec)
+
+    limits = None if profile is None else SimpleNamespace(
+        economic_profile=profile,
+        hard_video_usd=Decimal("1000") if max_cost is None else max_cost)
+    routing = ProviderRouting(
+        service, build or default_build,
+        configured_spec=lambda kind, project_id: (config or {}).get(kind) or {
+            "text": "demo:local", "image": "placeholder:", "voice": "piper:pt_BR-faber-medium",
+            "renderer": "ffmpeg:rich"}[kind],
+        limits_for=lambda project_id: limits,
+        production=production)
+    return routing, built
+
+
+def _impl(name, *, cost, quality=3, capabilities=("text.generate",), validated=True):
+    from app.studio.domain.provider import ProviderImplementation, ProviderKind
+
+    return ProviderImplementation(ProviderKind.TEXT, name, capabilities=capabilities, cost=cost,
+                                  quality=quality, validated=validated,
+                                  reason=None if validated else "not validated")
+
+
+def _decision_events(caplog):
+    import json
+
+    return [json.loads(record.message) for record in caplog.records
+            if record.name == "studio.providers" and record.message.startswith("{")]
+
+
+def test_provider_for_executes_the_economy_decision_instead_of_the_configured_spec(caplog):
+    """(a) ECONOMY escolhe o candidato mais barato disponível, mesmo com outro configurado."""
+    import logging
+    from decimal import Decimal
+
+    from app.studio.domain.provider import CostEstimate, EconomicProfile
+
+    caplog.set_level(logging.INFO, logger="studio.providers")
+    routing, built = _routing(
+        config={"text": "premium:top"},
+        implementations=[
+            _impl("cheap", cost=CostEstimate.estimate(Decimal("0.01")), quality=2),
+            _impl("premium", cost=CostEstimate.estimate(Decimal("0.90")), quality=5),
+        ],
+        profile=EconomicProfile.ECONOMY)
+
+    provider = routing("text", P)
+
+    assert built == ["cheap"]                      # executou a decisão, não o spec configurado
+    assert provider.name == "cheap"
+    events = _decision_events(caplog)
+    assert len(events) == 1
+    event = events[0]
+    assert event["event"] == "provider_decision" and event["attempt"] == 1
+    assert event["candidate"] == "cheap" and event["effective"] == "cheap"
+    assert event["profile"] == "ECONOMY"
+    assert "ECONOMY" in event["reason"] and "custo" in event["reason"]
+
+
+def test_provider_for_reevaluates_explicitly_when_the_decided_provider_is_unavailable(caplog):
+    """(b) provider decidido indisponível → nova avaliação auditada, nunca troca silenciosa."""
+    import logging
+    from decimal import Decimal
+
+    from app.studio.application.config import ProviderNotFound
+    from app.studio.domain.provider import CostEstimate, EconomicProfile
+
+    caplog.set_level(logging.INFO, logger="studio.providers")
+    service_impls = [
+        _impl("cheap", cost=CostEstimate.free(), quality=2),
+        _impl("demo", cost=CostEstimate.free(), quality=1),
+    ]
+    attempts = []
+
+    def build(kind, spec):
+        attempts.append(spec)
+        if spec == "cheap":
+            raise ProviderNotFound("no text provider for 'cheap:'")
+        return _BuiltProvider(spec)
+
+    routing, _ = _routing(config={"text": "demo:local"}, implementations=service_impls,
+                          build=build, profile=EconomicProfile.ECONOMY)
+
+    provider = routing("text", P)
+
+    assert attempts == ["cheap", "demo:local"]    # reavaliou; não caiu calado no configurado
+    assert provider.name == "demo"
+    first, second = _decision_events(caplog)
+    assert (first["attempt"], first["candidate"], first["effective"]) == (1, "cheap", None)
+    assert "unavailable" in first["reason"] and "ProviderNotFound" in first["reason"]
+    assert (second["attempt"], second["candidate"], second["effective"]) == (2, "demo:local", "demo")
+
+
+def test_provider_for_fails_with_the_reason_when_no_acceptable_candidate_exists(caplog):
+    """(c) sem candidato aceitável o erro é explícito e nada é construído/executado."""
+    import logging
+
+    from app.studio.domain.provider import CostEstimate, EconomicProfile, NoProviderAvailable
+
+    caplog.set_level(logging.INFO, logger="studio.providers")
+    routing, built = _routing(
+        implementations=[_impl("demo", cost=CostEstimate.free(), quality=1)],
+        profile=EconomicProfile.ECONOMY, production=True)
+
+    with pytest.raises(NoProviderAvailable) as excinfo:
+        routing("text", P)
+
+    assert "non-production provider" in str(excinfo.value)
+    assert built == []
+    events = _decision_events(caplog)
+    assert len(events) == 1 and events[0]["effective"] is None
+    assert "non-production provider" in events[0]["reason"]
+    assert events[0]["attempt"] == 1
+
+
+def test_provider_for_without_a_profile_keeps_the_configured_spec_unchanged():
+    """(e) sem perfil econômico a execução continua exatamente como antes (sem rotear)."""
+    from app.studio.application.providers import ProviderService
+    from app.studio.composition import ProviderRouting
+
+    class _NoRoute(ProviderService):
+        def route(self, *args, **kwargs):  # pragma: no cover - falha se chamado
+            raise AssertionError("não deveria rotear sem perfil econômico")
+
+    built = []
+    routing = ProviderRouting(_NoRoute(_Projects(), {}, []),
+                              lambda kind, spec: built.append(spec) or _BuiltProvider(spec),
+                              configured_spec=lambda kind, project_id: "premium:top")
+
+    provider = routing("text", P)
+
+    assert built == ["premium:top"] and provider.name == "premium" and provider.model == "top"
+
+
+def test_wiring_consumes_the_channel_profile_and_keeps_the_legacy_path_without_it(conn, dsn, tmp_path, caplog):
+    """F06.T02: a fiação real roteia pelo perfil do canal; sem perfil, o spec configurado manda."""
+    import logging
+    from decimal import Decimal
+
+    import psycopg
+
+    from app.studio.adapters.postgres.channel_budget_repo import PostgresChannelBudgetRepository
+    from app.studio.adapters.postgres.db import migrate
+    from app.studio.adapters.postgres.repo import PostgresVideoRepository
+    from app.studio.domain.channel_budget import BudgetLimits
+    from app.studio.domain.provider import EconomicProfile
+
+    caplog.set_level(logging.INFO, logger="studio.providers")
+    migrate(conn)
+    conn.commit()
+    connect = lambda: psycopg.connect(dsn)
+    videos = PostgresVideoRepository(connect)
+    routed = videos.create_project("Roteado", niche="Geral", language="pt-BR")
+    legacy = videos.create_project("Legado", niche="Geral", language="pt-BR")
+    PostgresChannelBudgetRepository(connect).upsert(BudgetLimits(
+        project_id=routed.id, hard_monthly_usd=Decimal("5"), soft_monthly_usd=Decimal("3"),
+        hard_video_usd=Decimal("1"), soft_video_usd=Decimal("1"),
+        economic_profile=EconomicProfile.ECONOMY))
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path, bridge_token="fake-token"),
+                    environ={"STUDIO_TEXT": "opencode:gpt-legado"})
+    model_for = studio.use_cases().editorial.generate.model_for
+
+    assert model_for(routed.id).name == "demo"          # ECONOMY executou a decisão roteada
+    assert model_for(legacy.id).name == "opencode"      # sem perfil: comportamento de antes
+    assert model_for(legacy.id).model == "gpt-legado"
+
+    events = [record.message for record in caplog.records if record.name == "studio.providers"]
+    assert any('"profile": "ECONOMY"' in message and '"effective": "demo"' in message
+               for message in events)
+    assert any('"profile": null' in message and '"candidate": "opencode:gpt-legado"' in message
+               for message in events)

@@ -18,7 +18,9 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from ...domain.effective_config import EffectiveConfig, EffectiveConfigError
 from ...domain.ids import check_id
+from ...domain.run_config import RunConfigConflict, RunConfigIntegrityError, RunConfigStatus, StoredRunConfig
 from ...domain.production_run import (
     EVENT_VERSION,
     STANDARD_DAG,
@@ -52,6 +54,9 @@ from .repo import _translated
 
 _RUN_COLS = ("run_id, video_id, channel_id, state, idempotency_key, schema_version, reason, "
              "created_at, updated_at")
+# F03.T02: a referência imutável da configuração viaja na própria linha do run. O SELECT/RETURNING
+# que precisa dela pede estas colunas explicitamente; `_run` ignora as extras.
+_CONFIG_COLS = "config_status, config_snapshot, config_hash, config_provenance, config_schema_version"
 _STAGE_COLS = ("run_id, stage_id, state, attempt, lease_owner, lease_expires_at, fencing_token, "
                "checkpoint, checkpoint_version, error, created_at, updated_at")
 _OUTBOX_COLS = "id, run_id, stage_id, event_type, event_version, payload, created_at, acked_at"
@@ -103,6 +108,37 @@ def _event(row: dict) -> OutboxEvent:
     )
 
 
+def _stored_config(row: dict) -> StoredRunConfig:
+    """Reconstrói a referência persistida; hash divergente é corrupção explícita, não warning."""
+    status = RunConfigStatus(row["config_status"])
+    if status is RunConfigStatus.LEGACY:
+        return StoredRunConfig(RunConfigStatus.LEGACY)
+    try:
+        config = EffectiveConfig.from_document(row["config_snapshot"])
+    except EffectiveConfigError as exc:
+        raise RunConfigIntegrityError(
+            f"persisted effective config is invalid: {exc}") from exc
+    if config.content_hash != row["config_hash"]:
+        raise RunConfigIntegrityError(
+            "persisted effective config does not match its stored content hash")
+    return StoredRunConfig(RunConfigStatus.RESOLVED, config)
+
+
+def _config_values(config: EffectiveConfig | None, video_id: str) -> tuple:
+    """Colunas do snapshot: documento canônico + hash + proveniência + schema (ou legado explícito)."""
+    if config is None:
+        return (RunConfigStatus.LEGACY.value, None, None, None, None)
+    if not isinstance(config, EffectiveConfig):
+        raise TypeError("config must be an EffectiveConfig or None")
+    if config.video_id != video_id:
+        raise ValueError("the effective config belongs to another video")
+    # Documento canônico (chaves ordenadas, números normalizados): o hash é determinístico e a
+    # proveniência viaja dentro do mesmo documento — a coluna separada é só para auditoria SQL.
+    document = config.canonical_document()
+    return (RunConfigStatus.RESOLVED.value, Jsonb(document), config.content_hash,
+            Jsonb(document["provenance"]), config.schema_version)
+
+
 def _text(value: Any, label: str, max_length: int) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} is required")
@@ -152,22 +188,28 @@ class PostgresProductionRunRepository:
 
     def create_run(self, run_id: str, video_id: str, idempotency_key: str, *,
                    channel_id: str | None = None,
-                   stages: Iterable[ProductionStage] | None = None) -> RunCreation:
+                   stages: Iterable[ProductionStage] | None = None,
+                   config: EffectiveConfig | None = None) -> RunCreation:
         run_id = check_id(run_id)
         video_id = check_id(video_id)
         if channel_id is not None:
             channel_id = check_id(channel_id)
         idempotency_key = canonical_idempotency_key(idempotency_key)
         ordered = self._dag.validate_stages(self._dag.stages if stages is None else stages)
+        # Snapshot calculado ANTES da transação, mas sem I/O: se a config for inválida/estranha,
+        # nenhum run é criado (o resolvedor já rodou a montante, antes de qualquer efeito).
+        snapshot = _config_values(config, video_id)
         with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
             inserted = _one(
                 conn,
-                f"INSERT INTO studio.production_runs(run_id, video_id, channel_id, idempotency_key, state) "
-                f"VALUES (%s, %s, %s, %s, 'CREATED') ON CONFLICT DO NOTHING RETURNING {_RUN_COLS}",
-                (run_id, video_id, channel_id, idempotency_key),
+                f"INSERT INTO studio.production_runs(run_id, video_id, channel_id, idempotency_key, state, "
+                f"{_CONFIG_COLS}) VALUES (%s, %s, %s, %s, 'CREATED', %s, %s, %s, %s, %s) "
+                f"ON CONFLICT DO NOTHING RETURNING {_RUN_COLS}, {_CONFIG_COLS}",
+                (run_id, video_id, channel_id, idempotency_key, *snapshot),
             )
             if inserted is None:
-                return self._existing_run(conn, run_id, video_id, channel_id, idempotency_key, ordered)
+                return self._existing_run(conn, run_id, video_id, channel_id, idempotency_key, ordered,
+                                          config)
             for stage in ordered:
                 conn.execute("INSERT INTO studio.stage_executions(run_id, stage_id, state) "
                              "VALUES (%s, %s, 'PENDING')", (run_id, stage.value))
@@ -178,10 +220,16 @@ class PostgresProductionRunRepository:
             return RunCreation(CreateRunResult.CREATED, _run(inserted))
 
     def _existing_run(self, conn: psycopg.Connection, run_id: str, video_id: str, channel_id: str | None,
-                      idempotency_key: str, ordered: tuple[ProductionStage, ...]) -> RunCreation:
-        """Replay: a chave identifica uma única solicitação; divergência é conflito, nunca duplicação."""
-        row = _one(conn, f"SELECT {_RUN_COLS} FROM studio.production_runs WHERE idempotency_key = %s",
-                   (idempotency_key,))
+                      idempotency_key: str, ordered: tuple[ProductionStage, ...],
+                      config: EffectiveConfig | None) -> RunCreation:
+        """Replay: a chave identifica uma única solicitação; divergência é conflito, nunca duplicação.
+
+        A configuração também é identidade: o run existente devolve o snapshot que já tinha e uma
+        chamada com outro conteúdo falha (`RunConfigConflict`), sem sobrescrever. Run legado não
+        ganha snapshot depois do fato — um retry com resolvedor é conflito explícito.
+        """
+        row = _one(conn, f"SELECT {_RUN_COLS}, {_CONFIG_COLS} FROM studio.production_runs "
+                         f"WHERE idempotency_key = %s", (idempotency_key,))
         if row is None:
             raise ProductionIdempotencyConflict("run id is already used by another idempotency key")
         if row["run_id"] != run_id or row["video_id"] != video_id or row["channel_id"] != channel_id:
@@ -190,7 +238,27 @@ class PostgresProductionRunRepository:
             conn, "SELECT stage_id FROM studio.stage_executions WHERE run_id = %s", (run_id,))}
         if stored != {stage.value for stage in ordered}:
             raise ProductionIdempotencyConflict("idempotency key already used with a different stage set")
+        if config is not None:
+            persisted = _stored_config(row)
+            if persisted.status is RunConfigStatus.LEGACY:
+                raise RunConfigConflict(
+                    "run was created without an effective config (legacy) and cannot gain one")
+            if persisted.content_hash != config.content_hash:
+                raise RunConfigConflict(
+                    "idempotency key already used with a different effective config")
         return RunCreation(CreateRunResult.EXISTING, _run(row))
+
+    def run_config(self, run_id: str) -> StoredRunConfig | None:
+        """Snapshot imutável do run para retomada/retry/replay; `None` se o run não existe.
+
+        Nunca resolve nada: só lê o documento canônico gravado na criação. Um run legado devolve
+        o marcador explícito, não um snapshot fabricado.
+        """
+        run_id = check_id(run_id)
+        with _translated(), _production_errors(), self._connect() as conn:
+            row = _one(conn, f"SELECT {_CONFIG_COLS} FROM studio.production_runs WHERE run_id = %s",
+                       (run_id,))
+        return _stored_config(row) if row is not None else None
 
     def get_run(self, run_id: str) -> ProductionRun | None:
         run_id = check_id(run_id)

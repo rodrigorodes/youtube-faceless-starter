@@ -59,7 +59,7 @@ def test_trends_uses_v3_shell_and_nav():
     assert "Cada tendência vem com a evidência" in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
-    assert 'href="/studio/panel/tendencias" aria-current="page"' in main
+    assert re.search(r'href="/studio/panel/tendencias(?:\?project_id=[^"]+)?" aria-current="page"', main)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1
 
@@ -110,3 +110,96 @@ def test_trends_satisfies_ux_contract():
     html, _ = _trends_page(trends=[_trend()])
     assert_ux_contract(html, page="painel/tendências")
     assert not re.search(r"\son[a-z]+=", html)
+
+
+# ------------------------------------------- scroll infinito da lista (pedido do operador)
+
+
+PAGE_SIZE = 24
+
+
+def _many(n, region="BR"):
+    return [_trend(topic=f"Tema {region} {i}", region=region,
+                   url=f"https://www.youtube.com/watch?v={region.lower()}{i:08d}") for i in range(n)]
+
+
+def _view(trends, project_id="1" * 32):
+    p_id = project_id
+    trend_repo = FakeTrendRepo(records=trends, last_collected=NOW)
+    panel_repo = FakePanelRepo(projects_list=[(p_id, "Canal Principal")])
+    return BuildPanel(panel_repo, 15.0, lambda: NOW, trends=trend_repo,
+                      categories_repo=FakeCategoryRepo()).execute(days=7)
+
+
+def _page_html(trends, **kw):
+    from app.studio.api.panel_trends import render_tendencias_v3
+    return render_tendencias_v3(_view(trends, kw.pop("project_id", "1" * 32)), **kw)[0]
+
+
+def _lote_html(trends, **kw):
+    from app.studio.api.panel_trends import render_tendencias_cartoes
+    view = _view(trends, kw.pop("project_id", "1" * 32))
+    return render_tendencias_cartoes(view, **kw)[0]
+
+
+def test_first_render_shows_one_batch_and_a_load_more_control():
+    html = _page_html(_many(30))
+    assert html.count('class="cartao-tendencia"') == PAGE_SIZE
+    assert 'id="btn-carregar-mais"' in html
+    assert "Mostrando 24 de 30." in html
+    assert "offset=24" in html                      # próximo lote aponta para o resto
+    assert 'aria-label="Paginação de tendências"' not in html   # não há mais paginação por página
+
+
+def test_load_more_is_absent_when_everything_already_fits():
+    html = _page_html(_many(3))
+    assert 'id="mais-tendencias"' not in html
+    assert 'id="btn-carregar-mais"' not in html
+
+
+def test_next_batch_returns_the_following_cards_and_says_when_it_ends():
+    trends = _many(30)
+    lote = _lote_html(trends, offset=PAGE_SIZE, limite=PAGE_SIZE)
+    assert lote.count('class="cartao-tendencia"') == 6
+    assert "Tema BR 24" in lote and "Tema BR 29" in lote
+    assert 'data-tem-mais="false"' in lote
+
+
+def test_middle_batch_points_to_the_next_offset():
+    lote = _lote_html(_many(60), offset=PAGE_SIZE, limite=PAGE_SIZE)
+    assert lote.count('class="cartao-tendencia"') == PAGE_SIZE
+    assert 'data-tem-mais="true"' in lote
+    assert "offset=48" in lote
+
+
+def test_filter_runs_on_the_server_and_the_next_batch_follows_the_filtered_list():
+    trends = _many(30, "BR") + _many(5, "US")
+    only_us = _page_html(trends, filtro="regiao:US")
+    assert only_us.count('class="cartao-tendencia"') == 5
+    assert "Tema US 0" in only_us and "Tema BR 0" not in only_us
+    assert 'id="btn-carregar-mais"' not in only_us          # 5 cabe no primeiro lote
+
+    br_lote = _lote_html(trends, filtro="regiao:BR", offset=PAGE_SIZE, limite=PAGE_SIZE)
+    assert br_lote.count('class="cartao-tendencia"') == 6
+    assert "Tema BR 29" in br_lote and "Tema US" not in br_lote
+
+
+def test_active_filter_is_marked_without_stealing_the_page_current_marker():
+    html = _page_html(_many(2), filtro="regiao:BR")
+    markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
+    assert markup.count('aria-current="page"') == 1        # só o item da navegação
+    assert 'data-filtro="regiao:BR" aria-current="true"' in html
+
+
+def test_bad_or_out_of_range_offset_returns_an_empty_honest_batch():
+    empty = _lote_html(_many(10), offset=999, limite=PAGE_SIZE)
+    assert empty.count('class="cartao-tendencia"') == 0
+    assert 'data-tem-mais="false"' in empty
+    negative = _lote_html(_many(10), offset=-5, limite=PAGE_SIZE)
+    assert negative.count('class="cartao-tendencia"') == 10   # offset inválido = começo
+
+
+def test_unknown_filter_shows_an_explicit_empty_state_not_every_trend():
+    html = _page_html(_many(3), filtro="pilar:inexistente")
+    assert html.count('class="cartao-tendencia"') == 0
+    assert "Nenhuma tendência encontrada para este filtro." in html

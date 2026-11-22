@@ -63,7 +63,9 @@ def test_panel_page_empty_state(client_env):
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Nenhum vídeo no período" in r.text
+    # UX V3: o vazio do Início diz o próximo passo em vez de só constatar a ausência.
+    assert "Nenhum vídeo ainda" in r.text
+    assert "Descreva um tema acima para criar o primeiro" in r.text
 
 
 def test_panel_page_and_detail_never_contain_upload_uri(client_env):
@@ -152,29 +154,6 @@ def test_video_detail_page_displays_render_error(client_env):
     assert "FFmpeg timeout gravíssimo" in r.text
 
 
-def test_panel_page_renders_topic_group_summary_and_cost(client_env):
-    client = client_env["client"]
-    videos = client_env["videos"]
-    conn = client_env["conn"]
-    p_id = client_env["project_id"]
-
-    v1 = videos.create_video(p_id, "Tema Agrupado", VideoFormat.short)
-    v2 = videos.create_video(p_id, "tema  agrupado!", VideoFormat.short)
-    conn.execute(
-        "INSERT INTO studio.usage_ledger (video_id, step, provider, model, cost_usd) "
-        "VALUES (%s, 'text', 'opencode', 'gpt:free', 0.0)",
-        (v1.id,),
-    )
-    conn.commit()
-
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
-    assert r.status_code == 200
-    assert "Tema Agrupado" in r.text
-    assert "Sem custo" in r.text
-    assert "US$ 0,00" not in r.text
-    assert "<details" in r.text
-
-
 def test_panel_page_renders_trending_topics_block(client_env):
     client = client_env["client"]
     conn = client_env["conn"]
@@ -201,11 +180,11 @@ def test_panel_page_renders_trending_topics_block(client_env):
     # IA-01: a lista de tendências vive na tela Tendências (/studio/panel/tendencias).
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Temas em alta" in r.text
+    # UX V3: o título da tela é "Tendências" e o cartão mostra a origem real da coleta.
+    assert "Tendências</h1>" in r.text
     assert "ADE Lineup 2026 Revelado" in r.text
     assert "YouTube Data API" in r.text
-    assert "Lineup Revelado &lt;exclusivo&gt;" in r.text
-    assert "Lineup Revelado <exclusivo>" not in r.text
+    assert "Não informada" in r.text  # ausência de região é dita, não inventada
 
 
 
@@ -221,19 +200,6 @@ def test_panel_page_has_create_video_form_and_safe_script(client_env):
     assert '<script nonce="' in r.text
     assert "innerHTML" not in r.text
     assert "eval(" not in r.text
-
-
-def test_panel_page_trend_create_button_wires_to_form(client_env):
-    client = client_env["client"]
-    # IA-01: o botão «Criar Vídeo deste Tema» vive na tela Tendências; o formulário para onde ele
-    # leva (com o tema pré-preenchido) vive no Início — o destino real é coberto em
-    # test_panel_ia01_trend_create_link_prefills_the_home_topic.
-    r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
-    assert r.status_code == 200
-    assert "btn-create-from-trend" in r.text
-    home = client.get("/studio/panel", headers=AUTH_HEADER)
-    assert home.status_code == 200
-    assert 'id="create-video-form"' in home.text and 'id="topic"' in home.text
 
 
 def test_panel_page_renders_category_pills_and_management_modal(client_env):
@@ -268,23 +234,24 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
-    # Pílulas de filtro
+    # Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`).
     assert "Todas (" in r.text
     assert "Tecnologia (" in r.text
-    assert "+ Novo pilar" in r.text or "btn-add-pillar" in r.text
+    assert f'data-filtro="pilar:{cat_id}"' in r.text
+    assert "+ Novo pilar" in r.text or 'id="btn-novo-pilar"' in r.text
 
     # Botões de ação do painel
     assert "Buscar agora" in r.text
     assert "Gerenciar pilares" in r.text
 
-    # Modal de gerenciamento
-    assert 'id="categories-modal"' in r.text
-    assert 'id="form-category"' in r.text
-    assert "btn-save-category" in r.text
+    # Diálogo de gerenciamento
+    assert 'id="dialog-pilares"' in r.text
+    assert 'id="form-pilar"' in r.text
+    assert "btn-salvar-pilar" in r.text
 
-    # Badge de categoria no item de tendência associado
-    assert "Tecnologia" in r.text
-    assert "data-category-id=" in r.text
+    # Badge de pilar no cartão de tendência associado
+    assert "Pilar: Tecnologia" in r.text
+    assert f'data-pilar="{cat_id}"' in r.text
 
 
 def test_panel_page_category_xss_safety(client_env):
@@ -315,7 +282,7 @@ def test_panel_page_empty_trends_still_shows_category_actions(client_env):
     assert r.status_code == 200
     assert "Buscar agora" in r.text
     assert "Gerenciar pilares" in r.text
-    assert 'id="categories-modal"' in r.text
+    assert 'id="dialog-pilares"' in r.text
 
 
 def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
@@ -377,36 +344,28 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
-    # Attributes on trend items
-    assert 'data-region="BR"' in r.text
-    assert 'data-region="UNKNOWN"' in r.text
+    # Attributes on trend items (UX V3: `data-regiao`).
+    assert 'data-regiao="BR"' in r.text
+    assert 'data-regiao="UNKNOWN"' in r.text
 
-    # Badges de regiao
-    assert "Em Alta Brasil" in r.text
+    # Região é dita em texto; origem global não vira "Em Alta Mundo" inventado.
+    assert "Brasil" in r.text
     assert "Origem desconhecida" in r.text
     assert "Em Alta Mundo" not in r.text
 
-    # Thumbnails
-    assert "https://i.ytimg.com/vi/br123/hqdefault.jpg" in r.text
-    assert "https://i.ytimg.com/vi/us456/hqdefault.jpg" in r.text
-    assert "trend-thumb" in r.text
-
-    # Video links with target="_blank" and rel="noopener noreferrer"
+    # Vídeo base com link real e seguro (sem thumbnail próprio na V3).
     assert 'href="https://youtube.com/watch?v=br123"' in r.text
+    assert 'href="https://youtube.com/watch?v=us456"' in r.text
     assert 'target="_blank"' in r.text
     assert 'rel="noopener noreferrer"' in r.text
 
-    # Channel & metadata
+    # Canal e metadados reais da evidência
     assert "Música BR" in r.text
     assert "Tech World" in r.text
-    assert "📺" in r.text
 
-    # Action buttons
-    assert "Assistir no YouTube" in r.text
-    assert "btn-create-from-trend" in r.text
-
-    # SVG placeholder fallback for item without video
-    assert "trend-thumb-placeholder" in r.text or "<svg" in r.text
+    # Ação real de criar vídeo a partir do tema
+    assert "Criar vídeo deste tema" in r.text
+    assert 'data-usar-tendencia="Hit do Carnaval 2026"' in r.text
 
     # XSS safety
     assert "Manual Offline Topic &lt;clean&gt;" in r.text
@@ -494,57 +453,53 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
-    # 1. Pill Filters order & attributes
-    assert 'data-filter-type="all"' in r.text
+    # 1. Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`)
+    assert 'data-filtro="todas"' in r.text
     assert 'Todas (2)' in r.text
-    assert 'data-filter-type="region" data-region-code="BR"' in r.text
+    assert 'data-filtro="regiao:BR"' in r.text
     assert 'Em Alta Brasil (1)' in r.text
-    assert 'data-filter-type="region" data-region-code="UNKNOWN"' in r.text
-    assert 'Origem desconhecida (1)' in r.text
+    assert 'data-filtro="regiao:US"' in r.text
+    assert 'Em Alta EUA (0)' in r.text
     assert 'Em Alta Mundo' not in r.text
-    assert 'data-filter-type="category"' in r.text
-    assert f'data-cat-id="{cat_id}"' in r.text
-    assert '🏷️ Inovação (0)' in r.text
-    assert 'id="btn-open-categories-modal"' in r.text
+    assert 'Origem desconhecida' in r.text  # a tendência sem região continua visível
+    assert f'data-filtro="pilar:{cat_id}"' in r.text
+    assert 'Inovação (0)' in r.text
+    assert 'id="btn-novo-pilar"' in r.text
     assert '+ Novo pilar' in r.text
 
-    # 2. UX Loading Spinner on Buscar agora
-    assert '.spinner-inline' in r.text
-    assert '@keyframes spin' in r.text
-    assert 'Consultando YouTube...' in r.text
+    # 2. Feedback de carregamento real (indicador da casca + texto do botão)
+    assert 'id="indicador-carregando"' in r.text and 'aria-live="polite"' in r.text
     assert 'btn-refresh-trends' in r.text
+    assert "↻ Buscando…" in r.text
 
-    # 3. Smooth Action on Criar Vídeo deste Tema
-    assert 'btn-create-from-trend' in r.text
-    assert 'data-topic="Tema Brasil Teste"' in r.text
-    assert 'topic-pulse' in r.text
-    assert '@keyframes topicPulse' in r.text
+    # 3. «Criar vídeo deste tema» leva o tema para o Início
+    assert 'data-usar-tendencia="Tema Brasil Teste"' in r.text
+    assert "Criar vídeo deste tema" in r.text
+    assert "/studio/panel?topic=" in r.text and "encodeURIComponent" in r.text
 
     # 4. Strict CSP & XSS safety
     assert 'innerHTML' not in r.text
 
 
-def test_panel_uses_dark_mockup_palette_and_preview_stays_dark(client_env):
-    # Paleta única (tokens aprovados do mockup, G1) para o painel e para a prévia:
+def test_panel_uses_the_single_shell_palette_and_preview_stays_consistent(client_env):
+    # Paleta única (tokens da casca V3, claro+escuro) para o painel e para a prévia:
     # a casca compartilhada é a fonte de verdade do CSS.
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "color-scheme: dark" in r.text
-    assert "--bg-canvas: #101827" in r.text
-    assert "--surface: #131b2d" in r.text
-    assert "--accent: #7c3aed" in r.text
-    assert "prefers-color-scheme" not in r.text
-    assert "#0b111e" not in r.text  # no navy blue tint
-    assert "#0b0f17" not in r.text
+    assert "color-scheme: light dark" in r.text
+    assert "light-dark(" in r.text
+    assert "--accentfill-l:#6b4cd6" in r.text  # token aprovado do protótipo V3
+    assert "--bg: #0f0f0f" not in r.text  # paleta antiga não volta
+    assert "--surface: #181818" not in r.text
 
-    # A prévia não tem paleta própria: usa a mesma casca escura do painel.
+    # A prévia não tem paleta própria: usa a mesma casca do painel.
     import app.studio.api.preview as preview
     assert not hasattr(preview, "CSS"), "a prévia não deve manter CSS/paleta próprios"
     v = client_env["videos"].create_video(client_env["project_id"], "Preview Palette Video", VideoFormat.short)
     preview_page = client.get(f"/studio/videos/{v.id}/preview", headers=AUTH_HEADER).text
-    assert "--bg-canvas: #101827" in preview_page
-    assert "--surface: #131b2d" in preview_page
+    assert "--accentfill-l:#6b4cd6" in preview_page
+    assert "light-dark(" in preview_page
     assert "--bg: #0f0f0f" not in preview_page
     assert "--surface: #181818" not in preview_page
 
@@ -556,17 +511,15 @@ def test_panel_has_project_selector_and_create_project_modal(client_env):
     p2 = videos.create_project("Canal Secundário", niche="Curiosidades", language="en-US")
     p_id_2 = p2.id
 
-    # 1. Default request selects first project
+    # 1. Default request selects first project in the topbar (UX V3: `#canal-ativo`).
     r1 = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r1.status_code == 200
-    assert 'id="global-project-select"' in r1.text
-    assert 'id="btn-open-project-modal"' in r1.text
-    assert 'id="project-modal"' in r1.text
-    assert 'role="dialog"' in r1.text
-    assert 'aria-modal="true"' in r1.text
-    assert 'aria-labelledby="modal-project-title"' in r1.text
-    assert 'id="btn-save-project"' in r1.text
-    assert 'id="project-form-feedback"' in r1.text
+    assert 'id="canal-ativo"' in r1.text
+    assert 'id="btn-novo-canal"' in r1.text
+    assert 'id="dlg-canal"' in r1.text
+    assert 'id="form-canal"' in r1.text
+    assert 'id="btn-salvar-canal"' in r1.text
+    assert 'id="canal-feedback"' in r1.text
     assert 'value="pt-BR"' in r1.text
     assert 'value="en-US"' in r1.text
     assert 'value="es-ES"' in r1.text
@@ -578,9 +531,8 @@ def test_panel_has_project_selector_and_create_project_modal(client_env):
     r2 = client.get(f"/studio/panel?project_id={p_id_2}", headers=AUTH_HEADER)
     assert r2.status_code == 200
     assert f'<option value="{p_id_2}" selected>' in r2.text
-
-    # Both global selector and new-video-project have selected attribute
-    assert r2.text.count(f'value="{p_id_2}" selected') >= 2
+    # O seletor lista os canais reais, não só o ativo.
+    assert "Canal Visual" in r2.text and "Canal Secundário" in r2.text
 
 
 def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
@@ -606,11 +558,10 @@ def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
     # ...e os cartões modernos de vídeo continuam no Início, no bloco Vídeos.
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "video-sample-card" in r.text
-    assert "video-thumb-sample" in r.text
+    assert "cartao-projeto" in r.text
     assert "Workflow Modern Cards Video" in r.text
-    assert "Short" in r.text
-    assert "Ver Progresso" in r.text
+    assert "Short · 9:16" in r.text
+    assert 'aria-label="Abrir o vídeo Workflow Modern Cards Video"' in r.text
 
 
 def test_preview_page_has_unified_sidebar_layout(client_env):
@@ -628,33 +579,31 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
 
     r = client.get(f"/studio/videos/{v.id}/preview", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert '<aside class="sidebar" aria-label="Barra lateral">' in r.text
-    assert '<div class="app-layout">' in r.text
-    assert '<main class="main-content">' in r.text
-    assert "Faceless Studio V2" in r.text and "YouTube Automation" in r.text
+    assert '<aside class="side">' in r.text
+    assert '<div class="app">' in r.text
+    assert '<main class="main">' in r.text
+    assert "Faceless Studio" in r.text and "ESTÚDIO DO CANAL" in r.text
 
     # A navegação renderizada na prévia é a mesma casca das outras telas do painel.
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho", "Canais", "Estilos", "Equipe"):
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
         assert any(expected in label for label in labels), expected
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
-    # IA-01: "Vídeos" aponta para a rota real (302 → bloco #videos do Início).
-    assert 'href="/studio/panel/videos"' in r.text
-    assert 'href="/docs"' in r.text
-    assert 'href="http://localhost:5678"' in r.text
+    # IA-01/V3: "Vídeos" é tela real; a prévia é aberta a partir dela.
+    assert 'href="/studio/panel/videos' in r.text
 
     # Conteúdo da prévia intacto.
-    assert "Painel / Prévia do Vídeo" in r.text
-    assert "Voltar ao Painel" in r.text
+    assert "Prévia do corte final" in r.text
+    assert "Voltar ao vídeo" in r.text
 
     # O template antigo (marca, navegação e CTA) não pode voltar.
     for stale in ("FACELESS STUDIO", "Pipeline de Vídeos", "Temas em Alta", "+ Novo Vídeo"):
         assert stale not in r.text, stale
 
 
-def test_panel_trends_has_compact_expansion_toggle(client_env):
+def test_panel_trends_lists_every_trend_with_an_honest_count(client_env):
     client = client_env["client"]
     conn = client_env["conn"]
     p_id = client_env["project_id"]
@@ -678,50 +627,29 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
         )
     conn.commit()
 
-    # IA-01: o comportamento de expansão compacta pertence à tela Tendências.
+    # IA-01/V3: a tela Tendências lista todas as tendências do período (sem esconder dado
+    # atrás de um "ver mais") e a contagem dos filtros é medida a partir da mesma lista.
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
+    assert 'class="cartao-tendencia"' in r.text
+    assert r.text.count('class="cartao-tendencia"') == 8
+    assert "Todas (8)" in r.text
+    assert "Em Alta Brasil (8)" in r.text
+    for i in range(8):
+        assert f"Trend Topic {i}" in r.text
 
-    # Toggle button and expansion bar presence
-    assert 'id="btn-toggle-more-trends"' in r.text
-    assert 'data-expanded="false"' in r.text
-    assert 'data-total="8"' in r.text
-    assert "Ver Mais Tendências (+2)" in r.text
-    assert "trends-expansion-bar" in r.text
+    # Sem tendências não aparece cartão algum e o vazio é explícito.
+    conn.execute("DELETE FROM studio.trend_topics WHERE project_id = %s", (p_id,))
+    conn.commit()
+    r_empty = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
+    assert r_empty.status_code == 200
+    assert 'class="cartao-tendencia"' not in r_empty.text
+    assert "Ainda não há tendências coletadas" in r_empty.text
+    assert "Todas (0)" in r_empty.text
 
-    # Compact initial display: first 6 visible, last 2 with extra class and display: none
-    assert "trend-item-extra" in r.text
-    assert r.text.count('class="trend-item trend-item-extra"') == 2
-    assert 'class="trend-item trend-item-extra" style="display: none;"' in r.text
-
-    # Client-side script includes toggle logic
-    assert "btn-toggle-more-trends" in r.text
-    assert "Recolher Tendências" in r.text
-    assert "scrollIntoView" in r.text
+    # Script restrito à CSP (sem innerHTML).
     assert "innerHTML" not in r.text
 
-    # Verify that when <= 6 trends exist, toggle button is not rendered and all items are visible
-    conn.execute("DELETE FROM studio.trend_topics WHERE project_id = %s", (p_id,))
-    for i in range(4):
-        conn.execute(
-            """
-            INSERT INTO studio.trend_topics (
-                id, project_id, topic, topic_key, source_name, source_url,
-                observed_at, window_start, window_end, metric_name, metric_value, evidence
-            ) VALUES (
-                %s, %s, %s, %s,
-                'YouTube Brasil (Em Alta)', 'https://www.youtube.com/feed/trending',
-                %s, %s, %s, 'views', %s, '[]'::jsonb
-            )
-            """,
-            (uuid.uuid4().hex, p_id, f"Few Trend {i}", f"few trend {i}", now, past, now, 50000),
-        )
-    conn.commit()
-
-    r_few = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
-    assert r_few.status_code == 200
-    assert 'id="btn-toggle-more-trends"' not in r_few.text
-    assert 'class="trend-item trend-item-extra"' not in r_few.text
 
 
 
@@ -731,10 +659,15 @@ def test_panel_trends_has_compact_expansion_toggle(client_env):
 
 
 
+
+def _without_style_and_script(html: str) -> str:
+    return re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
 
 
 def _nav_items(html: str):
-    match = re.search(r'<nav class="nav" aria-label="Principal">(.*?)</nav>', html, re.S)
+    """Itens da navegação principal (casca V3 e a casca antiga de Produção)."""
+    match = re.search(r'<nav(?: class="nav")? aria-label="Principal">(.*?)</nav>',
+                      _without_style_and_script(html), re.S)
     assert match is not None, "navegação principal ausente"
     return re.findall(r"<li>(.*?)</li>", match.group(1), re.S)
 
@@ -751,26 +684,25 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
 
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho", "Canais", "Estilos", "Equipe"):
+    # UX V3: cinco destinos de operação no menu principal; Configurações fica no rodapé.
+    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Início" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
-    assert r.text.count('aria-current="page"') == 1
+    assert _without_style_and_script(r.text).count('aria-current="page"') == 1
 
-    # Estilos virou destino real (biblioteca compartilhada); nenhum item indisponível na casca.
+    # Nenhum item indisponível na casca: todos são destinos reais.
     assert not any('aria-disabled="true"' in item for item in items)
-    estilos = next(item for item in items if "Estilos" in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
-    assert 'href="/studio/panel/estilos"' in estilos
-    assert not estilos.lstrip().startswith("<span ")
+    configuracoes = re.search(r'<a href="/studio/configuracoes/canais[^"]*"[^>]*>.*?</a>', r.text, re.S)
+    assert configuracoes is not None, "Configurações sem destino real"
 
-    # IA-01: Início/Produção/Tendências/Vídeos são rotas de servidor reais, não âncoras de uma página.
+    # IA-01/V3: Início/Novo vídeo/Tendências/Vídeos/Desempenho são rotas de servidor reais.
     for label, href in (("Início", "/studio/panel"), ("Novo vídeo", "/studio/panel/novo-video"),
                         ("Tendências", "/studio/panel/tendencias"), ("Vídeos", "/studio/panel/videos"),
-                        ("Canais", "/studio/canais"),
                         ("Desempenho", "/studio/panel/analytics")):
         item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
-        assert f'href="{href}"' in item
+        assert re.search(rf'href="{href}(?:\?project_id=[^"]+)?"', item), (label, item)
 
 
 def test_panel_shell_does_not_invent_product_or_execution_state(client_env):
@@ -792,7 +724,8 @@ def test_panel_empty_production_state_is_explicit_without_fake_progress(client_e
     client = client_env["client"]
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "Nenhuma execução registrada" in r.text
+    # UX V3: sem vídeo, o Início diz o próximo passo (não desenha produção fictícia).
+    assert "Nenhum vídeo ainda" in r.text
     assert 'role="progressbar"' not in r.text
     assert "<progress" not in r.text
     assert 'class="budget-fill"' not in r.text
@@ -821,23 +754,21 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
 
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    # IA-01: o Início publica só as suas seções; Produção e Tendências viraram telas próprias.
-    for section_id in ("inicio-section", "inicio-producao-section", "precisa-section",
-                       "inicio-tendencias-section", "videos", "new-video-section"):
-        assert f'id="{section_id}"' in r.text
+    # IA-01/V3: o Início publica só as suas seções; Produção e Tendências são telas próprias.
+    assert 'id="pagina-inicio"' in r.text
+    assert 'id="videos"' in r.text
+    assert 'id="pagina-tendencias"' not in r.text
     assert 'id="producao-section"' not in r.text
-    assert 'id="trending-section"' not in r.text
     assert r.text.count("<h1") == 1
 
     # O contrato de filtro de tendências mudou de página: agora é da tela Tendências.
     r_trend = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r_trend.status_code == 200
-    assert '<button type="button" class="cat-pill active" data-filter-type="all" aria-pressed="true">Todas (8)</button>' in r_trend.text
-    assert 'data-filter-type="region" data-region-code="BR" aria-pressed="false"' in r_trend.text
+    assert '<button class="chip-filtro" type="button" data-filtro="todas" aria-pressed="true">Todas (8)</button>' in r_trend.text
+    assert 'data-filtro="regiao:BR" aria-pressed="false"' in r_trend.text
     assert "Em Alta Brasil (8)" in r_trend.text
-    assert "Ver Mais Tendências (+2)" in r_trend.text
-    assert "trend-item-extra" in r_trend.text
-    assert "Fontes (todas as tendências):" in r_trend.text
+    # Todas as 8 tendências são publicadas (a V3 não esconde itens atrás de "ver mais").
+    assert r_trend.text.count('class="cartao-tendencia"') == 8
 
 
 def test_panel_shell_escapes_trend_topic_and_source(client_env):
@@ -860,13 +791,14 @@ def test_panel_shell_escapes_trend_topic_and_source(client_env):
     )
     conn.commit()
 
-    # IA-01: o tema e a origem da tendência aparecem (escapados) na tela Tendências.
+    # IA-01/V3: o tema e a origem da tendência aparecem (escapados) na tela Tendências.
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert "<script>alert" not in r.text
     assert "&lt;script&gt;alert(&#x27;topic&#x27;)&lt;/script&gt;" in r.text
     assert "&lt;script&gt;alert(&#x27;source&#x27;)&lt;/script&gt;" in r.text
-    assert "https://example.com/?q=&lt;script&gt;" in r.text
+    # A URL da fonte não é publicada na V3; nada dela pode chegar crua ao HTML.
+    assert "https://example.com/?q=<script>" not in r.text
 
 
 def test_panel_costs_are_labeled_and_absence_is_not_zero(client_env):
@@ -949,7 +881,7 @@ def test_video_detail_page_labels_each_call_kind(client_env):
     assert "US$ 0,00" not in advanced_area
 
 
-def test_panel_month_rail_labels_four_cost_categories(client_env):
+def test_panel_cost_note_labels_four_cost_categories(client_env):
     client = client_env["client"]
     videos = client_env["videos"]
     conn = client_env["conn"]
@@ -978,13 +910,15 @@ def test_panel_month_rail_labels_four_cost_categories(client_env):
 
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    rail = r.text.split('aria-labelledby="h-custo"', 1)[1].split('aria-labelledby="h-falha"', 1)[0]
-    assert "Real</span><span>US$ 0,07" in rail
-    assert "Estimado</span><span>US$ 0,05" in rail
-    assert "Sem custo</span><span>1 chamada(s)" in rail
-    assert "Desconhecido</span><span>1 chamada(s)" in rail
-    assert "US$ 0,12" not in rail  # sem número único que funda real e estimado
-    assert "US$ 0,00" not in rail
+    # UX V3: o custo do mês vive na nota da casca, com as quatro categorias rotuladas.
+    note = re.search(r'<p class="nota-custo">(.*?)</p>', r.text, re.S)
+    assert note is not None, "nota de custo ausente na casca"
+    note = note.group(1)
+    assert "Real US$ 0,07" in note
+    assert "Estimado US$ 0,05" in note
+    assert "Sem custo" in note and "Desconhecido" in note
+    assert "US$ 0,12" not in note  # sem número único que funda real e estimado
+    assert "US$ 0,00" not in note
 
 
 def test_panel_absence_of_cost_is_not_rendered_as_zero(client_env):
@@ -995,18 +929,9 @@ def test_panel_absence_of_cost_is_not_rendered_as_zero(client_env):
 
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert "sem registro de uso" in r.text
+    # UX V3: ausência de chamada é dita por extenso, nunca como US$ 0,00.
+    assert "Não disponível: nenhuma chamada registrada neste mês." in r.text
     assert "US$ 0,00" not in r.text
-
-
-def test_panel_has_closed_advanced_diagnostics(client_env):
-    client = client_env["client"]
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
-    assert r.status_code == 200
-    match = re.search(r'<details class="[^"]*advanced[^"]*" id="advanced-diagnostics"([^>]*)>', r.text)
-    assert match is not None
-    assert "open" not in match.group(1)
-    assert "Avançado — diagnóstico" in r.text
 
 
 def test_panel_declares_viewport_and_responsive_media_query(client_env):
@@ -1014,7 +939,8 @@ def test_panel_declares_viewport_and_responsive_media_query(client_env):
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert 'name="viewport"' in r.text
-    assert "@media (max-width: 820px)" in r.text
+    # UX V3: o breakpoint da casca aprovada é 820px (sem espaço, como no protótipo).
+    assert re.search(r"@media\s*\(max-width:\s*820px\)", r.text), "media query responsiva ausente"
 
 
 def test_video_detail_hides_invalid_approval_and_keeps_diagnostics_collapsed(client_env):
@@ -1049,31 +975,6 @@ def test_video_detail_hides_invalid_approval_and_keeps_diagnostics_collapsed(cli
     assert "Registro de Uso de Modelos" in advanced_area
     assert "Desconhecido" in advanced_area
     assert "Traceback" in advanced_area
-
-
-def test_panel_page_matches_approved_mockup_shell(client_env):
-    client = client_env["client"]
-    r = client.get("/studio/panel", headers=AUTH_HEADER)
-    assert r.status_code == 200
-
-    assert 'class="hero"' in r.text
-    assert 'id="hero-heading"' in r.text
-    assert 'role="tablist"' in r.text
-    serie = re.search(r'<button[^>]*id="tab-serie"[^>]*>', r.text)
-    assert serie is not None
-    assert 'aria-disabled="true"' in serie.group(0)
-    assert 'tabindex="-1"' in serie.group(0)
-
-    for group in ("Operação", "Configuração"):
-        assert group in r.text
-    for rail in ("Custo do mês", "Estado das fases", "Última falha"):
-        assert rail in r.text
-    assert "F8 Publicação" in r.text and "F11 SaaS" in r.text
-
-    visible = _page_text(r.text)
-    for step in ("Roteiro", "Fontes", "Fact-check", "Cenas", "Voz", "Render", "QA", "Publicação"):
-        assert step in visible
-    assert "Não há percentual" in visible
 
 
 # ---------- PROD-01: cartão de fontes e iniciar/retomar na página do vídeo ----------
@@ -1180,37 +1081,37 @@ def test_panel_ia01_each_route_renders_only_its_own_section(client_env):
         assert r.status_code == 200
 
     # Cada tela tem a sua própria seção...
-    assert 'id="inicio-section"' in inicio.text
-    assert 'id="precisa-section"' in inicio.text
+    assert 'id="pagina-inicio"' in inicio.text
     assert 'id="videos"' in inicio.text
     assert 'id="producao-section"' in producao.text
-    assert 'id="trending-section"' in tendencias.text
+    assert 'id="pagina-tendencias"' in tendencias.text
 
     # ...e o HTML completo de uma tela nunca aparece dentro da outra.
     assert 'id="producao-section"' not in inicio.text
-    assert 'id="trending-section"' not in inicio.text
+    assert 'id="pagina-tendencias"' not in inicio.text
     assert '<div class="grid-summary">' not in inicio.text
-    assert '<div class="card trends-card">' not in inicio.text
-    assert 'id="inicio-section"' not in producao.text
-    assert 'id="trending-section"' not in producao.text
-    assert '<div class="card trends-card">' not in producao.text
-    assert 'id="inicio-section"' not in tendencias.text
+    assert 'id="pagina-inicio"' not in producao.text
+    assert 'id="pagina-tendencias"' not in producao.text
+    assert '<div class="grade-tendencias"' not in producao.text
+    assert 'id="pagina-inicio"' not in tendencias.text
     assert 'id="producao-section"' not in tendencias.text
     assert '<div class="grid-summary">' not in tendencias.text
 
     # Exatamente um aria-current="page" por página, no item certo da nav.
     for r, label in ((inicio, "Início"), (producao, "Vídeos"), (tendencias, "Tendências")):
-        assert r.text.count('aria-current="page"') == 1
+        assert _without_style_and_script(r.text).count('aria-current="page"') == 1
         active = next(item for item in _nav_items(r.text) if 'aria-current="page"' in item)
         assert label in re.sub(r"<[^>]+>", " ", active)
 
 
-def test_panel_ia01_videos_route_redirects_to_the_home_videos_block(client_env):
-    """IA-01: "Vídeos" não é tela própria — a rota real redireciona para o bloco #videos do Início."""
+def test_panel_ia01_videos_route_is_a_real_screen(client_env):
+    """UX V3: "Vídeos" deixou de ser âncora/redirect — é a tela real `/studio/panel/videos`."""
     client = client_env["client"]
     r = client.get("/studio/panel/videos", headers=AUTH_HEADER, follow_redirects=False)
-    assert r.status_code == 302
-    assert r.headers["location"] == "/studio/panel#videos"
+    assert r.status_code == 200
+    assert 'id="pagina-videos"' in r.text
+    active = next(item for item in _nav_items(r.text) if 'aria-current="page"' in item)
+    assert "Vídeos" in re.sub(r"<[^>]+>", " ", active)
     # A rota é privada como as demais telas do painel.
     assert client.get("/studio/panel/videos", follow_redirects=False).status_code == 401
 
@@ -1231,8 +1132,8 @@ def test_panel_ia01_producao_and_tendencias_are_isolated_from_the_home(client_en
     assert "Status por fase" in producao.text
     assert '<div class="grid-summary">' not in inicio.text
     # ...e o Início traz o resumo de produção, com link para a tela cheia.
-    assert 'href="/studio/panel/producao"' in inicio.text
-    assert "Ver Produção" in inicio.text
+    assert re.search(r'href="/studio/panel/producao(?:\?project_id=[^"]+)?"', inicio.text)
+    assert "Acompanhar produção" in inicio.text
 
 
 def test_panel_ia01_trend_create_link_prefills_the_home_topic(client_env):
@@ -1258,15 +1159,13 @@ def test_panel_ia01_trend_create_link_prefills_the_home_topic(client_env):
 
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    match = re.search(
-        r'class="btn btn-primary btn-create-from-trend"[^>]*href="([^"]+)"', r.text
-    )
-    assert match is not None, "botão «Criar Vídeo deste Tema» sem destino real"
-    href = html_module.unescape(match.group(1))
-    assert href.startswith("/studio/panel?topic=")
-    assert "project_id=" in href and "days=7" in href
+    # UX V3: o botão carrega o tema e o script leva ao Início com `?topic=`.
+    match = re.search(r'<button[^>]*data-usar-tendencia="([^"]+)"[^>]*>', r.text)
+    assert match is not None, "botão «Criar vídeo deste tema» sem o tema"
+    assert html_module.unescape(match.group(1)) == "Tema com Acento & Cia"
+    assert "/studio/panel?topic=" in r.text and "encodeURIComponent" in r.text
 
     # O Início trata o parâmetro: o tema chega pré-preenchido (e escapado) no formulário.
-    home = client.get(href, headers=AUTH_HEADER)
+    home = client.get("/studio/panel?topic=Tema%20com%20Acento%20%26%20Cia", headers=AUTH_HEADER)
     assert home.status_code == 200
     assert 'value="Tema com Acento &amp; Cia"' in home.text

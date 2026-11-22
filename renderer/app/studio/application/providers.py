@@ -19,6 +19,7 @@ from ..domain.provider import (
     RouteRequest,
     RoutingDecision,
     card_for,
+    parse_spec,
     route_provider,
 )
 from .config import ProjectConfig
@@ -29,11 +30,18 @@ from .ports import ProviderProbe, VideoRepository
 class ProviderService:
     def __init__(self, videos: VideoRepository, environ: Mapping[str, str],
                  implementations: Sequence[ProviderImplementation],
-                 probes: Mapping[tuple[str, str], ProviderProbe] | None = None):
+                 probes: Mapping[tuple[str, str], ProviderProbe] | None = None,
+                 production: bool = False):
+        """`production=True` exclui demo/placeholder do roteamento (F06.T01).
+
+        O padrão preserva o uso consultivo atual: a fiação de produção (F06.T02) é quem passa
+        `production=True` — sem esse sinal, um stand-in continua aparecendo no painel de dev.
+        """
         self.videos = videos
         self.environ = environ
         self.implementations = tuple(implementations)
         self.probes = dict(probes or {})
+        self.production = bool(production)
 
     # -- configuração ------------------------------------------------------
 
@@ -76,23 +84,42 @@ class ProviderService:
 
     # -- roteamento --------------------------------------------------------
 
-    def candidates(self, kind: ProviderKind) -> list[ProviderCard]:
-        """Cartões de todas as implementações da porta (o configurado entra mesmo sem implementação)."""
+    def candidates(self, kind: ProviderKind, *, configured: str | None = None) -> list[ProviderCard]:
+        """Cartões de todas as implementações da porta (o configurado entra mesmo sem implementação).
+
+        Quando `configured` é o spec efetivo do projeto, a implementação de mesmo nome herda o
+        modelo/versão configurado — a decisão roteada executa exatamente a versão que o projeto
+        escolheu, não um nome solto que o registro não consegue construir.
+        """
+        configured_name = parse_spec(configured)[0] if configured else None
         cards: dict[str, ProviderCard] = {}
         for impl in self.implementations:
             if impl.kind is kind:
-                cards.setdefault(impl.name, card_for(kind, impl.name, self.implementations))
+                spec = configured if configured is not None and impl.name == configured_name else impl.name
+                cards.setdefault(impl.name, card_for(kind, spec, self.implementations))
         return list(cards.values())
 
     def route(self, project_id: str | None, kind: ProviderKind, profile: EconomicProfile,
-              max_cost_usd: Decimal | None = None) -> RoutingDecision:
+              max_cost_usd: Decimal | None = None,
+              production: bool | None = None,
+              exclude: Sequence[str] = ()) -> RoutingDecision:
+        """Roteia sob a política do perfil; `production=None` usa o modo do serviço.
+
+        `exclude` nomeia candidatos que uma reavaliação explícita já descartou (provider decidido
+        que não construiu). A exclusão é aplicada ao catálogo, nunca como downgrade silencioso:
+        sem candidato restante, `NoProviderAvailable` explica a política.
+        """
         if not isinstance(profile, EconomicProfile):
             profile = EconomicProfile(profile)
         configured = self.configured(project_id)
-        cards = self.candidates(kind)
+        excluded = frozenset(exclude)
+        cards = [card for card in self.candidates(kind, configured=configured[kind.value])
+                 if card.name not in excluded]
         # o provider explicitamente configurado abaixo pode não ter implementação: ele aparece
         # UNAVAILABLE e o roteador simplesmente o ignora (nunca finge disponibilidade).
         chosen = card_for(kind, configured[kind.value], self.implementations)
-        if all(c.name != chosen.name for c in cards):
+        if chosen.name not in excluded and all(c.name != chosen.name for c in cards):
             cards.append(chosen)
-        return route_provider(RouteRequest(kind, profile, max_cost_usd), cards)
+        request = RouteRequest(kind, profile, max_cost_usd,
+                               production=self.production if production is None else production)
+        return route_provider(request, cards)

@@ -3,11 +3,16 @@
 Os limites hard vão para o guard de operação paga (`guard_limits`); o soft é o gatilho de revisão
 humana. Sem linha persistida, valem os tetos padrão das configurações e o painel diz que não há
 configuração de canal.
+
+F01.T03: cada escopo é medido no **próprio** escopo. O teto global (settings) é independente do teto
+do canal; o resumo do painel e o piso do coordenador usam a mesma atribuição do ledger, nunca o gasto
+global para decidir sobre um canal.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from typing import Protocol
 
 from ..domain.channel_budget import (
     BudgetDecision,
@@ -15,10 +20,70 @@ from ..domain.channel_budget import (
     CostSummary,
     evaluate_budget,
 )
-from ..domain.ids import check_id
+from ..domain.ids import InvalidId, check_id
 from ..domain.provider import EconomicProfile
 from .errors import ProjectNotFound
 from .ports import ChannelBudgetRepository, ChannelUsageRepository, VideoRepository
+from .production import BudgetProjection
+
+
+class ScopedUsageRepository(Protocol):
+    """Leitura de gasto por escopo: o mesmo que o teto desconta (canal e global)."""
+
+    def month_summary(self, project_id: str) -> CostSummary: ...
+
+    def global_month_summary(self) -> CostSummary: ...
+
+
+@dataclass(frozen=True)
+class ChannelBudgetFloor:
+    """Piso medido do gasto mensal para o modo guardado do coordenador (F01.T03).
+
+    O hard bloqueia no guard; aqui o soft decide a pausa humana. O gasto medido é o **do canal do
+    vídeo** (não o global, que faria o gasto de A pausar B). O teto efetivo é o menor entre o soft do
+    canal e o teto das settings: nenhum canal pode afrouxar o limite global. Sem configuração de canal,
+    vale o teto das settings. Operação sem vídeo é escopo global explícito e mede o gasto global.
+    """
+
+    usage: ScopedUsageRepository
+    videos: VideoRepository
+    budgets: ChannelBudgetRepository
+    default_ceiling_usd: Decimal
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "default_ceiling_usd",
+                           _ceiling(self.default_ceiling_usd, "default ceiling"))
+
+    def project(self, run, next_stage) -> BudgetProjection:
+        video = self._video(run)
+        if video is None:
+            return BudgetProjection(projected_usd=self.usage.global_month_summary().spent_usd,
+                                    ceiling_usd=self.default_ceiling_usd)
+        summary = self.usage.month_summary(video.project_id)
+        limits = self.budgets.get(video.project_id)
+        ceiling = self.default_ceiling_usd
+        if limits is not None:
+            ceiling = min(_ceiling(limits.soft_monthly_usd, "soft monthly ceiling"), ceiling)
+        return BudgetProjection(projected_usd=summary.spent_usd, ceiling_usd=ceiling)
+
+    def _video(self, run):
+        video_id = getattr(run, "video_id", None)
+        if not video_id:
+            return None
+        try:
+            return self.videos.get_video(video_id)
+        except InvalidId:
+            return None  # id estranho não decide orçamento: cai no escopo global (tolerância do guard)
+
+
+def _ceiling(value: object, label: str) -> Decimal:
+    try:
+        amount = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a monetary value") from exc
+    if not amount.is_finite() or amount < 0:
+        raise ValueError(f"{label} must be a finite non-negative Decimal")
+    return amount
 
 
 @dataclass(frozen=True)

@@ -86,8 +86,9 @@ def charge(amount):
     return ChargeEvidence(Decimal(str(amount)), reference="invoice:42", declared_by="billing:adapter")
 
 
-def begin(repo, key, video=VIDEO, amount="0.60", monthly="1", video_limit="1"):
-    return repo.begin(key, video, Decimal(amount), Decimal(monthly), Decimal(video_limit))
+def begin(repo, key, video=VIDEO, amount="0.60", monthly="1", video_limit="1", global_monthly=None):
+    return repo.begin(key, video, Decimal(amount), Decimal(monthly), Decimal(video_limit),
+                      global_monthly_limit_usd=None if global_monthly is None else Decimal(global_monthly))
 
 
 def row_counts(conn):
@@ -480,3 +481,87 @@ def test_settlement_is_none_while_the_operation_is_not_confirmed(paid_db):
     repo, _ = paid_db
     assert begin(repo, "k1", amount="0.3") == BeginResult.CREATED
     assert repo.settlement("k1") is None
+
+
+# ------------------------------------------------------- F01.T03: atribuição explícita
+
+
+def test_paid_operation_records_the_channel_attribution_end_to_end(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="0.6", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+    assert conn.execute("SELECT project_id FROM studio.paid_operations WHERE idempotency_key = 'k1'").fetchone() == (PROJECT,)
+    assert conn.execute("SELECT project_id FROM studio.budget_reservations WHERE idempotency_key = 'k1'").fetchone() == (PROJECT,)
+    repo.confirm("k1", entry(0.6), actual(0.6))
+    # o lançamento herda o mesmo escopo da operação paga
+    assert conn.execute("SELECT project_id, video_id FROM studio.usage_ledger").fetchone() == (PROJECT, VIDEO)
+
+
+def test_video_less_paid_operation_is_explicitly_the_global_scope(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, conn = paid_db
+    assert repo.begin("global", None, Decimal("0.6"), Decimal("1"), Decimal("10"),
+                      global_monthly_limit_usd=Decimal("10")) == BeginResult.CREATED
+    assert conn.execute("SELECT project_id FROM studio.paid_operations WHERE idempotency_key = 'global'").fetchone() == (None,)
+    # e não consome o teto do canal
+    assert begin(repo, "channel", amount="1", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+
+
+def test_release_returns_the_channel_budget_without_leaking_the_reservation(paid_db):
+    from app.studio.application.budget import BeginResult
+
+    repo, _ = paid_db
+    assert begin(repo, "k1", amount="1", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+    repo.release("k1", "pre-effect failure")
+    assert begin(repo, "k2", amount="1", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+
+
+def test_reconciliation_keeps_the_scope_and_does_not_leak_the_reservation(paid_db):
+    from app.studio.application.budget import BeginResult, PaidOperationState
+
+    repo, conn = paid_db
+    assert begin(repo, "k1", amount="1", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+    repo.mark_uncertain("k1", "no confirmable cost")
+    assert begin(repo, "k2", amount="1", monthly="1", video_limit="10", global_monthly="10") == BeginResult.DENIED
+    repo.reconcile_actual("k1", Decimal("0.4"), reference="invoice:1", confirmed_by="ops")
+    assert repo.state("k1") == PaidOperationState.CONFIRMED
+    assert conn.execute("SELECT project_id FROM studio.usage_ledger").fetchone() == (PROJECT,)
+    assert conn.execute("SELECT count(*) FROM studio.budget_reservations").fetchone()[0] == 0
+    # 0.4 confirmado no canal, sem reserva fantasma: 0.6 ainda cabe no teto de 1
+    assert begin(repo, "k3", amount="0.6", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+
+
+def test_changing_the_global_ceiling_does_not_conflict_with_a_replay(paid_db):
+    """O teto global é política, não identidade da operação: replay com outra settings continua replay."""
+    from app.studio.application.budget import BeginResult
+
+    repo, _ = paid_db
+    assert begin(repo, "k1", amount="0.5", monthly="1", video_limit="10", global_monthly="10") == BeginResult.CREATED
+    assert begin(repo, "k1", amount="0.5", monthly="1", video_limit="10", global_monthly="20") == BeginResult.IN_PROGRESS
+
+
+# ------------------------------------------------- F06.T02: custo reservado antes do efeito pago
+
+
+def test_paid_effect_only_runs_after_the_reservation_is_persisted(paid_db):
+    """A chamada paga (efeito) só acontece com a reserva já gravada e a operação RESERVED."""
+    from app.studio.application.budget import PaidOperationGuard, PaidOperationState
+
+    repo, conn = paid_db
+    guard = PaidOperationGuard(repo, Decimal("1"), Decimal("1"))
+    observed = {}
+
+    def effect():
+        observed["reservations"] = conn.execute(
+            "SELECT count(*) FROM studio.budget_reservations WHERE idempotency_key = 'k1'").fetchone()[0]
+        observed["state"] = repo.state("k1")
+        return "paid output"
+
+    result = guard.run("k1", VIDEO, Decimal("0.4"), effect,
+                       settle=lambda _: (entry(0.4), actual(0.4)))
+
+    assert result == "paid output"
+    assert observed == {"reservations": 1, "state": PaidOperationState.RESERVED}
+    assert repo.state("k1") == PaidOperationState.CONFIRMED

@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.studio.application.config import _REGISTRY, ProjectConfig, build, register  # noqa: E402
 from app.studio.application.ports import ImageModel, Renderer, TextModel, Voice  # noqa: E402
+from app.studio.domain.provider import ProviderStanding, capability_gaps  # noqa: E402
 
 pytest.importorskip("psycopg")
 from app.studio.composition import Settings, Studio, _provider_implementations  # noqa: E402
@@ -122,6 +123,34 @@ def test_the_drift_check_catches_both_directions():
     announced_without, implemented_without = _drift(catalog, registry)
     assert announced_without == {("text", "demo")}  # no catálogo, sem register → painel mentiria
     assert implemented_without == {("voice", "ghost")}  # registrado, fora do catálogo → invisível
+
+
+# -- Capabilities e origem declaradas no catálogo real (F06.T01) --------------
+
+
+def test_every_registered_provider_declares_the_capability_of_its_port(registered_providers):
+    """O catálogo real declara a capability que a porta exige (F06.T01).
+
+    A política de roteamento só aceita cartão cuja capability declarada inclui a da porta;
+    um adaptador novo que declare um conjunto divergente seria barrado em execução. Este teste
+    pega isso no catálogo, antes do painel prometer o provider.
+    """
+    implementations = _provider_implementations(Settings())
+    assert capability_gaps(implementations) == ()
+    assert {impl.kind.value for impl in implementations} == set(PORTS)
+
+
+def test_the_product_catalog_has_exactly_two_stand_ins(registered_providers):
+    """Só ``text:demo`` e ``image:placeholder`` são stand-ins; o resto é produção.
+
+    Baseline deliberada (como ``EXPECTED_CATALOG``): se um adaptador real for classificado
+    como demo/placeholder — ou um novo stand-in entrar sem revisão — a política de produção
+    mudaria em silêncio. Atualizar este teste é a decisão explícita.
+    """
+    stand_ins = {(impl.kind.value, impl.name)
+                 for impl in _provider_implementations(Settings())
+                 if impl.standing is not ProviderStanding.PRODUCTION}
+    assert stand_ins == {("text", "demo"), ("image", "placeholder")}
 
 
 # -- A fronteira continua barrando SDK no núcleo ------------------------------
