@@ -52,44 +52,16 @@ def test_new_video_uses_v3_shell_and_nav():
     assert markup.count('aria-current="page"') == 1
 
 
-def test_new_video_has_three_steps():
+def test_new_video_single_screen_form_structure():
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view())
-    passos = re.search(r'<ol class="passos"[^>]*id="passos-criar"[^>]*>(.*?)</ol>', html, re.S).group(1)
-    for step in ("Conceito", "Revisão", "Criação"):
-        assert step in passos
-
-    assert 'id="etapa-1"' in html
-    assert 'id="etapa-2"' in html and 'id="etapa-2" hidden' in html
-    assert 'id="etapa-3"' in html and 'id="etapa-3" hidden' in html
-
-
-def test_new_video_concept_fields():
-    from app.studio.api.panel_new_video import render_new_video_v3
-
-    html, _ = render_new_video_v3(_view())
+    assert '<form id="form-novo-video"' in html
     assert 'id="tema-novo"' in html
     assert 'maxlength="300"' in html
     assert 'name="formato-novo"' in html
-    assert re.search(r'name="formato-novo"[^>]*value="long"[^>]*checked', html)
     assert 'name="estilo-novo"' in html
-    assert 'id="btn-para-revisao"' in html
-
-
-def test_new_video_review_and_creation_panels():
-    from app.studio.api.panel_new_video import render_new_video_v3
-
-    html, _ = render_new_video_v3(_view())
-    assert 'id="rev-tema"' in html
-    assert 'id="rev-formato"' in html
-    assert 'id="rev-estilo"' in html
-    assert 'id="rev-canal"' in html
-    assert 'id="btn-voltar-editar"' in html
-    assert 'id="btn-criar"' in html
-    assert 'id="btn-novo-outro"' in html
-    assert 'id="link-abrir-video"' in html
-    assert "Próximo passo: as fontes" in html
+    assert 'id="btn-criar-abrir"' in html
 
 
 def test_new_video_channel_preset_aside():
@@ -107,8 +79,7 @@ def test_new_video_empty_state_without_channels():
 
     html, _ = render_new_video_v3(_view(projects=[]))
     assert "Cadastre um canal" in html
-    btn = re.search(r'<button[^>]*id="btn-para-revisao"[^>]*>', html).group(0)
-    assert "disabled" in btn
+    assert re.search(r'<button[^>]*id="btn-criar-abrir"[^>]*disabled', html)
 
 
 def test_new_video_satisfies_ux_contract():
@@ -238,3 +209,28 @@ def test_channel_preset_without_a_profile_says_so_instead_of_inventing():
     assert "canal sem perfil" in aside
     assert "padrão do estúdio" in aside
     assert "Português (BR)" not in aside
+
+
+def test_new_video_has_prototype_usability_fields():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view())
+    # Campos canônicos do protótipo (prototype/index.html:611)
+    assert 'id="roteiro-pronto"' in html or 'id="script"' in html
+    assert "Roteiro pronto" in html
+    assert 'id="duracao-alvo"' in html or 'id="duration"' in html
+    assert "Duração" in html
+    assert 'id="revisar-roteiro"' in html or 'id="reviewScript"' in html
+    assert "Revisar roteiro" in html
+    assert "Criar e abrir vídeo" in html
+
+
+def test_new_video_has_educational_path_to_publish_card():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view())
+    assert "Seu caminho até publicar" in html
+    assert "Adicione fontes e revise o roteiro" in html
+    assert "Gere narração e monte as cenas" in html
+    assert "Ajuste composição e confira a qualidade" in html
+    assert "Aprove a versão e prepare a publicação" in html
