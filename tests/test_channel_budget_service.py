@@ -101,6 +101,47 @@ def test_get_budget_without_row_uses_defaults_and_reports_not_configured():
     assert view.summary.has_usage is False
 
 
+# ------------------------------------------- F06.T03: preferências de produção na tela
+
+
+def test_economic_profile_options_come_from_the_policy_and_mark_the_active_one():
+    from app.studio.application.channel_budget import economic_profile_options
+
+    options = economic_profile_options(EconomicProfile.BALANCED)
+    assert [o.profile.value for o in options] == ["ECONOMY", "BALANCED", "PREMIUM"]
+    assert [o.active for o in options] == [False, True, False]
+    by_profile = {o.profile: o for o in options}
+    assert by_profile[EconomicProfile.ECONOMY].min_quality == 1
+    assert by_profile[EconomicProfile.BALANCED].min_quality == 2
+    assert by_profile[EconomicProfile.PREMIUM].min_quality == 3
+    assert all(o.label and o.description for o in options)
+    # Custos desconhecidos: só o PREMIUM tolera, e o texto da opção precisa dizer isso.
+    assert "desconhecido" in by_profile[EconomicProfile.ECONOMY].description.lower()
+    assert "desconhecido" in by_profile[EconomicProfile.PREMIUM].description.lower()
+
+
+def test_economic_profile_options_are_stable_for_an_enum_value_from_the_api():
+    from app.studio.application.channel_budget import economic_profile_options
+
+    options = economic_profile_options("PREMIUM")
+    assert [o.active for o in options] == [False, False, True]
+
+
+def test_budget_view_names_the_origin_of_the_effective_limits():
+    configured = FakeBudgetRepo()
+    SetChannelBudget(configured, FakeVideoRepo()).execute(
+        PID, hard_monthly_usd=Decimal("10"), soft_monthly_usd=Decimal("5"),
+        hard_video_usd=Decimal("2"), soft_video_usd=Decimal("1"))
+    persisted = GetChannelBudget(configured, FakeVideoRepo(), FakeUsage(),
+                                 default_hard_monthly=Decimal("15"),
+                                 default_hard_video=Decimal("0")).execute(PID)
+    defaults = GetChannelBudget(FakeBudgetRepo(), FakeVideoRepo(), FakeUsage(),
+                                default_hard_monthly=Decimal("15"),
+                                default_hard_video=Decimal("0")).execute(PID)
+    assert persisted.limits_source == "canal"
+    assert defaults.limits_source == "servidor"
+
+
 # ----------------------------------------------------------- guard hard limit
 
 

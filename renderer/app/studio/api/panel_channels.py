@@ -11,12 +11,20 @@ o app configurado, o controle fica desabilitado com o motivo real (nunca "não e
 from __future__ import annotations
 
 import html
+import re
 import secrets
 from datetime import datetime
 from decimal import Decimal
 
+from ..application.channel_budget import economic_profile_options
 from ..application.channels_page import ChannelsPageView
-from ..domain.provider import Availability, ProviderCard, ProviderKind
+from ..domain.provider import (
+    Availability,
+    CostKind,
+    EconomicProfile,
+    ProviderCard,
+    ProviderKind,
+)
 from . import panel as shell
 from . import shell_v3
 
@@ -235,9 +243,31 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 .advanced-body .kv { border-top: 0; }
 .new-channel { margin-top: 0.85rem; }
 .new-channel summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; padding: 0.35rem 0; }
+/* F06.T03: conexão × configuração × credencial lado a lado, sem prometer BYOK. */
+.tres-estados { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.estado-bloco {
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.estado-bloco h3 { margin: 0 0 6px; font-size: 13px; font-weight: 750; color: var(--txt); }
+.estado-bloco .kv { align-items: flex-start; gap: 10px; }
+.estado-bloco .kv > span:last-child { text-align: right; line-height: 1.45; }
+.perfis-lista {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
 @media (max-width: 820px) {
   .grade-providers { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .tres-estados { grid-template-columns: minmax(0, 1fr); }
+  .estado-bloco .kv > span:last-child { text-align: left; }
 }
 """
 
@@ -268,9 +298,44 @@ def _input_amount(value: object) -> str:
 
 
 def _provider_cost(card: ProviderCard) -> str:
+    """Custo declarado em texto humano; preço não confirmado nunca vira valor nem zero."""
+    if card.cost.kind is CostKind.UNKNOWN:
+        note = f" ({card.cost.note})" if card.cost.note else ""
+        return f"Custo desconhecido — nenhum preço confirmado; não é tratado como zero{note}"
     label = card.cost.label
     note = f" ({card.cost.note})" if card.cost.note else ""
     return f"{e(label)}{e(note)}"
+
+
+# F06.T03: o motivo do roteador é categoria técnica; a tela traduz para texto humano sem
+# prometer provider e sem repetir o enum/inglês cru do domínio.
+_ROUTE_EXCLUSION_LABELS = {
+    "unknown cost": "custo desconhecido",
+    "non-production provider": "provider de demonstração/placeholder não executa em produção",
+    "missing the port capability": "não declara a capability da porta",
+    "cost above the cap": "custo acima do teto",
+}
+_QUALITY_FLOOR = re.compile(r"quality (\d+) below the profile floor (\d+)")
+
+
+def _route_failure_text(kind: ProviderKind, profile: EconomicProfile | str, reason: str) -> str:
+    """Explica, em português, por que uma porta ficou sem candidato — nunca inventa um."""
+    kind_label = KIND_LABELS.get(kind, getattr(kind, "value", str(kind)))
+    profile_label = profile.value if isinstance(profile, EconomicProfile) else str(profile)
+    categories: list[str] = []
+    quality = _QUALITY_FLOOR.search(reason or "")
+    if quality:
+        categories.append(
+            f"qualidade {quality.group(1)} abaixo do piso de qualidade {quality.group(2)}"
+        )
+    for needle, label in _ROUTE_EXCLUSION_LABELS.items():
+        if needle in (reason or "") and label not in categories:
+            categories.append(label)
+    if categories:
+        return (f"Nenhum provider de {kind_label} atende ao perfil {profile_label}: "
+                + "; ".join(categories) + ".")
+    return (f"Nenhum provider de {kind_label} atende ao perfil {profile_label} neste momento; "
+            "o roteador não registrou um motivo categorizado.")
 
 
 def _provider_item(card: ProviderCard, project_id: str) -> str:
@@ -319,7 +384,7 @@ def _provider_item(card: ProviderCard, project_id: str) -> str:
           {reason_html}
         </div>
         <div class="cartao-provider-inferior">
-          <span class="cost"><b>Custo:</b> {_provider_cost(card)}</span>
+          <span class="cost" data-cost-kind="{e(card.cost.kind.value)}"><b>Custo:</b> {_provider_cost(card)}</span>
           <span class="dim porta-spec">Porta: <code>{e(card.spec)}</code></span>
           {command}
         </div>
@@ -328,7 +393,8 @@ def _provider_item(card: ProviderCard, project_id: str) -> str:
 
 
 def _routing_html(view: ChannelsPageView) -> str:
-    profile = view.budget.limits.economic_profile.value if view.budget else "BALANCED"
+    profile_value = view.budget.limits.economic_profile if view.budget else EconomicProfile.BALANCED
+    profile = profile_value.value
     rows = []
     for decision in view.routes:
         fallbacks = " → ".join(e(card.name) for card in decision.fallbacks)
@@ -339,8 +405,9 @@ def _routing_html(view: ChannelsPageView) -> str:
         )
     for kind, reason in view.route_failures:
         rows.append(
-            f'<div class="kv roteamento-item"><span><b>Escolha no perfil {e(profile)}</b> — {e(KIND_LABELS.get(kind, kind.value))}</span>'
-            f'<span>Sem candidato disponível: {e(reason)}</span></div>'
+            f'<div class="kv roteamento-item" data-route-failure="{e(kind.value)}">'
+            f'<span><b>Escolha no perfil {e(profile)}</b> — {e(KIND_LABELS.get(kind, kind.value))}</span>'
+            f'<span>{e(_route_failure_text(kind, profile_value, reason))}</span></div>'
         )
     if not rows:
         return '<p class="muted">Nenhuma porta de provider configurada para roteamento.</p>'
@@ -708,12 +775,14 @@ def _budget_card(view: ChannelsPageView) -> str:
         return ""
     budget = view.budget
     limits = budget.limits
+    profile_value = limits.economic_profile
     if budget.configured:
         configured_note = (
             '<p class="fine">Limites do canal persistidos'
             + (f" em {limits.updated_at.strftime('%d/%m/%Y %H:%M')}" if limits.updated_at else "")
             + '.</p>'
         )
+        origin = "persistidos neste canal"
     else:
         configured_note = (
             '<p class="fine"><b>Nenhum limite de canal persistido.</b> Valem os tetos padrão do servidor '
@@ -721,12 +790,24 @@ def _budget_card(view: ChannelsPageView) -> str:
             f'hard por vídeo {_usd(limits.hard_video_usd, zero_text="US$ 0 (bloqueia operação paga)")}). '
             'Salvar abaixo passa a persistir a configuração deste canal.</p>'
         )
+        origin = "padrão do servidor, sem nada persistido para este canal"
+    profile_options = "".join(
+        f'<option value="{e(option.profile.value)}"{" selected" if option.active else ""}>'
+        f"{e(option.profile.value)} — {e(option.label)}</option>"
+        for option in economic_profile_options(profile_value)
+    )
+    profile_list = "".join(
+        f"<li><b>{e(option.profile.value)}</b> — {e(option.label)}: {e(option.description)}"
+        + (f" {_badge('s-done', '✓', 'Perfil ativo')}" if option.active else "")
+        + "</li>"
+        for option in economic_profile_options(profile_value)
+    )
     limit_rows = "".join(
         f'<div class="kv"><span>{e(title)}</span><span>{_usd(value, zero_text="US$ 0 (bloqueia operação paga)")}</span></div>'
-        for title, value in (("Limite soft mensal", limits.soft_monthly_usd),
-                             ("Limite hard mensal", limits.hard_monthly_usd),
-                             ("Limite soft por vídeo", limits.soft_video_usd),
-                             ("Limite hard por vídeo", limits.hard_video_usd))
+        for title, value in (("Limite soft mensal (vigente)", limits.soft_monthly_usd),
+                             ("Limite hard mensal (vigente)", limits.hard_monthly_usd),
+                             ("Limite soft por vídeo (vigente)", limits.soft_video_usd),
+                             ("Limite hard por vídeo (vigente)", limits.hard_video_usd))
     )
     return f"""
       <details class="card painel-sanfona" id="painel-orcamento">
@@ -747,7 +828,19 @@ def _budget_card(view: ChannelsPageView) -> str:
         <div class="sanfona-corpo">
           {configured_note}
           <form id="budget-form" data-project-id="{e(view.project.id)}" style="margin-top:14px">
-            <div class="grid-2">
+            <div class="field">
+              <label for="perfil-economico">Perfil econômico do canal</label>
+              <select class="input" id="perfil-economico" name="economic_profile"
+                      aria-describedby="perfil-economico-hint">
+                {profile_options}
+              </select>
+              <span class="hint" id="perfil-economico-hint">O perfil decide o roteamento de providers
+              (seção Providers) e é salvo junto com os limites. Nada de trocar código para mudar de perfil.</span>
+            </div>
+            <ul class="perfis-lista" aria-label="Perfis econômicos e a política vigente">
+              {profile_list}
+            </ul>
+            <div class="grid-2" style="margin-top:14px">
               <div class="field">
                 <label for="limite-soft-mensal">Limite soft mensal (US$)</label>
                 <input class="input" type="text" inputmode="decimal" id="limite-soft-mensal" name="soft_monthly_usd"
@@ -777,7 +870,14 @@ def _budget_card(view: ChannelsPageView) -> str:
             </div>
           </form>
           <div style="margin-top:14px">{limit_rows}</div>
-          <div style="margin-top:14px">{_summary_rows(view)}</div>
+          <p class="fine"><b>Origem dos limites vigentes:</b> {e(origin)}.</p>
+          <div style="margin-top:14px">
+            <h3 style="margin:0 0 6px;font-size:14px;font-weight:700">Gasto do mês</h3>
+            <p class="fine" style="margin-top:0">O teto desconta real confirmado + estimado. Chamadas sem
+            custo e de custo desconhecido aparecem separadas: nenhuma delas vira zero nem entra num
+            número inventado.</p>
+            {_summary_rows(view)}
+          </div>
           {_decision_html(view)}
         </div>
       </details>
@@ -890,6 +990,91 @@ def _youtube_card(view: ChannelsPageView) -> str:
               {credential_line}
               {_oauth_controls(view, status)}
             </div>
+          </div>
+        </div>
+      </details>
+    """
+
+
+def _credential_in_use_text(status: str) -> str:
+    """Credencial que a execução realmente usa — sem inferir BYOK a partir de cadastro."""
+    if status == "CONNECTED":
+        return ("OAuth do Google registrado no secret store do servidor: é essa a credencial usada "
+                "na publicação. Nenhum valor volta para o browser.")
+    if status in {"EXPIRED", "REVOKED", "ERROR"}:
+        return ("A credencial OAuth do YouTube está com problema; a publicação exige reautorização "
+                "antes de rodar.")
+    return "Nenhuma credencial OAuth em uso: o canal do YouTube não está associado."
+
+
+def _prefs_card(view: ChannelsPageView) -> str:
+    """F06.T03: conexão (YouTube), configuração (provider) e credencial usada são coisas distintas.
+
+    G10: a tela nunca sugere que uma chave BYOK cadastrada esteja em uso. A execução deste canal
+    resolve providers e YouTube pela configuração do servidor; BYOK pertence à tela de Equipe e
+    está fora do caminho de execução (ADR fs31-005, mono-operador).
+    """
+    yt = view.youtube or {}
+    status = str(yt.get("oauth_status") or "DISCONNECTED")
+    kind, icon, status_label = _OAUTH_STATE.get(status, ("s-idle", "○", "Estado desconhecido"))
+    channel_id = yt.get("channel_id")
+    if channel_id:
+        target_html = f"{e(yt.get('title') or 'Canal associado')} · <code>{e(channel_id)}</code>"
+    else:
+        target_html = "Nenhum canal do YouTube associado a este canal do Studio."
+    if view.providers_error:
+        configuration_rows = (
+            f'<p class="warning" role="note">Configuração de providers indisponível: '
+            f'{e(view.providers_error)}.</p>'
+        )
+    else:
+        configuration_rows = "".join(
+            f'<div class="kv"><span>{e(KIND_LABELS.get(card.kind, card.kind.value))}</span>'
+            f'<span><code>{e(card.spec)}</code> — '
+            + ("disponível" if card.availability is Availability.AVAILABLE else "indisponível agora")
+            + "</span></div>"
+            for card in view.providers
+        ) or '<p class="muted">Nenhuma configuração de provider registrada para este canal.</p>'
+    return f"""
+      <details class="card painel-sanfona" id="painel-credenciais">
+        <summary class="sanfona-cabecalho">
+          <div class="sanfona-titulos">
+            <h2>Conexão, configuração e credencial</h2>
+            <p class="dim sanfona-subtitulo">
+              Três coisas diferentes: o canal do YouTube associado, o provider escolhido e a
+              credencial que a execução realmente usa.
+            </p>
+          </div>
+          <div class="sanfona-meta">
+            <span class="sanfona-seta" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </summary>
+        <div class="sanfona-corpo">
+          <div class="tres-estados">
+            <section class="estado-bloco" aria-labelledby="h-conexao">
+              <h3 id="h-conexao">Conexão</h3>
+              <p class="fine">Canal do YouTube associado ao Studio.</p>
+              <div class="kv"><span>Estado</span><span>{_badge(kind, icon, status_label)}</span></div>
+              <div class="kv"><span>Canal</span><span>{target_html}</span></div>
+            </section>
+            <section class="estado-bloco" aria-labelledby="h-configuracao">
+              <h3 id="h-configuracao">Configuração</h3>
+              <p class="fine">Provider escolhido por tarefa; o spec real vem da configuração do canal.</p>
+              {configuration_rows}
+            </section>
+            <section class="estado-bloco" aria-labelledby="h-credencial">
+              <h3 id="h-credencial">Credencial utilizada</h3>
+              <div class="kv"><span>Na execução</span><span>Credencial da implantação do Studio
+              (ambiente do servidor), resolvida por provider; providers locais não usam chave.
+              {e(_credential_in_use_text(status))}</span></div>
+              <div class="kv"><span>BYOK</span><span>{_badge("s-idle", "○", "Não usada")}
+              BYOK está fora do caminho de execução deste canal: não é usada pelo roteamento nem
+              pela execução. Cadastro não é uso — a chave cadastrada na
+              <a href="/studio/panel/equipe">tela de Equipe</a> fica registrada, mas não alimenta
+              este canal (mono-operador, ADR fs31-005).</span></div>
+            </section>
           </div>
         </div>
       </details>
@@ -1039,6 +1224,7 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
       {_providers_card(view)}
       {_budget_card(view)}
       {_youtube_card(view)}
+      {_prefs_card(view)}
       {_advanced_card(view)}
     """
     body_page = shell_v3.render_settings_page_body(
@@ -1210,7 +1396,8 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
           soft_monthly_usd: (document.getElementById('limite-soft-mensal').value || '').trim(),
           hard_monthly_usd: (document.getElementById('limite-hard-mensal').value || '').trim(),
           soft_video_usd: (document.getElementById('limite-soft-video').value || '').trim(),
-          hard_video_usd: (document.getElementById('limite-hard-video').value || '').trim()
+          hard_video_usd: (document.getElementById('limite-hard-video').value || '').trim(),
+          economic_profile: document.getElementById('perfil-economico').value
         }};
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
         if (window.StudioLoading) window.StudioLoading.start('Salvando limites de orçamento…');

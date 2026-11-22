@@ -21,7 +21,7 @@ from ..domain.channel_budget import (
     evaluate_budget,
 )
 from ..domain.ids import InvalidId, check_id
-from ..domain.provider import EconomicProfile
+from ..domain.provider import EconomicProfile, RankingOrder, policy_for
 from .errors import ProjectNotFound
 from .ports import ChannelBudgetRepository, ChannelUsageRepository, VideoRepository
 from .production import BudgetProjection
@@ -93,6 +93,61 @@ class ChannelBudgetView:
     summary: CostSummary
     monthly: BudgetDecision
     video: BudgetDecision
+
+    @property
+    def limits_source(self) -> str:
+        """Origem dos limites **vigentes**: `canal` quando persistidos, `servidor` no padrão."""
+        return "canal" if self.configured else "servidor"
+
+
+# F06.T03: os perfis não são texto de marketing — cada opção descreve a política que o roteador
+# realmente aplica (piso de qualidade, ranking e tolerância a custo desconhecido).
+_PROFILE_LABELS = {
+    EconomicProfile.ECONOMY: "Economia",
+    EconomicProfile.BALANCED: "Equilibrado",
+    EconomicProfile.PREMIUM: "Premium",
+}
+
+
+def _profile_description(profile: EconomicProfile) -> str:
+    policy = policy_for(profile)
+    if policy.ranking is RankingOrder.COST_FIRST:
+        return (f"Menor custo conhecido primeiro; piso de qualidade {policy.min_quality}. "
+                "Custo desconhecido fica fora: sem preço não há como garantir economia.")
+    if policy.ranking is RankingOrder.QUALITY_FIRST:
+        return (f"Qualidade primeiro; piso {policy.min_quality}. Custo desconhecido só é aceito "
+                "em operação sem teto — com teto ele fica fora.")
+    return (f"Melhor qualidade até {policy.balanced_cost_factor:g}× a opção paga mais barata; "
+            f"piso {policy.min_quality}. Custo desconhecido fica fora.")
+
+
+@dataclass(frozen=True)
+class EconomicProfileOption:
+    """Opção de perfil econômico para a tela: o dado vem da política, não do mockup."""
+
+    profile: EconomicProfile
+    label: str
+    description: str
+    active: bool
+    min_quality: int
+    ranking: RankingOrder
+
+
+def economic_profile_options(current: EconomicProfile | str) -> tuple[EconomicProfileOption, ...]:
+    """Os três perfis reais, com a política vigente e qual está ativo no canal."""
+    if not isinstance(current, EconomicProfile):
+        current = EconomicProfile(current)
+    return tuple(
+        EconomicProfileOption(
+            profile=profile,
+            label=_PROFILE_LABELS[profile],
+            description=_profile_description(profile),
+            active=profile is current,
+            min_quality=policy_for(profile).min_quality,
+            ranking=policy_for(profile).ranking,
+        )
+        for profile in EconomicProfile
+    )
 
 
 class GetChannelBudget:
