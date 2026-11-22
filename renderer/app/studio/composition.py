@@ -71,11 +71,12 @@ from .application.saas import (BuildTeamView, ChangeMemberRole, InviteMember, Re
 from .application.trends import IngestTrends
 from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .application.channel_style_page import BuildChannelStylePage
 from .application.channels_page import BuildChannelsPage
 from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                                  UpdateVisualStyle, VisualStyleUsage)
 from .application.styles_page import BuildStylesPage
-from .application.video_style import BuildVideoStyleView, SetVideoStyle
+from .application.video_style import BuildVideoStyleView, SetChannelStylePatch, SetVideoStyle
 from .application.channel_budget import ChannelBudgetFloor, GetChannelBudget, SetChannelBudget
 from .application.providers import ProviderService
 from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -798,6 +799,10 @@ class Studio:
         youtube_channel = GetYouTubeChannel(youtube_repo, secret_store)
         project_config = GetPublicProjectConfig(repo)
         set_project_config = SetPublicProjectConfig(repo, implementations)
+        # F05.T04: a personalização do canal resolve a configuração efetiva no domínio; a tela
+        # não recalcula precedência nem copia parâmetros da biblioteca.
+        channel_style_page = BuildChannelStylePage(channel_repo, style_repo)
+        set_channel_style_patch = SetChannelStylePatch(channel_repo)
         channels_page = BuildChannelsPage(panel_repo, repo, GetChannelProfile(channel_repo, repo),
                                           providers_service, channel_budget, youtube_channel, project_config,
                                           oauth_available=oauth_client is not None,
@@ -833,6 +838,8 @@ production=production, script_view=script_view,
                                   get_project_config=project_config,
                                   set_project_config=set_project_config,
                                   channels_page=channels_page,
+                                  channel_style_page=channel_style_page,
+                                  set_channel_style_patch=set_channel_style_patch,
                                   team_view=team_view,
                                   analytics_repo=analytics_learning_repo,
                                   analytics_dashboard=analytics_dashboard,

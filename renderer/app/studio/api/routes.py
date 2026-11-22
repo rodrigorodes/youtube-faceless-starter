@@ -40,12 +40,14 @@ from ..application.media import AssetRefused
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
+from ..application.video_style import ChannelStylePatchConflict
 from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid, consent_project_id
 from ..application.connections import AuthorizationNotFound, ConnectionNotFound
 from ..application.render import RenderRefused
-from ..domain.production_run import (InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
+from ..domain.production_run import (CreateRunResult, InvalidIdempotencyKey, InvalidPipeline, InvalidProductionTransition,
                                      ProductionIdempotencyConflict, ProductionRunLockTimeout,
-                                     ProductionRunReferencedEntityNotFound, ProductionStage, RunState,
+                                     ProductionRunReferencedEntityNotFound, ProductionStage,
+                                     RunState,
                                      RunTransitionResult)
 from ..domain.publish import InvalidPublishData, srt_to_vtt
 from ..domain.publication_policy import PublicationPolicyError, PublicConfirmationRequired
@@ -368,6 +370,25 @@ class ProductionRunIn(BaseModel):
 
 class ProductionActionIn(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
+
+
+class ChannelStylePatchIn(BaseModel):
+    """F05.T04: patch tipado do canal com revisão otimista (0 = nunca personalizado)."""
+
+    expected_revision: int = Field(default=0, ge=0)
+    patch: dict | None = None
+
+
+class ChannelStylePatchOut(BaseModel):
+    revision: int
+    patch: dict | None = None
+
+
+class ProductionRegenerateIn(BaseModel):
+    """Regenerar é execução nova; a revisão escolhe a chave determinística."""
+
+    revision: int = Field(default=1, ge=1, le=20)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class ProductionResumeIn(BaseModel):
@@ -1443,7 +1464,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.channels_page is None:
                 raise HTTPException(503, "channel services unavailable")
-            return render_channels(uc.channels_page.execute(_active_channel(uc, project_id)))
+            view = uc.channels_page.execute(_active_channel(uc, project_id))
+            style_view = None
+            if uc.channel_style_page is not None and view.profile is not None:
+                style_view = uc.channel_style_page.execute(view.profile.id)
+            return render_channels(view, channel_style=style_view)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1808,6 +1833,21 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 pipeline.append(PipelineStage(stage, label, False, reasons[stage]))
         return tuple(pipeline)
 
+    @router.post("/videos/{video_id}/production-runs/{run_id}/regenerate", status_code=202,
+                 response_model=ProductionRunStartOut)
+    def regenerate_production_run(video_id: str, run_id: str, body: ProductionRegenerateIn | None = None):
+        """F03.T04: execução **nova** a partir de um run existente (nunca resume disfarçado)."""
+        body = body or ProductionRegenerateIn()
+
+        def go(uc):
+            _owned(uc, video_id, run_id)
+            creation = production_service(uc).regenerate(check_id(run_id), revision=body.revision,
+                                                        reason=(body.reason or "").strip() or None)
+            return ProductionRunStartOut(run_id=creation.run.run_id, state=creation.run.state.value,
+                                         mode=uc.production.coordinator.mode.value,
+                                         created=creation.result is CreateRunResult.CREATED)
+        return run(go)
+
     @router.get("/panel/novo-video", response_class=HTMLResponse)
     def panel_new_video_html(project_id: str | None = None):
         def get_page(uc):
@@ -2024,6 +2064,27 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if video is None:
                 raise HTTPException(404, "video not found")
             return video
+        return run(go)
+
+    @router.patch("/channels/{profile_id}/style-patch", response_model=ChannelStylePatchOut)
+    def set_channel_style_patch(profile_id: str, body: ChannelStylePatchIn):
+        """F05.T04: grava/remove o override tipado do canal, com controle otimista.
+
+        `patch` vazio/ausente remove o override (o canal volta a herdar, nunca `{}`). Revisão
+        divergente é 409 e nada é gravado; patch fora da allowlist é 422 com a chave nomeada.
+        """
+        def go(uc):
+            service = _need(uc, "set_channel_style_patch", "style services unavailable")
+            try:
+                stored = service.execute(profile_id, body.expected_revision, body.patch)
+            except ChannelStylePatchConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            if stored is None:
+                raise HTTPException(404, "channel not found")
+            return ChannelStylePatchOut(revision=stored.revision,
+                                        patch=stored.patch.to_mapping() if stored.patch else None)
         return run(go)
 
     # -- providers (F10-03/F10-04) -------------------------------------------

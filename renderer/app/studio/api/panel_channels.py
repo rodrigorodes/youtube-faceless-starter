@@ -27,6 +27,7 @@ from ..domain.provider import (
 )
 from . import panel as shell
 from . import shell_v3
+from .panel_channel_style import CHANNEL_STYLE_CSS, CHANNEL_STYLE_JS, render_channel_style
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -1200,12 +1201,17 @@ def _sidebar_card(view: ChannelsPageView) -> str:
     """
 
 
-def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
-    """Página de Canais: casca aprovada + dado real do Studio ou estado vazio explícito."""
+def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, dict[str, str]]:
+    """Página de Canais: casca aprovada + dado real do Studio ou estado vazio explícito.
+
+    `channel_style` (F05.T04) é a projeção de personalização do canal; quando ausente a
+    página é a mesma de antes (sem controle novo).
+    """
     if view.project is None:
         return _empty_page(_sidebar_card(view))
     nonce = secrets.token_urlsafe(16)
     project = view.project
+    channel_style_html = render_channel_style(channel_style) if channel_style is not None else ""
     content_html = f"""
       <div class="card">
         <div class="spread">
@@ -1221,6 +1227,7 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
       {_channel_card(view)}
       {_profile_card(view)}
       {_appearance_card(view)}
+      {channel_style_html}
       {_providers_card(view)}
       {_budget_card(view)}
       {_youtube_card(view)}
@@ -1540,7 +1547,7 @@ def render_channels(view: ChannelsPageView) -> tuple[str, dict[str, str]]:
         projects=[(project.id, project.name)],
         project_id=project.id,
         cost_note="",
-        page_js=page_js,
-        extra_css=CHANNELS_CSS,
+        page_js=page_js + CHANNEL_STYLE_JS,
+        extra_css=CHANNELS_CSS + CHANNEL_STYLE_CSS,
     )
     return html, shell._headers(nonce)

@@ -171,13 +171,39 @@ def test_styles_page_menu_has_estilos_active_and_no_dead_configuracoes(env):
 def test_styles_form_has_labels_hints_and_collapsed_advanced(env):
     html = page(env).text
     for field_id in ("novo-estilo-nome", "novo-estilo-bpm", "novo-estilo-caption-size",
-                     "novo-estilo-voice", "novo-estilo-extra"):
+                     "novo-estilo-voice"):
         assert f'for="{field_id}"' in html, field_id
     assert 'aria-describedby="novo-estilo-nome-hint"' in html
     assert 'role="status"' in html and 'aria-live="polite"' in html
     # "Avançado" recolhido por padrão (divulgação progressiva em 2 níveis)
     assert "<details open" not in html
     assert 'class="advanced"' in html
+
+
+def test_styles_form_does_not_edit_params_the_render_ignores(env):
+    """`extra` era um JSON livre que o render não lê: sai da edição e não vira promessa.
+
+    O valor declarado continua preservado no formulário (`data-params`), mas não há controle
+    editável — a API continua aceitando o bag para extensão, a tela não finge suporte.
+    """
+    _create_style(env, "Com extra", {"extra": {"lut": "warm"}})
+    html = page(env).text
+    assert "data-extra" not in html and "novo-estilo-extra" not in html
+    # Preservado no round-trip do formulário, sem campo dedicado.
+    assert 'data-params="{&quot;extra&quot;: {&quot;lut&quot;: &quot;warm&quot;}}"' in html
+
+
+def test_styles_page_flags_declared_but_unapplied_params(env):
+    """Transição/extra são carregados pelo contrato, mas o render ainda não os aplica."""
+    _create_style(env, "Com transição",
+                  {"transition": {"kind": "fade", "duration_ticks": 12}, "extra": {"lut": "warm"}})
+    visible = page_text(page(env).text)
+    assert "não aplicado pelo render" in visible
+    assert "transição" in visible and "extra" in visible
+    # O resumo do que o render aplica não lista o que ele não aplica.
+    row = visible.split("Com transição", 1)[1]
+    summary = row.split("versão", 1)[0]
+    assert "transição" not in summary and "extra" not in summary
 
 
 # ------------------------------------------------------------------ higiene

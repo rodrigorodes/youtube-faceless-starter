@@ -72,6 +72,17 @@ def test_style_crud_round_trips_params(api):
     assert patched.json()["version"] == 2
 
 
+def test_style_api_keeps_params_the_render_does_not_apply_yet(api):
+    """`transition`/`extra` continuam no contrato (extensão carregada), mas a tela não os edita."""
+    params = {"transition": {"kind": "fade", "duration_ticks": 12}, "extra": {"lut": "warm"}}
+    created = api["client"].post("/studio/styles", json={"name": "Com transição", "params": params},
+                                 headers=WORKER_HEADER)
+    assert created.status_code == 201, created.text
+    assert created.json()["params"] == params
+    got = api["client"].get(f"/studio/styles/{created.json()['id']}", headers=WORKER_HEADER)
+    assert got.json()["params"] == params
+
+
 def test_style_archive_is_soft_delete(api):
     client = api["client"]
     style_id = client.post("/studio/styles", json={"name": "Arquivável"}, headers=WORKER_HEADER).json()["id"]
@@ -171,3 +182,57 @@ def test_channels_using_is_measured_not_estimated(api):
     listed = client.get("/studio/styles", headers=WORKER_HEADER).json()
     assert listed[0]["channels_using"] == 2
     assert client.get(f"/studio/styles/{style_id}", headers=WORKER_HEADER).json()["channels_using"] == 2
+
+
+# ------------------------------------------- personalização do canal (F05.T04)
+
+
+def _profile_with_style(api):
+    project_id = api["project_id"]
+    client = api["client"]
+    style = client.post("/studio/styles", headers=WORKER_HEADER,
+                        json={"name": "Canal escuro", "params": {"motion": ["zoom_in"]}}).json()
+    profile = client.post(f"/studio/projects/{project_id}/channels", headers=WORKER_HEADER,
+                          json={"name": "Canal H"}).json()
+    patched = client.patch(f"/studio/channels/{profile['id']}", headers=WORKER_HEADER,
+                           json={"expected_version": profile["version"], "changes": {"style_id": style["id"]}})
+    assert patched.status_code == 200, patched.text
+    return style, patched.json()
+
+
+def test_channel_style_patch_round_trips_with_optimistic_revision(api):
+    style, profile = _profile_with_style(api)
+    client = api["client"]
+    url = f"/studio/channels/{profile['id']}/style-patch"
+
+    saved = client.patch(url, headers=WORKER_HEADER,
+                         json={"expected_revision": 0, "patch": {"music": {"bpm": 99}}})
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["revision"] == 1 and body["patch"]["music"]["bpm"] == 99
+
+    stale = client.patch(url, headers=WORKER_HEADER,
+                         json={"expected_revision": 0, "patch": {"music": {"bpm": 120}}})
+    assert stale.status_code == 409
+
+    removed = client.patch(url, headers=WORKER_HEADER,
+                           json={"expected_revision": 1, "patch": None})
+    assert removed.status_code == 200 and removed.json()["patch"] is None
+    assert removed.json()["revision"] == 2
+
+
+def test_channel_style_patch_rejects_unknown_field_and_unknown_channel(api):
+    _style, profile = _profile_with_style(api)
+    client = api["client"]
+    bad = client.patch(f"/studio/channels/{profile['id']}/style-patch", headers=WORKER_HEADER,
+                       json={"expected_revision": 0, "patch": {"nao_existe": 1}})
+    assert bad.status_code == 422 and "nao_existe" in bad.text
+    missing = client.patch(f"/studio/channels/{'f' * 32}/style-patch", headers=WORKER_HEADER,
+                           json={"expected_revision": 0, "patch": None})
+    assert missing.status_code == 404
+
+
+def test_channel_style_patch_requires_the_worker_token(api):
+    _style, profile = _profile_with_style(api)
+    assert api["client"].patch(f"/studio/channels/{profile['id']}/style-patch",
+                               json={"expected_revision": 0, "patch": None}).status_code in (401, 403)

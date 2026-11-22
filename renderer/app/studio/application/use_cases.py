@@ -23,7 +23,7 @@ from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCateg
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                      UpdateVisualStyle, VisualStyleUsage)
-from .video_style import BuildVideoStyleView, SetVideoStyle
+from .video_style import SetChannelStylePatch, BuildVideoStyleView, SetVideoStyle
 from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que importa os casos de uso)
     from .production import Production
     from .script_view import BuildScriptView
+    from .channel_style_page import BuildChannelStylePage
     from .channels_page import BuildChannelsPage
     from .styles_page import BuildStylesPage
     from .advanced_page import BuildAdvancedView
@@ -134,6 +135,9 @@ class UseCases:
     set_project_config: SetPublicProjectConfig | None = None
     # F10 (UI): projeção da tela de Canais consumindo os casos de uso acima
     channels_page: "BuildChannelsPage | None" = None
+    # F05.T04: personalização do canal (origem/efetivo/reset) e escrita do patch com revisão.
+    channel_style_page: "BuildChannelStylePage | None" = None
+    set_channel_style_patch: "SetChannelStylePatch | None" = None
     # F11: leitura da tela de Equipe (tenancy/BYOK).
     team_view: "BuildTeamView | None" = None
     # F9 (analytics e loop de aprendizado)
@@ -205,6 +209,8 @@ class UseCases:
                   get_project_config: GetPublicProjectConfig | None = None,
                   set_project_config: SetPublicProjectConfig | None = None,
                   channels_page: "BuildChannelsPage | None" = None,
+                  channel_style_page: "BuildChannelStylePage | None" = None,
+                  set_channel_style_patch: SetChannelStylePatch | None = None,
                   team_view: "BuildTeamView | None" = None,
                   analytics_repo: AnalyticsRepository | None = None,
                   analytics_dashboard: BuildAnalyticsDashboard | None = None,
@@ -248,6 +254,7 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    get_youtube_channel, associate_youtube_channel, disconnect_youtube_channel, get_project_config,
                    set_project_config,
                    channels_page,
+                   channel_style_page, set_channel_style_patch,
                    team_view,
                    analytics_repo, analytics_dashboard, analytics_collection, analytics_decide,
                    analytics_register_experiment,

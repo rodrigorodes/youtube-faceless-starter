@@ -3,8 +3,15 @@
 Lista os estilos do estúdio; cada linha traz nome, um resumo curto dos parâmetros e **quantos
 canais usam** (contagem medida no banco, nunca estimada). Criar/editar usa **divulgação
 progressiva em dois níveis**: o essencial primeiro (nome · ritmo de câmera · bpm) e o **Avançado**
-recolhido (legenda, cores, voz e `extra`). Nada é obrigatório além do nome. Arquivar, nunca
-apagar: o estilo sai da lista e o nome é liberado; os canais voltam ao padrão do estúdio.
+recolhido (legenda, cores e voz). Nada é obrigatório além do nome. Arquivar, nunca apagar: o
+estilo sai da lista e o nome é liberado; os canais voltam ao padrão do estúdio.
+
+F05.T04 — a biblioteca só edita o que o render aplica. `motion`, `music`, `caption`, `palette` e
+`voice` são lidos pelo renderer; `transition` (carregada no plano, ainda não aplicada) e `extra`
+(bag de extensão sem leitura) continuam aceitos pela API e **preservados** ao salvar, mas aparecem
+rotulados como “não aplicado pelo render”, sem controle editável. O `extra` deixou de ser um
+textarea de JSON livre: era um controle que não mudava o vídeo. Personalizar um canal é outra
+tela (`panel_channel_style`), com patch por camada — editar aqui nunca cria cópia por canal.
 
 Fonte de verdade: `docs/superpowers/specs/2026-11-21-backoffice-settings-ux-design.md` §4/§5.3/§6/§7.
 """
@@ -32,6 +39,8 @@ _MOTION_LABELS = {
     "none": "Nenhum (sem movimento)",
 }
 _MOTIONS = [m for m in _MOTION_ORDER if m in MOTIONS] + sorted(MOTIONS - set(_MOTION_ORDER))
+# Opções de movimento com rótulo legível: uma fonte só para a biblioteca e a personalização do canal.
+MOTION_OPTIONS = tuple((motion, _MOTION_LABELS.get(motion, motion)) for motion in _MOTIONS)
 
 _PALETTE_FIELDS = (
     ("caption_text", "Cor do texto da legenda"),
@@ -52,6 +61,7 @@ STYLES_CSS = """
 .style-row:first-child { border-top: 0; }
 .item-title { font-weight: 600; }
 .item-sub { font-size: 0.78rem; color: var(--text-dim); }
+.item-sub.unused { color: var(--text-muted); font-style: italic; }
 .usage { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1.1rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
@@ -120,16 +130,8 @@ function collectStyleParams(form) {
   const model = voiceInput ? voiceInput.value.trim() : '';
   if (model) { params.voice = { model: model }; } else { delete params.voice; }
 
-  const extraInput = form.querySelector('[data-extra]');
-  const raw = extraInput ? extraInput.value.trim() : '';
-  if (raw) {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('O avançado (JSON) precisa ser um objeto.');
-    }
-    params.extra = parsed;
-  } else { delete params.extra; }
-
+  // `transition` e `extra` não têm controle (o render não os aplica): ficam intocados no
+  // `base` lido de `data-params`, então salvar outro campo não os apaga.
   return params;
 }
 
@@ -229,7 +231,7 @@ if (firstStyle) {
 
 
 def _param_summary(params: dict) -> str:
-    """Resumo curto e honesto dos parâmetros aplicáveis; sem parâmetro, diz que não há."""
+    """Resumo curto e honesto **do que o render aplica**; `transition`/`extra` não entram aqui."""
     parts = []
     motion = params.get("motion")
     if isinstance(motion, list) and motion:
@@ -244,13 +246,31 @@ def _param_summary(params: dict) -> str:
         parts.append("cores")
     if params.get("voice"):
         parts.append("voz")
-    if params.get("transition"):
-        parts.append("transição")
-    if params.get("extra"):
-        parts.append("extra")
     if parts:
         return " · ".join(parts)
-    return "parâmetros declarados" if params else "sem parâmetros declarados"
+    if params:
+        return "nenhum parâmetro aplicado pelo render"
+    return "sem parâmetros declarados"
+
+
+def _unused_param_labels(params: dict) -> list[str]:
+    """Parâmetros declarados que o render **não** aplica hoje (rotulados, nunca fingidos)."""
+    labels = []
+    if params.get("transition"):
+        labels.append("transição")
+    extra = params.get("extra")
+    if isinstance(extra, dict) and extra:
+        count = len(extra)
+        labels.append(f"extra ({count} chave{'s' if count != 1 else ''})")
+    return labels
+
+
+def _unused_param_note(params: dict) -> str:
+    labels = _unused_param_labels(params)
+    if not labels:
+        return ""
+    return (f'<div class="item-sub unused">Declarado e não aplicado pelo render: '
+            f'{e(", ".join(labels))}. Preservado ao salvar.</div>')
 
 
 def _usage_text(count: int) -> str:
@@ -285,15 +305,21 @@ def _value(params: dict, section: str, key: str) -> str:
 def _style_form(prefix: str, *, style=None) -> str:
     """Formulário de criar/editar com divulgação progressiva em dois níveis.
 
-    Nível 1 é a própria divulgação (o `<details>` que o contém). Nível 2 é o "Avançado". Os
-    parâmetros que não têm campo dedicado (ex.: `transition`) são preservados a partir do
-    `data-params` do estilo atual — nada é inventado e nada é perdido sem querer.
+    Nível 1 é a própria divulgação (o `<details>` que o contém). Nível 2 é o "Avançado". Só os
+    parâmetros que o render aplica ganham controle; o que não tem suporte (`transition`, `extra`)
+    é preservado a partir do `data-params` e aparece rotulado como não aplicado — nada é
+    inventado, nada é perdido sem querer e nenhum controle promete efeito que não existe.
     """
     is_edit = style is not None
     params = dict(style.params) if is_edit else {}
     selected_motions = set(params.get("motion") or [])
-    extra = params.get("extra")
-    extra_text = json.dumps(extra, ensure_ascii=False, indent=2) if extra else ""
+    unused_labels = _unused_param_labels(params)
+    unused_note = (
+        f'<p class="hint" id="{prefix}-nao-aplicado">Declarado neste estilo, não aplicado pelo '
+        f'render hoje: {e(", ".join(unused_labels))}. Não há controle de edição; o valor é '
+        f'preservado ao salvar.</p>'
+        if unused_labels else ""
+    )
     mode = "edit" if is_edit else "create"
     style_id = style.id if is_edit else ""
     version = style.version if is_edit else 0
@@ -338,7 +364,7 @@ def _style_form(prefix: str, *, style=None) -> str:
           </div>
         </div>
         <details class="advanced" id="{prefix}-avancado">
-          <summary class="advanced-summary">Avançado — legenda, cores, voz e extra</summary>
+          <summary class="advanced-summary">Avançado — legenda, cores e voz</summary>
           <div class="advanced-body">
             <div class="grid-2">
               <div class="field">
@@ -362,12 +388,7 @@ def _style_form(prefix: str, *, style=None) -> str:
                 <span class="hint" id="{prefix}-voice-hint">Modelo de voz do provider. Vazio = padrão do render.</span>
               </div>
             </div>
-            <div class="field" style="margin-top:0.9rem">
-              <label for="{prefix}-extra">Extra (JSON)</label>
-              <textarea class="input" id="{prefix}-extra" data-extra rows="3" spellcheck="false"
-                        aria-describedby="{prefix}-extra-hint">{e(extra_text)}</textarea>
-              <span class="hint" id="{prefix}-extra-hint">Objeto JSON para parâmetros sem campo próprio (ex.: transição). Precisa ser um objeto.</span>
-            </div>
+            {unused_note}
           </div>
         </details>
         <div class="spread" style="margin-top:1rem">
@@ -414,6 +435,7 @@ def _style_row(item: StyleListItem) -> str:
         <div>
           <div class="item-title">{e(style.name)}</div>
           <div class="item-sub">{e(_param_summary(style.params))} · versão {style.version}</div>
+          {_unused_param_note(style.params)}
         </div>
         <span class="usage">{e(_usage_text(item.channels_using))}</span>
         <details class="style-disclosure">

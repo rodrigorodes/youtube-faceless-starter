@@ -13,18 +13,24 @@ precedência sobre o patch do canal, revisão própria para o controle otimista 
 **remove** o patch (volta a herdar), nunca um `{}` sem semântica. A resolução efetiva é
 recalculada na leitura (`effective_config.resolve_effective_config`), então quando a base de
 estilo muda o patch continua aplicado sobre a base nova — o resultado não é congelado aqui.
+
+`SetChannelStylePatch` (F05.T04) é o caso de uso **simétrico do canal**: mesma validação de
+revisão, mesmo ``StylePatch`` normalizado, e o conflito do agregado traduzido para
+``ChannelStylePatchConflict`` (409 na API). A personalização do canal não edita a biblioteca.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..domain.channel import ChannelVersionConflict
 from ..domain.contracts import Video
 from ..domain.ids import check_id
 from ..domain.visual_style import StylePatch, VisualStyle, effective_style_id
 from .ports import ChannelProfileRepository, VideoRepository, VisualStyleRepository
 
 __all__ = ["VideoStyleView", "BuildVideoStyleView", "SetVideoStyle", "VideoStylePatch",
-           "SetVideoStylePatch", "VideoStylePatchConflict"]
+           "SetVideoStylePatch", "VideoStylePatchConflict", "ChannelStylePatch",
+           "SetChannelStylePatch", "ChannelStylePatchConflict"]
 
 
 class VideoStylePatchConflict(ValueError):
@@ -32,6 +38,16 @@ class VideoStylePatchConflict(ValueError):
 
     Equivalente ao ``ChannelVersionConflict`` para o agregado vídeo (que não tem `version`): o
     repositório recusa a escrita perdedora antes de gravar qualquer coisa.
+    """
+
+
+class ChannelStylePatchConflict(ValueError):
+    """A revisão informada do patch do canal não é a atual: outra escrita venceu a corrida.
+
+    O repositório do canal usa ``ChannelVersionConflict`` também para a revisão do patch (é o
+    token otimista do agregado); o caso de uso traduz para este tipo **específico** de patch para
+    que a API responda 409 sem confundir com um conflito de versão editorial. Nada é gravado pela
+    escrita perdedora.
     """
 
 
@@ -157,3 +173,54 @@ class SetVideoStylePatch:
         v_id = check_id(video_id)
         revision = validate_style_patch_revision(expected_revision)
         return self.videos.set_video_style_patch(v_id, revision, patch)
+
+
+@dataclass(frozen=True)
+class ChannelStylePatch:
+    """Estado persistido do patch **do canal**: revisão e override tipado (``None`` = herda).
+
+    Simétrico a ``VideoStylePatch``: ``patch`` ausente/vazio é ausência de override (o canal
+    herda o estilo inteiro) e a normalização é a canônica de ``domain.visual_style.StylePatch``.
+    A revisão é a do patch (``style_patch_revision``), independente da ``version`` editorial —
+    personalizar estilo não edita o perfil.
+    """
+
+    revision: int = 0
+    patch: StylePatch | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "revision", validate_style_patch_revision(self.revision))
+        if self.patch is not None:
+            typed = (self.patch if isinstance(self.patch, StylePatch)
+                     else StylePatch.from_mapping(self.patch, where="channel style patch"))
+            object.__setattr__(self, "patch", None if typed.is_empty else typed)
+
+    @property
+    def inherits(self) -> bool:
+        return self.patch is None
+
+
+class SetChannelStylePatch:
+    """Grava (ou remove, com None) o override tipado de estilo deste canal (F05.T04).
+
+    Espelha ``SetVideoStylePatch``: devolve o estado persistido (revisão + patch) ou ``None`` se
+    o canal não existe. Um patch inválido sobe como ``StylePatchInvalid`` (antes de qualquer
+    escrita) e uma revisão velha como ``ChannelStylePatchConflict`` — nada é gravado pela escrita
+    perdedora. Patch vazio vira ``None`` no repositório: o canal volta a herdar, nunca `{}`.
+    """
+
+    def __init__(self, channels: ChannelProfileRepository):
+        self.channels = channels
+
+    def execute(self, profile_id: str, expected_revision: int,
+                patch: StylePatch | dict | None) -> ChannelStylePatch | None:
+        p_id = check_id(profile_id)
+        revision = validate_style_patch_revision(expected_revision)
+        try:
+            profile = self.channels.set_style_patch(p_id, revision, patch)
+        except ChannelVersionConflict as exc:
+            # Mesmo token otimista do agregado; aqui o erro diz que o alvo era o patch.
+            raise ChannelStylePatchConflict(str(exc)) from None
+        if profile is None:
+            return None
+        return ChannelStylePatch(revision=profile.style_patch_revision, patch=profile.style_patch)

@@ -103,6 +103,12 @@ class _Coordinator:
             raise self._retry_error
         return self._transition
 
+    def regenerate(self, run_id, *, revision=1, reason=None):
+        if self._retry_error is not None:
+            raise self._retry_error
+        self.regenerated = (run_id, revision, reason)
+        return self._start_result
+
 
 class _Production:
     def __init__(self, coordinator):
@@ -117,6 +123,9 @@ class _Production:
 
     def retry(self, run_id):
         return self.coordinator.retry(run_id)
+
+    def regenerate(self, run_id, *, revision=1, reason=None):
+        return self.coordinator.regenerate(run_id, revision=revision, reason=reason)
 
 
 class _UseCases:
@@ -255,3 +264,21 @@ def test_get_exposes_the_lifecycle_decision_event_without_secrets():
     dumped = str(body).lower().replace("fencing_token", "")
     for forbidden in ("api_key", "password", "secret", "config_snapshot", "authorization"):
         assert forbidden not in dumped
+
+
+def test_regenerate_is_a_new_run_and_forwards_revision():
+    """F03.T04: regenerar é execução nova — a rota responde 202 com a criação nova."""
+    coordinator = _Coordinator(projection=_projection(), start_result=_creation())
+    response = client(coordinator).post(f"/studio/videos/{VIDEO}/production-runs/{RUN}/regenerate",
+                                        json={"revision": 2, "reason": "nova revisão"})
+    assert response.status_code == 202
+    assert response.json()["run_id"] == RUN and response.json()["created"] is True
+    assert coordinator.regenerated == (RUN, 2, "nova revisão")
+
+
+def test_regenerate_unknown_run_is_404_and_bad_revision_is_422():
+    coordinator = _Coordinator(projection=None, start_result=_creation())
+    assert client(coordinator).post(f"/studio/videos/{VIDEO}/production-runs/{RUN}/regenerate").status_code == 404
+    ok = _Coordinator(projection=_projection(), start_result=_creation())
+    assert client(ok).post(f"/studio/videos/{VIDEO}/production-runs/{RUN}/regenerate",
+                           json={"revision": 0}).status_code == 422
