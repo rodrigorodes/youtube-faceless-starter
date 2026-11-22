@@ -1,6 +1,6 @@
 # CONTINUITY — retomada em outra sessão
 
-**Atualizado:** 22/11/2026 · **Repo:** `/Users/rodrigomendes/youtube-faceless-starter` · **HEAD:** `c90d806` (commit local do W0–W5; `git push` **negado por permissão**, nada saiu da máquina) · **trabalho posterior ao commit:** não commitado.
+**Atualizado:** 22/11/2026 · **Repo:** `/Users/rodrigomendes/youtube-faceless-starter` · **HEAD:** `c3585dc` (commit local desta sessão; o anterior é `c90d806`) · **`git push` negado por permissão — nada saiu da máquina**. Working tree limpo.
 **Idioma:** pt-BR. **Testes:** só pelo container (`scripts/test-container.sh`); o host macOS não é ambiente de teste.
 **Leia primeiro:** `phases/INTEGRATION-PLAN.md` (plano, §9 = decisões do operador) e `evidence/REPO-VALIDATION.md` (matriz e riscos R1–R11).
 
@@ -10,7 +10,7 @@
 **alinhamento de UX ao protótipo** (`prototype/index.html`), com a regra do PO: *onde o atual for
 melhor, manter; o resto adequar ao protótipo seguindo os docs de análise*.
 
-**Feito nesta sessão (não commitado):**
+**Feito nesta sessão (commit local `c3585dc`, 58 arquivos):**
 - Achados 1, 3, 4, 11 resolvidos; bug B1 (porta da intenção) e B2 (ids duplicados no diálogo de
   canal) corrigidos — `evidence/VERIFIED-FINDINGS.md`.
 - **S3/S4/S5 portados**: compilador FFmpeg em `adapters/render_plan_compiler.py`; `composition.py` →
@@ -36,10 +36,10 @@ com `ffmpeg` nos defaults; `MediaSearch` sem 2ª fonte; QA semântico sem verifi
 `test_secrets_hygiene` só falha com a árvore suja; import morto de `render_new_video` em `routes.py`;
 Início sem a faixa de benefícios e Biblioteca sem as 3 abas (ambos dependem de expor dado real).
 
-**Próxima ação:** decidir com o PO (a) o commit local das mudanças (o `git add -A` já deixou tudo
-staged; `HEAD` segue `c90d806`), (b) a remoção do canal de teste criado na validação no ar
-(`Prova fix B2 (validacao no ar)`) e (c) a limpeza dos 3 canais "Musica" do banco dev — **nenhuma
-remoção sem autorização**.
+**Próxima ação:** decidir com o PO (a) a remoção do canal de teste criado na validação no ar
+(`Prova fix B2 (validacao no ar)`) e (b) a limpeza dos 3 canais "Musica" do banco dev — **nenhuma
+remoção sem autorização**. O commit local já está feito (`c3585dc`); o `git push` continua bloqueado
+por permissão.
 
 ## 1. Objetivo
 Integrar a proposta (revisão 3) **seguindo a UX atual e acrescentando ao core e à UX existentes**. Sem SPA, sem segundo shell/coordenador/renderer. Autorizado até agora: **W0 e W1**. W2 em diante (render, mídia, edição por cena, publicação) **não** foi autorizado.
@@ -112,6 +112,7 @@ Worktrees da onda: `.worktrees/ve-w1-listas` (`ve/w1-listas`), `.worktrees/ve-w1
   - `test_port_contracts::test_catalog_and_registry_have_no_drift` — vazamento de `_REGISTRY` por `register("voice","tone-narr",...)` em nível de módulo em `test_scene_narration.py` (**achado 11b**). **Corrigido** (fixture autouse com `registered_providers`).
   - `test_secrets_hygiene` ×2 — artefato do trabalho não commitado: `package-starter.sh` faz `stat()` no caminho de cada arquivo do **índice**, e `composition.py` estava deletado no disco mas ainda no índice. **Resolvido** com `git add -A` (a deleção entrou no índice).
   - Verificação focada dos 3: `test_secrets_hygiene + test_port_contracts + test_scene_narration + test_editorial_api + test_render_api + test_tts_calibration` → **89 passed**.
+- **Rodada completa final (`full2`, após as 2 correções): 0 failed, 3319 passed, 6 skipped** (446 s), `hash renderer/app=b8ab3099d5a1c228`, `migrações=41`. Commit local `c3585dc`; working tree limpo. Os 6 skips = Node.js ausente na imagem.
 - **Validação no ar** (imagem `renderer` reconstruída, app em `http://localhost:8000`, `/health` 200):
   - Nav de **7 itens** sem caption "Operação" em `/studio/panel`, `/studio/canais`, `/studio/panel/tendencias`, `/studio/configuracoes/canais`, `/studio/panel/equipe`.
   - **Zero ids duplicados** em `/studio/canais`, `/studio/configuracoes/estrategia` e `/studio/configuracoes/producao`; o diálogo do shell usa `dlg-canal-*` e `canal-nome` aparece **1×** (o campo do perfil).
