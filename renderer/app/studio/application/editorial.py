@@ -20,7 +20,10 @@ from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 if TYPE_CHECKING:
     from .ideas import ScoreIdeas
-    from .longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
+    from .longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
+                           GetScriptRevision, ListScriptRevisions, RemoveScriptScene, ReorderScriptScenes,
+                           RestoreScriptRevision)
+    from .scene_narration import RegenerateSceneNarration, SceneNarration
 from .ports import (FactCheckRepository, ScriptRepository, SceneDraft, SnapshotRepository, SourceFetcher, TextModel,
                     UsageRepository, VideoRepository)
 
@@ -448,5 +451,15 @@ class Editorial:
     score_ideas: "ScoreIdeas | None" = None
     long_generate: "GenerateLongScript | None" = None  # F4: roteiro longo em duas passagens
     edit_script: "EditScriptScene | None" = None
+    add_scene: "AddScriptScene | None" = None
+    remove_scene: "RemoveScriptScene | None" = None
+    reorder_scenes: "ReorderScriptScenes | None" = None
     approve_script: "ApproveScriptVersion | None" = None
     list_sources: "ListSources | None" = None
+    # W4.3: pré-escuta e regeneração da narração de uma cena (opcionais; sem eles, nada muda).
+    scene_narration: "SceneNarration | None" = None
+    regenerate_narration: "RegenerateSceneNarration | None" = None
+    # W4.5 (EDIT-04): histórico recuperável de revisões de cena.
+    restore_revision: "RestoreScriptRevision | None" = None
+    list_revisions: "ListScriptRevisions | None" = None
+    get_revision: "GetScriptRevision | None" = None

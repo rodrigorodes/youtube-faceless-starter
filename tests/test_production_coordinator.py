@@ -479,6 +479,29 @@ def _resolving_coordinator(db, *, config=None):
     return coordinator, repo, resolver, calls, frozen
 
 
+class _FrozenSelectionHandler:
+    """Handler de roteiro que registra a seleção congelada visível na execução."""
+
+    stage = ProductionStage.SCRIPT
+    available = True
+
+    def __init__(self, *, fail_first=False):
+        self.fail_first = fail_first
+        self.selections = []
+        self.calls = 0
+
+    def execute(self, context):
+        from app.studio.application.production import frozen_provider_selection
+
+        selection = frozen_provider_selection()
+        self.selections.append(dict(selection) if selection is not None else None)
+        self.calls += 1
+        if self.fail_first and self.calls == 1:
+            raise StageExecutionFailed("first attempt fails")
+        return StageOutcome(
+            checkpoint=Checkpoint({"stage": self.stage.value}, context.checkpoint_version))
+
+
 def test_start_resolves_the_config_and_persists_the_snapshot_before_any_effect(db):
     from app.studio.domain.run_config import RunConfigStatus
 
@@ -552,6 +575,54 @@ def test_resume_and_retry_read_the_persisted_snapshot_and_never_re_resolve(db):
     assert coordinator.retry(run_id).result is RunTransitionResult.APPLIED
     assert coordinator.config_for(run_id).config.content_hash == before
     assert calls == [VIDEO]  # resolver rodou só no start; retomada/retry só leem
+
+
+def test_retry_uses_the_frozen_provider_selection_and_does_not_re_resolve(db):
+    """S8: o retry lê a seleção congelada no snapshot; o catálogo/perfil vivo não decide de novo."""
+    repo, _ = db
+    handler = _FrozenSelectionHandler(fail_first=True)
+    coordinator = ProductionCoordinator(repo, handlers=handlers(script=handler),
+                                        videos=_Videos({VIDEO: _video()}), config_store=repo)
+    frozen = _config()
+    calls = []
+
+    def selection_for(video, config):
+        calls.append(video.id)
+        return {"text": "alpha:one"} if len(calls) == 1 else {"text": "beta:two"}
+
+    creation = coordinator.start(VIDEO, "run-selection-1", effective_config_for=lambda video: frozen,
+                                 config_store=repo, provider_selection_for=selection_for)
+    run_id = creation.run.run_id
+    assert calls == [VIDEO]
+    assert coordinator.config_for(run_id).config.provider_selection == {"text": "alpha:one"}
+
+    assert coordinator.step(run_id, owner="w1").result is WorkerStepResult.FAILED
+    assert handler.selections == [{"text": "alpha:one"}]
+    assert coordinator.retry(run_id).result is RunTransitionResult.APPLIED
+    assert coordinator.step(run_id, owner="w2").result is WorkerStepResult.COMPLETED_PAUSED
+    assert handler.selections == [{"text": "alpha:one"}, {"text": "alpha:one"}]
+    assert calls == [VIDEO]  # a retomada não re-resolveu a seleção
+
+
+def test_a_run_without_a_frozen_selection_keeps_live_routing(db):
+    """S8: run criado sem seleção (legado ou config sem selection) continua roteando normalmente."""
+    repo, _ = db
+    handler = _FrozenSelectionHandler()
+    coordinator = ProductionCoordinator(repo, handlers=handlers(script=handler),
+                                        videos=_Videos({VIDEO: _video()}), config_store=repo)
+    creation = coordinator.start(VIDEO, "run-selection-legacy", effective_config_for=lambda video: _config(),
+                                 config_store=repo)
+    assert coordinator.step(creation.run.run_id, owner="w").result is WorkerStepResult.COMPLETED_PAUSED
+    assert handler.selections == [None]
+
+
+def test_a_truly_legacy_run_without_a_snapshot_keeps_live_routing(db):
+    repo, _ = db
+    handler = _FrozenSelectionHandler()
+    coordinator = ProductionCoordinator(repo, handlers=handlers(script=handler), config_store=repo)
+    creation = coordinator.start(VIDEO, "run-selection-legacy-2")  # sem resolvedor: run legado
+    assert coordinator.step(creation.run.run_id, owner="w").result is WorkerStepResult.COMPLETED_PAUSED
+    assert handler.selections == [None]
 
 
 def test_start_with_a_resolver_requires_an_existing_video(db):

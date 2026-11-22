@@ -19,6 +19,7 @@ from .adapters.image_opencode import OpenCodeImage
 from .adapters.image_placeholder import PlaceholderImage
 from .adapters.image_stock import PexelsImage
 from .adapters.image_veo import VeoImage
+from .adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
 from .adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository
 from .adapters.postgres.analytics_repo import PostgresAnalyticsRepository
 from .adapters.postgres.panel_repo import PostgresPanelRepository
@@ -49,13 +50,15 @@ from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from .adapters.thumbnail import PillowThumbnail
 from .adapters.qa_ffmpeg import FfmpegQa
-from .adapters.quality_ffmpeg import FfmpegQualityEvaluator, FfmpegQualityProbe
+from .adapters.quality_ffmpeg import FfmpegOverlayVerifier, FfmpegQualityEvaluator, FfmpegQualityProbe
+from .adapters.quality_semantic import NotVerifiedSemanticChecker
 from .adapters.render_disabled import DisabledRenderer
 from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from .adapters.storage import FileAssetStore, FileRenderStorage
 from .adapters.voice_piper import PiperVoice
 from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
+from .adapters.postgres.scene_duration_repo import PostgresSceneDurationRepository
 from .adapters.postgres.repo import PostgresVideoRepository
 from .adapters.text_demo import DemoText
 from .adapters.text_opencode import OpenCodeText
@@ -73,6 +76,7 @@ from .application.categories import DeleteCategory, ListCategories, RefreshTrend
 from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
 from .application.channel_style_page import BuildChannelStylePage
 from .application.channels_page import BuildChannelsPage
+from .application.composition_view import BuildCompositionView
 from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                                  UpdateVisualStyle, VisualStyleUsage)
 from .application.styles_page import BuildStylesPage
@@ -98,19 +102,26 @@ from .application.connections import (BeginAccountConsent, CompleteAccountConsen
                                       ListConnections, RevokeAuthorization, Unlink)
 from .domain.youtube_oauth import OAuthConfigurationError
 from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
+from .application.scene_narration import RegenerateSceneNarration, SceneNarration
 from .application.render_cache import PlanRegeneration
-from .application.media import ListAssets, Media, PrepareStoryboard, ProduceAssets
+from .application.media import ListAssets, ListSceneCandidates, Media, PrepareStoryboard, ProduceAssets, SwapSceneMedia
 from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
-from .application.longform import ApproveScriptVersion, EditScriptScene, GenerateLongScript
+from .application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
+                                   GetScriptRevision, ListScriptRevisions, RemoveScriptScene, ReorderScriptScenes,
+                                   RestoreScriptRevision)
 from .application.script_view import BuildScriptView
 from .application.budget import PaidOperationGuard
 from .application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
-                                     ProductionCoordinator, build_stage_handlers)
+                                     ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
 from .application.advanced_page import BuildAdvancedView
 from .application.use_cases import ServiceUnavailable, UseCases
 
 DEFAULT_ALLOWLIST = ("amsterdam-dance-event.nl",)
 DEFAULT_ALLOW_NAMES = ("amsterda",)  # exônimo pt-BR de Amsterdam
+
+# Fornecedores locais/gratuitos: conhecimento do concreto (nome de fornecedor) declarado só
+# aqui, na raiz de composição. O domínio recebe o conjunto como política e não cita nomes.
+FREE_PROVIDERS = frozenset({"placeholder", "demo", "piper", "stock"})
 
 
 def _csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -192,7 +203,24 @@ def _style_for_video(video, channels, styles):
     return resolve_style(profile, channel_style, override=video_style)
 
 
-def _effective_config_for(video, channels, styles, videos=None):
+def _economic_profile_for(budgets, project_id):
+    """Perfil econômico **declarado** do canal (`channel_budgets.economic_profile`), ou None.
+
+    W0B.3/R9: o snapshot nascia sempre ``BALANCED``/``engine_default`` porque o resolvedor não
+    recebia o perfil — o roteamento real, esse sim, lê o perfil do canal dinamicamente. Sem orçamento
+    de canal devolve None (o domínio congela o default do motor, como antes); id estranho ou linha
+    ausente não derruba o run, a mesma tolerância do ``channel_guard_limits``.
+    """
+    if budgets is None:
+        return None
+    try:
+        limits = budgets.get(project_id)
+    except InvalidId:
+        return None
+    return limits.economic_profile if limits is not None else None
+
+
+def _effective_config_for(video, channels, styles, videos=None, budgets=None):
     """F03.T02/F05.T02: resolvedor da configuração efetiva ligado na composição.
 
     Recebe o `Video` já carregado (o coordenador entrega o agregado), resolve o canal do projeto
@@ -201,6 +229,9 @@ def _effective_config_for(video, channels, styles, videos=None):
     (`get_video_style_patch`), sempre normalizados por `StylePatch`. A leitura é injetada e pura no
     domínio; nada aqui executa efeito nem grava: o snapshot só entra no banco dentro do
     `create_run`, na transação do run.
+
+    W0B.3/R9: com `budgets`, a política econômica **declarada** do canal também é congelada no
+    snapshot (`provider_policy.profile`), em vez de o snapshot afirmar sempre `BALANCED`.
     """
     try:
         profile = channels.get_by_project(video.project_id)
@@ -212,7 +243,8 @@ def _effective_config_for(video, channels, styles, videos=None):
         video_patch = stored.patch if stored is not None else None
     return resolve_effective_config(video=video, channel=profile, lookup_style=styles.get,
                                     video_patch=video_patch,
-                                    channel_patch=profile.style_patch if profile is not None else None)
+                                    channel_patch=profile.style_patch if profile is not None else None,
+                                    provider_profile=_economic_profile_for(budgets, video.project_id))
 
 
 def _voice_model(style) -> str | None:
@@ -245,13 +277,18 @@ def _voice_for_video(video, channels, styles, fallback, build_provider):
 
 
 def _voice_for_config(video, config, fallback, build_provider):
-    """F03.T03: a voz sai da **configuração efetiva congelada**, não de uma nova leitura de estilo.
+    """F03.T03/S8: a voz sai da **configuração efetiva congelada**, não de uma nova leitura.
 
-    ``config.voice.model`` é o modelo já mesclado pelas camadas criativas (patch do vídeo >
-    canal > estilo) e congelado no snapshot do run. Sem voz declarada, o projeto decide
-    (``fallback`` → ``provider_for("voice", ...)``) — o mesmo legado de antes. A composição é a
-    única que conhece o registro de providers; o core só recebe o ``Voice`` resolvido.
+    A seleção congelada do run vence; sem ela (run legado), ``config.voice.model`` — o modelo já
+    mesclado pelas camadas criativas (patch do vídeo > canal > estilo) e congelado no snapshot —
+    continua valendo. Sem voz declarada, o projeto decide (``fallback`` → ``provider_for("voice",
+    ...)``) — o mesmo legado de antes. A composição é a única que conhece o registro de providers;
+    o core só recebe o ``Voice`` resolvido.
     """
+    selection = getattr(config, "provider_selection", None) if config is not None else None
+    spec = selection.get("voice") if selection else None
+    if spec:
+        return build_provider("voice", spec)
     model = config.voice.get("model") if config is not None else None
     model = model.strip() if isinstance(model, str) and model.strip() else None
     if model is None:
@@ -294,12 +331,30 @@ class ProviderRouting:
 
     def __call__(self, kind: str, project_id: str | None):
         kind_enum = kind if isinstance(kind, ProviderKind) else ProviderKind(kind)
+        # S8: dentro de um run com snapshot, a seleção congelada vence a política viva. O retry
+        # não re-resolve: executa exatamente o provider/modelo que foi exibido e aprovado.
+        frozen = frozen_provider_selection()
+        if frozen:
+            spec = frozen.get(kind_enum.value)
+            if spec:
+                return self._frozen(kind_enum, spec)
         limits = self.limits_for(project_id) if project_id else None
         profile = getattr(limits, "economic_profile", None) if limits is not None else None
         if profile is None:
             return self._legacy(kind_enum, project_id)
         return self._routed(kind_enum, project_id, profile,
                             getattr(limits, "hard_video_usd", None))
+
+    def _frozen(self, kind: ProviderKind, spec: str):
+        """Executa a seleção congelada; se ela não construir, recusa — nunca troca em silêncio."""
+        try:
+            provider = self.build(kind.value, spec)
+        except (ProviderNotFound, ProviderSpecInvalid) as exc:
+            self._audit(kind, None, spec, None,
+                        f"frozen run selection unavailable: {type(exc).__name__}", attempt=1)
+            raise
+        self._audit(kind, None, spec, provider, "frozen run selection", attempt=1)
+        return provider
 
     def _legacy(self, kind: ProviderKind, project_id: str | None):
         spec = self.configured_spec(kind.value, project_id)
@@ -395,6 +450,9 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
                                cost=CostEstimate.free(note="síntese local"), quality=3, validated=True),
         ProviderImplementation(ProviderKind.RENDERER, "ffmpeg", capabilities=("render.video",),
                                cost=CostEstimate.free(note="render local"), quality=4, validated=True),
+        ProviderImplementation(ProviderKind.SEARCH, "pexels", capabilities=("search.media",),
+                               cost=CostEstimate.free(note="busca de mídia gratuita"), quality=4,
+                               validated=pexels_ok, reason=None if pexels_ok else "PEXELS_API_KEY ausente"),
     ]
 
 
@@ -484,6 +542,7 @@ class Studio:
         register("image", "placeholder", PlaceholderImage)
         register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
         register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
+        register("search", "pexels", lambda model: PexelsMediaSearch(model, settings.pexels_key))
         register("voice", "piper", PiperVoice)
         # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
         # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
@@ -500,7 +559,11 @@ class Studio:
         self._analyzer = analyzer or FfmpegQa()
         # O probe mede (ffprobe/ebur128) com o MESMO analisador do render; o avaliador junta a
         # medição à política pura. Passar o analisador como probe quebraria o ``measure``.
-        self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(FfmpegQualityProbe(self._analyzer))
+        self._quality_evaluator = quality_evaluator or FfmpegQualityEvaluator(
+            FfmpegQualityProbe(self._analyzer),
+            overlay_verifier=FfmpegOverlayVerifier(),
+            semantic_checker=NotVerifiedSemanticChecker(),
+        )
         self._use_cases: UseCases | None = None
         self._lock = threading.Lock()
         self._retry_at = 0.0  # backoff após falha de inicialização
@@ -612,6 +675,42 @@ class Studio:
         def provider_for(kind: str, project_id: str | None):
             return provider_routing(kind, project_id)
 
+        def _frozen_selection_for(video, config):
+            """S8: seleção efetiva por capacidade, resolvida UMA vez na criação do run.
+
+            Usa o mesmo perfil/limites do roteamento vivo. A voz declarada pelo estilo criativo
+            vence o roteamento (é o mesmo critério de `_voice_for_config`); as demais capacidades
+            seguem a decisão do perfil. Sem candidato para uma capacidade, ela fica fora da
+            seleção e o run cai no roteamento vivo só para ela.
+            """
+            limits = budget_limits(video.project_id)
+            profile = getattr(limits, "economic_profile", None) if limits is not None else None
+            max_cost = getattr(limits, "hard_video_usd", None) if limits is not None else None
+            selection: dict[str, str] = {}
+            for kind in ProviderKind:
+                if kind is ProviderKind.SEARCH:
+                    # W3.1: `search` é capacidade de catálogo sem chave em `Project.config`;
+                    # não entra no congelamento de execução (não gera conteúdo no run).
+                    continue
+                if kind is ProviderKind.VOICE:
+                    model = config.voice.get("model") if config is not None else None
+                    model = model.strip() if isinstance(model, str) and model.strip() else None
+                    if model is not None:
+                        selection[kind.value] = model if ":" in model else f"piper:{model}"
+                        continue
+                try:
+                    if profile is None:
+                        spec = _configured_provider_spec(repo, self.environ, kind.value,
+                                                         video.project_id)
+                    else:
+                        spec = providers_service.route(
+                            video.project_id, kind, profile, max_cost_usd=max_cost,
+                            production=s.provider_production).primary.spec
+                except (ProviderNotFound, NoProviderAvailable):
+                    continue
+                selection[kind.value] = spec
+            return selection or None
+
         def text_for(project_id: str | None):
             return provider_for("text", project_id)
 
@@ -640,30 +739,23 @@ class Studio:
         # configuração efetiva do canal — a mesma resolução do run, sem segunda leitura nem cópia.
         # Sem canal/perfil, `EditorialContext` é o retrato legado e o prompt não muda.
         def editorial_for(video):
-            return _effective_config_for(video, channel_repo, style_repo, repo)
+            return _effective_config_for(video, channel_repo, style_repo, repo, budget_repo)
 
-        editorial = Editorial(
-            ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
-            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for,
-                                    paid=paid_guard, editorial_for=editorial_for),
-            get_script=GetScript(repo, scripts),
-            fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
-            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard),
-            long_generate=GenerateLongScript(repo, snaps, scripts, None, guard, usage, scripts,
-                                             model_for=text_for, paid=paid_guard,
-                                             allow_names=frozenset(s.allow_names),
-                                             editorial_for=editorial_for),
-            edit_script=EditScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
-            approve_script=ApproveScriptVersion(repo, snaps, scripts, scripts, checks=checks,
-                                                allow_names=frozenset(s.allow_names)),
-            list_sources=ListSources(snaps, repo))
         assets = PostgresAssetRepository(connect)
+        asset_store = FileAssetStore(s.storage_root)
+        # W3.1/W4.4: a busca de mídia e a materialização de um candidato existem quando há chave do
+        # provedor (a capacidade `search` não entra na config por projeto). Sem chave, `list_candidates`
+        # fica desligado e o caminho de candidato do `swap` recusa — o vínculo por `asset_id` continua.
+        media_search = PexelsMediaSearch("pexels", s.pexels_key) if s.pexels_key else None
+        media_fetcher = PexelsMediaFetcher("pexels") if s.pexels_key else None
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),
-            produce=ProduceAssets(repo, scripts, assets, FileAssetStore(s.storage_root), guard, usage,
+            produce=ProduceAssets(repo, scripts, assets, asset_store, guard, usage,
                                   image_for=lambda project_id: provider_for("image", project_id),
                                   lock=PostgresProductionLock(self._connect_autocommit), paid=paid_guard),
-            list_assets=ListAssets(repo, scripts, assets))
+            list_assets=ListAssets(repo, scripts, assets),
+            list_candidates=ListSceneCandidates(repo, scripts, media_search) if media_search else None,
+            swap=SwapSceneMedia(repo, scripts, assets, asset_store, fetcher=media_fetcher, guard=guard, usage=usage))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.
@@ -681,6 +773,9 @@ class Studio:
         # criação). Ele é construído aqui porque o `RunRender` precisa da MESMA porta: job de run
         # existente lê o snapshot, nunca re-resolve canal/estilo.
         run_repo = build_postgres_production_run_repository(connect, dag=COORDINATOR_DAG)
+        # W4.3: duração real por cena e WAV durável para pré-escuta. Opcionais no RunRender, mas
+        # fiados aqui para que o render passe a gravar a medida e o áudio de cada cena.
+        scene_durations = PostgresSceneDurationRepository(connect)
         run = RunRender(repo, scripts, assets, jobs, files,
                          voice_for=lambda video: _voice_for_video(video, channel_repo, style_repo,
                                                                   lambda project_id: provider_for("voice", project_id),
@@ -690,11 +785,48 @@ class Studio:
                          style_for=lambda video: _style_for_video(video, channel_repo, style_repo),
                          # F03.T03: no run existente vale o snapshot; no render avulso a config é
                          # resolvida UMA vez no início e alimenta voz e plano.
-                         effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo),
+                         effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo, budget_repo),
                          config_store=run_repo,
                          voice_for_config=lambda video, config: _voice_for_config(
                              video, config, lambda project_id: provider_for("voice", project_id),
-                             self._build_provider))
+                             self._build_provider),
+                         scene_durations=scene_durations,
+                         scene_narration=files)
+        # W4.3: a pré-escuta lê o WAV durável e o índice de cache; a regeneração usa a mesma voz
+        # por vídeo do render e a mesma guarda de orçamento. Construídas depois do `run` porque
+        # dependem de `files`/`scene_durations`.
+        scene_narration = SceneNarration(repo, scripts, files, plans=PostgresRenderPlanRepository(connect),
+                                         durations=scene_durations)
+        regenerate_narration = RegenerateSceneNarration(
+            repo, scripts,
+            lambda video: _voice_for_video(video, channel_repo, style_repo,
+                                           lambda project_id: provider_for("voice", project_id),
+                                           self._build_provider),
+            files, scene_durations, paid=paid_guard)
+        editorial = Editorial(
+            ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
+            generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for,
+                                    paid=paid_guard, editorial_for=editorial_for),
+            get_script=GetScript(repo, scripts),
+            fact_check=RunFactCheck(repo, snaps, scripts, checks, frozenset(s.allow_names)),
+            score_ideas=ScoreIdeas(None, guard, usage, model_for=text_for, paid=paid_guard),
+            long_generate=GenerateLongScript(repo, snaps, scripts, None, guard, usage, scripts,
+                                             model_for=text_for, paid=paid_guard,
+                                             allow_names=frozenset(s.allow_names),
+                                             editorial_for=editorial_for),
+            edit_script=EditScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
+            add_scene=AddScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
+            remove_scene=RemoveScriptScene(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
+            reorder_scenes=ReorderScriptScenes(repo, snaps, scripts, scripts, allow_names=frozenset(s.allow_names)),
+            approve_script=ApproveScriptVersion(repo, snaps, scripts, scripts, checks=checks,
+                                                allow_names=frozenset(s.allow_names)),
+            list_sources=ListSources(snaps, repo),
+            scene_narration=scene_narration,
+            regenerate_narration=regenerate_narration,
+            restore_revision=RestoreScriptRevision(repo, snaps, scripts, scripts,
+                                                   allow_names=frozenset(s.allow_names)),
+            list_revisions=ListScriptRevisions(repo, scripts),
+            get_revision=GetScriptRevision(repo, scripts))
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
@@ -777,8 +909,9 @@ class Studio:
         production = Production(coordinator=coordinator, worker=worker,
                                 submit=lambda run_id: self._executor.submit(worker.work, run_id),
                                 in_flight=run_repo,
-                                effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo),
-                                config_store=run_repo)
+                                effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo, budget_repo),
+                                config_store=run_repo,
+                                provider_selection_for=_frozen_selection_for)
         analytics_learning_repo = PostgresAnalyticsLearningRepository(connect)
         analytics_dashboard = BuildAnalyticsDashboard(analytics_learning_repo)
         analytics_collection = CollectMetrics(
@@ -787,10 +920,10 @@ class Studio:
         analytics_decide = DecideRecommendation(analytics_learning_repo)
         analytics_register_experiment = RegisterExperiment(analytics_learning_repo)
         panel_repo = PostgresPanelRepository(connect)
-        panel = BuildPanel(panel_repo, s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo)
+        panel = BuildPanel(panel_repo, s.max_cost_month, lambda: datetime.now(timezone.utc), trends=trend_repo, categories_repo=category_repo, free_providers=FREE_PROVIDERS)
         saas_repo = PostgresSaasRepository(connect)
         saas_clock = lambda: datetime.now(timezone.utc)
-        team_view = BuildTeamView(saas_repo, saas_clock)
+        team_view = BuildTeamView(saas_repo, saas_clock, free_providers=FREE_PROVIDERS)
         script_view = BuildScriptView(repo, snaps, scripts, scripts, checks=checks, allow_names=frozenset(s.allow_names))
         channel_budget = GetChannelBudget(
             budget_repo, repo, usage_repo,
@@ -870,7 +1003,8 @@ production=production, script_view=script_view,
                                   set_video_style=SetVideoStyle(repo),
                                   video_style_view=video_style_view,
                                   style_repo=style_repo,
-                                  advanced_page=BuildAdvancedView(providers_service, panel_repo))
+                                  advanced_page=BuildAdvancedView(providers_service, panel_repo),
+                                  composition_view=BuildCompositionView(PostgresRenderPlanRepository(connect)))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

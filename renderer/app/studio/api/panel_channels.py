@@ -529,6 +529,9 @@ def _profile_card(view: ChannelsPageView) -> str:
     strategy = profile.strategy if profile else ""
     audience = profile.audience if profile else ""
     pillars = ", ".join(profile.pillars) if profile else ""
+    narrative = profile.narrative if profile else ""
+    target_duration_s = profile.target_duration_s if profile else ""
+    cta = profile.cta if profile else ""
     visual = profile.visual_identity if profile else ""
     voice = profile.voice if profile else ""
     language = profile.language if profile else project.language or "pt-BR"
@@ -581,7 +584,7 @@ def _profile_card(view: ChannelsPageView) -> str:
                  visualmente com voz e idioma. -->
             <div class="item-config">
               <div><b><label for="canal-voz">Voz do narrador</label></b>
-                <small>Voz usada nos vídeos novos deste canal</small></div>
+                <small>Declarado, ainda não aplicado: a voz dos vídeos novos ainda vem do estilo ou do padrão do estúdio.</small></div>
               <input class="input" type="text" id="canal-voz" name="voice" maxlength="200"
                      value="{e(voice)}" style="max-width:280px" placeholder="provedor:modelo"
                      aria-describedby="canal-voz-hint">
@@ -624,10 +627,28 @@ def _profile_card(view: ChannelsPageView) -> str:
                     <span class="hint">Separe os pilares por vírgula; repetidos são descartados.</span>
                   </div>
                   <div class="field">
+                    <label for="canal-narrativa">Estilo narrativo</label>
+                    <input class="input" type="text" id="canal-narrativa" name="narrative" maxlength="4000"
+                           value="{e(narrative)}">
+                    <span class="hint">Orientação de estilo usada no roteiro dos vídeos novos (até 4000 caracteres).</span>
+                  </div>
+                  <div class="field">
+                    <label for="canal-duracao">Duração padrão (segundos)</label>
+                    <input class="input" type="number" inputmode="numeric" id="canal-duracao"
+                           name="target_duration_s" min="1" max="36000" value="{e(target_duration_s)}">
+                    <span class="hint">Alvo de duração dos vídeos novos: entre 1 e 36000 segundos.</span>
+                  </div>
+                  <div class="field">
+                    <label for="canal-cta">Chamada para ação</label>
+                    <input class="input" type="text" id="canal-cta" name="cta" maxlength="500"
+                           value="{e(cta)}">
+                    <span class="hint">Frase de encerramento pedida no roteiro (até 500 caracteres).</span>
+                  </div>
+                  <div class="field">
                     <label for="canal-identidade">Identidade visual</label>
                     <input class="input" type="text" id="canal-identidade" name="visual_identity" maxlength="2000"
                            value="{e(visual)}">
-                    <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span>
+                    <span class="hint">Declarado, ainda não aplicado: hoje não altera thumbnail, cartelas nem legendas.</span>
                   </div>
                 </div>
               </div>
@@ -1205,71 +1226,13 @@ def _sidebar_card(view: ChannelsPageView) -> str:
     """
 
 
-def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, dict[str, str]]:
-    """Página de Canais: casca aprovada + dado real do Studio ou estado vazio explícito.
+def _channels_page_js(project_id: str) -> str:
+    """JavaScript da tela de Canais (canal ativo, formulários de perfil/aparência, novo canal).
 
-    `channel_style` (F05.T04) é a projeção de personalização do canal; quando ausente a
-    página é a mesma de antes (sem controle novo).
+    W1.5: a mesma casca serve às seções de Configurações que **reusam** os cartões desta tela
+    (`api/panel_settings.py`), sem duplicar o formulário nem a persistência.
     """
-    if view.project is None:
-        return _empty_page(_sidebar_card(view))
-    nonce = secrets.token_urlsafe(16)
-    project = view.project
-    channel_style_html = render_channel_style(channel_style) if channel_style is not None else ""
-    # FS31 pedido do operador: o canal ativo é a primeira decisão da tela e vale para tudo —
-    # estilo, voz, idioma e orçamento. Por isso ele fica fixo no topo, não escondido na sanfona.
-    switch_options = "".join(
-        f'<option value="{e(pid)}"{" selected" if pid == project.id else ""}>{e(label)}</option>'
-        for pid, label in view.projects
-    )
-    channel_rows = "".join(
-        (
-            f'<div class="item-config" data-canal="{e(pid)}">'
-            f'<div><b>{e(label)}</b><small>'
-            + ("O canal que está ativo agora" if pid == project.id
-               else "Trocar para este canal em todas as telas")
-            + "</small></div>"
-            + ('<span class="selo">ATIVO</span>' if pid == project.id else
-               f'<button class="btn btn-sm" type="button" data-trocar-canal="{e(pid)}">Trocar</button>')
-            + "</div>"
-        )
-        for pid, label in view.projects
-    )
-    channel_switch_html = f"""
-      <div class="card" id="canal-ativo-card">
-        <div class="spread" style="align-items:center;gap:12px;flex-wrap:wrap">
-          <div>
-            <h2 style="margin:0">Canal ativo</h2>
-            <p class="dim" style="margin:2px 0 0;font-size:13px">
-              Um canal por vez fica ativo — ele define estilo, voz, idioma e orçamento em todas as telas.
-            </p>
-          </div>
-          <div class="campo" style="margin:0;min-width:220px">
-            <label for="canal-switcher">Trocar canal ativo</label>
-            <select id="canal-switcher" class="input">{switch_options}</select>
-          </div>
-        </div>
-        <div style="margin-top:10px">{channel_rows}</div>
-      </div>"""
-    content_html = f"""
-      {channel_switch_html}
-      {_profile_card(view)}
-      {_appearance_card(view)}
-      {channel_style_html}
-      {_providers_card(view)}
-      {_budget_card(view)}
-      {_youtube_card(view)}
-      {_prefs_card(view)}
-      {_advanced_card(view)}
-      {_channel_card(view)}
-    """
-    body_page = shell_v3.render_settings_page_body(
-        active_section="canais",
-        section_title="Canais",
-        content_html=content_html,
-        project_id=project.id,
-    )
-    page_js = f"""
+    return f"""
     try {{
       document.querySelectorAll('details.painel-sanfona').forEach((det) => {{
         if (det.id !== 'canais-avancado' && det.id !== 'painel-identidade') {{
@@ -1278,7 +1241,7 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
       }});
     }} catch (e) {{}}
 
-    const projectId = "{e(project.id)}";
+    const projectId = "{e(project_id)}";
     const trocarCanal = (id) => {{
       if (window.StudioLoading) window.StudioLoading.start('Trocando canal ativo…');
       window.location.href = '/studio/canais?project_id=' + encodeURIComponent(id);
@@ -1347,9 +1310,14 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
           language: document.getElementById('canal-idioma').value,
           audience: document.getElementById('canal-publico').value.trim(),
           pillars: splitPillars(document.getElementById('canal-pilares').value),
+          narrative: document.getElementById('canal-narrativa').value.trim(),
+          cta: document.getElementById('canal-cta').value.trim(),
           visual_identity: document.getElementById('canal-identidade').value.trim(),
           voice: document.getElementById('canal-voz').value.trim()
         }};
+        // Duração é inteiro 1–36000: vazio não é 0, então o campo só entra quando preenchido.
+        const duracaoRaw = (document.getElementById('canal-duracao').value || '').trim();
+        if (duracaoRaw) changes.target_duration_s = Number(duracaoRaw);
         if (!changes.name) {{ if (feedback) feedback.textContent = 'Informe o nome do perfil.'; return; }}
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
         if (window.StudioLoading) window.StudioLoading.start(profileId ? 'Salvando nova versão do canal…' : 'Criando perfil do canal…');
@@ -1572,6 +1540,73 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
       }});
     }});
     """
+
+
+def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, dict[str, str]]:
+    """Página de Canais: casca aprovada + dado real do Studio ou estado vazio explícito.
+
+    `channel_style` (F05.T04) é a projeção de personalização do canal; quando ausente a
+    página é a mesma de antes (sem controle novo).
+    """
+    if view.project is None:
+        return _empty_page(_sidebar_card(view))
+    nonce = secrets.token_urlsafe(16)
+    project = view.project
+    channel_style_html = render_channel_style(channel_style) if channel_style is not None else ""
+    # FS31 pedido do operador: o canal ativo é a primeira decisão da tela e vale para tudo —
+    # estilo, voz, idioma e orçamento. Por isso ele fica fixo no topo, não escondido na sanfona.
+    switch_options = "".join(
+        f'<option value="{e(pid)}"{" selected" if pid == project.id else ""}>{e(label)}</option>'
+        for pid, label in view.projects
+    )
+    channel_rows = "".join(
+        (
+            f'<div class="item-config" data-canal="{e(pid)}">'
+            f'<div><b>{e(label)}</b><small>'
+            + ("O canal que está ativo agora" if pid == project.id
+               else "Trocar para este canal em todas as telas")
+            + "</small></div>"
+            + ('<span class="selo">ATIVO</span>' if pid == project.id else
+               f'<button class="btn btn-sm" type="button" data-trocar-canal="{e(pid)}">Trocar</button>')
+            + "</div>"
+        )
+        for pid, label in view.projects
+    )
+    channel_switch_html = f"""
+      <div class="card" id="canal-ativo-card">
+        <div class="spread" style="align-items:center;gap:12px;flex-wrap:wrap">
+          <div>
+            <h2 style="margin:0">Canal ativo</h2>
+            <p class="dim" style="margin:2px 0 0;font-size:13px">
+              Um canal por vez fica ativo — ele define estilo, voz, idioma e orçamento em todas as telas.
+            </p>
+          </div>
+          <div class="campo" style="margin:0;min-width:220px">
+            <label for="canal-switcher">Trocar canal ativo</label>
+            <select id="canal-switcher" class="input">{switch_options}</select>
+          </div>
+        </div>
+        <div style="margin-top:10px">{channel_rows}</div>
+      </div>"""
+    content_html = f"""
+      {channel_switch_html}
+      {_profile_card(view)}
+      {_appearance_card(view)}
+      {channel_style_html}
+      {_providers_card(view)}
+      {_budget_card(view)}
+      {_youtube_card(view)}
+      {_prefs_card(view)}
+      {_advanced_card(view)}
+      {_channel_card(view)}
+    """
+    body_page = shell_v3.render_settings_page_body(
+        active_section="canais",
+        section_title="Canais",
+        content_html=content_html,
+        project_id=project.id,
+    )
+    page_js = _channels_page_js(project.id)
     html = shell_v3.render_document(
         title="Faceless Studio — Canais",
         active="canais",

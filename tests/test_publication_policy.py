@@ -11,10 +11,12 @@ from app.studio.domain.publication_policy import (  # noqa: E402
     FailureClass,
     PublicationGateError,
     PublicationIntentEvidence,
+    PublicationIntentObsolete,
     PublicConfirmationRequired,
     RetryPolicy,
     classify_http,
     idempotency_key,
+    metadata_fingerprint,
     next_action,
     publication_window_state,
     requires_public_confirmation,
@@ -22,6 +24,7 @@ from app.studio.domain.publication_policy import (  # noqa: E402
     retry_delay,
     validate_visibility,
     verify_publication_gate,
+    verify_publication_intent,
 )
 
 V, R = "a" * 32, "b" * 32
@@ -150,3 +153,52 @@ def test_publication_body_reflects_the_confirmed_visibility():
     assert body["status"]["privacyStatus"] == "public" and "publishAt" not in body["status"]
     scheduled = youtube_insert_body("Título", "Descrição", ["a"], NOW + timedelta(days=1), visibility="public")
     assert scheduled["status"]["privacyStatus"] == "private" and scheduled["status"]["publishAt"].endswith("Z")
+
+
+# -- W5.1 (PUB-01 / A19 / A37): a intenção obsoleta não publica com dados diferentes -----------
+
+
+def test_metadata_fingerprint_is_stable_and_changes_with_any_confirmed_field():
+    base = metadata_fingerprint("Título", "Descrição", ["a", "b"], "private")
+    assert base == metadata_fingerprint("Título", "Descrição", ["a", "b"], "private")
+    assert len(base) == 64 and all(ch in "0123456789abcdef" for ch in base)
+    assert metadata_fingerprint("Outro", "Descrição", ["a", "b"], "private") != base
+    assert metadata_fingerprint("Título", "Outra", ["a", "b"], "private") != base
+    assert metadata_fingerprint("Título", "Descrição", ["a", "c"], "private") != base
+    assert metadata_fingerprint("Título", "Descrição", ["a", "b"], "unlisted") != base
+
+
+def test_intent_without_a_snapshot_stays_valid_for_legacy_records():
+    # Registros gravados antes da fatia não invalidam a publicação (verificação aditiva).
+    verify_publication_intent(intent(), youtube_channel_id="UCnewchannel", title="Outro",
+                              description="Outra", tags=["x"])
+
+
+def test_intent_is_obsolete_when_the_destination_changes():
+    confirmed = intent(youtube_channel_id="UCtarget123")
+    verify_publication_intent(confirmed, youtube_channel_id="UCtarget123",
+                              title="Título", description="Descrição", tags=["a"])
+    with pytest.raises(PublicationIntentObsolete, match="destination"):
+        verify_publication_intent(confirmed, youtube_channel_id="UCother123",
+                                  title="Título", description="Descrição", tags=["a"])
+
+
+def test_intent_is_obsolete_when_the_metadata_changes():
+    fp = metadata_fingerprint("Título", "Descrição", ["a"], "private")
+    confirmed = intent(metadata_fingerprint=fp)
+    verify_publication_intent(confirmed, youtube_channel_id=None,
+                              title="Título", description="Descrição", tags=["a"])
+    with pytest.raises(PublicationIntentObsolete, match="metadata"):
+        verify_publication_intent(confirmed, youtube_channel_id=None,
+                                  title="Outro", description="Descrição", tags=["a"])
+    with pytest.raises(PublicationIntentObsolete, match="metadata"):
+        verify_publication_intent(confirmed, youtube_channel_id=None,
+                                  title="Título", description="Descrição", tags=["a", "b"])
+
+
+def test_intent_snapshot_fields_are_validated():
+    assert intent(youtube_channel_id="UCtarget123").youtube_channel_id == "UCtarget123"
+    with pytest.raises(ValueError):
+        intent(youtube_channel_id="")
+    with pytest.raises(ValueError):
+        intent(metadata_fingerprint="not-a-checksum")

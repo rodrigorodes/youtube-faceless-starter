@@ -178,8 +178,10 @@ def test_channels_state_badges_carry_real_text_not_only_an_icon(env):
 def test_channels_page_uses_the_approved_shell(env):
     html = page(env).text
     items = nav_items(html)
-    # UX V3: o menu principal não tem item ativo; Configurações é a entrada da área.
-    assert [_nav_text(i) for i in items] == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    # W1.5: menu do protótipo — "Criar vídeo" e "Tendências e ideias" (rótulos) + item Biblioteca.
+    # Configurações continua no rodapé da casca.
+    assert [_nav_text(i) for i in items] == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias",
+                                            "Desempenho", "Biblioteca"]
     config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
     assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
     # Canais é a seção ativa dentro de Configurações.
@@ -242,6 +244,85 @@ def test_channels_shows_niche_as_read_only_and_does_not_fake_editable_field(env)
     assert 'id="nicho"' not in html
 
 
+# --------------------------- SET-01/W1.6: estratégia editorial exposta no perfil do canal
+
+
+def test_profile_form_exposes_narrative_duration_and_cta_with_real_values(env):
+    """SET-01 (A32): narrativa, duração padrão e CTA do canal ganham campo na tela.
+
+    Os três já alimentam o prompt pelo perfil (`channel_profiles` → configuração efetiva);
+    faltava o formulário. O campo mostra o valor real do perfil e os limites do domínio.
+    """
+    _seed_profile(env, narrative="Documentário em três atos", target_duration_s=480,
+                  cta="Inscreva-se e ative o sino")
+    html = page(env).text
+
+    narrative = re.search(r'<input[^>]*id="canal-narrativa"[^>]*>', html)
+    assert narrative is not None, "campo Estilo narrativo ausente"
+    assert 'value="Documentário em três atos"' in narrative.group(0)
+    assert 'maxlength="4000"' in narrative.group(0)
+
+    duration = re.search(r'<input[^>]*id="canal-duracao"[^>]*>', html)
+    assert duration is not None, "campo Duração padrão ausente"
+    assert 'value="480"' in duration.group(0)
+    assert 'min="1"' in duration.group(0) and 'max="36000"' in duration.group(0)
+
+    cta = re.search(r'<input[^>]*id="canal-cta"[^>]*>', html)
+    assert cta is not None, "campo Chamada para ação ausente"
+    assert 'value="Inscreva-se e ative o sino"' in cta.group(0)
+    assert 'maxlength="500"' in cta.group(0)
+
+    for field_id, label in (("canal-narrativa", "Estilo narrativo"),
+                            ("canal-duracao", "Duração padrão \\(segundos\\)"),
+                            ("canal-cta", "Chamada para ação")):
+        assert re.search(rf'<label for="{field_id}">\s*{label}\s*</label>', html), field_id
+
+    assert_ux_contract(html, page="canais/estrategia-editorial")
+
+
+def test_profile_form_sends_the_editorial_fields_to_the_same_profile_route(env):
+    """Sem rota nova: o formulário existente passa a enviar os três campos no `changes`."""
+    _seed_profile(env)
+    html = page(env).text
+    for field_id in ("canal-narrativa", "canal-duracao", "canal-cta"):
+        assert f'getElementById(\'{field_id}\')' in html, field_id
+    assert "narrative:" in html and "cta:" in html and "target_duration_s" in html
+
+
+# ------------------------------------------ campos declarados que o core ainda não aplica
+
+
+def test_voice_and_visual_identity_are_declared_not_applied(env):
+    """R4: rótulo honesto para campos sem consumidor no core (nenhuma promessa sem consumidor).
+
+    `channel_profiles.voice` é ignorada pelo render — a voz sai do estilo (`params.voice.model`)
+    ou do projeto (`composition.py:218-260`) — e `visual_identity` não é consumida por nenhum
+    estágio. Enquanto não houver consumidor, a tela declara isso em vez de prometer "voz usada" /
+    "aplicada a thumbnail, cartelas e legendas".
+    """
+    _seed_profile(env)
+    html = page(env).text
+    visible = page_text(html)
+
+    # As promessas antigas, sem consumidor, não podem sobreviver.
+    assert "Voz usada nos vídeos novos deste canal" not in visible
+    assert "Aplicada a thumbnail, cartelas e legendas" not in visible
+
+    # A honestidade precisa ser visível (não só leitor de tela) e dizer onde o efeito não acontece.
+    voice = re.search(r'<label for="canal-voz">.*?<small>(.*?)</small>', html, re.S)
+    assert voice is not None, "campo Voz do narrador ausente"
+    assert "declarado, ainda não aplicado" in voice.group(1).lower()
+    # RF-01: o texto visível usa "canal"/"estúdio", nunca "projeto" (a voz sai do estilo ou do
+    # padrão do estúdio; `channel_profiles.voice` é ignorada — `composition.py:218-260`).
+    assert "estilo ou do padrão do estúdio" in voice.group(1).lower()
+
+    identidade = re.search(r'<label for="canal-identidade">.*?<span class="hint">(.*?)</span>',
+                           html, re.S)
+    assert identidade is not None, "campo Identidade visual ausente"
+    assert "declarado, ainda não aplicado" in identidade.group(1).lower()
+    assert "thumbnail, cartelas" in identidade.group(1).lower()
+
+
 # ------------------------------------------------------- menu de Configurações
 
 
@@ -252,7 +333,8 @@ def test_settings_menu_matches_the_prototype_and_keeps_the_active_channel(env):
     """
     html = page(env).text
     labels = [_nav_text(item) for item in settings_nav_items(html)]
-    assert labels == ["Identidade do canal", "Canais", "Conexões", "Estilos", "Equipe", "Avançado"]
+    assert labels == ["Canais", "Estratégia editorial", "Marca e estilo", "Produção e orçamento",
+                      "Conexões e providers", "Conta e equipe", "Avançado e diagnóstico"]
     for item in settings_nav_items(html):
         assert f"project_id={env['project'].id}" in item, item
 

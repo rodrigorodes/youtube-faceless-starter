@@ -30,6 +30,7 @@ from app.studio.domain.render_plan import (  # noqa: E402
 from app.studio.domain.render_plan_builder import (  # noqa: E402
     DEFAULT_TICKS_PER_SECOND,
     PlanBuildError,
+    StoryboardOverlay,
     StoryboardScene,
     asset_reference_for,
     build_render_plan,
@@ -336,3 +337,52 @@ def test_builder_carries_the_frozen_config_reference_into_the_plan():
     plan = build(config_snapshot=snapshot)
     assert plan.config_snapshot == snapshot
     assert build().config_snapshot is None  # sem referência, o plano é o de antes
+
+
+# --------------------------------------------------------------------------- VE-01 — overlay
+
+
+def test_T17_builder_hosts_one_overlay_inside_the_base_with_stable_identity():
+    plan = build(
+        assets=[asset_ref(), asset_ref("overlay-asset")],
+        overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="overlay-asset",
+                                    start_s=0.5, duration_s=1.0, z_index=2, fit="cover")],
+    )
+    scene = plan.timeline.scenes[0]
+    overlays = [shot for shot in scene.shots if shot.role == "overlay"]
+    assert len(overlays) == 1
+    [overlay] = overlays
+    assert overlay.shot_id == "overlay:scene-01:0"
+    assert overlay.track_id == "visual-overlay"
+    assert overlay.z_index == 2
+    assert overlay.composition.fit == "cover"
+    assert "visual-overlay" in [track.track_id for track in plan.timeline.tracks]
+    assert scene.base_shots[0].role == "base"
+
+
+def test_T17_plan_without_overlay_is_identical_to_the_current_shape():
+    plain = build()
+    with_empty = build(overlays=[])
+    assert plain == with_empty
+    assert [track.track_id for track in plain.timeline.tracks] == [
+        "visual-main", "narration-main", "subtitle-main",
+    ]
+    assert all(shot.role == "base" for scene in plain.timeline.scenes for shot in scene.shots)
+
+
+def test_T18_builder_rejects_invalid_overlay_windows_and_references():
+    with pytest.raises(PlanBuildError):
+        build(overlays=[StoryboardOverlay(scene_id="unknown", asset_id="asset-01",
+                                          start_s=0.0, duration_s=0.5)])
+    with pytest.raises(PlanBuildError):
+        build(overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="missing",
+                                          start_s=0.0, duration_s=0.5)])
+    with pytest.raises(PlanBuildError):
+        build(overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="asset-01",
+                                          start_s=-0.1, duration_s=0.5)])
+    with pytest.raises(PlanBuildError):
+        build(overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="asset-01",
+                                          start_s=0.0, duration_s=0.0)])
+    with pytest.raises(PlanBuildError):
+        build(overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="asset-01",
+                                          start_s=2.0, duration_s=2.0)])

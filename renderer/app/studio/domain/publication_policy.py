@@ -6,10 +6,15 @@ de confirmação extra para visibilidade pública. A aplicação e os adaptadore
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+
+from .youtube_identity import validate_youtube_channel_id
 
 _ID32 = re.compile(r"^[0-9a-f]{32}$")
 _CHECKSUM64 = re.compile(r"^[0-9a-f]{64}$")
@@ -27,6 +32,14 @@ class PublicConfirmationRequired(PublicationPolicyError):
 
 class PublicationGateError(PublicationPolicyError):
     """O render/QA aprovado não é exatamente o que se pretende publicar."""
+
+
+class PublicationIntentObsolete(PublicationGateError):
+    """O destino ou os metadados mudaram depois da confirmação: a intenção não vale mais.
+
+    A19/A37: a intenção anterior não pode ser reutilizada para publicar com dados diferentes —
+    exige uma confirmação nova (mesmo que o render/checksum continuem iguais).
+    """
 
 
 class FailureClass(str, Enum):
@@ -70,6 +83,19 @@ def idempotency_key(video_id: str, render_id: str, checksum: str) -> str:
     return f"pub-{_id32(video_id, 'video_id')}-{_id32(render_id, 'render_id')}-{_checksum(checksum)}"
 
 
+def metadata_fingerprint(title: str, description: str, tags: Iterable[str], visibility: str) -> str:
+    """Impressão estável dos metadados confirmados (A19/A37), sem guardar o texto em claro.
+
+    Inclui título, descrição, tags (na ordem em que serão enviadas) e visibilidade: qualquer
+    mudança produz uma impressão diferente e torna a intenção anterior obsoleta.
+    """
+    payload = json.dumps(
+        {"title": title, "description": description, "tags": list(tags),
+         "visibility": validate_visibility(visibility)},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True)
 class PublicationIntentEvidence:
     """Intenção de publicação gravada atomicamente com a aprovação (F8-02).
@@ -86,6 +112,10 @@ class PublicationIntentEvidence:
     visibility: str
     public_confirmed: bool
     idempotency_key: str
+    # A19/A37: destino e metadados confirmados na mesma intenção. Nulos em intenções antigas
+    # (gravadas antes desta fatia): a verificação é aditiva e não invalida registros legados.
+    youtube_channel_id: str | None = None
+    metadata_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "video_id", _id32(self.video_id, "video_id"))
@@ -100,6 +130,12 @@ class PublicationIntentEvidence:
             raise PublicationPolicyError("qa_passed and qa_override must be booleans")
         if self.idempotency_key != idempotency_key(self.video_id, self.render_id, self.checksum):
             raise PublicationPolicyError("the idempotency key does not match the media identity")
+        if self.youtube_channel_id is not None:
+            object.__setattr__(self, "youtube_channel_id",
+                               validate_youtube_channel_id(self.youtube_channel_id))
+        if self.metadata_fingerprint is not None:
+            if not isinstance(self.metadata_fingerprint, str) or not _CHECKSUM64.fullmatch(self.metadata_fingerprint):
+                raise PublicationPolicyError("metadata_fingerprint must be 64 lowercase hex characters")
 
 
 def verify_publication_gate(intent: PublicationIntentEvidence, *, render_id: str, checksum: str,
@@ -119,6 +155,24 @@ def verify_publication_gate(intent: PublicationIntentEvidence, *, render_id: str
         raise PublicationGateError("the approved output no longer matches the publication intent")
     if not qa_report_passed and not intent.qa_override:
         raise PublicationGateError("QA did not pass; publication needs an approved QA report or a recorded override")
+
+
+def verify_publication_intent(intent: PublicationIntentEvidence, *, youtube_channel_id: str | None,
+                              title: str, description: str, tags: Iterable[str]) -> None:
+    """A intenção confirmada ainda descreve o destino e os metadados atuais? (A19/A37)
+
+    Só compara o que a intenção gravou: registros legados (sem destino/impressão) seguem válidos
+    para não quebrar o caminho existente. Divergência é `PublicationIntentObsolete` — fail-closed,
+    nunca publica com dados diferentes dos confirmados.
+    """
+    if intent.youtube_channel_id is not None and youtube_channel_id != intent.youtube_channel_id:
+        raise PublicationIntentObsolete(
+            "the YouTube destination changed since the publication intent; confirm the publication again")
+    if intent.metadata_fingerprint is not None:
+        current = metadata_fingerprint(title, description, tags, intent.visibility)
+        if current != intent.metadata_fingerprint:
+            raise PublicationIntentObsolete(
+                "the video metadata changed since the publication intent; confirm the publication again")
 
 
 def classify_http(status: int | None, *, error_code: str | None = None) -> FailureClass:

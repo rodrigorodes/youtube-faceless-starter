@@ -51,7 +51,7 @@ def test_home_navigation_is_the_approved_ia():
     html = _home()
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
     labels = [re.sub(r"<[^>]+>", "", li).strip() for li in re.findall(r"<li>(.*?)</li>", main, re.S)]
-    assert labels == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    assert labels == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho", "Biblioteca"]
     assert main.count('aria-current="page"') == 1
     # F02.T01: o item ativo pode carregar o canal ativo (?project_id=)
     assert re.search(r'<a href="/studio/panel(?:\?project_id=[^"]+)?" aria-current="page">', main)

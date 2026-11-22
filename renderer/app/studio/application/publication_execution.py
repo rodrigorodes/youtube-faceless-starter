@@ -4,6 +4,17 @@ O caminho real: reivindica a publicação (nova ou devida-para-retry), prova o g
 `render_id`/checksum aprovados, obtém um access token do canal e sobe pela porta `YouTubeUploader`.
 Falha transitória volta com backoff; falha permanente e ambiguidade esgotada vão para DLQ; resultado
 externo desconhecido nunca é presumido sucesso — fica `UNKNOWN` esperando reconciliação.
+
+W5.2 (PUB-02) — idempotência do retry: repetir a **mesma** publicação nunca cria um segundo upload.
+A única identidade do efeito externo é a sessão resumable já gravada (`upload_uri`); o retry a
+retoma. Quando o resultado do adaptador é desconhecido (exceção, sessão que não pôde ser gravada),
+o estado externo é ambíguo e a publicação vai para `UNKNOWN`/reconciliação — **não** se reenvia
+sozinho. Uma publicação já com `youtube_video_id` confirmado devolve `UPLOADED` sem tocar na rede.
+
+W5.2 — caminho efetivo: o workflow n8n `workflows/03-publish-approved.json` está **inativo**
+(`"active": false`) e só orquestra; o servidor (este executor, via `POST /studio/publications/execute`)
+é o caminho de upload. Se o workflow for reativado, ele **não** carrega credencial do YouTube nem
+faz PUT: continua chamando este endpoint. Ver `workflows/README-publish-approval.md`.
 """
 from __future__ import annotations
 
@@ -27,6 +38,7 @@ from ..domain.publication_policy import (
     publication_window_state,
     retry_delay,
     verify_publication_gate,
+    verify_publication_intent,
 )
 from ..domain.youtube_oauth import OAuthError, OAuthReconnectRequired, OAuthTransientError
 from .youtube_oauth import ChannelNotConnected
@@ -48,7 +60,7 @@ from .ports import (
     VideoRepository,
     YouTubeUploader,
 )
-from .publishing import PublicationNotFound, credits_and_sources
+from .publishing import PublicationConflict, PublicationNotFound, credits_and_sources
 
 
 class PublicationResult(str, Enum):
@@ -115,8 +127,9 @@ class TargetChannelTokenProvider:
     (`FallbackTokenProvider`). Esse caminho só existe enquanto nenhum canal do estúdio aponta para
     um destino, e não serve de fallback para um canal com destino.
 
-    Projeto com id inválido é tratado como sem destino, a mesma leitura do gate de identidade
-    (`RunPublication._authorization_gate`), para token e gate não divergirem.
+    Projeto com id inválido é tratado como sem destino — lê o mesmo ``get_by_project`` do gate de
+    identidade (`RunPublication._authorization_gate`). Desde o W0B.2 esse caso **bloqueia** no gate
+    (canal não resolvido): o token legado pode até ser buscado, mas a publicação para antes do upload.
     """
 
     def __init__(self, channels: ChannelProfileRepository, targeted: TokenProvider, legacy: TokenProvider):
@@ -148,9 +161,10 @@ class RunPublication:
         self.videos, self.scripts, self.assets, self.jobs, self.snaps = videos, scripts, assets, jobs, snaps
         self.approvals, self.intents, self.pubs, self.files = approvals, intents, pubs, files
         self.uploads, self.tokens = uploads, tokens
-        # YT-03: com destino configurado, a publicação exige a autorização do canal. Sem estes
-        # repositórios (default None, ex.: construção antiga/testes), a publicação não é bloqueada:
-        # é o mesmo caminho de hoje, em que nenhum canal do estúdio tem destino no banco.
+        # YT-03/W0B.2: com destino configurado, a publicação exige a autorização do canal. Sem estes
+        # repositórios (default None, ex.: construção antiga/testes) o gate não consulta o canal e a
+        # publicação segue sem bloqueio — o caminho do servidor sempre os injeta (`composition.py`).
+        # Ver `_authorization_gate`.
         self.channels, self.authorizations = channels, authorizations
         self.clock = clock
         self.policy = retry_policy or RetryPolicy()
@@ -186,6 +200,21 @@ class RunPublication:
         return youtube_insert_body(video.title or default_title(video.topic), description, video.tags,
                                    pub.publish_at, visibility=intent.visibility)
 
+    def _confirmed_destination(self, video, intent) -> str | None:
+        """Destino do YouTube que a intenção confirmou (A19); `None` quando não há como verificar.
+
+        Sem os repositórios de canal (construção legada), não há como comparar: devolve o próprio
+        destino da intenção para que a comparação de destino não acuse uma mudança que não foi
+        observada. O caminho do servidor sempre injeta os repositórios (`composition.py`).
+        """
+        if self.channels is None:
+            return intent.youtube_channel_id
+        try:
+            channel = self.channels.get_by_project(video.project_id)
+        except InvalidId:
+            channel = None
+        return channel.youtube_channel_id if channel is not None else None
+
     def _prepare(self, pub: Publication) -> tuple[UploadRequest, str] | PublicationRun:
         video = self.videos.get_video(pub.video_id)
         if video is None:
@@ -199,6 +228,11 @@ class RunPublication:
         if job is None or output is None:
             return self._blocked(pub, "there is no successful render to publish")
         try:
+            # A19/A37: destino ou metadados mudaram depois da confirmação → intenção obsoleta.
+            verify_publication_intent(
+                intent, youtube_channel_id=self._confirmed_destination(video, intent),
+                title=video.title or default_title(video.topic), description=video.description or "",
+                tags=video.tags)
             verify_publication_gate(intent, render_id=job.id, checksum=output.cache_key, output_asset_id=output.id,
                                     qa_report_passed=bool(video.qa_report and video.qa_report.is_publishable),
                                     approval_output_asset_id=approval.output_asset_id if approval else None)
@@ -224,21 +258,34 @@ class RunPublication:
                             token_channel_id: str | None) -> PublicationRun | None:
         """YT-03: verifica que a autorização resolve para o canal esperado — antes de qualquer upload.
 
-        Sem destino configurado no canal do projeto (o estado de hoje: nenhum canal com destino no
-        banco) ou sem os repositórios de canal/autorizações, devolve `None`: a publicação segue o
-        caminho antigo **sem bloqueio**, preservando a operação. Com destino, a ausência de
-        autorização vigente, a divergência de canal ou a incerteza sobre o canal do token bloqueiam
-        via `_blocked` — nenhum `uploads.upload` acontece nesse caminho.
+        W0B.2 (R8): o gate **falha fechado**. Com os repositórios injetados — o que o caminho do
+        servidor sempre faz (`composition.py` passa ``channels``/``authorizations``) — a publicação
+        só prossegue quando o canal do projeto tem destino **e** há uma autorização ``CONNECTED``
+        que resolva para esse destino, com o token pertencendo ao mesmo canal. Sem perfil de canal,
+        com ``project_id`` inválido (``InvalidId``), com canal **sem destino**, sem autorização
+        vigente ou com token de outro canal, bloqueia via `_blocked` (DLQ ``PERMANENT``) — nenhum
+        `uploads.upload` acontece nesse caminho.
+
+        Única exceção, documentada de propósito: quando o ``RunPublication`` é construído **sem**
+        os repositórios de canal/autorizações (``channels is None`` ou ``authorizations is None``).
+        Essa é uma construção legada (testes) que o caminho do servidor **não** produz; sem os
+        repositórios não há como consultar o canal, então a publicação segue o caminho antigo sem
+        gate para não quebrar quem monta o executor assim.
         """
         if self.channels is None or self.authorizations is None:
             return None
         try:
             channel = self.channels.get_by_project(project_id)
         except InvalidId:
-            return None
-        if channel is None or channel.youtube_channel_id is None:
-            return None
-        authorizations = self.authorizations.authorizations_for_channel(channel.youtube_channel_id)
+            return self._blocked(
+                pub, "invalid project identifier; the channel destination cannot be checked — "
+                     "re-create the channel in Canais → Conexão")
+        if channel is None:
+            return self._blocked(
+                pub, "no channel profile is configured for this project; the YouTube destination "
+                     "cannot be checked — connect the channel in Canais → Conexão")
+        authorizations = (self.authorizations.authorizations_for_channel(channel.youtube_channel_id)
+                          if channel.youtube_channel_id is not None else ())
         verdict = verify_publication_authorization(channel, authorizations, token_channel_id=token_channel_id)
         if verdict.allowed:
             return None
@@ -253,6 +300,11 @@ class RunPublication:
         pub = self._claimed(lease_seconds, max_attempts, video_id)
         if pub is None:
             return PublicationRun(PublicationResult.IDLE)
+        # W5.2: idempotência dura. Se a MESMA publicação já tem id confirmado, não há o que subir:
+        # devolver UPLOADED sem tocar na rede. `claim`/`claim_retry` já filtram esse caso; a guarda
+        # existe para que nem um repositório mais permissivo consiga reenviar um vídeo já publicado.
+        if pub.youtube_video_id:
+            return PublicationRun(PublicationResult.UPLOADED, publication=pub, youtube_video_id=pub.youtube_video_id)
         prepared = self._prepare(pub)
         if isinstance(prepared, PublicationRun):
             return prepared
@@ -270,8 +322,11 @@ class RunPublication:
             return blocked
         try:
             result = self.uploads.upload(request, access_token.token)
-        except Exception as exc:  # adaptador quebrado não pode derrubar o worker nem marcar sucesso
-            return self._retry(pub, f"the uploader failed ({type(exc).__name__})", FailureClass.TRANSIENT)
+        except Exception as exc:
+            # W5.2: uma exceção do adaptador **não prova** que o YouTube não recebeu o vídeo. Sem
+            # resultado e sem poder descartar um efeito externo, o estado é ambíguo: reenviar poderia
+            # duplicar o upload. Vai para `UNKNOWN`/reconciliação, nunca para retry automático.
+            return self._ambiguous(pub, f"the uploader raised ({type(exc).__name__}); the remote state is unknown")
         return self._settle(pub, result)
 
     def _settle(self, pub: Publication, result) -> PublicationRun:
@@ -281,8 +336,13 @@ class RunPublication:
                 return self._ambiguous(pub, "the uploader reported success without a video id")
             try:
                 saved = self.pubs.mark_uploaded(pub.id, result.youtube_video_id)
-            except Exception as exc:  # conflito de id: nunca sobrescreve, exige humano
-                return self._blocked(pub, f"could not record the YouTube id: {type(exc).__name__}")
+            except PublicationConflict:
+                # Outro id já gravado para o vídeo: conflito real, não sobrescreve — exige humano.
+                return self._blocked(pub, "the video already has another YouTube id recorded")
+            except Exception as exc:
+                # O vídeo existe no YouTube, mas não conseguimos gravar o id. Reconciliação resolve
+                # (o id é recuperável); DLQ esconderia um sucesso real.
+                return self._ambiguous(pub, f"the YouTube id could not be recorded ({type(exc).__name__})")
             if saved is None:
                 return self._ambiguous(pub, "the publication disappeared while recording the YouTube id")
             return PublicationRun(PublicationResult.UPLOADED, publication=saved,
@@ -291,11 +351,14 @@ class RunPublication:
             session_uri = result.upload_uri or pub.upload_uri
             if not session_uri:
                 return self._ambiguous(pub, "the uploader reported an incomplete session without a session URL")
-            self.pubs.record_session(pub.id, pub.attempt, session_uri, result.offset)
+            if not self.pubs.record_session(pub.id, pub.attempt, session_uri, result.offset):
+                # Sem a sessão gravada, o retry abriria uma NOVA sessão: risco de segundo upload.
+                return self._ambiguous(pub, "the upload session could not be recorded; reconcile before retrying")
             return self._retry(pub, error, FailureClass.TRANSIENT)
         if result.outcome is UploadOutcome.RETRYABLE:
             if result.upload_uri and result.upload_uri != pub.upload_uri:
-                self.pubs.record_session(pub.id, pub.attempt, result.upload_uri, result.offset)
+                if not self.pubs.record_session(pub.id, pub.attempt, result.upload_uri, result.offset):
+                    return self._ambiguous(pub, "the upload session could not be recorded; reconcile before retrying")
             return self._retry(pub, error, FailureClass.TRANSIENT)
         if result.outcome is UploadOutcome.PERMANENT:
             return self._dead_letter(pub, error, FailureClass.PERMANENT)

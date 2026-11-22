@@ -2,12 +2,12 @@
 import re
 import string
 import unicodedata
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import Enum
 
 from .contracts import JobStatus, PublicationStatus, VideoStatus
 
-_KNOWN_FREE_PROVIDERS = {"placeholder", "demo", "piper", "stock"}
 _PUNCT_EDGES = string.punctuation + " \t\n\r"
 
 
@@ -48,13 +48,18 @@ def classify(status: VideoStatus, *, job: JobStatus | None = None, step_running:
     return Stage.PENDING
 
 
-def is_known_cost(provider: str, model: str, cost_usd: float) -> bool:
-    """Determina se o custo de uma chamada é confiavelmente conhecido."""
+def is_known_cost(provider: str, model: str, cost_usd: float,
+                  free_providers: Collection[str]) -> bool:
+    """Determina se o custo de uma chamada é confiavelmente conhecido.
+
+    `free_providers` é a política de gratuidade declarada pela raiz de composição: o domínio
+    não conhece nome concreto de fornecedor, só a regra que recebe.
+    """
     if cost_usd > 0.0:
         return True
     if (model or "").lower().endswith(":free"):
         return True
-    if (provider or "").lower() in _KNOWN_FREE_PROVIDERS:
+    if (provider or "").lower() in {str(name).lower() for name in free_providers}:
         return True
     return False
 

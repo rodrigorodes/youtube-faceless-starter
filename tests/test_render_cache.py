@@ -21,8 +21,9 @@ from app.studio.domain.render_cache import (  # noqa: E402
     plan_graph,
     selective_invalidation,
 )
-from app.studio.domain.render_plan import RenderPlan, StyleSnapshot  # noqa: E402
+from app.studio.domain.render_plan import RenderPlan, StyleSnapshot, Transition  # noqa: E402
 from app.studio.domain.render_plan_builder import (  # noqa: E402
+    StoryboardOverlay,
     StoryboardScene,
     asset_reference_for,
     build_render_plan,
@@ -254,3 +255,143 @@ def test_custom_policy_is_supported_by_construction():
 def test_plan_graph_rejects_a_non_plan():
     with pytest.raises(TypeError):
         plan_graph("not a plan")
+
+
+# ------------------------------------------- VE-01: overlay dentro do segmento base
+#
+# O overlay não tem segmento físico: só o shot base vira nó ``visual``. O conteúdo do
+# overlay entra no fingerprint do base que o hospeda — adicionar, remover, trocar asset,
+# mudar a janela ou o ``z_index`` invalida só aquela cena; reordenar a entrada não muda nada.
+
+SHA_OVERLAY = "c" * 64
+SHA_OVERLAY_2 = "d" * 64
+
+
+def overlay_plan(*, revision=1, overlays=None):
+    """Duas cenas base; a cena 1 hospeda o(s) overlay(s) informado(s)."""
+    items = overlays if overlays is not None else [
+        StoryboardOverlay(scene_id="scene-01", asset_id="asset-overlay", start_s=0.1, duration_s=0.2)
+    ]
+    return build_render_plan(
+        plan_id="plan:video-001",
+        revision=revision,
+        project_id="project-001",
+        video_id="video-001",
+        format=VideoFormat.short,
+        scenes=[
+            StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration="Primeira cena do vídeo.",
+                            speech_seconds=2.0),
+            StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration="Segunda cena do vídeo.",
+                            speech_seconds=2.0),
+        ],
+        assets=[
+            image_ref("asset-01", SHA_A),
+            image_ref("asset-02", SHA_B),
+            image_ref("asset-overlay", SHA_OVERLAY),
+            image_ref("asset-overlay-2", SHA_OVERLAY_2),
+        ],
+        style_snapshot=StyleSnapshot(style_id="channel-001", version=1),
+        overlays=items,
+    )
+
+
+def test_overlay_does_not_create_a_visual_cache_node():
+    graph = plan_graph(overlay_plan())
+    visual_keys = {node.node.key for node in graph.nodes if node.node.kind == "visual"}
+    assert visual_keys == {"shot:scene-01", "shot:scene-02"}
+    assert not any(key.startswith("overlay:") for key in visual_keys)
+
+
+def test_base_visual_fingerprint_tracks_the_hosted_overlay():
+    without = plan_graph(two_scene_plan())
+    with_overlay = plan_graph(overlay_plan())
+    assert without.fingerprint(A_VISUAL) != with_overlay.fingerprint(A_VISUAL)
+    # a cena que não hospeda o overlay continua idêntica
+    assert without.fingerprint(B_VISUAL) == with_overlay.fingerprint(B_VISUAL)
+
+
+def test_overlay_asset_window_and_z_index_change_only_the_hosting_base():
+    base = plan_graph(overlay_plan())
+    variants = [
+        overlay_plan(overlays=[StoryboardOverlay(
+            scene_id="scene-01", asset_id="asset-overlay-2", start_s=0.1, duration_s=0.2)]),
+        overlay_plan(overlays=[StoryboardOverlay(
+            scene_id="scene-01", asset_id="asset-overlay", start_s=0.3, duration_s=0.2)]),
+        overlay_plan(overlays=[StoryboardOverlay(
+            scene_id="scene-01", asset_id="asset-overlay", start_s=0.1, duration_s=0.2, z_index=2)]),
+    ]
+    for variant in variants:
+        graph = plan_graph(variant)
+        assert base.fingerprint(A_VISUAL) != graph.fingerprint(A_VISUAL)
+        assert base.fingerprint(B_VISUAL) == graph.fingerprint(B_VISUAL)
+
+
+def test_reordering_the_overlay_input_keeps_the_fingerprint():
+    first = StoryboardOverlay(scene_id="scene-01", asset_id="asset-overlay", start_s=0.1, duration_s=0.2)
+    second = StoryboardOverlay(scene_id="scene-01", asset_id="asset-overlay-2", start_s=0.5, duration_s=0.2,
+                               z_index=2)
+    forward = plan_graph(overlay_plan(overlays=[first, second]))
+    backward = plan_graph(overlay_plan(overlays=[second, first]))
+    assert forward == backward
+
+
+# ------------------------------------------- W3.2: a transição do plano invalida o segmento
+#
+# `Shot.transition` entra no fingerprint do nó ``visual``: mudar o fade do segmento re-renderiza
+# só aquela cena (a outra continua reusável) — sem isso o cache devolveria um vídeo com o fade
+# antigo e a transição "consumida" pelo compilador não valeria no reúso.
+
+
+def plan_with_transition(*, scene_id="scene-01", kind="fade", duration_ticks=40):
+    plan = two_scene_plan()
+    transition = Transition(kind=kind, duration_ticks=duration_ticks)
+    scenes = []
+    for scene in plan.timeline.scenes:
+        if scene.scene_id == scene_id:
+            shots = [scene.shots[0].model_copy(update={"transition": transition})] + list(scene.shots[1:])
+            scene = scene.model_copy(update={"shots": shots})
+        scenes.append(scene)
+    return plan.model_copy(update={"timeline": plan.timeline.model_copy(update={"scenes": scenes})})
+
+
+def test_transition_change_invalidates_only_its_scene_visual():
+    base = plan_graph(two_scene_plan())
+    with_fade = plan_graph(plan_with_transition())
+    assert base.fingerprint(A_VISUAL) != with_fade.fingerprint(A_VISUAL)
+    assert base.fingerprint(B_VISUAL) == with_fade.fingerprint(B_VISUAL)
+    result = selective_invalidation(base, with_fade)
+    assert A_VISUAL in result.invalidated
+    assert B_VISUAL in result.reusable and B_NARRATION in result.reusable
+    assert CONCAT in result.invalidated and FINAL in result.invalidated
+
+
+def test_transition_duration_change_invalidates_the_scene_visual():
+    with_fade = plan_graph(plan_with_transition(duration_ticks=40))
+    longer = plan_graph(plan_with_transition(duration_ticks=80))
+    assert with_fade.fingerprint(A_VISUAL) != longer.fingerprint(A_VISUAL)
+    assert with_fade.fingerprint(B_VISUAL) == longer.fingerprint(B_VISUAL)
+
+
+
+# ------------------------------------------- W4.4: troca de mídia por cena (EDIT-03/VE-06)
+
+
+def test_swapping_one_scene_media_invalidates_only_that_scene_and_the_final():
+    """Trocar o asset de UMA cena invalida só a cena trocada e os agregadores (concat/final)."""
+    current = plan_graph(build_render_plan(
+        plan_id="plan:video-001", revision=2, project_id="project-001", video_id="video-001",
+        format=VideoFormat.short,
+        scenes=[
+            StoryboardScene(scene_id="scene-01", asset_id="asset-03", narration="Primeira cena do vídeo.",
+                            speech_seconds=2.0),
+            StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration="Segunda cena do vídeo.",
+                            speech_seconds=2.0),
+        ],
+        assets=[image_ref("asset-03", "e" * 64), image_ref("asset-02", SHA_B)],
+        style_snapshot=StyleSnapshot(style_id="channel-001", version=3),
+    ))
+    result = selective_invalidation(plan_graph(two_scene_plan()), current)
+    assert result.invalidated == frozenset({A_VISUAL, CONCAT, FINAL})
+    assert B_VISUAL in result.reusable and B_NARRATION in result.reusable and A_NARRATION in result.reusable
+    assert current.fingerprint(A_VISUAL) != plan_graph(two_scene_plan()).fingerprint(A_VISUAL)
+    assert current.fingerprint(B_VISUAL) == plan_graph(two_scene_plan()).fingerprint(B_VISUAL)

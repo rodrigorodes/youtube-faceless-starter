@@ -20,6 +20,7 @@ from ..domain.provider import (
     RoutingDecision,
     card_for,
     parse_spec,
+    registered_names,
     route_provider,
 )
 from .config import ProjectConfig
@@ -56,15 +57,32 @@ class ProviderService:
 
     # -- catálogo ----------------------------------------------------------
 
+    def _spec_for(self, configured: Mapping[str, str], kind: ProviderKind) -> str | None:
+        """Spec do projeto para a porta; capacidades sem config (ex.: ``search``) usam o
+        primeiro nome registrado no catálogo. ``None`` quando não há implementação."""
+        spec = configured.get(kind.value)
+        if spec:
+            return spec
+        names = registered_names(self.implementations, kind)
+        return f"{names[0]}:" if names else None
+
     def list(self, project_id: str | None, kind: ProviderKind | None = None) -> list[ProviderCard]:
         configured = self.configured(project_id)
         kinds = (kind,) if kind is not None else tuple(ProviderKind)
-        return [card_for(k, configured[k.value], self.implementations) for k in kinds]
+        cards: list[ProviderCard] = []
+        for k in kinds:
+            spec = self._spec_for(configured, k)
+            if spec is not None:
+                cards.append(card_for(k, spec, self.implementations))
+        return cards
 
     def test_connection(self, project_id: str | None, kind: ProviderKind,
                         spec: str | None = None) -> ConnectionTestResult:
         configured = self.configured(project_id)
-        chosen = spec if spec is not None else configured[kind.value]
+        chosen = spec if spec is not None else self._spec_for(configured, kind)
+        if chosen is None:
+            return ConnectionTestResult(kind, "", "", available=False, checked=False,
+                                        reason="no provider configured for this port")
         card = card_for(kind, chosen, self.implementations)
         if card.availability is not Availability.AVAILABLE:
             # sem implementação validada: UNAVAILABLE, sem executar nada e sem fingir
@@ -113,13 +131,15 @@ class ProviderService:
             profile = EconomicProfile(profile)
         configured = self.configured(project_id)
         excluded = frozenset(exclude)
-        cards = [card for card in self.candidates(kind, configured=configured[kind.value])
+        spec = self._spec_for(configured, kind)
+        cards = [card for card in self.candidates(kind, configured=spec)
                  if card.name not in excluded]
         # o provider explicitamente configurado abaixo pode não ter implementação: ele aparece
         # UNAVAILABLE e o roteador simplesmente o ignora (nunca finge disponibilidade).
-        chosen = card_for(kind, configured[kind.value], self.implementations)
-        if chosen.name not in excluded and all(c.name != chosen.name for c in cards):
-            cards.append(chosen)
+        if spec is not None:
+            chosen = card_for(kind, spec, self.implementations)
+            if chosen.name not in excluded and all(c.name != chosen.name for c in cards):
+                cards.append(chosen)
         request = RouteRequest(kind, profile, max_cost_usd,
                                production=self.production if production is None else production)
         return route_provider(request, cards)

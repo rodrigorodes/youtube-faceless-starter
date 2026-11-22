@@ -171,6 +171,17 @@ code,kbd,samp {
 .tools { display:flex; align-items:center; gap:10px; }
 .canal-select { border:1px solid var(--line); background:var(--panel); border-radius:11px;
   padding:9px 12px; font-size:12px; min-width:185px; }
+/* W1.2: canal dono do vídeo, em leitura (sem seletor: trocar de canal não move o vídeo). */
+.canal-video { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line);
+  background:var(--panel); border-radius:11px; padding:8px 12px; font-size:12px; color:var(--muted); }
+.canal-video b { color:var(--txt); font-weight:650; }
+/* W1.4: áreas do vídeo como links de servidor (sem abas JS). Rola na horizontal em 390px. */
+.abas-video { display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--line);
+  padding-bottom:14px; margin:0 0 22px; overflow-x:auto; }
+.abas-video .aba { padding:9px 12px; border:1px solid var(--line); border-radius:10px;
+  background:transparent; color:var(--muted); font-size:12px; font-weight:600; text-decoration:none; }
+.abas-video .aba:hover { color:var(--txt); border-color:#595268; }
+.abas-video .aba.ativa { background:var(--panel2); color:var(--accent); border-color:var(--accent); }
 .icon-btn { background:transparent; border:1px solid var(--line); border-radius:10px;
   width:36px; height:36px; display:grid; place-items:center; cursor:pointer; color:var(--muted);
   transition:background-color .15s ease, color .15s ease, border-color .15s ease; }

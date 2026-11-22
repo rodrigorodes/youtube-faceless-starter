@@ -93,6 +93,54 @@ def test_panel_page_and_detail_never_contain_upload_uri(client_env):
     assert secret_uri not in r_detail.text
 
 
+def test_video_pages_show_the_owner_channel(client_env):
+    """W1.2 (R6): as páginas do vídeo mostram o **canal dono** em leitura, não a casca vazia.
+
+    Trocar de canal ativo não move o vídeo (`active_channel.py`), então a página do vídeo precisa
+    dizer de quem ele é — antes a casca ia com `projects=[]` e exibia "Nenhum canal cadastrado".
+    """
+    client, videos = client_env["client"], client_env["videos"]
+    other = videos.create_project("Canal B", niche="História")
+    video = videos.create_video(other.id, "Tema do canal B", VideoFormat.short)
+    for path in (f"/studio/panel/videos/{video.id}",
+                 f"/studio/videos/{video.id}/roteiro",
+                 f"/studio/videos/{video.id}/preview"):
+        response = client.get(path, headers=AUTH_HEADER)
+        assert response.status_code == 200, path
+        assert "Canal B" in response.text, path
+        assert 'id="sem-canal"' not in response.text, path
+
+
+def test_video_area_routes_are_real_and_old_routes_still_work(client_env):
+    """W1.4 (UX-03): cada área do vídeo é uma rota de servidor; as rotas antigas seguem válidas.
+
+    A navegação é por **links** com `aria-current="page"` exato na área ativa (sem SPA nem JS de
+    abas) e cada área é uma leitura sobre o que o core já tem.
+    """
+    client, videos = client_env["client"], client_env["videos"]
+    project = videos.create_project("Canal Áreas", niche="História")
+    video = videos.create_video(project.id, "Tema das áreas", VideoFormat.short)
+
+    for area in ("visao-geral", "fontes", "narracao", "cenas", "composicao", "qualidade",
+                 "publicacao", "producao"):
+        response = client.get(f"/studio/panel/videos/{video.id}/{area}", headers=AUTH_HEADER)
+        assert response.status_code == 200, area
+        assert '<nav class="abas-video" aria-label="Áreas do vídeo">' in response.text, area
+        assert f'href="/studio/panel/videos/{video.id}/{area}" aria-current="page"' in response.text, area
+
+    # As rotas antigas continuam existindo e funcionando.
+    for path in (f"/studio/panel/videos/{video.id}",
+                 f"/studio/videos/{video.id}/roteiro",
+                 f"/studio/videos/{video.id}/preview",
+                 f"/studio/panel/videos/{video.id}/production-runs"):
+        assert client.get(path, headers=AUTH_HEADER).status_code == 200, path
+
+    # Área desconhecida não quebra: cai na Visão geral (a nav marca a área padrão).
+    unknown = client.get(f"/studio/panel/videos/{video.id}/nao-existe", headers=AUTH_HEADER)
+    assert unknown.status_code == 200
+    assert f'href="/studio/panel/videos/{video.id}/visao-geral" aria-current="page"' in unknown.text
+
+
 def test_video_detail_page_escapes_error_messages(client_env):
     client = client_env["client"]
     videos = client_env["videos"]
@@ -472,10 +520,11 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert 'btn-refresh-trends' in r.text
     assert "↻ Buscando…" in r.text
 
-    # 3. «Criar vídeo deste tema» leva o tema para o Início
+    # 3. «Criar vídeo deste tema» leva o tema (e o canal ativo) para o Início
     assert 'data-usar-tendencia="Tema Brasil Teste"' in r.text
     assert "Criar vídeo deste tema" in r.text
-    assert "/studio/panel?topic=" in r.text and "encodeURIComponent" in r.text
+    # KEEP-01 (A33): o link já carrega o canal ativo junto do tema, sem trocar de canal
+    assert re.search(r'href="/studio/panel\?project_id=[^"]+&amp;topic=Tema\+Brasil\+Teste"', r.text)
 
     # 4. Strict CSP & XSS safety
     assert 'innerHTML' not in r.text
@@ -588,7 +637,7 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
     # A navegação renderizada na prévia é a mesma casca das outras telas do painel.
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert any(expected in label for label in labels), expected
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Vídeos" in " ".join(re.sub(r"<[^>]+>", " ", active[0]).split())
@@ -685,8 +734,8 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
 
-    # UX V3: cinco destinos de operação no menu principal; Configurações fica no rodapé.
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
+    # W1.5: menu do protótipo (rótulos novos + Biblioteca); Configurações fica no rodapé.
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
@@ -699,9 +748,9 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     assert configuracoes is not None, "Configurações sem destino real"
 
     # IA-01/V3: Início/Novo vídeo/Tendências/Vídeos/Desempenho são rotas de servidor reais.
-    for label, href in (("Início", "/studio/panel"), ("Novo vídeo", "/studio/panel/novo-video"),
-                        ("Tendências", "/studio/panel/tendencias"), ("Vídeos", "/studio/panel/videos"),
-                        ("Desempenho", "/studio/panel/analytics")):
+    for label, href in (("Início", "/studio/panel"), ("Criar vídeo", "/studio/panel/novo-video"),
+                        ("Tendências e ideias", "/studio/panel/tendencias"),
+                        ("Vídeos", "/studio/panel/videos"), ("Desempenho", "/studio/panel/analytics")):
         item = next(item for item in items if label in " ".join(re.sub(r"<[^>]+>", " ", item).split()))
         assert re.search(rf'href="{href}(?:\?project_id=[^"]+)?"', item), (label, item)
 
@@ -1145,7 +1194,11 @@ def test_panel_ia01_producao_and_tendencias_are_isolated_from_the_home(client_en
 
 
 def test_panel_ia01_trend_create_link_prefills_the_home_topic(client_env):
-    """O «Criar Vídeo deste Tema» (Tendências) leva o tema pré-preenchido para o Início."""
+    """O «Criar Vídeo deste Tema» (Tendências) leva o tema pré-preenchido para o Início.
+
+    KEEP-01 (A33): o link também carrega o canal ativo; criar a partir de uma tendência não
+    pode trocar o canal em silêncio (o handler JS antigo navegava só com `?topic=`).
+    """
     import html as html_module
 
     client = client_env["client"]
@@ -1167,11 +1220,12 @@ def test_panel_ia01_trend_create_link_prefills_the_home_topic(client_env):
 
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
-    # UX V3: o botão carrega o tema e o script leva ao Início com `?topic=`.
-    match = re.search(r'<button[^>]*data-usar-tendencia="([^"]+)"[^>]*>', r.text)
-    assert match is not None, "botão «Criar vídeo deste tema» sem o tema"
+    # UX V3/KEEP-01: o link carrega o tema e o canal ativo; o destino já está correto sem JS.
+    match = re.search(r'<a[^>]*data-usar-tendencia="([^"]+)"[^>]*>', r.text)
+    assert match is not None, "link «Criar vídeo deste tema» sem o tema"
     assert html_module.unescape(match.group(1)) == "Tema com Acento & Cia"
-    assert "/studio/panel?topic=" in r.text and "encodeURIComponent" in r.text
+    assert f"project_id={p_id}" in match.group(0)
+    assert "topic=Tema+com+Acento+%26+Cia" in match.group(0)
 
     # O Início trata o parâmetro: o tema chega pré-preenchido (e escapado) no formulário.
     home = client.get("/studio/panel?topic=Tema%20com%20Acento%20%26%20Cia", headers=AUTH_HEADER)

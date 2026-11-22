@@ -81,7 +81,7 @@ def test_wizard_page_marks_its_nav_as_the_production_screen(env):
     assert nav.count('aria-current="page"') == 1
     active = re.search(r'<a href="/studio/panel/novo-video[^"]*" aria-current="page">(.*?)</a>',
                        nav, re.S).group(1)
-    assert "Novo vídeo" in active
+    assert "Criar vídeo" in active
 
 
 def test_wizard_page_never_leaks_illustrative_mockup_text(env):

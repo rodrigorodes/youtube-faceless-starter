@@ -4,6 +4,9 @@ from collections.abc import Callable, Mapping
 from pydantic import BaseModel, ConfigDict
 
 KINDS = ("text", "image", "voice", "renderer")
+# Portas que podem ser construídas pelo registro. `search` é capacidade de catálogo, não uma
+# chave de `Project.config`; por isso não entra em `KINDS` nem em `_DEFAULTS`.
+BUILD_KINDS = (*KINDS, "search")
 _DEFAULTS = {
     "text": ("STUDIO_TEXT", "opencode:openai/gpt-6-luna"),
     "image": ("STUDIO_IMAGE", "opencode:openrouter/recraft/recraft-v4.1-flash-v2:free"),
@@ -42,7 +45,7 @@ def register(kind: str, name: str, factory: Callable[[str], object]) -> None:
 
 def build(kind: str, spec: str) -> object:
     name, sep, model = spec.partition(":")  # só o primeiro ":" separa (modelos podem conter ":free")
-    factory = _REGISTRY.get((kind, name)) if sep and kind in KINDS else None
+    factory = _REGISTRY.get((kind, name)) if sep and kind in BUILD_KINDS else None
     if factory is None:
         raise ProviderNotFound(f"no {kind} provider for {spec!r}")
     return factory(model)

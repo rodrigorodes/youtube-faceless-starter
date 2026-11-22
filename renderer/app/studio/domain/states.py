@@ -7,7 +7,7 @@ _PRE_APPROVAL = frozenset(_LINEAR[:-1])  # etapas que podem falhar e ser retomad
 VIDEO_TRANSITIONS: dict[S, frozenset[S]] = {
     **{cur: frozenset({nxt, S.FAILED}) for cur, nxt in zip(_LINEAR, _LINEAR[1:])},
     S.AWAITING_APPROVAL: frozenset({S.APPROVED, S.REJECTED}),
-    S.APPROVED: frozenset({S.PUBLISHED}),  # falha de upload fica em Publication, não no vídeo
+    S.APPROVED: frozenset({S.PUBLISHED, S.SCRIPTED}),  # reabrir: a guarda de publicação fica no caso de uso (ADR-002)
     S.PUBLISHED: frozenset(),
     S.REJECTED: frozenset(),
     S.FAILED: _PRE_APPROVAL,  # a origem exata da retomada é validada na P06

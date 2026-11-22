@@ -15,9 +15,14 @@ from app.studio.domain.contracts import (  # noqa: E402
 )
 from app.studio.domain.qa_report import QaCoverage, QaFinding, QaReport  # noqa: E402
 from app.studio.domain.channel import ChannelProfile  # noqa: E402
+from app.studio.domain.ids import InvalidId  # noqa: E402
 from app.studio.domain.youtube_channel import OAuthStatus  # noqa: E402
 from app.studio.domain.youtube_identity import ChannelAuthorization  # noqa: E402
-from app.studio.domain.publication_policy import PublicationIntentEvidence, idempotency_key  # noqa: E402
+from app.studio.domain.publication_policy import (  # noqa: E402
+    PublicationIntentEvidence,
+    idempotency_key,
+    metadata_fingerprint,
+)
 from app.studio.domain.youtube_oauth import OAuthReconnectRequired, OAuthTransientError  # noqa: E402
 
 V, P, R = "a" * 32, "b" * 32, "c" * 32
@@ -195,13 +200,21 @@ class Tokens:
 
 
 class Channels:
-    """Repositório de canal: o projeto → destino do YouTube (None = sem destino)."""
+    """Repositório de canal: o projeto → destino do YouTube.
 
-    def __init__(self, target=None):
-        self.target = target
+    ``exists=False`` simula um projeto **sem perfil de canal** (o repositório devolve ``None``);
+    ``invalid=True`` simula um ``project_id`` que o repositório rejeita (``InvalidId``); com
+    ``exists=True`` o canal existe e ``target=None`` significa **canal sem destino** (fail-closed
+    depois do W0B.2).
+    """
+
+    def __init__(self, target=None, exists=True, invalid=False):
+        self.target, self.exists, self.invalid = target, exists, invalid
 
     def get_by_project(self, project_id):
-        if self.target is None:
+        if self.invalid:
+            raise InvalidId("invalid id")
+        if not self.exists:
             return None
         return ChannelProfile(id="c" * 32, project_id=project_id, name="Canal", youtube_channel_id=self.target)
 
@@ -416,12 +429,43 @@ def test_an_unknown_token_channel_is_blocked_when_a_target_is_configured(tmp_pat
     assert result.result is PublicationResult.BLOCKED and "unknown" in result.detail and uploads.uploads == []
 
 
-def test_a_channel_without_a_target_preserves_the_current_behavior(tmp_path):
-    # PR -> sem destino: não bloqueia, mesmo com token de outro canal ou sem repositórios (default).
-    run, _, uploads, _ = use(tmp_path, channels=Channels(None), authorizations=Authorizations(authorization()),
-                             tokens=Tokens(channel_id=OTHER))
-    assert run.execute().result is PublicationResult.UPLOADED and len(uploads.uploads) == 1
-    legacy, _, legacy_uploads, _ = use(tmp_path)  # construção antiga, sem repositórios
+def test_a_channel_without_a_target_is_blocked_before_any_upload(tmp_path):
+    """W0B.2 (R8): canal existente **sem destino** não publica — o gate deixou de ser fail-open."""
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(None), authorizations=Authorizations(authorization()),
+                                tokens=Tokens(channel_id=OTHER))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED
+    assert "destination" in result.detail and "Canais" in result.detail  # mensagem acionável
+    assert uploads.uploads == []  # o uploader nunca é chamado
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
+def test_a_project_without_a_channel_profile_is_blocked_before_any_upload(tmp_path):
+    """W0B.2: com repositórios injetados, a ausência de perfil de canal bloqueia a publicação."""
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(exists=False),
+                                authorizations=Authorizations(authorization()), tokens=Tokens(channel_id=TARGET))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED
+    assert "channel" in result.detail.lower() and uploads.uploads == []
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
+def test_an_invalid_project_id_is_blocked_when_repositories_are_injected(tmp_path):
+    """W0B.2: ``InvalidId`` do repositório de canal não pode virar permissão silenciosa."""
+    run, pubs, uploads, _ = use(tmp_path, channels=Channels(invalid=True),
+                                authorizations=Authorizations(authorization()), tokens=Tokens(channel_id=TARGET))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and uploads.uploads == []
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
+def test_a_legacy_construction_without_repositories_preserves_the_current_behavior(tmp_path):
+    """Construção legada (sem repositórios de canal/autorizações) segue o caminho antigo.
+
+    O caminho do servidor sempre injeta os repositórios (`composition.py`), então esta forma só
+    existe em testes/construções antigas; documentada como exceção no docstring do gate.
+    """
+    legacy, _, legacy_uploads, _ = use(tmp_path)  # sem repositórios: `channels`/`authorizations` = None
     assert legacy.execute().result is PublicationResult.UPLOADED and len(legacy_uploads.uploads) == 1
 
 
@@ -460,6 +504,107 @@ def test_reconcile_requires_reconnect_instead_of_guessing(tmp_path):
     assert result.result is PublicationResult.BLOCKED and pubs.calls[-1] == ("resolve_ambiguous", False, "PERMANENT")
 
 
+# --------------------------- W5.2 (PUB-02): retry idempotente, sem upload duplicado (A20)
+
+
+def test_a_confirmed_publication_is_idempotent_and_never_uploads_again(tmp_path):
+    """W5.2/A20: repetir a MESMA publicação com id confirmado devolve UPLOADED sem novo upload."""
+    pubs = Pubs(pub=Publication(id=PUB, video_id=V, status=PublicationStatus.UPLOADED, attempt=1,
+                                youtube_video_id=YT))
+    run, pubs, uploads, tokens = use(tmp_path, pubs=pubs)
+    result = run.execute()
+    assert result.result is PublicationResult.UPLOADED and result.youtube_video_id == YT
+    assert uploads.uploads == [] and tokens.calls == 0
+
+
+def test_a_second_click_finds_nothing_to_claim_and_does_not_upload_again(tmp_path):
+    """W5.2/A20: duplo clique não duplica: o segundo execute não reivindica nem sobe nada."""
+
+    class OncePubs(Pubs):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.claims = 0
+
+        def claim_retry(self, lease_seconds, max_attempts, video_id=None):
+            return None
+
+        def claim(self, lease_seconds, max_attempts, video_id=None):
+            self.claims += 1
+            return self.pub if self.claims == 1 else None
+
+    run, pubs, uploads, _ = use(tmp_path, pubs=OncePubs())
+    assert run.execute().result is PublicationResult.UPLOADED
+    assert run.execute().result is PublicationResult.IDLE
+    assert len(uploads.uploads) == 1
+
+
+def test_a_retry_reuses_the_existing_resumable_session(tmp_path):
+    """W5.2/A20: o retry da MESMA publicação retoma a sessão existente; não abre uma segunda."""
+    uri = "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=existing"
+    retry_pub = Publication(id="9" * 32, video_id=V, status=PublicationStatus.PENDING, attempt=2,
+                            upload_uri=uri)
+    run, pubs, uploads, _ = use(tmp_path, pubs=Pubs(retry=retry_pub))
+    result = run.execute()
+    assert result.result is PublicationResult.UPLOADED
+    request, _ = uploads.uploads[0]
+    assert request.upload_uri == uri
+    assert len(uploads.uploads) == 1
+    assert pubs.calls[0] == ("claim_retry",)
+
+
+def test_an_uploader_exception_is_ambiguous_and_never_retried(tmp_path):
+    """W5.2/A20: exceção do adaptador não prova ausência de efeito externo — reconciliação, não reenvio."""
+    uploads = Uploads(error=RuntimeError("transport exploded"))
+    run, pubs, uploads, _ = use(tmp_path, uploads=uploads)
+    result = run.execute()
+    assert result.result is PublicationResult.RECONCILE
+    assert len(uploads.uploads) == 1
+    assert not any(call[0] == "retry_later" for call in pubs.calls)
+    assert pubs.calls[-1][0] == "mark_ambiguous"
+
+
+def test_a_successful_upload_whose_id_cannot_be_recorded_is_reconciled_not_duplicated(tmp_path):
+    """W5.2: o vídeo subiu mas o id não foi gravado; reconciliar — nunca subir de novo."""
+
+    class FailingMarkPubs(Pubs):
+        def mark_uploaded(self, publication_id, youtube_video_id):
+            self.calls.append(("mark_uploaded", youtube_video_id))
+            raise RuntimeError("database unavailable")
+
+    run, pubs, uploads, _ = use(tmp_path, pubs=FailingMarkPubs())
+    result = run.execute()
+    assert result.result is PublicationResult.RECONCILE
+    assert len(uploads.uploads) == 1
+    assert pubs.calls[-1][0] == "mark_ambiguous"
+
+
+def test_a_session_that_cannot_be_recorded_is_ambiguous_not_retried(tmp_path):
+    """W5.2: sem a sessão gravada, o retry abriria uma NOVA sessão — exige reconciliação."""
+
+    class UnrecordablePubs(Pubs):
+        def record_session(self, publication_id, attempt, uri, offset):
+            self.calls.append(("record_session", attempt, uri, offset))
+            return False
+
+    uri = "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=x"
+    uploads = Uploads(UploadResult(UploadOutcome.INCOMPLETE, upload_uri=uri, offset=1234))
+    run, pubs, uploads, _ = use(tmp_path, pubs=UnrecordablePubs(), uploads=uploads)
+    result = run.execute()
+    assert result.result is PublicationResult.RECONCILE
+    assert not any(call[0] == "retry_later" for call in pubs.calls)
+    assert pubs.calls[-1][0] == "mark_ambiguous"
+
+
+def test_reconcile_never_uploads_and_marks_the_confirmed_id(tmp_path):
+    """W5.2: a reconciliação só sonda a sessão; nunca faz um novo upload."""
+    from app.studio.application.publication_execution import ReconcilePublication
+    pubs = Pubs(pub=_unknown_pub())
+    uploads = Uploads(reconcile_result=UploadResult(UploadOutcome.UPLOADED, youtube_video_id=YT, upload_uri="u"))
+    result = ReconcilePublication(Videos(), pubs, uploads, Tokens()).execute(PUB)
+    assert result.result is PublicationResult.UPLOADED and pubs.uploaded == YT
+    assert uploads.uploads == [] and len(uploads.reconciliations) == 1
+
+
 # ------------------------------- F01.T04: contingência explícita da publicação
 
 
@@ -492,3 +637,41 @@ def test_publication_flag_is_read_from_the_environment():
     assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "1"}).publication_enabled is True
     assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "0"}).publication_enabled is False
     assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": "false"}).publication_enabled is False
+
+
+# -- W5.1 (PUB-01 / A19 / A37): destino ou metadados mudados tornam a intenção obsoleta ---------
+
+
+def _confirmed_intent():
+    return intent(youtube_channel_id=TARGET,
+                  metadata_fingerprint=metadata_fingerprint("Título", "Resumo", ["ade"], "private"))
+
+
+def test_a_changed_destination_blocks_the_stale_intent(tmp_path):
+    run, pubs, uploads, _ = use(
+        tmp_path, intents=Intents(_confirmed_intent()),
+        channels=Channels("UCnewdestination"),
+        authorizations=Authorizations(authorization("UCnewdestination")),
+        tokens=Tokens(channel_id="UCnewdestination"))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and "destination" in result.detail
+    assert uploads.uploads == []  # a intenção antiga não autoriza upload para outro canal
+    assert pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
+def test_changed_metadata_blocks_the_stale_intent(tmp_path):
+    videos = Videos()
+    videos.video = videos.video.model_copy(update={"title": "Título editado"})
+    run, pubs, uploads, _ = use(tmp_path, videos=videos,
+                                intents=Intents(intent(metadata_fingerprint=metadata_fingerprint(
+                                    "Título", "Resumo", ["ade"], "private"))))
+    result = run.execute()
+    assert result.result is PublicationResult.BLOCKED and "metadata" in result.detail
+    assert uploads.uploads == [] and pubs.calls[-1][:3] == ("dead_letter", 1, "PERMANENT")
+
+
+def test_unchanged_destination_and_metadata_still_upload(tmp_path):
+    run, _, uploads, _ = use(tmp_path, intents=Intents(_confirmed_intent()),
+                             channels=Channels(TARGET), authorizations=Authorizations(authorization()),
+                             tokens=Tokens(channel_id=TARGET))
+    assert run.execute().result is PublicationResult.UPLOADED and len(uploads.uploads) == 1

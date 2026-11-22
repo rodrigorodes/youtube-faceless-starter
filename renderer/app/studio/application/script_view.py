@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..domain.contracts import VideoStatus
 from ..domain.longform import ScriptPlan, approval_is_current, review_script
 from ..domain.narration_duration import estimate_text_durations
 from .editorial import _claims, _require_video
@@ -40,6 +41,10 @@ class VersionView:
     superseded: bool
     hash_short: str | None
     content_hash: str | None = None
+    # W4.5: só há "restaurar" quando a revisão tem snapshot recuperável.
+    restorable: bool = False
+    scene_count: int = 0
+    media_pending: int = 0
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,8 @@ class ScriptPageView:
     fact_check: FactCheckView | None = None
     approved: bool = False
     review: ReviewView | None = None
+    # W4.5: restaurar só é possível em IDEA/SCRIPTED; a tela não oferece botão que o backend recusa.
+    editable: bool = True
 
 
 def _hash_short(content_hash: str | None) -> str | None:
@@ -95,8 +102,9 @@ class BuildScriptView:
     def execute(self, video_id: str) -> ScriptPageView:
         video = _require_video(self.videos, video_id)
         records = self.longform.list_script_records(video_id)
+        editable = video.status in (VideoStatus.IDEA, VideoStatus.SCRIPTED)
         if not records:
-            return ScriptPageView(video_id=video.id, topic=video.topic, has_script=False)
+            return ScriptPageView(video_id=video.id, topic=video.topic, has_script=False, editable=editable)
         latest = records[-1]
         plan = latest.plan
         scenes = self.scripts.scenes(video_id)
@@ -130,12 +138,19 @@ class BuildScriptView:
                                 uncited_count=len(measured.uncited_scene_idxs),
                                 invented_count=len(measured.unsupported))
 
+        summaries = {}
+        summaries_fn = getattr(self.longform, "revision_summaries", None)
+        if callable(summaries_fn):
+            summaries = {summary.version: summary for summary in summaries_fn(video_id)}
         versions = [
             VersionView(version=r.script.version, current=r.script.version == latest.script.version,
                         approved=r.approval is not None and r.approval.decision == "approved",
                         rejected=r.approval is not None and r.approval.decision == "rejected",
                         superseded=r.script.version < latest.script.version,
-                        hash_short=_hash_short(r.content_hash), content_hash=r.content_hash)
+                        hash_short=_hash_short(r.content_hash), content_hash=r.content_hash,
+                        restorable=r.script.version in summaries,
+                        scene_count=summaries[r.script.version].scene_count if r.script.version in summaries else 0,
+                        media_pending=summaries[r.script.version].media_pending if r.script.version in summaries else 0)
             for r in records
         ]
         return ScriptPageView(
@@ -144,6 +159,7 @@ class BuildScriptView:
             words_per_minute=plan.words_per_minute if plan else None,
             scene_count=len(scenes), chapter_count=len(plan.chapters) if plan else 0,
             chapters=chapter_views, versions=versions, fact_check=fact_check, approved=approved, review=review,
+            editable=editable,
         )
 
     @staticmethod

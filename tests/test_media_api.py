@@ -151,3 +151,26 @@ def test_each_scene_gets_the_asset_of_its_own_prompt(conn, dsn, tmp_path):
     assert len({s["asset"]["id"] for s in listed}) == 4
     conn.commit()
     assert conn.execute("SELECT count(*) FROM studio.usage_ledger WHERE video_id=%s AND step='image'", (vid,)).fetchone()[0] == 4
+
+
+def test_swap_scene_media_links_only_that_scene_and_is_idempotent(conn, dsn, tmp_path):
+    from app.studio.adapters.postgres.db import migrate
+    migrate(conn)
+    client = make_client(dsn, tmp_path)
+    vid = fact_checked_video(client)
+    conn.execute("UPDATE studio.scenes SET image_prompt = 'prompt numero ' || idx || ' sobre palco' WHERE video_id = %s", (vid,))
+    conn.commit()
+    client.post(f"/studio/videos/{vid}/storyboard")
+    client.post(f"/studio/videos/{vid}/assets")
+    before = [scene["asset"]["id"] for scene in client.get(f"/studio/videos/{vid}/assets").json()["scenes"]]
+    assert len(set(before)) == 4  # cada cena tem o próprio asset
+    scene_id = conn.execute("SELECT id FROM studio.scenes WHERE video_id=%s AND idx=1", (vid,)).fetchone()[0]
+
+    response = client.post(f"/studio/videos/{vid}/scenes/{scene_id}/media", json={"asset_id": before[2]})
+    assert response.status_code == 200 and response.json()["changed"] is True
+    after = [scene["asset"]["id"] for scene in client.get(f"/studio/videos/{vid}/assets").json()["scenes"]]
+    assert after == [before[0], before[2], before[2], before[3]]  # só a cena 1 mudou
+
+    replay = client.post(f"/studio/videos/{vid}/scenes/{scene_id}/media", json={"asset_id": before[2]})
+    assert replay.status_code == 200 and replay.json()["changed"] is False  # repetir é seguro
+

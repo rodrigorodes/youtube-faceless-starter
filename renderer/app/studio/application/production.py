@@ -23,7 +23,9 @@ import hashlib
 import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -77,6 +79,27 @@ from .ports import (
 from .render import RunRender, StartRender
 
 logger = logging.getLogger("studio.production")
+
+# S8: a seleção de provider congelada no snapshot do run em execução. O worker liga este contexto
+# enquanto o handler roda; o roteador (composition) o consulta antes de qualquer re-roteamento.
+# Fora de um run (ou em run legado sem `selection`) o valor é None e o comportamento é o de antes.
+_FROZEN_PROVIDER_SELECTION: ContextVar[Mapping[str, str] | None] = ContextVar(
+    "frozen_provider_selection", default=None)
+
+
+def frozen_provider_selection() -> Mapping[str, str] | None:
+    """Seleção congelada do run em execução, ou None quando não há snapshot com seleção."""
+    return _FROZEN_PROVIDER_SELECTION.get()
+
+
+@contextmanager
+def use_frozen_provider_selection(selection: Mapping[str, str] | None):
+    """Liga a seleção congelada só durante a execução do handler (isolamento por contexto)."""
+    token = _FROZEN_PROVIDER_SELECTION.set(selection)
+    try:
+        yield
+    finally:
+        _FROZEN_PROVIDER_SELECTION.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +633,9 @@ class ProductionCoordinator:
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None,
               effective_config_for: Callable[[Video], EffectiveConfig] | None = None,
-              config_store: ProductionRunConfigStore | None = None) -> RunCreation:
+              config_store: ProductionRunConfigStore | None = None,
+              provider_selection_for: Callable[[Video, EffectiveConfig], Mapping[str, str] | None] | None = None
+              ) -> RunCreation:
         """Cria (ou reusa, pela chave) a execução. Não executa nada: o worker pega as etapas prontas.
 
         F03.T02: com `effective_config_for`, a configuração efetiva é resolvida **antes** de gravar
@@ -618,6 +643,10 @@ class ProductionCoordinator:
         nada). Sem resolvedor, o comportamento anterior é preservado e o run nasce `legacy` de
         forma explícita — nunca re-resolvido depois. O replay devolve o run existente com a config
         que ele já tinha; um snapshot divergente é `RunConfigConflict`, não sobrescrita.
+
+        S8: com `provider_selection_for`, a seleção efetiva por capacidade é resolvida junto com a
+        configuração e congelada no mesmo snapshot. Sem ela, o snapshot continua sem `selection`
+        (run legado) e o roteamento vivo segue como antes.
         """
         video_id = check_id(video_id)
         if channel_id is not None:
@@ -626,7 +655,7 @@ class ProductionCoordinator:
         self._require_available(requested)
         ordered = self.pipeline.validate_stages(requested)
         store = config_store if config_store is not None else self.config_store
-        config = self._resolve_config(video_id, effective_config_for)
+        config = self._resolve_config(video_id, effective_config_for, provider_selection_for)
         # `run_id` determinístico pela chave: o replay apresenta a mesma identidade, então o
         # repositório devolve EXISTING em vez de conflito — chamada repetida não duplica run.
         run_id = uuid.uuid5(uuid.NAMESPACE_URL, f"studio-production-run:{video_id}:{idempotency_key}").hex
@@ -643,7 +672,9 @@ class ProductionCoordinator:
         return creation
 
     def _resolve_config(self, video_id: str,
-                        effective_config_for: Callable[[Video], EffectiveConfig] | None
+                        effective_config_for: Callable[[Video], EffectiveConfig] | None,
+                        provider_selection_for: Callable[[Video, EffectiveConfig],
+                                                         Mapping[str, str] | None] | None = None
                         ) -> EffectiveConfig | None:
         """Resolve antes do INSERT: erro aqui não cria run nem deixa efeito pela metade."""
         if effective_config_for is None:
@@ -660,6 +691,12 @@ class ProductionCoordinator:
             raise TypeError("effective_config_for must return an EffectiveConfig")
         if config.video_id != video_id:
             raise ValueError("the effective config belongs to another video")
+        if provider_selection_for is not None:
+            if not callable(provider_selection_for):
+                raise TypeError("provider_selection_for must be callable or None")
+            selection = provider_selection_for(video, config)
+            if selection:
+                config = replace(config, provider_selection=selection)
         return config
 
     def config_for(self, run_id: str) -> StoredRunConfig | None:
@@ -671,6 +708,13 @@ class ProductionCoordinator:
         if self.config_store is None:
             return None
         return self.config_store.run_config(check_id(run_id))
+
+    def _frozen_selection(self, run_id: str) -> Mapping[str, str] | None:
+        """Seleção congelada do snapshot do run; None em run legado ou config sem `selection`."""
+        stored = self.config_for(run_id)
+        if stored is None or stored.status is not RunConfigStatus.RESOLVED or stored.config is None:
+            return None
+        return stored.config.provider_selection
 
     def get(self, run_id: str) -> ProductionProjection | None:
         run = self.runs.get_run(run_id)
@@ -805,15 +849,23 @@ class ProductionCoordinator:
 
     def _execute_claimed(self, run: ProductionRun, execution: StageExecution, owner: str) -> WorkerStep:
         handler = self.handlers[execution.stage_id]
+        # S8: a seleção congelada é ligada só durante o handler. Em run legado (sem snapshot) ou
+        # sem `selection`, o contexto fica None e o roteador segue o caminho vivo de antes.
         try:
-            outcome = handler.execute(StageContext(run=run, execution=execution))
-        except StageExecutionFailed as exc:
-            return self._fail(run, execution, owner, str(exc))
-        except StageCapabilityUnavailable as exc:
-            return self._fail(run, execution, owner, str(exc))
-        except Exception as exc:  # o worker não pode derrubar o processo: a etapa vira FAILED com a causa
-            logger.warning("stage %s failed: %s", execution.stage_id.value, type(exc).__name__)
+            selection = self._frozen_selection(run.run_id)
+        except Exception as exc:  # leitura do snapshot não pode derrubar o worker
+            logger.warning("frozen selection read failed for %s: %s", run.run_id, type(exc).__name__)
             return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
+        with use_frozen_provider_selection(selection):
+            try:
+                outcome = handler.execute(StageContext(run=run, execution=execution))
+            except StageExecutionFailed as exc:
+                return self._fail(run, execution, owner, str(exc))
+            except StageCapabilityUnavailable as exc:
+                return self._fail(run, execution, owner, str(exc))
+            except Exception as exc:  # o worker não pode derrubar o processo: a etapa vira FAILED com a causa
+                logger.warning("stage %s failed: %s", execution.stage_id.value, type(exc).__name__)
+                return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
         if outcome.request_human is not None:
             return self._pause(run, execution, owner, WorkerStepResult.PAUSED, outcome.request_human)
         transition = self.runs.complete_stage(run.run_id, execution.stage_id, owner, execution.fencing_token,
@@ -933,6 +985,8 @@ class Production:
     # F03.T02: resolvedor e leitura do snapshot. Ausentes = caminho legado explícito (sem snapshot).
     effective_config_for: Callable[[Video], EffectiveConfig] | None = None
     config_store: ProductionRunConfigStore | None = None
+    # S8: seleção efetiva por capacidade, congelada junto com a configuração no mesmo snapshot.
+    provider_selection_for: Callable[[Video, EffectiveConfig], Mapping[str, str] | None] | None = None
 
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None) -> RunCreation:
@@ -973,9 +1027,14 @@ class Production:
     def _create(self, video_id: str, idempotency_key: str, *, channel_id: str | None,
                 stages: Sequence[ProductionStage] | None, operation: RunOperation,
                 source_run_id: str | None = None, reason: str | None = None) -> RunCreation:
+        options = {"effective_config_for": self.effective_config_for,
+                   "config_store": self.config_store}
+        if self.provider_selection_for is not None:
+            # S8: o resolvedor só é encaminhado quando existe; sem ele o caminho legado e os
+            # dublês de teste que não conhecem o parâmetro continuam valendo.
+            options["provider_selection_for"] = self.provider_selection_for
         creation = self.coordinator.start(
-            video_id, idempotency_key, channel_id=channel_id, stages=stages,
-            effective_config_for=self.effective_config_for, config_store=self.config_store)
+            video_id, idempotency_key, channel_id=channel_id, stages=stages, **options)
         self._enqueue(creation.run.run_id)
         if creation.result is CreateRunResult.CREATED:
             self._record_creation(creation, operation, source_run_id=source_run_id, reason=reason)

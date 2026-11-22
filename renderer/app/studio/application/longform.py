@@ -26,6 +26,7 @@ default curto), mas o ritmo continua o medido — não é campo do canal.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -41,9 +42,12 @@ from ..domain.longform import (
     ScriptApproval,
     ScriptPlan,
     ScriptReview,
+    approval_is_current,
+    chapter_for_position,
     plan_content_hash,
     review_script,
     validate_structure,
+    with_chapter_scene_delta,
 )
 from ..domain.narration_duration import (
     MEASURED_EFFECTIVE_WORDS_PER_MINUTE,
@@ -68,11 +72,17 @@ from .editorial import (
     language_label,
     parse_scene_drafts,
 )
+from .errors import InvalidInput, ScriptEditIdempotencyConflict, ScriptRevisionUnavailable
 from .ports import (
     FactCheckReader,
     LongFormScriptRepository,
     SceneDraft,
+    SceneRevision,
+    ScriptEditOutcome,
+    ScriptEditRecord,
+    ScriptRecord,
     ScriptRepository,
+    ScriptRevisionSummary,
     SnapshotRepository,
     TextModel,
     UsageRepository,
@@ -390,8 +400,21 @@ def _review_reasons(review: ScriptReview) -> str:
 # ---------------------------------------------------------------------------
 
 
-class EditScriptScene:
-    """Reescreve uma cena criando nova versão. A aprovação anterior deixa de ser atual."""
+def _payload_digest(payload: dict) -> str:
+    """sha256 canônico do payload da edição: replay idêntico = mesmo hash; mudança = outro hash."""
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _require_script_editable(video: Video) -> None:
+    if video.status not in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
+        raise StateConflict(
+            f"editing a script is only available in IDEA/SCRIPTED, got {video.status.value}; "
+            "re-run production to rewind downstream outputs")
+
+
+class _ScriptSceneMutation:
+    """Base comum das mutações de cena: carrega a versão corrente, revisa e grava com CAS/idempotência."""
 
     def __init__(self, videos: VideoRepository, snaps: SnapshotRepository, scripts: ScriptRepository,
                  longform: LongFormScriptRepository, allow_names: frozenset[str] = frozenset(),
@@ -399,46 +422,308 @@ class EditScriptScene:
         self.videos, self.snaps, self.scripts = videos, snaps, scripts
         self.longform, self.allow_names, self.tolerance = longform, allow_names, tolerance
 
-    def execute(self, video_id: str, scene_idx: int, narration: str, *, expected_version: int,
-                caption: str | None = None, image_prompt: str | None = None,
-                claim_ids: Sequence[str] | None = None) -> LongScriptResult:
+    def _load(self, video_id: str, expected_version: int):
         video = _require_video(self.videos, video_id)
-        if video.status not in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
-            raise StateConflict(
-                f"editing a script is only available in IDEA/SCRIPTED, got {video.status.value}; "
-                "re-run production to rewind downstream outputs")
+        _require_script_editable(video)
         records = self.longform.list_script_records(video_id)
         if not records or records[-1].script.version != expected_version or records[-1].plan is None:
-            raise ScriptVersionStale("the requested version is not the latest script version")
+            latest = records[-1].script.version if records else None
+            raise ScriptVersionStale(
+                f"the requested version {expected_version} is not the latest script version ({latest})")
         plan = records[-1].plan
         snapshots = self.snaps.list(video_id)
         claims = _claims(snapshots)
-        claim_ids_set = {c.id for c in claims}
         drafts = _scenes_to_drafts(self.scripts.scenes(video_id))
-        if not 0 <= scene_idx < len(drafts):
-            raise ValueError(f"scene index {scene_idx} is out of range")
-        current = drafts[scene_idx]
-        drafts[scene_idx] = SceneDraft(
-            narration=narration.strip(), caption=(caption if caption is not None else current.caption),
-            label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
-            claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
-        )
+        return video, plan, drafts, snapshots, claims
+
+    def _review_and_hash(self, video_id: str, plan: ScriptPlan, drafts: Sequence[SceneDraft],
+                         snapshots, claims):
         scenes = _drafts_to_scenes(video_id, drafts)
-        review = review_script(plan, scenes, sources=[s.text for s in snapshots], known_claim_ids=claim_ids_set,
+        review = review_script(plan, scenes, sources=[s.text for s in snapshots],
+                               known_claim_ids={c.id for c in claims},
                                allow_names=self.allow_names, tolerance=self.tolerance)
         if not review.passed:
             raise ScriptRejected(f"edited script did not pass review: {_review_reasons(review)}")
         content_hash = plan_content_hash(plan, scenes)
         text = "\n".join(d.narration for d in drafts)
         cited = sorted({c for d in drafts for c in d.claim_ids})
+        return review, content_hash, text, cited
+
+    def _result(self, script: Script, plan: ScriptPlan, drafts: Sequence[SceneDraft],
+                review: ScriptReview) -> LongScriptResult:
+        durations = estimate_text_durations([d.narration for d in drafts], plan.words_per_minute)
+        return LongScriptResult(script=script, plan=plan, scenes=tuple(_drafts_to_scenes(script.video_id, drafts)),
+                                review=review, cost_usd=0.0,
+                                estimated_duration_seconds=durations.total_seconds,
+                                word_count=sum(len(d.narration.split()) for d in drafts))
+
+    def _result_from_outcome(self, outcome: ScriptEditOutcome, plan: ScriptPlan,
+                             review: ScriptReview) -> LongScriptResult:
+        durations = estimate_text_durations([s.narration for s in outcome.scenes], plan.words_per_minute)
+        return LongScriptResult(script=outcome.script, plan=plan, scenes=outcome.scenes, review=review,
+                                cost_usd=0.0, estimated_duration_seconds=durations.total_seconds,
+                                word_count=sum(len(s.narration.split()) for s in outcome.scenes))
+
+    def _plan_for_version(self, video_id: str, version: int) -> ScriptPlan:
+        for record in self.longform.list_script_records(video_id):
+            if record.script.version == version and record.plan is not None:
+                return record.plan
+        raise ScriptVersionStale(f"the stored edit result for version {version} has no plan")
+
+    def _replay(self, video_id: str, idempotency_key: str, digest: str) -> LongScriptResult | None:
+        existing = self.longform.find_edit(video_id, idempotency_key)
+        if existing is None:
+            return None
+        if existing.payload_sha256 != digest:
+            raise ScriptEditIdempotencyConflict(
+                "idempotency key already used with a different payload")
+        plan = self._plan_for_version(video_id, existing.outcome.script.version)
+        snapshots = self.snaps.list(video_id)
+        claims = _claims(snapshots)
+        review = review_script(plan, list(existing.outcome.scenes), sources=[s.text for s in snapshots],
+                               known_claim_ids={c.id for c in claims},
+                               allow_names=self.allow_names, tolerance=self.tolerance)
+        return self._result_from_outcome(existing.outcome, plan, review)
+
+    def _save(self, video: Video, plan: ScriptPlan, drafts: Sequence[SceneDraft], snapshots, claims,
+              expected_version: int, idempotency_key: str, digest: str) -> LongScriptResult:
+        review, content_hash, text, cited = self._review_and_hash(video.id, plan, drafts, snapshots, claims)
+        outcome = self.longform.save_edit(video.id, idempotency_key, digest, expected_version, text, drafts,
+                                          cited, plan, content_hash, video.status, VideoStatus.SCRIPTED)
+        if outcome is None:
+            raise ScriptVersionStale(
+                f"the requested version {expected_version} is not the latest script version")
+        return self._result_from_outcome(outcome, plan, review)
+
+
+class EditScriptScene(_ScriptSceneMutation):
+    """Reescreve uma cena criando nova versão. A aprovação anterior deixa de ser atual."""
+
+    def execute(self, video_id: str, scene_idx: int, narration: str, *, expected_version: int,
+                caption: str | None = None, image_prompt: str | None = None,
+                claim_ids: Sequence[str] | None = None) -> LongScriptResult:
+        video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if not 0 <= scene_idx < len(drafts):
+            raise InvalidInput(f"scene index {scene_idx} is out of range")
+        current = drafts[scene_idx]
+        drafts[scene_idx] = SceneDraft(
+            narration=narration.strip(), caption=(caption if caption is not None else current.caption),
+            label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
+            claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
+        )
+        review, content_hash, text, cited = self._review_and_hash(video_id, plan, drafts, snapshots, claims)
         script = self.longform.save_planned_version(video_id, text, drafts, cited, plan, content_hash,
                                                     video.status, VideoStatus.SCRIPTED)
         if script is None:
             raise ScriptVersionStale("the script changed while editing")
-        durations = estimate_text_durations([d.narration for d in drafts], plan.words_per_minute)
-        return LongScriptResult(script=script, plan=plan, scenes=tuple(scenes), review=review, cost_usd=0.0,
-                                estimated_duration_seconds=durations.total_seconds,
-                                word_count=sum(len(d.narration.split()) for d in drafts))
+        return self._result(script, plan, drafts, review)
+
+    def execute_idempotent(self, video_id: str, scene_idx: int, narration: str, *, expected_version: int,
+                           idempotency_key: str, caption: str | None = None,
+                           image_prompt: str | None = None,
+                           claim_ids: Sequence[str] | None = None) -> LongScriptResult:
+        digest = _payload_digest({
+            "kind": "edit", "scene": scene_idx, "expected_version": expected_version,
+            "narration": narration.strip(),
+            "caption": caption.strip() if caption is not None else None,
+            "image_prompt": image_prompt.strip() if image_prompt is not None else None,
+            "claim_ids": list(claim_ids) if claim_ids is not None else None,
+        })
+        replay = self._replay(video_id, idempotency_key, digest)
+        if replay is not None:
+            return replay
+        video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if not 0 <= scene_idx < len(drafts):
+            raise InvalidInput(f"scene index {scene_idx} is out of range")
+        current = drafts[scene_idx]
+        drafts[scene_idx] = SceneDraft(
+            narration=narration.strip(), caption=(caption if caption is not None else current.caption),
+            label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
+            claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
+        )
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+
+
+class AddScriptScene(_ScriptSceneMutation):
+    """Adiciona uma cena em posição explícita (ou no fim) criando nova versão."""
+
+    def execute_idempotent(self, video_id: str, *, expected_version: int, idempotency_key: str,
+                           narration: str, image_prompt: str, position: int | None = None,
+                           caption: str = "", label: str = "",
+                           claim_ids: Sequence[str] = ()) -> LongScriptResult:
+        digest = _payload_digest({
+            "kind": "add", "expected_version": expected_version, "position": position,
+            "narration": narration.strip(), "caption": caption.strip(), "label": label.strip(),
+            "image_prompt": image_prompt.strip(), "claim_ids": list(claim_ids),
+        })
+        replay = self._replay(video_id, idempotency_key, digest)
+        if replay is not None:
+            return replay
+        video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if position is None:
+            position = len(drafts)
+        if not 0 <= position <= len(drafts):
+            raise InvalidInput(f"scene position {position} is out of range")
+        plan = with_chapter_scene_delta(plan, chapter_for_position(plan, position), 1)
+        drafts.insert(position, SceneDraft(narration.strip(), caption.strip(), label.strip(),
+                                           image_prompt.strip(), list(claim_ids)))
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+
+
+class RemoveScriptScene(_ScriptSceneMutation):
+    """Remove uma cena criando nova versão; a cena removida não volta na versão seguinte."""
+
+    def execute_idempotent(self, video_id: str, scene_idx: int, *, expected_version: int,
+                           idempotency_key: str) -> LongScriptResult:
+        digest = _payload_digest({
+            "kind": "remove", "scene": scene_idx, "expected_version": expected_version,
+        })
+        replay = self._replay(video_id, idempotency_key, digest)
+        if replay is not None:
+            return replay
+        video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if not 0 <= scene_idx < len(drafts):
+            raise InvalidInput(f"scene index {scene_idx} is out of range")
+        try:
+            plan = with_chapter_scene_delta(plan, chapter_for_position(plan, scene_idx), -1)
+        except ValueError as exc:
+            raise InvalidInput(str(exc)) from exc
+        del drafts[scene_idx]
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+
+
+class ReorderScriptScenes(_ScriptSceneMutation):
+    """Reordena as cenas por uma permutação dos índices atuais, preservando a identidade de cada uma."""
+
+    def execute_idempotent(self, video_id: str, order: Sequence[int], *, expected_version: int,
+                           idempotency_key: str) -> LongScriptResult:
+        digest = _payload_digest({
+            "kind": "reorder", "order": list(order), "expected_version": expected_version,
+        })
+        replay = self._replay(video_id, idempotency_key, digest)
+        if replay is not None:
+            return replay
+        video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if sorted(order) != list(range(len(drafts))):
+            raise InvalidInput("scene order must be a permutation of the current scene indices")
+        drafts = [drafts[index] for index in order]
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+
+
+# ---------------------------------------------------------------------------
+# W4.5 (EDIT-04): histórico recuperável de revisões de cena
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ScriptRevisionView:
+    """Revisão do roteiro: metadados e, opcionalmente, as cenas do snapshot recuperável."""
+
+    version: int
+    current: bool
+    approved: bool
+    superseded: bool
+    restorable: bool
+    scene_count: int
+    media_pending: int
+    content_hash: str | None = None
+    scenes: tuple[SceneRevision, ...] = ()
+
+
+def _revision_views(records: Sequence[ScriptRecord],
+                    summaries: Sequence[ScriptRevisionSummary]) -> list[ScriptRevisionView]:
+    by_version = {summary.version: summary for summary in summaries}
+    latest = records[-1].script.version if records else None
+    views: list[ScriptRevisionView] = []
+    for record in records:
+        summary = by_version.get(record.script.version)
+        views.append(ScriptRevisionView(
+            version=record.script.version,
+            current=record.script.version == latest,
+            approved=record.approval is not None and record.approval.decision == "approved"
+            and approval_is_current(record.approval, version=record.script.version,
+                                    content_hash=record.content_hash or ""),
+            superseded=latest is not None and record.script.version < latest,
+            restorable=summary is not None,
+            scene_count=summary.scene_count if summary is not None else 0,
+            media_pending=summary.media_pending if summary is not None else 0,
+            content_hash=record.content_hash))
+    return views
+
+
+class ListScriptRevisions:
+    """Lista as versões do roteiro com o que dá para restaurar; revisão legada não vira botão."""
+
+    def __init__(self, videos: VideoRepository, longform: LongFormScriptRepository):
+        self.videos, self.longform = videos, longform
+
+    def execute(self, video_id: str) -> list[ScriptRevisionView]:
+        _require_video(self.videos, video_id)
+        return _revision_views(self.longform.list_script_records(video_id),
+                               self.longform.revision_summaries(video_id))
+
+
+class GetScriptRevision:
+    """Lê uma revisão concreta: metadados + cenas do snapshot (erro explícito se não recuperável)."""
+
+    def __init__(self, videos: VideoRepository, longform: LongFormScriptRepository):
+        self.videos, self.longform = videos, longform
+
+    def execute(self, video_id: str, version: int) -> ScriptRevisionView:
+        _require_video(self.videos, video_id)
+        records = self.longform.list_script_records(video_id)
+        if not any(record.script.version == version for record in records):
+            raise ScriptRevisionUnavailable(f"script revision {version} does not exist")
+        scenes = tuple(self.longform.revision_scenes(video_id, version))
+        if not scenes:
+            raise ScriptRevisionUnavailable(
+                f"script revision {version} has no recoverable scene snapshot")
+        view = next(view for view in _revision_views(records, self.longform.revision_summaries(video_id))
+                    if view.version == version)
+        return ScriptRevisionView(version=view.version, current=view.current, approved=view.approved,
+                                  superseded=view.superseded, restorable=view.restorable,
+                                  scene_count=view.scene_count, media_pending=view.media_pending,
+                                  content_hash=view.content_hash, scenes=scenes)
+
+
+class RestoreScriptRevision(_ScriptSceneMutation):
+    """Restaura uma revisão anterior como NOVA versão: texto, ordem e mídia da revisão escolhida.
+
+    A nova revisão copia o snapshot da revisão escolhida (nunca o estado atual); mídia ausente vira
+    ``media_review_required`` no repositório. A aprovação anterior continua presa à versão antiga e
+    não vale para a nova. Nada é apagado.
+    """
+
+    def execute_idempotent(self, video_id: str, version: int, *, expected_version: int,
+                           idempotency_key: str) -> LongScriptResult:
+        digest = _payload_digest({"kind": "restore", "revision": version, "expected_version": expected_version})
+        replay = self._replay(video_id, idempotency_key, digest)
+        if replay is not None:
+            return replay
+        video = _require_video(self.videos, video_id)
+        _require_script_editable(video)
+        records = self.longform.list_script_records(video_id)
+        if not records or records[-1].script.version != expected_version or records[-1].plan is None:
+            latest = records[-1].script.version if records else None
+            raise ScriptVersionStale(
+                f"the requested version {expected_version} is not the latest script version ({latest})")
+        source = next((record for record in records
+                       if record.script.version == version and record.plan is not None), None)
+        if source is None:
+            raise ScriptRevisionUnavailable(f"script revision {version} has no long-form plan to restore")
+        revisions = self.longform.revision_scenes(video_id, version)
+        if not revisions:
+            raise ScriptRevisionUnavailable(f"script revision {version} has no recoverable scene snapshot")
+        drafts = [SceneDraft(r.narration, r.caption, r.label, r.image_prompt, list(r.claim_ids)) for r in revisions]
+        snapshots = self.snaps.list(video_id)
+        claims = _claims(snapshots)
+        review, content_hash, text, cited = self._review_and_hash(video_id, source.plan, drafts, snapshots, claims)
+        outcome = self.longform.save_restore(video_id, idempotency_key, digest, expected_version, version,
+                                             text, cited, source.plan, content_hash, video.status,
+                                             VideoStatus.SCRIPTED)
+        if outcome is None:
+            raise ScriptVersionStale("the script changed while restoring")
+        return self._result_from_outcome(outcome, source.plan, review)
 
 
 def _scenes_to_drafts(scenes: Sequence[Scene]) -> list[SceneDraft]:

@@ -36,7 +36,7 @@ from ..application.analytics_learning import conclusion_from
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.longform import ScriptApprovalRefused, ScriptVersionStale
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
-from ..application.media import AssetRefused
+from ..application.media import AssetRefused, SceneMediaRefused, SceneNotFound
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
@@ -48,7 +48,7 @@ from ..domain.production_run import (CreateRunResult, InvalidIdempotencyKey, Inv
                                      ProductionIdempotencyConflict, ProductionRunLockTimeout,
                                      ProductionRunReferencedEntityNotFound, ProductionStage,
                                      RunState,
-                                     RunTransitionResult)
+                                     RunTransitionResult, canonical_idempotency_key)
 from ..domain.publish import InvalidPublishData, srt_to_vtt
 from ..domain.publication_policy import PublicationPolicyError, PublicConfirmationRequired
 from ..domain.youtube_oauth import (OAuthConfigurationError, OAuthError, OAuthReconnectRequired,
@@ -74,13 +74,15 @@ from .panel_production import (
     render_production_page,
 )
 from .panel_new_video import render_new_video_v3
+from . import panel_settings
 from .active_channel import with_channel as _with_channel
 from .panel_advanced import render_advanced
 from .panel_videos import render_videos
+from .panel_video_workspace import render_video_workspace
 from .panel_trends import render_tendencias_cartoes, render_tendencias_v3
-from ..application.errors import VisualStyleNotFound
+from ..application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUnavailable, VisualStyleNotFound
 from ..application.panel import cost_breakdown
-from ..application.ports import ModelUnavailable
+from ..application.ports import MediaCandidate, ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
 from ..domain.qa_report import QaReport
@@ -122,6 +124,17 @@ def _browser_guard(request: Request) -> None:
 
 def _same_secret(left: str, right: str) -> bool:
     return hmac.compare_digest(hashlib.sha256(left.encode()).digest(), hashlib.sha256(right.encode()).digest())
+
+
+def _required_idempotency_key(request: Request, field: str | None) -> str:
+    """Header ``Idempotency-Key`` (ou campo do corpo) obrigatório e na forma canônica."""
+    key = request.headers.get("idempotency-key") or field
+    if not key:
+        raise HTTPException(400, "an Idempotency-Key header (or idempotency_key field) is required")
+    try:
+        return canonical_idempotency_key(key)
+    except InvalidIdempotencyKey as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 def _authenticate(request: Request) -> None:
@@ -201,6 +214,134 @@ class ScriptApproveIn(BaseModel):
     version: int = Field(ge=1)
     content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     reason: str = Field(default="", max_length=500)
+
+
+class ScriptSceneEditIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+    narration: str = Field(min_length=5, max_length=400)
+    caption: str | None = Field(default=None, max_length=110)
+    image_prompt: str | None = Field(default=None, min_length=10, max_length=500)
+    claim_ids: list[str] | None = None
+
+
+class ScriptSceneAddIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+    position: int | None = Field(default=None, ge=0)
+    narration: str = Field(min_length=5, max_length=400)
+    caption: str = Field(default="", max_length=110)
+    label: str = Field(default="", max_length=32)
+    image_prompt: str = Field(min_length=10, max_length=500)
+    claim_ids: list[str] = Field(default_factory=list)
+
+
+class ScriptSceneRemoveIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+
+
+class ScriptSceneReorderIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+    order: list[int] = Field(min_length=1)
+
+
+class ScriptRevisionRestoreIn(BaseModel):
+    expected_version: int = Field(ge=1)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+
+
+class ScriptRevisionSceneOut(BaseModel):
+    scene_id: str
+    idx: int
+    narration: str
+    caption: str = ""
+    label: str = ""
+    image_prompt: str
+    claim_ids: list[str] = Field(default_factory=list)
+    asset_id: str | None = None
+    media_review_required: bool = False
+    duration_s: float | None = None
+
+
+class ScriptRevisionOut(BaseModel):
+    version: int
+    current: bool
+    approved: bool
+    superseded: bool
+    restorable: bool
+    scene_count: int
+    media_pending: int
+    content_hash: str | None = None
+    scenes: list[ScriptRevisionSceneOut] = Field(default_factory=list)
+
+
+def _revision_out(view) -> ScriptRevisionOut:
+    return ScriptRevisionOut(
+        version=view.version, current=view.current, approved=view.approved, superseded=view.superseded,
+        restorable=view.restorable, scene_count=view.scene_count, media_pending=view.media_pending,
+        content_hash=view.content_hash,
+        scenes=[ScriptRevisionSceneOut(scene_id=scene.scene_id, idx=scene.idx, narration=scene.narration,
+                                       caption=scene.caption, label=scene.label, image_prompt=scene.image_prompt,
+                                       claim_ids=list(scene.claim_ids), asset_id=scene.asset_id,
+                                       media_review_required=scene.media_review_required,
+                                       duration_s=scene.duration_s)
+                for scene in view.scenes])
+
+
+class MediaCandidateOut(BaseModel):
+    """Candidato de mídia exposto pela busca (W4.4); licença e proveniência sempre presentes."""
+
+    license: str
+    source_url: str
+    url: str
+    attribution: str
+    author: str = ""
+    media_id: str = ""
+    media_type: str = "image"
+    width: int | None = None
+    height: int | None = None
+    cost_usd: float | None = None
+
+
+class SceneCandidatesOut(BaseModel):
+    scene_id: str
+    query: str
+    candidates: list[MediaCandidateOut]
+
+
+class SceneMediaChoiceIn(BaseModel):
+    """Escolha de mídia de uma cena: um asset existente **ou** um candidato (nunca os dois)."""
+
+    asset_id: str | None = None
+    candidate: MediaCandidateOut | None = None
+    expected_asset_id: str | None = None
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class SceneMediaOut(BaseModel):
+    scene_id: str
+    asset: Asset | None
+    changed: bool
+    reason: str = ""
+
+
+def _candidate_out(candidate: MediaCandidate) -> MediaCandidateOut:
+    return MediaCandidateOut(
+        license=candidate.license, source_url=candidate.source_url, url=candidate.url,
+        attribution=candidate.attribution, author=candidate.author, media_id=candidate.media_id,
+        media_type=candidate.media_type, width=candidate.width, height=candidate.height,
+        cost_usd=float(candidate.cost_usd) if candidate.cost_usd is not None else None)
+
+
+class SceneNarrationOut(BaseModel):
+    video_id: str
+    scene_id: str
+    duration_s: float
+    sha256: str
+    voice_id: str = ""
+    audio_url: str
 
 
 class IdeasIn(BaseModel):
@@ -880,6 +1021,14 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(409, str(exc)) from exc
         except ScriptVersionStale as exc:
             raise HTTPException(409, str(exc)) from exc
+        except ScriptEditIdempotencyConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ScriptRevisionUnavailable as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except SceneNotFound as exc:
+            raise HTTPException(404, "scene not found") from exc
+        except SceneMediaRefused as exc:
+            raise HTTPException(422, str(exc)) from exc
         except ScriptApprovalRefused as exc:
             raise HTTPException(422, str(exc)) from exc
         except (SourceRefused, ProviderNotFound, IdeaInputRefused, TrendRefused) as exc:
@@ -1111,12 +1260,102 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "script not found")
         return ScriptOut(script=found[0], scenes=found[1])
 
+    # Reorder é registrado antes de "/scenes/{scene_idx}" para não ser capturado como índice.
+    @router.post("/videos/{video_id}/script/scenes/reorder", response_model=ScriptOut)
+    def reorder_script_scenes(video_id: str, body: ScriptSceneReorderIn, request: Request):
+        key = _required_idempotency_key(request, body.idempotency_key)
+
+        def go(uc):
+            ed = editorial(uc)
+            if ed.reorder_scenes is None:
+                raise HTTPException(503, "script editing unavailable")
+            result = ed.reorder_scenes.execute_idempotent(
+                check_id(video_id), body.order, expected_version=body.expected_version, idempotency_key=key)
+            return ScriptOut(script=result.script, scenes=list(result.scenes))
+        return run(go)
+
+    @router.post("/videos/{video_id}/script/scenes", response_model=ScriptOut)
+    def add_script_scene(video_id: str, body: ScriptSceneAddIn, request: Request):
+        key = _required_idempotency_key(request, body.idempotency_key)
+
+        def go(uc):
+            ed = editorial(uc)
+            if ed.add_scene is None:
+                raise HTTPException(503, "script editing unavailable")
+            result = ed.add_scene.execute_idempotent(
+                check_id(video_id), expected_version=body.expected_version, idempotency_key=key,
+                narration=body.narration, image_prompt=body.image_prompt, position=body.position,
+                caption=body.caption, label=body.label, claim_ids=body.claim_ids)
+            return ScriptOut(script=result.script, scenes=list(result.scenes))
+        return run(go)
+
+    @router.post("/videos/{video_id}/script/scenes/{scene_idx}", response_model=ScriptOut)
+    def edit_script_scene(video_id: str, scene_idx: int, body: ScriptSceneEditIn, request: Request):
+        key = _required_idempotency_key(request, body.idempotency_key)
+
+        def go(uc):
+            ed = editorial(uc)
+            if ed.edit_script is None:
+                raise HTTPException(503, "script editing unavailable")
+            result = ed.edit_script.execute_idempotent(
+                check_id(video_id), scene_idx, body.narration, expected_version=body.expected_version,
+                idempotency_key=key, caption=body.caption, image_prompt=body.image_prompt,
+                claim_ids=body.claim_ids)
+            return ScriptOut(script=result.script, scenes=list(result.scenes))
+        return run(go)
+
+    @router.delete("/videos/{video_id}/script/scenes/{scene_idx}", response_model=ScriptOut)
+    def remove_script_scene(video_id: str, scene_idx: int, body: ScriptSceneRemoveIn, request: Request):
+        key = _required_idempotency_key(request, body.idempotency_key)
+
+        def go(uc):
+            ed = editorial(uc)
+            if ed.remove_scene is None:
+                raise HTTPException(503, "script editing unavailable")
+            result = ed.remove_scene.execute_idempotent(
+                check_id(video_id), scene_idx, expected_version=body.expected_version, idempotency_key=key)
+            return ScriptOut(script=result.script, scenes=list(result.scenes))
+        return run(go)
+
+    # W4.5 (EDIT-04): histórico recuperável. Restaurar cria uma NOVA revisão a partir da escolhida.
+    @router.get("/videos/{video_id}/script/revisions", response_model=list[ScriptRevisionOut])
+    def list_script_revisions(video_id: str):
+        def go(uc):
+            ed = editorial(uc)
+            if ed.list_revisions is None:
+                raise HTTPException(503, "script revisions unavailable")
+            return [_revision_out(view) for view in ed.list_revisions.execute(check_id(video_id))]
+        return run(go)
+
+    @router.get("/videos/{video_id}/script/revisions/{version}", response_model=ScriptRevisionOut)
+    def get_script_revision(video_id: str, version: int):
+        def go(uc):
+            ed = editorial(uc)
+            if ed.get_revision is None:
+                raise HTTPException(503, "script revisions unavailable")
+            return _revision_out(ed.get_revision.execute(check_id(video_id), version))
+        return run(go)
+
+    @router.post("/videos/{video_id}/script/revisions/{version}/restore", response_model=ScriptOut)
+    def restore_script_revision(video_id: str, version: int, body: ScriptRevisionRestoreIn, request: Request):
+        key = _required_idempotency_key(request, body.idempotency_key)
+
+        def go(uc):
+            ed = editorial(uc)
+            if ed.restore_revision is None:
+                raise HTTPException(503, "script revisions unavailable")
+            result = ed.restore_revision.execute_idempotent(
+                check_id(video_id), version, expected_version=body.expected_version, idempotency_key=key)
+            return ScriptOut(script=result.script, scenes=list(result.scenes))
+        return run(go)
+
     @router.get("/videos/{video_id}/roteiro", response_class=HTMLResponse)
     def script_page(video_id: str):
         def get_page(uc):
             if uc.script_view is None:
                 raise HTTPException(503, "script view unavailable")
-            return render_script(uc.script_view.execute(check_id(video_id)))
+            return render_script(uc.script_view.execute(check_id(video_id)),
+                                 video_channel=_video_channel_name(uc, video_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1192,10 +1431,54 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         listed = run(lambda uc: media(uc).list_assets.execute(check_id(video_id)))
         return AssetsOut(scenes=[SceneAssetOut(idx=x.idx, asset=x.asset) for x in listed])
 
+    def scene_candidates(uc: UseCases):
+        if uc.media is None or uc.media.list_candidates is None:
+            raise HTTPException(503, "media search unavailable")
+        return uc.media.list_candidates
+
+    def scene_swap(uc: UseCases):
+        if uc.media is None or uc.media.swap is None:
+            raise HTTPException(503, "media swap unavailable")
+        return uc.media.swap
+
+    @router.get("/videos/{video_id}/scenes/{scene_id}/media/candidates", response_model=SceneCandidatesOut)
+    def list_scene_candidates(video_id: str, scene_id: str):
+        found = run(lambda uc: scene_candidates(uc).execute(check_id(video_id), check_id(scene_id)))
+        return SceneCandidatesOut(scene_id=found.scene_id, query=found.query,
+                                  candidates=[_candidate_out(c) for c in found.candidates])
+
+    @router.post("/videos/{video_id}/scenes/{scene_id}/media", response_model=SceneMediaOut)
+    def swap_scene_media(video_id: str, scene_id: str, body: SceneMediaChoiceIn):
+        def go(uc: UseCases):
+            try:
+                candidate = MediaCandidate(**body.candidate.model_dump()) if body.candidate is not None else None
+            except ValueError as exc:
+                # candidato inválido (licença/proveniência em branco): erro de negócio, nunca 500
+                raise SceneMediaRefused(f"invalid media candidate: {exc}") from exc
+            return scene_swap(uc).execute(
+                check_id(video_id), check_id(scene_id),
+                asset_id=check_id(body.asset_id) if body.asset_id else None,
+                candidate=candidate,
+                expected_asset_id=check_id(body.expected_asset_id) if body.expected_asset_id else None,
+                expected_version=body.expected_version)
+
+        result = run(go)
+        return SceneMediaOut(scene_id=result.scene_id, asset=result.asset, changed=result.changed, reason=result.reason)
+
     def rendering(uc: UseCases):
         if uc.rendering is None:
             raise HTTPException(503, "render services unavailable")
         return uc.rendering
+
+    def scene_narration(uc: UseCases):
+        if uc.editorial is None or uc.editorial.scene_narration is None:
+            raise HTTPException(503, "scene narration unavailable")
+        return uc.editorial.scene_narration
+
+    def regenerate_narration(uc: UseCases):
+        if uc.editorial is None or uc.editorial.regenerate_narration is None:
+            raise HTTPException(503, "scene narration unavailable")
+        return uc.editorial.regenerate_narration
 
     @router.post("/videos/{video_id}/render", status_code=202, response_model=RenderJob)
     def start_render(video_id: str):
@@ -1323,16 +1606,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     # UX-02: Configurações como área de rotas reais. Cada seção leva à tela que já existe; a
     # tela continua sendo a rota canônica (seus formulários publicam nela), sem duplicar página.
-    # F02.T03: sete áreas de Configurações. As que já existem dentro da tela de Canais levam
-    # à sanfona certa (âncora real), em vez de duplicar formulário/persistência.
+    # W1.5: sete seções, com os rótulos do protótipo. `estrategia`, `marca` e `producao` passaram a
+    # ter **página própria** (`panel_settings`), que reusa os cartões da tela de Canais — mesmo
+    # formulário, mesmo endpoint. `estilos` e `identidade` continuam aceitos como apelidos antigos.
     _SETTINGS_SECTIONS = {
         "canais": "/studio/canais",
-        "estrategia": "/studio/canais#painel-perfil",
-        "estilos": "/studio/panel/estilos",
-        "producao": "/studio/canais#painel-providers",
+        "estrategia": "/studio/configuracoes/estrategia",
+        "marca": "/studio/configuracoes/marca",
+        "producao": "/studio/configuracoes/producao",
         "conexoes": "/studio/panel/conexoes",
         "equipe": "/studio/panel/equipe",
         "avancado": "/studio/panel/avancado",
+        # apelidos legados (não aparecem no menu): o endereço antigo não pode virar 404.
+        "estilos": "/studio/panel/estilos",
+        "identidade": "/studio/configuracoes/marca",
     }
 
     @router.get("/configuracoes")
@@ -1343,6 +1630,18 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/configuracoes/{section}")
     def settings_section_redirect(section: str, project_id: str | None = None):
+        if section in panel_settings.SECTIONS:
+            def get_page(uc):
+                if uc.channels_page is None:
+                    raise HTTPException(503, "channel services unavailable")
+                _, p_id = _topbar(uc, project_id)
+                view = uc.channels_page.execute(p_id)
+                style_view = None
+                if uc.channel_style_page is not None and view.profile is not None:
+                    style_view = uc.channel_style_page.execute(view.profile.id)
+                return panel_settings.render_settings_section(section, view, channel_style=style_view)
+            page, headers = run(get_page)
+            return HTMLResponse(page, headers=headers)
         target = _SETTINGS_SECTIONS.get(section)
         if target is None:
             raise HTTPException(404, "unknown settings section")
@@ -1457,8 +1756,43 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             detail = uc.panel.detail(check_id(video_id))
             style_view = (uc.video_style_view.execute(check_id(video_id))
                           if uc.video_style_view is not None else None)
-            return render_video(detail, style_view=style_view)
+            return render_video(detail, style_view=style_view,
+                                video_channel=_channel_name(uc, detail.video.project_id),
+                                free_providers=uc.panel.free_providers)
         page, headers = run(get_detail_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/panel/videos/{video_id}/{area}", response_class=HTMLResponse)
+    def panel_video_area_html(video_id: str, area: str):
+        """W1.4 (UX-03): as áreas do vídeo como **rotas**, com links e `aria-current="page"`.
+
+        Cada área é uma leitura sobre o que o core já tem (nada de SPA nem segundo coordenador);
+        o gate de aprovação continua na prévia e a produção nas rotas de execução. Área desconhecida
+        cai na Visão geral. As rotas antigas (`/panel/videos/{id}`, `/roteiro`, `/preview`,
+        `production-runs`) continuam valendo.
+        """
+        def get_page(uc):
+            if uc.panel is None:
+                raise HTTPException(503, "panel services unavailable")
+            detail = uc.panel.detail(check_id(video_id))
+            style_view = (uc.video_style_view.execute(check_id(video_id))
+                          if uc.video_style_view is not None else None)
+            script_view = (uc.script_view.execute(check_id(video_id))
+                           if uc.script_view is not None else None)
+            # W2.3: a aba Composição lê o plano persistido (última revisão) pela porta; as
+            # outras áreas não pagam a consulta.
+            composition_view = None
+            if area == "composicao" and uc.composition_view is not None:
+                composition_view = uc.composition_view.execute(check_id(video_id))
+            # W5.1 (PUB-01): a aba Publicação renderiza o formulário de aprovação da prévia.
+            preview = (uc.publishing.preview.execute(check_id(video_id))
+                       if area == "publicacao" and uc.publishing is not None else None)
+            return render_video_workspace(detail, area, style_view=style_view,
+                                          script_view=script_view,
+                                          composition_view=composition_view,
+                                          preview=preview,
+                                          channel_name=_channel_name(uc, detail.video.project_id))
+        page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/canais", response_class=HTMLResponse)
@@ -1609,6 +1943,32 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "rendered file not available")
         return PlainTextResponse(srt_to_vtt(path.read_text(encoding="utf-8")), media_type="text/vtt; charset=utf-8")
 
+    def _narration_out(video_id: str, scene_id: str, artifact) -> SceneNarrationOut:
+        return SceneNarrationOut(
+            video_id=artifact.video_id, scene_id=artifact.scene_id,
+            duration_s=artifact.duration_s, sha256=artifact.sha256,
+            voice_id=artifact.voice_id,
+            audio_url=f"/studio/videos/{video_id}/scenes/{scene_id}/narration.wav")
+
+    @router.get("/videos/{video_id}/scenes/{scene_id}/narration", response_model=SceneNarrationOut)
+    def scene_narration_status(video_id: str, scene_id: str):
+        artifact = run(lambda uc: scene_narration(uc).find(check_id(video_id), check_id(scene_id)))
+        if artifact is None:
+            raise HTTPException(404, "scene narration not available")
+        return _narration_out(video_id, scene_id, artifact)
+
+    @router.get("/videos/{video_id}/scenes/{scene_id}/narration.wav")
+    def scene_narration_file(video_id: str, scene_id: str):
+        artifact = run(lambda uc: scene_narration(uc).find(check_id(video_id), check_id(scene_id)))
+        if artifact is None:
+            raise HTTPException(404, "scene narration not available")
+        return FileResponse(artifact.path, media_type="audio/wav", filename=f"{scene_id}.wav")
+
+    @router.post("/videos/{video_id}/scenes/{scene_id}/narration/regenerate", response_model=SceneNarrationOut)
+    def regenerate_scene_narration(video_id: str, scene_id: str):
+        artifact = run(lambda uc: regenerate_narration(uc).execute(check_id(video_id), check_id(scene_id)))
+        return _narration_out(video_id, scene_id, artifact)
+
     def publishing(uc: UseCases):
         if uc.publishing is None:
             raise HTTPException(503, "publishing services unavailable")
@@ -1630,7 +1990,9 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/videos/{video_id}/preview", response_class=HTMLResponse)
     def preview(video_id: str):
-        page, headers = render_preview(run(lambda uc: publishing(uc).preview.execute(check_id(video_id))))
+        page, headers = render_preview(
+            run(lambda uc: publishing(uc).preview.execute(check_id(video_id))),
+            video_channel=run(lambda uc: _video_channel_name(uc, video_id)))
         return HTMLResponse(page, headers=headers)
 
     @router.get("/videos/{video_id}/thumbnail")
@@ -1651,10 +2013,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.post("/publications/execute", response_model=PublicationRunOut,
                  response_model_exclude={"publication": {"upload_uri"}})
     def execute_publication(body: PublishIn | None = None):
-        """F01.T02: executa a publicação no Core (claim + token do grant + upload + settle).
+        """F01.T02/W5.2: executa a publicação no Core (claim + token do grant + upload + settle).
 
-        É este o único caminho de upload: o n8n orquestra e não carrega credencial do YouTube.
-        Devolve IDLE quando não há nada devido, e nunca presume sucesso de resultado ambíguo.
+        É este o **caminho efetivo** de upload: o workflow n8n `workflows/03-publish-approved.json`
+        está **inativo** (`"active": false`) e, quando reativado, só orquestra — não carrega
+        credencial do YouTube nem faz PUT. Devolve IDLE quando não há nada devido e nunca presume
+        sucesso de resultado ambíguo (idempotência do retry em `application/publication_execution.py`).
         """
         body = body or PublishIn()
 
@@ -1669,6 +2033,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.post("/publications/claim", response_model=ClaimResult)
     def claim(body: ClaimIn | None = None):
+        # W5.2 — achado registrado, NÃO corrigido aqui: este é o caminho legado que servia o workflow
+        # n8n. Ele entrega arquivo + `youtube_body` ao chamador e **não** passa pelo gate de identidade
+        # do canal (`verify_publication_gate`), enquanto `/publications/execute` passa. Como o workflow
+        # `03-publish-approved.json` está inativo ("active": false) e não faz upload, o caminho não
+        # está exposto; se for reativado, precisa entrar no gate. Não se "conserta" o n8n nesta tarefa.
         item = run(lambda uc: publishing(uc).claim.execute((body or ClaimIn()).lease_seconds))
         return ClaimResult(item=None if item is None else ClaimOut(
             publication=item.publication, youtube_body=item.youtube_body, file_size=item.file_size, content_type=item.content_type,
@@ -1911,11 +2280,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 mode=projection.mode.value,
                 month=uc.panel.month_cost(),
                 unavailable_stages=projection.unavailable_stages,
-                cost=cost_breakdown(usage_rows),
+                cost=cost_breakdown(usage_rows, uc.panel.free_providers),
                 usage=tuple(detail.usage),
                 events=tuple(production_service(uc).coordinator.events(check_id(run_id))),
             )
-            return render_execution(view)
+            return render_execution(view, video_channel=_channel_name(uc, detail.video.project_id),
+                                    free_providers=uc.panel.free_providers)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1955,6 +2325,25 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if all(pid != p_id for pid, _ in existing):
             raise ProjectNotFound(p_id)
         return p_id
+
+    def _channel_name(uc, project_id: str | None) -> str:
+        """W1.2 (R6): nome do canal **dono** do vídeo, em leitura, para a casca das páginas de vídeo.
+
+        A lista de canais vem do mesmo repositório que alimenta o seletor do topo. Sem
+        correspondência devolve "" e a casca mantém o comportamento anterior — nunca inventa nome.
+        """
+        if not project_id:
+            return ""
+        repo = getattr(getattr(uc, "panel", None), "repo", None)
+        for pid, name in (repo.projects() if repo is not None else []):
+            if pid == project_id:
+                return name
+        return ""
+
+    def _video_channel_name(uc, video_id: str) -> str:
+        """Canal dono do vídeo a partir do próprio vídeo (sem depender da página já ter o projeto)."""
+        video = uc.get_video.execute(check_id(video_id)) if uc.get_video is not None else None
+        return _channel_name(uc, getattr(video, "project_id", None))
 
     @router.post("/projects/{project_id}/channels", status_code=201, response_model=ChannelProfileOut)
     def create_channel(project_id: str, body: ChannelProfileIn):

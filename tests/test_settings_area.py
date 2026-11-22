@@ -1,6 +1,9 @@
-"""UX-02: Configurações como área de rotas reais (/studio/configuracoes/<seção>).
+"""UX-02/W1.5: Configurações como área de rotas reais (/studio/configuracoes/<seção>).
 
-Cada seção leva à tela real correspondente; seção desconhecida dá 404 (nada de link morto).
+As seções que levam à tela canônica **redirecionam** (302); as que ganharam **página própria** na
+W1.5 (`estrategia`, `marca`, `producao`) são renderizadas pela aplicação — não redirecionam. Seção
+desconhecida dá 404 (nada de link morto). O conteúdo real das páginas próprias é verificado em
+`tests/test_settings_sections.py` (com Postgres descartável).
 """
 import os
 import sys
@@ -18,23 +21,32 @@ from app.main import app  # noqa: E402
 
 AUTH = ("test-user", "test-browser-password")
 
-# F02.T03: as sete áreas. Estratégia/Produção vivem na tela de Canais (sanfonas reais).
-SECTIONS = {
+# W1.5: sete seções do protótipo. Estas continuam sendo redirecionamento para a tela canônica.
+# `estilos` e `identidade` são apelidos legados (não aparecem no menu) que não podem virar 404.
+REDIRECTS = {
     "canais": "/studio/canais",
-    "estrategia": "/studio/canais#painel-perfil",
     "estilos": "/studio/panel/estilos",
-    "producao": "/studio/canais#painel-providers",
     "conexoes": "/studio/panel/conexoes",
     "equipe": "/studio/panel/equipe",
     "avancado": "/studio/panel/avancado",
+    "identidade": "/studio/configuracoes/marca",
 }
 
+# W1.5: seções com página própria (`panel_settings`), renderizadas pela aplicação — sem redirect.
+OWN_PAGES = ("estrategia", "marca", "producao")
 
-@pytest.mark.parametrize("section,target", SECTIONS.items())
-def test_each_settings_section_redirects_to_its_real_screen(section, target):
+
+@pytest.mark.parametrize("section,target", REDIRECTS.items())
+def test_each_settings_section_that_redirects_reaches_its_real_screen(section, target):
     r = TestClient(app).get(f"/studio/configuracoes/{section}", auth=AUTH, follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == target
+
+
+@pytest.mark.parametrize("section", OWN_PAGES)
+def test_sections_with_their_own_page_do_not_redirect(section):
+    r = TestClient(app).get(f"/studio/configuracoes/{section}", auth=AUTH, follow_redirects=False)
+    assert r.status_code != 302, f"{section}: deveria ter página própria, não redirecionar"
 
 
 def test_settings_root_opens_the_first_section():

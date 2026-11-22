@@ -41,6 +41,7 @@ if TYPE_CHECKING:  # import só para tipagem: evita ciclo com o coordenador (que
     from .channels_page import BuildChannelsPage
     from .styles_page import BuildStylesPage
     from .advanced_page import BuildAdvancedView
+    from .composition_view import BuildCompositionView
     from .ports import VisualStyleRepository
 
 
@@ -181,6 +182,8 @@ class UseCases:
     video_style_view: BuildVideoStyleView | None = None
     # F02.T03: view model da tela Avançado (diagnóstico read-only).
     advanced_page: "BuildAdvancedView | None" = None
+    # W2.3: leitura do plano de composição persistido (só a porta `RenderPlanRepository`).
+    composition_view: "BuildCompositionView | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -245,7 +248,8 @@ class UseCases:
                   set_video_style: SetVideoStyle | None = None,
                   video_style_view: BuildVideoStyleView | None = None,
                   style_repo: "VisualStyleRepository | None" = None,
-                  advanced_page: "BuildAdvancedView | None" = None) -> "UseCases":
+                  advanced_page: "BuildAdvancedView | None" = None,
+                  composition_view: "BuildCompositionView | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo, style_repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -265,4 +269,4 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
                    archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view,
-                   advanced_page)
+                   advanced_page, composition_view)

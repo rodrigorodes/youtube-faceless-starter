@@ -330,6 +330,39 @@ def test_resolve_plan_honours_contain_on_a_small_image():
     assert result.get("asset-image").width == 540
 
 
+def overlay_plan(*, fit="contain"):
+    """Cena com base + overlay de imagem (VE-01): o overlay é um shot da cena."""
+    base = Shot(shot_id="base", track_id="visual-main", start_tick=0, duration_ticks=100,
+                asset_ref="asset-image")
+    overlay = Shot(shot_id="overlay", track_id="visual-overlay", start_tick=10, duration_ticks=40,
+                   asset_ref="asset-overlay", role="overlay", z_index=1,
+                   composition=Composition(fit=fit))
+    return RenderPlan(
+        plan_id="plan-overlay", revision=1, project_id="project-01", video_id="video-01",
+        output=Output(format=VideoFormat.short, width=1080, height=1920),
+        timeline=Timeline(timebase=Timebase(ticks_per_second=25),
+                          tracks=[Track(track_id="visual-main", kind="visual"),
+                                  Track(track_id="visual-overlay", kind="visual")],
+                          scenes=[Scene(scene_id="scene-01", start_tick=0, duration_ticks=100,
+                                        shots=[base, overlay])]),
+        asset_manifest=[reference("asset-image", "image", uri="storage/image.png"),
+                        reference("asset-overlay", "image", uri="storage/overlay.png")],
+        style_snapshot=StyleSnapshot(style_id="channel-01", version=1),
+        provenance=Provenance(builder_version="1.0.0"),
+    )
+
+
+def test_overlay_contain_accepts_a_smaller_asset_and_cover_refuses_it():
+    plan = overlay_plan(fit="contain")
+    small = [descriptor(r, width=540, height=960) if r.asset_id == "asset-overlay" else descriptor(r)
+             for r in plan.asset_manifest]
+    result = ResolvePlanAssets(FakeResolver(small)).execute(plan)
+    assert result.get("asset-overlay").width == 540
+    covered = overlay_plan(fit="cover")
+    with pytest.raises(AssetResolutionError, match="upscale|smaller"):
+        ResolvePlanAssets(FakeResolver(small)).execute(covered)
+
+
 # --------------------------------------------------------------------------- #
 # Adapter — LocalAssetResolver (disco real, sem FFmpeg/subprocess)
 # --------------------------------------------------------------------------- #

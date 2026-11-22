@@ -32,13 +32,12 @@ sys.path.insert(0, str(ROOT / "renderer"))
 from app.studio.domain.narration_duration import (  # noqa: E402
     MEASURED_EFFECTIVE_WORDS_PER_MINUTE,
     MEASURED_PAUSE_SECONDS,
-    MEASURED_PIPER_VERSION,
     MEASURED_SPEECH_WORDS_PER_MINUTE,
     MEASURED_UTTERANCE_OVERHEAD_SECONDS,
-    MEASURED_VOICE,
     estimate_text_durations,
     estimate_voice_durations,
 )
+from app.studio.tts_calibration import MEASURED_PIPER_VERSION, MEASURED_VOICE  # noqa: E402
 
 CORPUS = ROOT / "scripts" / "tts_calibration_samples.json"
 EVIDENCE_RUNS = tuple(

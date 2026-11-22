@@ -2,18 +2,20 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
 from ..domain.render_plan import AssetReference, ConfigSnapshot, RenderPlan
+from ..domain.quality import OverlayEvidence, SemanticResult
 from ..domain.trends import TrendItem
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
@@ -54,6 +56,62 @@ class ImageResult:
 
 
 @dataclass(frozen=True)
+class OverlayLayer:
+    """Camada de imagem sobre uma cena (VE-01): DTO de entrada, não modelo de domínio.
+
+    ``start_s`` é **relativo** ao início da cena e ``duration_s`` é positivo. ``license`` é
+    obrigatória e não vazia, como em ``ImageResult.license``. O overlay é desenhado no vídeo
+    só na VE-02; nesta fase o plano e o compilador o descrevem de forma determinística.
+    """
+
+    scene_id: str          # RenderSpec.scenes[i].id
+    asset_id: str          # id do asset do overlay (imagem)
+    image: Path            # arquivo PNG/JPEG do overlay
+    license: str           # obrigatória, não vazia (como ImageResult.license)
+    start_s: float         # início RELATIVO à cena, em segundos (>= 0)
+    duration_s: float      # > 0
+    z_index: int = 1       # >= 1
+    fit: Literal["cover", "contain"] = "contain"
+
+
+@dataclass(frozen=True)
+class MediaCandidate:
+    """Candidato de mídia de uma busca agnóstica de fornecedor.
+
+    Licença, proveniência (``source_url``), URL do arquivo e atribuição são obrigatórias: um
+    candidato sem esses dados nunca é aceito — o core não inventa licença nem crédito. Custo e
+    dimensões são opcionais porque nem todo provedor os informa. O fornecedor concreto não
+    aparece neste contrato; o adaptador é quem o conhece.
+    """
+
+    license: str
+    source_url: str
+    url: str
+    attribution: str
+    author: str = ""
+    media_id: str = ""
+    media_type: str = "image"
+    width: int | None = None
+    height: int | None = None
+    cost_usd: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("license", "source_url", "url", "attribution", "media_type"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required")
+        if self.cost_usd is not None:
+            amount = Decimal(str(self.cost_usd))
+            if not amount.is_finite() or amount < 0:
+                raise ValueError("cost_usd must be a finite non-negative Decimal")
+            object.__setattr__(self, "cost_usd", amount)
+        for name in ("width", "height"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                raise ValueError(f"{name} must be a positive integer when provided")
+
+
+@dataclass(frozen=True)
 class RenderSpec:
     scenes: list[Scene]
     images: list[Path]            # PNG de cada cena, na mesma ordem
@@ -72,6 +130,8 @@ class RenderSpec:
     # F03.T03: identidade da configuração efetiva congelada que governou voz e render. O plano a
     # grava (aditivo); ``None`` = render legado, sem snapshot (o plano é o de antes).
     config_snapshot: ConfigSnapshot | None = None
+    # VE-01: camadas de imagem por cena (default vazio = plano idêntico ao atual).
+    layers: tuple[OverlayLayer, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -128,6 +188,31 @@ class ImageModel(Protocol):
     model: str
     def cost_estimate(self, prompt: str) -> float: ...
     def generate(self, prompt: str, *, aspect: str = "9:16") -> ImageResult: ...
+
+
+@runtime_checkable
+class MediaSearch(Protocol):
+    """Busca de mídia por capacidade, sem conhecer o fornecedor concreto.
+
+    O adaptador traduz o provedor real para ``MediaCandidate``. O core nunca decide por nome
+    de fornecedor; escolhe a implementação registrada no catálogo, como nas demais portas.
+    """
+
+    name: str
+    def search(self, query: str, *, media_type: str = "image", orientation: str = "landscape",
+               per_page: int = 10) -> list[MediaCandidate]: ...
+
+
+class MediaFetcher(Protocol):
+    """Materializa um ``MediaCandidate`` aceito em bytes de imagem (VE-06/W4.4).
+
+    O adaptador faz o HTTP e valida o host confiável; o núcleo decide a licença e a vinculação.
+    Devolve ``ImageResult`` com a mesma exigência de ``ImageModel`` (licença/atribuição/proveniência):
+    um candidato sem licença no resultado é recusado pelo caso de uso, nunca completado.
+    """
+
+    name: str
+    def fetch(self, candidate: MediaCandidate) -> ImageResult: ...
 
 
 @runtime_checkable
@@ -211,17 +296,65 @@ class ScriptRecord:
     approval: ScriptApproval | None
 
 
+@dataclass(frozen=True)
+class ScriptEditOutcome:
+    """Resultado de uma edição de cena já persistida: roteiro e cenas com identidade estável."""
+
+    script: Script
+    scenes: tuple[Scene, ...]
+
+
+@dataclass(frozen=True)
+class ScriptEditRecord:
+    """Requisição de edição já gravada: hash do payload e resultado, para replay idempotente."""
+
+    payload_sha256: str
+    outcome: ScriptEditOutcome
+
+
+@dataclass(frozen=True)
+class SceneRevision:
+    """Cena como ela estava numa versão: texto falado, ordem e vínculo de mídia (W4.5/EDIT-04).
+
+    ``asset_id`` é o vínculo que existia na revisão, mesmo que o asset já não exista; quem restaura
+    confere a existência e marca ``media_review_required`` sem reescrever o snapshot.
+    """
+
+    scene_id: str
+    idx: int
+    narration: str
+    caption: str
+    label: str
+    image_prompt: str
+    claim_ids: list[str]
+    asset_id: str | None
+    media_review_required: bool
+    duration_s: float | None = None
+
+
+@dataclass(frozen=True)
+class ScriptRevisionSummary:
+    """Resumo de uma revisão recuperável: quantas cenas e quantas pedem mídia."""
+
+    version: int
+    scene_count: int
+    media_pending: int
+    captured_at: datetime | None = None
+
+
 class LongFormScriptRepository(Protocol):
     """Persistência versionada do roteiro longo: plano, hash e aprovação presa à versão.
 
     O mesmo objeto que satisfaz `ScriptRepository` pode satisfazer esta porta. `save_planned_version`
     grava roteiro, cenas, plano e hash **na mesma transação**: nunca existe versão sem hash ou hash sem
     versão. `approve` vincula a decisão à versão lida; False se essa versão já não é a mais recente.
+    `find_edit`/`save_edit` implementam a idempotência por chave + hash de payload: replay devolve o
+    resultado gravado; chave reutilizada com payload diferente é conflito.
     """
 
     def save_planned_version(self, video_id: str, text: str, drafts: list[SceneDraft], claim_ids: list[str],
                              plan: ScriptPlan, content_hash: str, expected: VideoStatus, new: VideoStatus) -> Script | None:
-        """Grava roteiro (versão +1), cenas e plano/hash atomicamente; None se o estado não for o esperado."""
+        """Grava roteiro (versão +1), cenas, plano e hash atomicamente; None se o estado não for o esperado."""
 
     def list_script_records(self, video_id: str) -> list[ScriptRecord]:
         """Versões do roteiro em ordem crescente, com plano, hash e aprovação de cada uma."""
@@ -229,6 +362,40 @@ class LongFormScriptRepository(Protocol):
     def approve(self, video_id: str, version: int, content_hash: str, decision: str, reason: str,
                 approved_by: str, approved_at: datetime | None = None) -> bool:
         """Grava a decisão presa à (versão, hash). False se a versão não existe ou já não é a mais recente."""
+
+    def find_edit(self, video_id: str, idempotency_key: str) -> ScriptEditRecord | None:
+        """Requisição de edição já gravada para a chave, ou None."""
+
+    def save_edit(self, video_id: str, idempotency_key: str, payload_sha256: str, expected_version: int,
+                  text: str, drafts: list[SceneDraft], claim_ids: list[str], plan: ScriptPlan,
+                  content_hash: str, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
+        """Grava a edição (versão +1) com plano/hash e o registro idempotente na mesma transação.
+
+        Replay com o mesmo hash devolve o resultado gravado; chave com outro hash levanta
+        ``ScriptEditIdempotencyConflict``. None se o estado ou a versão mudaram (CAS).
+        """
+
+    def revision_scenes(self, video_id: str, version: int) -> list[SceneRevision]:
+        """Snapshot da revisão em ordem de `idx`; vazio quando a versão não tem snapshot recuperável.
+        A versão corrente é lida das cenas vivas (o snapshot corrente pode estar desatualizado
+        depois de vincular mídia); as versões passadas vêm do snapshot congelado.
+        """
+
+    def revision_summaries(self, video_id: str) -> list[ScriptRevisionSummary]:
+        """Revisões com snapshot, em ordem crescente de versão, com contagem de cenas e pendências."""
+
+    def save_restore(self, video_id: str, idempotency_key: str, payload_sha256: str, expected_version: int,
+                     source_version: int, text: str, claim_ids: list[str], plan: ScriptPlan,
+                     content_hash: str, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
+        """Restaura a revisão `source_version` como versão +1, com CAS/idempotência (W4.5/EDIT-04).
+
+        Escreve o texto, a ordem **e** os vínculos de mídia da revisão escolhida — nunca os do
+        estado atual. Mídia que já não existe em `studio.assets` vira `media_review_required` e
+        `asset_id = NULL` na projeção corrente, sem reescrever o snapshot. Replay com o mesmo hash
+        devolve o resultado gravado; chave com outro hash é `ScriptEditIdempotencyConflict`; None
+        se o estado ou a versão corrente mudaram (CAS). Revisão sem snapshot é
+        `ScriptRevisionUnavailable`.
+        """
 
 
 class UsageRepository(Protocol):
@@ -244,6 +411,9 @@ class AssetRepository(Protocol):
         """Insere; se a chave de cache já existir (corrida), devolve o asset existente."""
     def link_scene(self, video_id: str, idx: int, asset_id: str, image_prompt: str) -> bool:
         """Vincula só se o vídeo ainda está STORYBOARDED e a cena idx continua com este prompt; False caso contrário."""
+    def swap_scene_asset(self, video_id: str, scene_id: str, asset_id: str,
+                         expected_asset_id: str | None) -> bool:
+        """Troca o asset de UMA cena por id estável, com CAS no vínculo lido; False se o vínculo mudou."""
 
 
 class AssetStore(Protocol):
@@ -275,14 +445,63 @@ class QaAnalyzer(Protocol):
         se `narration` (WAV só com a voz) for dado, narration_lufs e narration_silence_ratio."""
 
 
+@runtime_checkable
+class OverlayVerifier(Protocol):
+    """Verificação **técnica** do overlay (VE-05) — mede o vídeo renderizado, sem IA.
+
+    Recebe o plano e o caminho do vídeo já renderizado e devolve uma medição por camada
+    de overlay: presença, janela e tamanho (``domain.quality.OverlayEvidence``). O
+    adaptador concreto mede com ffprobe/ffmpeg; o núcleo de ``domain``/``application``
+    não toca mídia. Plano sem overlay devolve sequência vazia — este é o caminho que
+    preserva o QA de hoje quando não há camada nova.
+    """
+
+    def verify(self, plan: RenderPlan, *, media_path: Path,
+               descriptors: Sequence[AssetDescriptor] = ()) -> tuple[OverlayEvidence, ...]: ...
+
+
+@runtime_checkable
+class SemanticChecker(Protocol):
+    """Verificação **semântica** do conteúdo (VE-05) — o provedor de visão é do adaptador.
+
+    Recebe o plano e a mídia renderizada e devolve um ``SemanticResult`` tipado
+    (``verified``/``not_verified``/``failed``). O núcleo **não** implementa provedor:
+    sem verificador real o resultado honesto é ``not_verified``, nunca um "passou"
+    inventado. Qualquer heurística ou LLM entra como adapter novo, sem mudar o contrato.
+    """
+
+    def check(self, plan: RenderPlan, *, media_path: Path,
+              narration_path: Path | None = None,
+              descriptors: Sequence[AssetDescriptor] = ()) -> SemanticResult: ...
+
+
+@runtime_checkable
+class TenantContext(Protocol):
+    """Identidade de organização/tenant do request (ISO) — declarada antes do adaptador.
+
+    ``organization_id`` é o escopo canônico das consultas de trabalho; ``tenant_id`` é o
+    alias usado pelos repositórios/SaaS para o mesmo tenant. O contexto vem da identidade
+    autenticada (hoje o operador único configurado), **nunca** de query string. O
+    adaptador concreto (single-tenant agora; sessão na fase 2) mora em ``adapters/`` e é
+    montado **só** em ``composition.py``.
+    """
+
+    tenant_id: str
+    organization_id: str
+
+    def require_organization_id(self) -> str:
+        """Escopo canônico do tenant; levanta se o contexto estiver vazio."""
+
+
 class QualityEvaluator(Protocol):
     """Porta do QA do render (RP-030, design §6/§7.5): plano + evidências → QualityReport.
 
     O ``QualityReport`` é o contrato versionado da F6 (``domain.qa_report.QaReport``):
     achados com severidade ``blocking``/``warning``/``info`` e cobertura
     ``verified``/``not_verified``. A porta decide sobre a evidência disponível de forma
-    determinística — **não** avalia semântica multimodal (sem provedor) nem inventa score
-    visual; a falta de evidência vira cobertura ``not_verified``.
+    determinística — quando o plano tem overlay, mede o que é técnico (``OverlayVerifier``)
+    e declara a cobertura semântica via ``SemanticChecker`` (default ``not_verified``);
+    **não** inventa score visual; a falta de evidência vira cobertura ``not_verified``.
 
     A implementação concreta mora em ``adapters/`` (ffprobe/ebur128 + resolução dos
     assets) e é montada **só** em ``composition.py``; a política de severidade é pura
@@ -312,6 +531,23 @@ class RenderJobRepository(Protocol):
     def complete(self, job_id: str, asset: Asset, qa: QualityReport) -> bool:
         """Numa transação: job SUCCEEDED, qa_report no vídeo e estado → RENDERED (→ AWAITING_APPROVAL se o relatório
         for publicável). False se o estado do vídeo mudou."""
+
+
+class SceneDurationStore(Protocol):
+    """Duração **real** medida por cena (W4.3), gravada depois da síntese da voz.
+
+    A coluna `studio.scenes.duration_s` já existia; até a W4.3 nada a escrevia. Guardar a medida
+    permite pré-escuta e orçamento de tempo sem reabrir o WAV.
+    """
+
+    def save_durations(self, video_id: str, durations: "Mapping[str, float]") -> None: ...
+    def durations(self, video_id: str) -> dict[str, float]: ...
+
+
+class SceneNarrationStore(Protocol):
+    """Caminho durável do WAV de narração de uma cena (fora do diretório temporário do render)."""
+
+    def narration_path(self, project_id: str, video_id: str, scene_id: str) -> Path: ...
 
 
 class RenderStorage(Protocol):

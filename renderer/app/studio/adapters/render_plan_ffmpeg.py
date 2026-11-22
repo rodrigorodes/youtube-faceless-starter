@@ -20,6 +20,10 @@ Paridade preservada: Ken Burns por modo **explícito** do plano (sem ``index % 4
 selo (``label``), aviso de imagem sintética (``disclosure``), legenda queimada por trecho
 com ``enable`` semiaberto, *ducking* da música sob a narração, ``loudnorm=I=-16``, fades
 por segmento, 1080×1920 (short) e 1920×1080 (long) e timebase **25 fps**.
+
+VE-02: o overlay de imagem é composto **dentro** do segmento base pelo compilador puro
+(entrada extra + ``overlay`` com ``enable`` na janela relativa ao shot); o executor só
+roda o comando — áudio, montagem e duração do vídeo não mudam.
 """
 from __future__ import annotations
 
@@ -44,7 +48,7 @@ from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
-from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardScene, build_render_plan
+from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardOverlay, StoryboardScene, build_render_plan
 from ..domain.visual_style import ResolvedStyle
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
@@ -429,6 +433,32 @@ class PlanFfmpegRenderer:
                 voice_id=spec.voice_id,
             ))
         manifest = list(manifest_by_id.values())
+        # VE-01: camadas de imagem por cena. A licença é obrigatória (I16) e o asset entra no
+        # manifesto com hash do arquivo e ``media_type="image"``; o builder valida a janela.
+        overlays: list[StoryboardOverlay] = []
+        for layer in spec.layers:
+            if not str(layer.license).strip():
+                raise RuntimeError(f"overlay layer {layer.asset_id!r} has no license")
+            layer_path = Path(layer.image)
+            if layer.asset_id not in manifest_by_id:
+                manifest_by_id[layer.asset_id] = AssetReference(
+                    asset_id=layer.asset_id,
+                    asset_version=1,
+                    uri=layer_path.as_posix(),
+                    content_sha256=hashlib.sha256(layer_path.read_bytes()).hexdigest(),
+                    media_type="image",
+                    license=layer.license,
+                )
+            asset_paths.setdefault(layer.asset_id, layer_path)
+            overlays.append(StoryboardOverlay(
+                scene_id=layer.scene_id,
+                asset_id=layer.asset_id,
+                start_s=layer.start_s,
+                duration_s=layer.duration_s,
+                z_index=layer.z_index,
+                fit=layer.fit,
+            ))
+        manifest = list(manifest_by_id.values())
         # VS-03: o motion do estilo (ciclo de câmera) sobrepõe o ciclo default da instância
         # quando o estilo o declara; sem estilo (ou sem motion), mantém-se ``self.cycle``.
         cycle = spec.style.motion if (spec.style is not None and spec.style.motion) else self.cycle
@@ -447,6 +477,7 @@ class PlanFfmpegRenderer:
             motions=self._motions([row.id for row in rows], cycle),
             music_params=(spec.style.music if spec.style is not None else None),
             config_snapshot=spec.config_snapshot,
+            overlays=overlays,
         )
 
     def _motions(self, scene_ids: list[str], cycle: tuple[Motion, ...] | None = None) -> dict[str, Motion]:
@@ -467,6 +498,8 @@ class PlanFfmpegRenderer:
         by_asset: dict[str, Path] = {}
         for row, image in zip(spec.scenes, spec.images):
             by_asset.setdefault(row.asset_id, Path(image))  # mesmo asset serve várias cenas
+        for layer in spec.layers:  # VE-01: o asset do overlay também precisa de descriptor
+            by_asset.setdefault(layer.asset_id, Path(layer.image))
         descriptors: dict[str, AssetDescriptor] = {}
         for reference in plan.asset_manifest:
             path = by_asset[reference.asset_id]
@@ -503,6 +536,9 @@ class PlanFfmpegRenderer:
         ``style`` (VS-04) entra só na materialização dos overlays: legenda (geometria) e selo
         (cor). ``None`` = sem estilo resolvido ⇒ layout/cores default de sempre.
         """
+        # VE-02: as camadas de imagem já vêm no ``filter_complex``/``args`` de cada segmento
+        # base (compilador puro); o executor só roda o comando. Áudio, concat e duração do
+        # vídeo não mudam — o overlay é só visual.
         reuse = reuse or {}
         final_node = NodeId("final", "video")
         if final_node in reuse:  # nada mudou: o MP4 final já existe como artefato físico

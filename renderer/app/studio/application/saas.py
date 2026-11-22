@@ -8,7 +8,7 @@ nunca entra nestes objetos: só a máscara, a impressão digital e a coordenada 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
@@ -115,9 +115,11 @@ class TeamView:
 
 class BuildTeamView:
     """Monta a visão da Equipe com dado real. Sem organização, devolve o estado vazio explícito."""
-    def __init__(self, repo: SaasRepository, clock: Callable[[], datetime]):
+    def __init__(self, repo: SaasRepository, clock: Callable[[], datetime],
+                 free_providers: Collection[str] = frozenset()):
         self.repo = repo
         self.clock = clock
+        self.free_providers = frozenset(free_providers)
 
     def execute(self, org_id: str | None = None) -> TeamView:
         now = self.clock()
@@ -134,8 +136,10 @@ class BuildTeamView:
             raise OrganizationNotFound("organization not found")
 
         rows = self.repo.usage_rows(org_id)
-        tenant_cost = cost_breakdown((provider, model, cost_usd, kind)
-                                     for _, provider, model, cost_usd, kind in rows)
+        tenant_cost = cost_breakdown(
+            ((provider, model, cost_usd, kind) for _, provider, model, cost_usd, kind in rows),
+            self.free_providers,
+        )
 
         by_member: dict[str, list[tuple[str, str, float, str | None]]] = {}
         by_provider: dict[str, list[tuple[str, str, float, str | None]]] = {}
@@ -145,14 +149,14 @@ class BuildTeamView:
             by_provider.setdefault(provider, []).append((provider, model, cost_usd, kind))
 
         member_costs = tuple(
-            MemberUsageView(label=label, cost=cost_breakdown(items))
+            MemberUsageView(label=label, cost=cost_breakdown(items, self.free_providers))
             for label, items in sorted(by_member.items(), key=lambda kv: (kv[0] == "sem membro atribuído", kv[0]))
         )
         keys = tuple(
             KeyView(id=key.id, provider=key.provider, mask=key.mask, fingerprint=key.fingerprint,
                     status=key.status,
                     created_at=key.created_at, rotated_at=key.rotated_at, revoked_at=key.revoked_at,
-                    usage=cost_breakdown(by_provider.get(key.provider, [])))
+                    usage=cost_breakdown(by_provider.get(key.provider, []), self.free_providers))
             for key in sorted(self.repo.keys(org_id), key=lambda k: (k.created_at or now, k.id))
         )
 

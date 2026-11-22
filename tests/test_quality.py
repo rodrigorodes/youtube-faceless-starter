@@ -36,6 +36,7 @@ from app.studio.domain.quality import (  # noqa: E402
     CHECK_NARRATION,
     CHECK_RESOLUTION,
     MULTIMODAL_EVALUATION,
+    OverlayEvidence,
     QualityEvidence,
     _classify,
     _FAILURE_RULES,
@@ -43,7 +44,11 @@ from app.studio.domain.quality import (  # noqa: E402
 )
 from app.studio.domain.render import MAX_SECONDS  # noqa: E402
 from app.studio.domain.render_plan import AssetReference, StyleSnapshot  # noqa: E402
-from app.studio.domain.render_plan_builder import StoryboardScene, build_render_plan  # noqa: E402
+from app.studio.domain.render_plan_builder import (  # noqa: E402
+    StoryboardOverlay,
+    StoryboardScene,
+    build_render_plan,
+)
 
 SHA = "a" * 64
 RENDER_ID = "r" * 64
@@ -203,6 +208,34 @@ def test_orphan_manifest_asset_is_a_warning_not_a_blocker():
     assert report.severity_counts["warning"] >= 1
     assert any(f.check_id == CHECK_MANIFEST and f.severity == "warning" for f in report.findings)
     assert report.is_publishable  # aviso não bloqueia
+
+
+def test_asset_used_only_as_overlay_is_not_an_orphan():
+    base = AssetReference(asset_id="asset0", asset_version=1, uri="assets/0.png",
+                          content_sha256=SHA, media_type="image", license="CC0")
+    layer = AssetReference(asset_id="asset-overlay", asset_version=1, uri="assets/overlay.png",
+                           content_sha256=SHA, media_type="image", license="CC0")
+    plan = build_render_plan(
+        plan_id="plan:overlay", revision=1, project_id="p", video_id="v", format=VideoFormat.short,
+        scenes=[StoryboardScene(scene_id="scene0", asset_id="asset0",
+                                narration="Narração do teste automatizado.", speech_seconds=2.2,
+                                label="SELO")],
+        assets=[base, layer], style_snapshot=StyleSnapshot(style_id="s", version=1), music=True,
+        overlays=[StoryboardOverlay(scene_id="scene0", asset_id="asset-overlay",
+                                    start_s=0.5, duration_s=1.0)],
+    )
+    shot = plan.timeline.scenes[0].overlay_shots[0]
+    tps = plan.timeline.ticks_per_second
+    overlay = OverlayEvidence(
+        shot_id=shot.shot_id, scene_id=plan.timeline.scenes[0].scene_id,
+        start_s=shot.start_tick / tps,
+        end_s=(shot.start_tick + shot.duration_ticks) / tps,
+        present=True, window_ok=True, coverage_ratio=0.8,
+        width=1080, height=1920, frame_width=1080, frame_height=1920,
+    )
+    report = evaluate_quality(plan, evidence(plan, good_metrics(plan), descriptors_for(plan), overlays=(overlay,)))
+    assert not any(f.check_id == CHECK_MANIFEST for f in report.findings)
+    assert report.is_publishable
 
 
 def test_duration_near_the_format_limit_is_a_warning():

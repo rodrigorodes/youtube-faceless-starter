@@ -28,14 +28,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.studio.application.config import _REGISTRY, ProjectConfig, build, register  # noqa: E402
-from app.studio.application.ports import ImageModel, Renderer, TextModel, Voice  # noqa: E402
+from app.studio.application.ports import (  # noqa: E402
+    ImageModel,
+    MediaSearch,
+    OverlayVerifier,
+    Renderer,
+    SemanticChecker,
+    TenantContext,
+    TextModel,
+    Voice,
+)
 from app.studio.domain.provider import ProviderStanding, capability_gaps  # noqa: E402
+from app.studio.domain.quality import SemanticResult  # noqa: E402
 
 pytest.importorskip("psycopg")
 from app.studio.composition import Settings, Studio, _provider_implementations  # noqa: E402
 
 # Porta de cada ``kind`` de provider. É o contrato que o registro precisa satisfazer.
-PORTS = {"text": TextModel, "image": ImageModel, "voice": Voice, "renderer": Renderer}
+PORTS = {"text": TextModel, "image": ImageModel, "voice": Voice, "renderer": Renderer,
+         "search": MediaSearch}
 DUMMY_MODEL = "dummy-model"
 # Baseline explícito do produto: se o código e a expectativa divergirem juntos, o teste
 # ainda pega — o catálogo não pode mudar por acidente, só por decisão documentada.
@@ -44,6 +55,7 @@ EXPECTED_CATALOG = {
     ("image", "opencode"), ("image", "placeholder"), ("image", "stock"), ("image", "veo"),
     ("voice", "piper"),
     ("renderer", "ffmpeg"),
+    ("search", "pexels"),
 }
 
 
@@ -336,3 +348,77 @@ def test_runtime_checkable_proves_member_presence_not_signatures():
             return 0.0
 
     assert isinstance(WrongArity(), Voice)  # presença basta: a assinatura não é checada aqui
+
+
+# -- Portas S6 declaradas antes do adaptador (VE-05/ISO) ----------------------
+
+
+class _FakeSemanticChecker:
+    """Satisfaz ``SemanticChecker`` sem provedor: declara ``not_verified`` honestamente."""
+
+    name = "fake"
+
+    def check(self, plan, *, media_path, narration_path=None, descriptors=()):
+        return SemanticResult(verdict="not_verified", reason="fake provider absent")
+
+
+class _FakeOverlayVerifier:
+    """Satisfaz ``OverlayVerifier`` sem tocar mídia (o adaptador real usa ffprobe/ffmpeg)."""
+
+    name = "fake"
+
+    def verify(self, plan, *, media_path, descriptors=()):
+        return ()
+
+
+class _FakeTenantContext:
+    """Satisfaz ``TenantContext`` com o mínimo de identidade de tenant."""
+
+    tenant_id = "tenant-test"
+    organization_id = "org-test"
+
+    def require_organization_id(self):
+        return self.organization_id
+
+
+def test_s6_semantic_checker_port_is_declared_and_satisfiable():
+    from app.studio.adapters.quality_semantic import NotVerifiedSemanticChecker
+
+    assert isinstance(_FakeSemanticChecker(), SemanticChecker)
+    assert isinstance(NotVerifiedSemanticChecker(), SemanticChecker)
+    result = NotVerifiedSemanticChecker().check(
+        _fake_plan(), media_path=Path("/tmp/none.mp4"))
+    assert result.verdict == "not_verified" and result.reason
+
+
+def test_s6_overlay_verifier_port_is_declared_and_satisfiable():
+    assert isinstance(_FakeOverlayVerifier(), OverlayVerifier)
+
+
+def test_s6_tenant_context_port_is_declared_and_satisfiable():
+    assert isinstance(_FakeTenantContext(), TenantContext)
+    assert _FakeTenantContext().require_organization_id() == "org-test"
+
+    class _NoScope:
+        tenant_id = "tenant-test"
+        organization_id = "org-test"
+
+    assert not isinstance(_NoScope(), TenantContext)  # falta o escopo canônico
+
+
+def _fake_plan():
+    """Plano mínimo só para exercitar as portas S6 (sem persistência nem render)."""
+    from app.studio.domain.contracts import VideoFormat
+    from app.studio.domain.render_plan import AssetReference, StyleSnapshot
+    from app.studio.domain.render_plan_builder import StoryboardScene, build_render_plan
+
+    sha = "a" * 64
+    return build_render_plan(
+        plan_id="plan:port", revision=1, project_id="p", video_id="v", format=VideoFormat.short,
+        scenes=[StoryboardScene(scene_id="scene0", asset_id="asset0",
+                                narration="Narração do teste automatizado.", speech_seconds=2.2,
+                                label="SELO")],
+        assets=[AssetReference(asset_id="asset0", asset_version=1, uri="assets/0.png",
+                               content_sha256=sha, media_type="image", license="CC0")],
+        style_snapshot=StyleSnapshot(style_id="s", version=1),
+    )

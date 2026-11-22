@@ -241,6 +241,41 @@ def plan_content_hash(plan: ScriptPlan, scenes: Sequence[Scene]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def chapter_for_position(plan: ScriptPlan, position: int) -> int:
+    """Índice do capítulo que contém a posição de cena (posição de inserção no fim fica no último)."""
+    if position < 0:
+        raise ValueError("scene position must not be negative")
+    cumulative = 0
+    for index, chapter in enumerate(plan.chapters):
+        cumulative += chapter.scene_count
+        if position < cumulative:
+            return index
+    return len(plan.chapters) - 1
+
+
+def with_chapter_scene_delta(plan: ScriptPlan, chapter_index: int, delta: int) -> ScriptPlan:
+    """Ajusta a contagem de cenas de um capítulo e redistribui os alvos proporcionalmente.
+
+    Inserir/remover cena muda a contagem total; o plano precisa continuar somando o total de cenas
+    para a revisão de continuidade. O alvo de cada capítulo é redistribuído sem mudar o alvo global.
+    """
+    if delta not in (-1, 0, 1):
+        raise ValueError("scene count delta must be -1, 0 or 1")
+    if not 0 <= chapter_index < len(plan.chapters):
+        raise ValueError("chapter index is out of range")
+    chapters = list(plan.chapters)
+    new_count = chapters[chapter_index].scene_count + delta
+    if new_count < 1:
+        raise ValueError("a chapter must keep at least one scene")
+    chapters[chapter_index] = chapters[chapter_index].model_copy(update={"scene_count": new_count})
+    total = sum(chapter.scene_count for chapter in chapters)
+    adjusted = tuple(
+        chapter.model_copy(update={"target_seconds": plan.target_seconds * chapter.scene_count / total})
+        for chapter in chapters
+    )
+    return plan.model_copy(update={"chapters": adjusted})
+
+
 class ScriptApproval(BaseModel):
     """Aprovação humana de roteiro, presa à versão e ao hash que a originaram."""
 

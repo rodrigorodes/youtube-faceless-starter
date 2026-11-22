@@ -62,13 +62,15 @@ from .channel import (MAX_AUDIENCE_LENGTH, MAX_CTA_LENGTH, MAX_DURATION_S, MAX_N
                       MAX_PILLARS, ChannelProfile)
 from .contracts import Video
 from .ids import InvalidId, check_id
-from .provider import EconomicProfile
+from .provider import EconomicProfile, ProviderKind, ProviderSpecInvalid, parse_spec
 from .visual_style import (DEFAULT_MUSIC_BPM, DEFAULT_MUSIC_SEED, MOTIONS, PATCH_LIST_GROUPS,
                            StylePatch, VisualStyle, VisualStyleError, VisualStyleParamsInvalid,
                            clean_params)
 
 SCHEMA_VERSION = 1
-PROVIDER_POLICY_VERSION = 1
+# S8: a política passou a carregar a seleção congelada por capacidade (aditivo; vazio continua
+# compatível com o documento antigo, que não tinha `selection`).
+PROVIDER_POLICY_VERSION = 2
 
 EDITORIAL_FIELDS = ("language", "audience", "pillars", "narrative", "duration_s", "cta")
 AUDIOVISUAL_GROUPS = ("voice", "motion", "music", "transition", "caption", "palette", "extra")
@@ -97,6 +99,10 @@ AUDIOVISUAL_DEFAULTS: Mapping[str, Mapping[str, Any]] = MappingProxyType({
 _FORBIDDEN_KEY_PARTS = ("token", "secret", "password", "authoriz", "balance", "saldo",
                         "credential", "api_key", "apikey", "grant")
 _MAX_CANONICAL_INT = 2 ** 53
+# S8: a seleção congelada é `provider:model` por capacidade. Ela é um spec, nunca uma credencial:
+# prefixos de chave conhecidos e palavras de segredo são recusados no valor, não só na chave.
+_SELECTION_SECRET_PREFIXES = ("sk-", "sk_", "pk_", "ghp_", "xoxb-", "github_pat_", "bearer ",
+                              "basic ")
 
 
 class EffectiveConfigError(ValueError):
@@ -162,6 +168,22 @@ def _assert_no_secrets(node: object, where: str) -> None:
     elif isinstance(node, (list, tuple)):
         for item in node:
             _assert_no_secrets(item, where)
+
+
+def _assert_selection_has_no_secret(spec: str, where: str) -> None:
+    """Recusa um spec que pareça credencial; o valor nunca é ecoado de volta.
+
+    O spec é ``provider:model`` e o modelo pode conter ``:`` (ex.: ``opencode:vendor:model``):
+    cada segmento é conferido, então um segredo depois do primeiro ``:`` também é recusado.
+    """
+    lowered = spec.strip().lower()
+    for part in lowered.split(":"):
+        if part.startswith(_SELECTION_SECRET_PREFIXES):
+            raise EffectiveConfigInvalid(
+                f"{where} cannot carry credentials or tokens")
+        if any(fragment in part for fragment in _FORBIDDEN_KEY_PARTS):
+            raise EffectiveConfigInvalid(
+                f"{where} cannot carry credentials or tokens")
 
 
 def _canonical_value(value: object, where: str) -> Any:
@@ -253,6 +275,34 @@ def _validated_patch(patch: object, where: str) -> dict[str, Any]:
         raise EffectiveConfigInvalid(str(exc)) from None
 
 
+def _clean_provider_selection(selection: object) -> Mapping[str, str] | None:
+    """S8: valida a seleção congelada por capacidade e devolve o mapa imutável.
+
+    Chaves são capacidades conhecidas do catálogo; valores são specs ``provider:model`` (o modelo
+    é opcional). Vazio vira ausente — o documento antigo continua sem a chave ``selection``.
+    """
+    raw = _mapping(selection, "provider_policy.selection")
+    known = {kind.value for kind in ProviderKind}
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        kind = str(key).strip()
+        if kind not in known:
+            raise EffectiveConfigInvalid(
+                f"unknown provider capability {kind!r}; expected one of {sorted(known)}")
+        if not isinstance(value, str) or not value.strip():
+            raise EffectiveConfigInvalid(
+                f"provider_policy.selection.{kind} must be a non-empty provider spec")
+        spec = value.strip()
+        try:
+            parse_spec(spec)
+        except ProviderSpecInvalid as exc:
+            raise EffectiveConfigInvalid(
+                f"provider_policy.selection.{kind}: {exc}") from None
+        _assert_selection_has_no_secret(spec, f"provider_policy.selection.{kind}")
+        cleaned[kind] = spec
+    return MappingProxyType(cleaned) if cleaned else None
+
+
 # ---------- o valor ----------
 
 
@@ -279,6 +329,7 @@ class EffectiveConfig:
     extra: Mapping[str, Any] = field(default_factory=dict)  # type: ignore[assignment]
     provider_profile: EconomicProfile = EconomicProfile.BALANCED
     provider_policy_version: int = PROVIDER_POLICY_VERSION
+    provider_selection: Mapping[str, str] | None = None
     schema_version: int = SCHEMA_VERSION
     provenance: Mapping[str, str] = field(default_factory=dict)  # type: ignore[assignment]
 
@@ -375,6 +426,9 @@ class EffectiveConfig:
                 or not isinstance(self.provider_policy_version, int) \
                 or self.provider_policy_version < 1:
             raise EffectiveConfigInvalid("provider policy version must be an integer >= 1")
+        if self.provider_selection is not None:
+            object.__setattr__(self, "provider_selection",
+                               _clean_provider_selection(self.provider_selection))
 
     def _validate_provenance(self) -> None:
         provenance = _mapping(self.provenance, "provenance")
@@ -410,6 +464,8 @@ class EffectiveConfig:
             "provider_policy": {
                 "profile": self.provider_profile.value,
                 "version": self.provider_policy_version,
+                **({"selection": _thaw(self.provider_selection)}
+                   if self.provider_selection else {}),
             },
             "provenance": _thaw(self.provenance),
         }
@@ -450,7 +506,10 @@ class EffectiveConfig:
         audiovisual = _mapping(doc["audiovisual"], "audiovisual")
         _exact_keys(audiovisual, AUDIOVISUAL_GROUPS, "audiovisual")
         policy = _mapping(doc["provider_policy"], "provider_policy")
-        _exact_keys(policy, ("profile", "version"), "provider_policy")
+        _exact_keys(policy, ("profile", "version", "selection"), "provider_policy")
+        selection = policy.get("selection")
+        if selection is not None:
+            selection = dict(_mapping(selection, "provider_policy.selection"))
         provenance = _mapping(doc["provenance"], "provenance")
         return cls(
             project_id=doc["project_id"],
@@ -472,6 +531,7 @@ class EffectiveConfig:
             extra=dict(_mapping(audiovisual["extra"], "audiovisual.extra")),
             provider_profile=policy["profile"],
             provider_policy_version=policy["version"],
+            provider_selection=selection,
             schema_version=version,
             provenance={str(key): value for key, value in provenance.items()},
         )
@@ -603,6 +663,7 @@ def resolve_effective_config(
     video_patch: StylePatch | Mapping[str, Any] | None = None,
     channel_patch: StylePatch | Mapping[str, Any] | None = None,
     provider_profile: EconomicProfile | str | None = None,
+    provider_selection: Mapping[str, str] | None = None,
 ) -> EffectiveConfig:
     """Resolve a configuração efetiva **antes** de qualquer efeito. Puro, sem I/O.
 
@@ -610,7 +671,9 @@ def resolve_effective_config(
     (a composição passa a biblioteca) e pode devolver ``None`` para id ausente. ``video_patch`` e
     ``channel_patch`` são os overrides tipados de estilo (``StylePatch``, F05.T01/ADR-004); o
     mapping cru também é aceito e normalizado pela mesma allowlist. ``provider_profile`` é a
-    política econômica **declarada** (F06) — aqui só a referência é congelada.
+    política econômica **declarada** (F06) — aqui só a referência é congelada. ``provider_selection``
+    é a seleção efetiva por capacidade (S8), também congelada como referência: sem ela o documento
+    continua idêntico ao antigo (sem a chave ``selection``).
     """
     if not isinstance(video, Video):
         raise EffectiveConfigInvalid("video must be a Video")
@@ -671,6 +734,7 @@ def resolve_effective_config(
         extra=audiovisual.get("extra", {}),
         provider_profile=profile,
         provider_policy_version=PROVIDER_POLICY_VERSION,
+        provider_selection=provider_selection,
         provenance={
             **{"style": style_source.value, "provider_policy": policy_source.value},
             **{f"editorial.{field}": editorial_source.value for field in EDITORIAL_FIELDS},

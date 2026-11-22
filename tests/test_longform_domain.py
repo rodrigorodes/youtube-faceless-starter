@@ -16,10 +16,12 @@ from app.studio.domain.longform import (  # noqa: E402
     ScriptApproval,
     ScriptPlan,
     approval_is_current,
+    chapter_for_position,
     invalidated_outputs,
     plan_content_hash,
     review_script,
     validate_structure,
+    with_chapter_scene_delta,
 )
 from app.studio.domain.narration_duration import estimate_text_durations  # noqa: E402
 
@@ -184,3 +186,41 @@ def test_editing_the_scene_text_leaves_the_storyboard_valid():
         DownstreamOutput.FACT_CHECK, DownstreamOutput.RENDER, DownstreamOutput.QA,
         DownstreamOutput.APPROVAL, DownstreamOutput.PUBLISHING,
     })
+
+
+# --- edição por cena: posição e ajuste do plano (W4.1) ------------------------
+
+
+def test_chapter_for_position_maps_scene_and_append_positions():
+    assert chapter_for_position(GOOD_PLAN, 0) == 0
+    assert chapter_for_position(GOOD_PLAN, 1) == 0
+    assert chapter_for_position(GOOD_PLAN, 2) == 1
+    assert chapter_for_position(GOOD_PLAN, 4) == 1
+    assert chapter_for_position(GOOD_PLAN, 5) == 2
+    assert chapter_for_position(GOOD_PLAN, 11) == 3
+    assert chapter_for_position(GOOD_PLAN, 12) == 3  # inserir no fim fica no último capítulo
+    with pytest.raises(ValueError):
+        chapter_for_position(GOOD_PLAN, -1)
+
+
+def test_with_chapter_scene_delta_keeps_total_and_redistributes_targets():
+    added = with_chapter_scene_delta(GOOD_PLAN, 1, 1)
+    assert added.scene_count == 13
+    assert added.chapters[1].scene_count == 4
+    assert added.target_seconds == GOOD_PLAN.target_seconds
+    assert sum(c.target_seconds for c in added.chapters) == pytest.approx(GOOD_PLAN.target_seconds)
+
+    removed = with_chapter_scene_delta(GOOD_PLAN, 2, -1)
+    assert removed.scene_count == 11
+    assert removed.chapters[2].scene_count == 4
+    assert sum(c.target_seconds for c in removed.chapters) == pytest.approx(GOOD_PLAN.target_seconds)
+
+    with pytest.raises(ValueError):
+        with_chapter_scene_delta(GOOD_PLAN, 3, -2)
+    with pytest.raises(ValueError):
+        with_chapter_scene_delta(GOOD_PLAN, 99, 1)
+
+    single = plan(chapter("Abertura", Block.HOOK, 1, 60), chapter("Contexto", Block.CONTEXT, 1, 120),
+                  chapter("Desenvolvimento", Block.DEVELOPMENT, 1, 200), chapter("Fecho", Block.CTA, 1, 100))
+    with pytest.raises(ValueError):
+        with_chapter_scene_delta(single, 0, -1)

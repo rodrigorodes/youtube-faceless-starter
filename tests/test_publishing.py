@@ -426,7 +426,7 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert nav is not None, "prévia sem a navegação principal da casca"
     labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert expected in labels, f"prévia: '{expected}' fora da casca"
     # IA-01/V3: Tendências e Vídeos são rotas reais.
     assert 'href="/studio/panel/tendencias' in nav.group(1)

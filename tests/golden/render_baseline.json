@@ -1,0 +1,69 @@
+{
+  "_comment": "Envelope de paridade audiovisual do pipeline sem overlays (VE-00). Medido no container do renderer; regenerar com scripts/render_golden.py. Não é hash de MP4 nem digest.",
+  "cases": {
+    "long_2scenes_music": {
+      "_tolerances": {
+        "duration_s": 0.05,
+        "lufs": 1.5
+      },
+      "audio_channels": 2,
+      "audio_codec": "aac",
+      "audio_sample_rate": 96000,
+      "black_ratio": 0.0,
+      "duration_s": 5.16,
+      "frame_rate": "25/1",
+      "frames": 129,
+      "has_audio": true,
+      "height": 1080,
+      "integrated_lufs": -15.3,
+      "narration_lufs": -12.5,
+      "pix_fmt": "yuv420p",
+      "silence_ratio": 0.0,
+      "video_codec": "h264",
+      "width": 1920
+    },
+    "short_1scene_music": {
+      "_tolerances": {
+        "duration_s": 0.05,
+        "lufs": 1.5
+      },
+      "audio_channels": 2,
+      "audio_codec": "aac",
+      "audio_sample_rate": 96000,
+      "black_ratio": 0.0,
+      "duration_s": 2.8,
+      "frame_rate": "25/1",
+      "frames": 70,
+      "has_audio": true,
+      "height": 1920,
+      "integrated_lufs": -16.0,
+      "narration_lufs": -12.4,
+      "pix_fmt": "yuv420p",
+      "silence_ratio": 0.0,
+      "video_codec": "h264",
+      "width": 1080
+    },
+    "short_1scene_silent_music": {
+      "_tolerances": {
+        "duration_s": 0.05,
+        "lufs": 1.5
+      },
+      "audio_channels": 2,
+      "audio_codec": "aac",
+      "audio_sample_rate": 96000,
+      "black_ratio": 0.0,
+      "duration_s": 2.8,
+      "frame_rate": "25/1",
+      "frames": 70,
+      "has_audio": true,
+      "height": 1920,
+      "integrated_lufs": -16.0,
+      "narration_lufs": -12.4,
+      "pix_fmt": "yuv420p",
+      "silence_ratio": 0.1805,
+      "video_codec": "h264",
+      "width": 1080
+    }
+  },
+  "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers"
+}

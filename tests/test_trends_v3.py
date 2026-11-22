@@ -97,6 +97,25 @@ def test_trends_empty_state_when_no_trends():
     assert "Ainda não há tendências coletadas" in html
 
 
+# --------------------------------------- KEEP-01/W1.3: canal preservado ao criar vídeo
+
+
+def test_create_video_link_keeps_the_active_channel_and_topic():
+    """KEEP-01 (A33): "Criar vídeo deste tema" não troca o canal ativo em silêncio.
+
+    O link precisa carregar o canal ativo (`project_id`) junto do tema; sem isso a tela
+    Início recebia só o tema e caía no canal padrão do estúdio.
+    """
+    p_id = "1" * 32
+    html, _ = _trends_page(trends=[_trend()], project_id=p_id)
+    link = re.search(r'<a[^>]*data-usar-tendencia="GTA VI: dia 3"[^>]*>', html)
+    assert link is not None, "link de criar vídeo ausente"
+    assert f"project_id={p_id}" in link.group(0), link.group(0)
+    assert "topic=GTA" in link.group(0), link.group(0)
+    # o handler antigo navegava sem o canal; não pode continuar vencendo o href do link
+    assert "location.href = '/studio/panel?topic='" not in html
+
+
 def test_trends_has_pillar_dialog():
     html, _ = _trends_page()
     assert 'id="dialog-pilares"' in html

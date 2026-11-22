@@ -22,7 +22,8 @@ from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
 from .ports import (AssetRepository, ProductionRunConfigStore, QualityEvaluator, RenderJobRepository, RenderPlanRepository,
-                    Renderer, RenderSpec, RenderStorage, ScriptRepository, VideoRepository, Voice)
+                    Renderer, RenderSpec, RenderStorage, SceneDurationStore, SceneNarrationStore, ScriptRepository,
+                    VideoRepository, Voice)
 
 
 class RenderRefused(ValueError):
@@ -161,7 +162,9 @@ class RunRender:
                  effective_config_for: Callable[[Video], EffectiveConfig] | None = None,
                  config_store: ProductionRunConfigStore | None = None,
                  voice_for_config: Callable[[Video, EffectiveConfig], Voice] | None = None,
-                 style_for_config: Callable[[EffectiveConfig], ResolvedStyle | None] | None = None):
+                 style_for_config: Callable[[EffectiveConfig], ResolvedStyle | None] | None = None,
+                 scene_durations: "SceneDurationStore | None" = None,
+                 scene_narration: "SceneNarrationStore | None" = None):
         self.videos, self.scripts, self.assets, self.jobs, self.files = videos, scripts, assets, jobs, files
         self.voice_for, self.renderer_for, self.quality = voice_for, renderer_for, quality
         # VS-06: a voz efetiva é resolvida por **vídeo** (o estilo do canal/override decide),
@@ -187,6 +190,10 @@ class RunRender:
         # (`style_from_effective_config` como default). Ausentes = fallback legado.
         self.voice_for_config = voice_for_config
         self.style_for_config = style_for_config
+        # W4.3: duração real por cena e cópia durável do WAV para pré-escuta. Opcionais: sem eles,
+        # o render é exatamente o de antes.
+        self.scene_durations = scene_durations
+        self.scene_narration = scene_narration
 
     def execute(self, job_id: str, run_id: str | None = None) -> None:
         """Roda um job. Nunca levanta (a exceção iria para um Future que ninguém lê): qualquer falha vira job FAILED
@@ -329,6 +336,15 @@ class RunRender:
         total, limit = sum(lengths), MAX_SECONDS[video.format]
         if total > limit:
             raise RenderRefused(f"video would last {total:.0f}s, above the {limit}s limit for {video.format.value}")
+        # W4.3: a duração medida vira dado da cena e o WAV fica disponível para pré-escuta.
+        if self.scene_durations is not None:
+            self.scene_durations.save_durations(video.id, {scene.id: float(sec) for (scene, _), sec in zip(pairs, seconds)})
+        if self.scene_narration is not None:
+            for (scene, _), wav in zip(pairs, wavs):
+                try:
+                    shutil.copyfile(wav, self.scene_narration.narration_path(video.project_id, video.id, scene.id))
+                except OSError:
+                    pass
         cues: list[Cue] = []
         offset = 0.0
         for (scene, _), speech, length in zip(pairs, seconds, lengths):
@@ -351,7 +367,7 @@ class RunRender:
             raise RenderRefused("render was cancelled or the video state changed")
         relative = self.files.publish(video.project_id, video.id, job.id, mp4, to_srt(cues))
         asset = self.assets.add(Asset(id=uuid.uuid4().hex, kind=AssetKind.video, cache_key=key, path=relative, provider=renderer.name,
-                                      model="ffmpeg", license="gerado pelo estúdio a partir de assets licenciados"))
+                                      model=renderer.name, license="gerado pelo estúdio a partir de assets licenciados"))
         if not self.jobs.complete(job.id, asset, qa):
             raise RenderRefused("video state changed during the render")
         self.files.prune(video.project_id, video.id, relative)  # só o arquivo do job vencedor sobrevive

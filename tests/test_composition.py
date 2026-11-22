@@ -659,6 +659,38 @@ def test_provider_for_without_a_profile_keeps_the_configured_spec_unchanged():
     assert built == ["premium:top"] and provider.name == "premium" and provider.model == "top"
 
 
+def test_provider_routing_uses_the_frozen_run_selection_without_routing():
+    """S8: a seleção congelada no run vence a política e não é re-roteada."""
+    from app.studio.application.production import use_frozen_provider_selection
+    from app.studio.domain.provider import EconomicProfile
+
+    routing, built = _routing(profile=EconomicProfile.PREMIUM)
+    routing.service.route = lambda *a, **k: pytest.fail("a seleção congelada não deve ser re-roteada")
+
+    with use_frozen_provider_selection({"text": "frozen:model"}):
+        provider = routing("text", P)
+
+    assert built == ["frozen:model"]
+    assert provider.name == "frozen"
+
+
+def test_a_frozen_selection_that_does_not_build_is_not_replaced_by_live_routing():
+    """S8: se a seleção congelada não constrói, o erro sobe; nunca há troca silenciosa."""
+    from app.studio.application.config import ProviderNotFound
+    from app.studio.application.production import use_frozen_provider_selection
+    from app.studio.domain.provider import EconomicProfile
+
+    def _build(kind, spec):
+        raise ProviderNotFound("gone")
+
+    routing, _ = _routing(profile=EconomicProfile.PREMIUM, build=_build)
+    routing.service.route = lambda *a, **k: pytest.fail("a seleção congelada não deve ser re-roteada")
+
+    with use_frozen_provider_selection({"text": "frozen:model"}):
+        with pytest.raises(ProviderNotFound):
+            routing("text", P)
+
+
 def test_wiring_consumes_the_channel_profile_and_keeps_the_legacy_path_without_it(conn, dsn, tmp_path, caplog):
     """F06.T02: a fiação real roteia pelo perfil do canal; sem perfil, o spec configurado manda."""
     import logging

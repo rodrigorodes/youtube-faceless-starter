@@ -29,6 +29,13 @@ def test_only_approved_can_be_published():
         assert can_transition(s, VideoStatus.PUBLISHED) == (s == VideoStatus.APPROVED)
 
 
+def test_approved_can_reopen_for_editing_but_published_cannot():
+    assert can_transition(VideoStatus.APPROVED, VideoStatus.SCRIPTED)
+    assert can_transition(VideoStatus.APPROVED, VideoStatus.PUBLISHED)
+    assert not can_transition(VideoStatus.PUBLISHED, VideoStatus.SCRIPTED)
+    assert not can_transition(VideoStatus.PUBLISHED, VideoStatus.APPROVED)
+
+
 def test_terminal_states_have_no_exit():
     assert VIDEO_TRANSITIONS[VideoStatus.PUBLISHED] == frozenset()
     assert VIDEO_TRANSITIONS[VideoStatus.REJECTED] == frozenset()

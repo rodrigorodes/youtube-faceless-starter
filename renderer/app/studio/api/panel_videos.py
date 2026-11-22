@@ -61,13 +61,17 @@ VIDEOS_JS = """
 
 
 def _situacao_key(stage: Stage) -> str:
-    if stage in (Stage.IN_PRODUCTION,):
-        return "producao"
+    """Bucket do filtro de situação. "Publicados" é só o vídeo efetivamente publicado.
+
+    Só `Stage.COMPLETED` entra em "publicados": esse estágio só é produzido pelo `classify` do
+    domínio quando o status é `PUBLISHED` ou a publicação é `UPLOADED`. Um vídeo apenas aprovado
+    (`Stage.APPROVED`) continua em "Em criação" — aprovar nunca é apresentado como publicar.
+    """
     if stage in (Stage.AWAITING_APPROVAL, Stage.FAILED):
         return "aprovar"
-    if stage in (Stage.APPROVED, Stage.COMPLETED):
+    if stage is Stage.COMPLETED:
         return "publicados"
-    return "outros"
+    return "producao"
 
 
 def video_card(video: VideoItem) -> str:
@@ -124,7 +128,7 @@ def render_videos(view: PanelView) -> tuple[str, dict[str, str]]:
             <legend>Situação</legend>
             <div class="pills" id="filtro-situacao">
               <label class="pill"><input type="radio" name="filtro" value="todos" checked> Todos</label>
-              <label class="pill"><input type="radio" name="filtro" value="producao"> Em produção</label>
+              <label class="pill"><input type="radio" name="filtro" value="producao"> Em criação</label>
               <label class="pill"><input type="radio" name="filtro" value="aprovar"> Esperando você</label>
               <label class="pill"><input type="radio" name="filtro" value="publicados"> Publicados</label>
             </div>

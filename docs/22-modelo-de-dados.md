@@ -1,17 +1,17 @@
 # Modelo de dados (gerado)
 
 > Gerado por `scripts/export_schema.py`. Não edite à mão.
-> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 36 migrações
-> (`0001_init` … `0041_production_run_operation`).
+> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 41 migrações
+> (`0001_init` … `0046_scene_revisions`).
 > DDL consolidado e executável: `docs/schema/studio.sql`.
 > As colunas, chaves e índices abaixo vêm da **introspecção do banco real** após aplicar
 > as migrações — não de leitura de texto —, para não documentar algo que o banco não tem.
 
 ## Visão geral
 
-- Tabelas: **48**
-- Chaves estrangeiras: **67**
-- Índices: **103**
+- Tabelas: **51**
+- Chaves estrangeiras: **71**
+- Índices: **108**
 
 ## Diagrama de relacionamentos
 
@@ -32,6 +32,11 @@ erDiagram
     analytics_recommendation_decisions {
         text recommendation_id PK
         text project_id FK
+    }
+    approval_history {
+        text id PK
+        text video_id FK
+        text output_asset_id FK
     }
     approvals {
         text video_id PK,FK
@@ -162,6 +167,11 @@ erDiagram
         integer revision PK
         text video_id FK
     }
+    scene_revisions {
+        text video_id PK,FK
+        integer version PK,FK
+        text scene_id PK
+    }
     scenes {
         text id PK
         text video_id FK
@@ -173,6 +183,10 @@ erDiagram
     script_approvals {
         text video_id PK,FK
         integer version PK,FK
+    }
+    script_edit_requests {
+        text video_id PK,FK
+        text idempotency_key PK
     }
     script_plans {
         text video_id PK,FK
@@ -236,6 +250,8 @@ erDiagram
     projects ||--|{ analytics_experiments : "analytics_experiments_project_id_fkey"
     videos ||--|{ analytics_experiments : "analytics_experiments_video_id_fkey"
     projects ||--|{ analytics_recommendation_decisions : "analytics_recommendation_decisions_project_id_fkey"
+    assets ||--o{ approval_history : "approval_history_output_asset_id_fkey"
+    videos ||--|{ approval_history : "approval_history_video_id_fkey"
     assets ||--o{ approvals : "approvals_output_asset_id_fkey"
     videos ||--|{ approvals : "approvals_video_id_fkey"
     projects ||--o{ budget_reservations : "budget_reservations_project_id_fkey"
@@ -280,9 +296,11 @@ erDiagram
     assets ||--o{ render_jobs : "render_jobs_output_asset_id_fkey"
     videos ||--|{ render_jobs : "render_jobs_video_id_fkey"
     videos ||--|{ render_plans : "render_plans_video_id_fkey"
+    scripts ||--|{ scene_revisions : "scene_revisions_video_id_version_fkey"
     assets ||--o{ scenes : "scenes_asset_id_fkey"
     videos ||--|{ scenes : "scenes_video_id_fkey"
     scripts ||--|{ script_approvals : "script_approvals_video_id_version_fkey"
+    videos ||--|{ script_edit_requests : "script_edit_requests_video_id_fkey"
     scripts ||--|{ script_plans : "script_plans_video_id_version_fkey"
     videos ||--|{ scripts : "scripts_video_id_fkey"
     videos ||--o{ source_snapshots : "source_snapshots_video_id_fkey"
@@ -309,6 +327,8 @@ erDiagram
 | `analytics_experiments` (project_id) | → | `projects` (id) | obrigatória | `analytics_experiments_project_id_fkey` |
 | `analytics_experiments` (video_id) | → | `videos` (id) | obrigatória | `analytics_experiments_video_id_fkey` |
 | `analytics_recommendation_decisions` (project_id) | → | `projects` (id) | obrigatória | `analytics_recommendation_decisions_project_id_fkey` |
+| `approval_history` (output_asset_id) | → | `assets` (id) | opcional | `approval_history_output_asset_id_fkey` |
+| `approval_history` (video_id) | → | `videos` (id) | obrigatória | `approval_history_video_id_fkey` |
 | `approvals` (output_asset_id) | → | `assets` (id) | opcional | `approvals_output_asset_id_fkey` |
 | `approvals` (video_id) | → | `videos` (id) | obrigatória | `approvals_video_id_fkey` |
 | `budget_reservations` (project_id) | → | `projects` (id) | opcional | `budget_reservations_project_id_fkey` |
@@ -353,9 +373,11 @@ erDiagram
 | `render_jobs` (output_asset_id) | → | `assets` (id) | opcional | `render_jobs_output_asset_id_fkey` |
 | `render_jobs` (video_id) | → | `videos` (id) | obrigatória | `render_jobs_video_id_fkey` |
 | `render_plans` (video_id) | → | `videos` (id) | obrigatória | `render_plans_video_id_fkey` |
+| `scene_revisions` (video_id, version) | → | `scripts` (video_id, version) | obrigatória | `scene_revisions_video_id_version_fkey` |
 | `scenes` (asset_id) | → | `assets` (id) | opcional | `scenes_asset_id_fkey` |
 | `scenes` (video_id) | → | `videos` (id) | obrigatória | `scenes_video_id_fkey` |
 | `script_approvals` (video_id, version) | → | `scripts` (video_id, version) | obrigatória | `script_approvals_video_id_version_fkey` |
+| `script_edit_requests` (video_id) | → | `videos` (id) | obrigatória | `script_edit_requests_video_id_fkey` |
 | `script_plans` (video_id, version) | → | `scripts` (video_id, version) | obrigatória | `script_plans_video_id_version_fkey` |
 | `scripts` (video_id) | → | `videos` (id) | obrigatória | `scripts_video_id_fkey` |
 | `source_snapshots` (video_id) | → | `videos` (id) | opcional | `source_snapshots_video_id_fkey` |
@@ -488,6 +510,57 @@ erDiagram
 
 **Migrações que citam esta tabela:** 0026_analytics_learning
 
+### `studio.approval_history`
+
+| Coluna | Tipo | Nulo | Padrão |
+| --- | --- | --- | --- |
+| `id` | `text` | não | — |
+| `video_id` | `text` | não | — |
+| `previous_status` | `text` | não | — |
+| `decision` | `text` | sim | — |
+| `reason` | `text` | não | `''::text` |
+| `qa_override` | `boolean` | não | `false` |
+| `publish_at` | `timestamp with time zone` | sim | — |
+| `output_asset_id` | `text` | sim | — |
+| `render_id` | `text` | sim | — |
+| `media_checksum` | `text` | sim | — |
+| `qa_passed` | `boolean` | sim | — |
+| `intent_qa_override` | `boolean` | sim | — |
+| `visibility` | `text` | sim | — |
+| `public_confirmed` | `boolean` | sim | — |
+| `idempotency_key` | `text` | sim | — |
+| `qa_report` | `jsonb` | sim | — |
+| `approved_at` | `timestamp with time zone` | sim | — |
+| `archived_at` | `timestamp with time zone` | não | `now()` |
+| `archive_reason` | `text` | não | `'reopen_for_editing'::text` |
+| `youtube_channel_id` | `text` | sim | — |
+| `metadata_fingerprint` | `text` | sim | — |
+
+**Chave primária:** `id`
+
+**Restrições:**
+
+- `approval_history_decision_check` (check): `CHECK ((decision = ANY (ARRAY['approved'::text, 'rejected'::text])))`
+- `approval_history_id_check` (check): `CHECK ((id ~ '^[0-9a-f]{32}$'::text))`
+- `approval_history_media_checksum_check` (check): `CHECK (((media_checksum IS NULL) OR (media_checksum ~ '^[0-9a-f]{64}$'::text)))`
+- `approval_history_metadata_fingerprint_check` (check): `CHECK (((metadata_fingerprint IS NULL) OR (metadata_fingerprint ~ '^[0-9a-f]{64}$'::text)))`
+- `approval_history_previous_status_check` (check): `CHECK ((previous_status = ANY (ARRAY['APPROVED'::text, 'PUBLISHED'::text])))`
+- `approval_history_render_id_check` (check): `CHECK (((render_id IS NULL) OR (render_id ~ '^[0-9a-f]{32}$'::text)))`
+- `approval_history_visibility_check` (check): `CHECK (((visibility IS NULL) OR (visibility = ANY (ARRAY['private'::text, 'unlisted'::text, 'public'::text]))))`
+- `approval_history_pkey` (PK): `PRIMARY KEY (id)`
+
+**Chaves estrangeiras:**
+
+- `approval_history_output_asset_id_fkey`: (output_asset_id) → `assets` (id)
+- `approval_history_video_id_fkey`: (video_id) → `videos` (id)
+
+**Índices:**
+
+- `approval_history_pkey`: `CREATE UNIQUE INDEX approval_history_pkey ON studio.approval_history USING btree (id)`
+- `ix_approval_history_video`: `CREATE INDEX ix_approval_history_video ON studio.approval_history USING btree (video_id, archived_at DESC)`
+
+**Migrações que citam esta tabela:** 0043_reopen_approved_video, 0045_publication_intent_destination_metadata
+
 ### `studio.approvals`
 
 | Coluna | Tipo | Nulo | Padrão |
@@ -553,7 +626,7 @@ erDiagram
 - `assets_cache_key_key`: `CREATE UNIQUE INDEX assets_cache_key_key ON studio.assets USING btree (cache_key)`
 - `assets_pkey`: `CREATE UNIQUE INDEX assets_pkey ON studio.assets USING btree (id)`
 
-**Migrações que citam esta tabela:** 0001_init, 0004_asset_credits, 0005_license_nonblank, 0006_render, 0010_approval_render, 0028_publication_resilience
+**Migrações que citam esta tabela:** 0001_init, 0004_asset_credits, 0005_license_nonblank, 0006_render, 0010_approval_render, 0028_publication_resilience, 0043_reopen_approved_video, 0046_scene_revisions
 
 ### `studio.budget_reservations`
 
@@ -1334,6 +1407,8 @@ erDiagram
 | `public_confirmed` | `boolean` | não | `false` |
 | `idempotency_key` | `text` | não | — |
 | `approved_at` | `timestamp with time zone` | não | `now()` |
+| `youtube_channel_id` | `text` | sim | — |
+| `metadata_fingerprint` | `text` | sim | — |
 
 **Chave primária:** `video_id`
 
@@ -1342,6 +1417,7 @@ erDiagram
 - `publication_intents_check` (check): `CHECK (((visibility <> 'public'::text) OR public_confirmed))`
 - `publication_intents_idempotency_key_check` (check): `CHECK ((idempotency_key ~ '^[a-z0-9.:_-]{1,200}$'::text))`
 - `publication_intents_media_checksum_check` (check): `CHECK ((media_checksum ~ '^[0-9a-f]{64}$'::text))`
+- `publication_intents_metadata_fingerprint_check` (check): `CHECK (((metadata_fingerprint IS NULL) OR (metadata_fingerprint ~ '^[0-9a-f]{64}$'::text)))`
 - `publication_intents_render_id_check` (check): `CHECK ((render_id ~ '^[0-9a-f]{32}$'::text))`
 - `publication_intents_visibility_check` (check): `CHECK ((visibility = ANY (ARRAY['private'::text, 'unlisted'::text, 'public'::text])))`
 - `publication_intents_pkey` (PK): `PRIMARY KEY (video_id)`
@@ -1357,7 +1433,7 @@ erDiagram
 - `publication_intents_idempotency_key_key`: `CREATE UNIQUE INDEX publication_intents_idempotency_key_key ON studio.publication_intents USING btree (idempotency_key)`
 - `publication_intents_pkey`: `CREATE UNIQUE INDEX publication_intents_pkey ON studio.publication_intents USING btree (video_id)`
 
-**Migrações que citam esta tabela:** 0028_publication_resilience
+**Migrações que citam esta tabela:** 0028_publication_resilience, 0045_publication_intent_destination_metadata
 
 ### `studio.publications`
 
@@ -1387,6 +1463,8 @@ erDiagram
 | `failure_class` | `text` | sim | — |
 | `dead_letter` | `boolean` | não | `false` |
 | `remote_state` | `text` | sim | — |
+| `invalidated_at` | `timestamp with time zone` | sim | — |
+| `invalidation_reason` | `text` | sim | — |
 
 **Chave primária:** `id`
 
@@ -1409,7 +1487,6 @@ erDiagram
 - `publications_youtube_id_format` (check): `CHECK (((youtube_video_id IS NULL) OR (youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'::text)))`
 - `publications_pkey` (PK): `PRIMARY KEY (id)`
 - `publications_idempotency_key_key` (único): `UNIQUE (idempotency_key)`
-- `publications_video_id_key` (único): `UNIQUE (video_id)`
 
 **Chaves estrangeiras:**
 
@@ -1420,10 +1497,10 @@ erDiagram
 - `ix_publications_retry_due`: `CREATE INDEX ix_publications_retry_due ON studio.publications USING btree (next_attempt_at) WHERE ((status = ANY (ARRAY['PENDING'::text, 'FAILED'::text])) AND (NOT dead_letter))`
 - `publications_idempotency_key_key`: `CREATE UNIQUE INDEX publications_idempotency_key_key ON studio.publications USING btree (idempotency_key)`
 - `publications_pkey`: `CREATE UNIQUE INDEX publications_pkey ON studio.publications USING btree (id)`
-- `publications_video_id_key`: `CREATE UNIQUE INDEX publications_video_id_key ON studio.publications USING btree (video_id)`
+- `uq_publications_active_video`: `CREATE UNIQUE INDEX uq_publications_active_video ON studio.publications USING btree (video_id) WHERE (invalidated_at IS NULL)`
 - `uq_publications_youtube_id`: `CREATE UNIQUE INDEX uq_publications_youtube_id ON studio.publications USING btree (youtube_video_id) WHERE (youtube_video_id IS NOT NULL)`
 
-**Migrações que citam esta tabela:** 0001_init, 0007_publish, 0008_publication_attempt_base, 0026_analytics_learning, 0028_publication_resilience
+**Migrações que citam esta tabela:** 0001_init, 0007_publish, 0008_publication_attempt_base, 0026_analytics_learning, 0028_publication_resilience, 0043_reopen_approved_video
 
 ### `studio.render_cache_entries`
 
@@ -1531,6 +1608,46 @@ erDiagram
 
 **Migrações que citam esta tabela:** 0032_render_plan_cache
 
+### `studio.scene_revisions`
+
+| Coluna | Tipo | Nulo | Padrão |
+| --- | --- | --- | --- |
+| `video_id` | `text` | não | — |
+| `version` | `integer` | não | — |
+| `scene_id` | `text` | não | — |
+| `idx` | `integer` | não | — |
+| `narration` | `text` | não | — |
+| `caption` | `text` | não | `''::text` |
+| `label` | `text` | não | `''::text` |
+| `image_prompt` | `text` | não | — |
+| `claim_ids` | `jsonb` | não | `'[]'::jsonb` |
+| `asset_id` | `text` | sim | — |
+| `media_review_required` | `boolean` | não | `false` |
+| `duration_s` | `real` | sim | — |
+| `captured_at` | `timestamp with time zone` | não | `now()` |
+
+**Chave primária:** `video_id`, `version`, `scene_id`
+
+**Restrições:**
+
+- `scene_revisions_asset_id_check` (check): `CHECK (((asset_id IS NULL) OR (asset_id ~ '^[0-9a-f]{32}$'::text)))`
+- `scene_revisions_duration_s_check` (check): `CHECK (((duration_s IS NULL) OR (duration_s >= (0)::double precision)))`
+- `scene_revisions_idx_check` (check): `CHECK ((idx >= 0))`
+- `scene_revisions_scene_id_check` (check): `CHECK ((scene_id ~ '^[0-9a-f]{32}$'::text))`
+- `scene_revisions_version_check` (check): `CHECK ((version >= 1))`
+- `scene_revisions_pkey` (PK): `PRIMARY KEY (video_id, version, scene_id)`
+
+**Chaves estrangeiras:**
+
+- `scene_revisions_video_id_version_fkey`: (video_id, version) → `scripts` (video_id, version)
+
+**Índices:**
+
+- `ix_scene_revisions_video_version`: `CREATE INDEX ix_scene_revisions_video_version ON studio.scene_revisions USING btree (video_id, version, idx)`
+- `scene_revisions_pkey`: `CREATE UNIQUE INDEX scene_revisions_pkey ON studio.scene_revisions USING btree (video_id, version, scene_id)`
+
+**Migrações que citam esta tabela:** 0046_scene_revisions
+
 ### `studio.scenes`
 
 | Coluna | Tipo | Nulo | Padrão |
@@ -1545,6 +1662,7 @@ erDiagram
 | `asset_id` | `text` | sim | — |
 | `duration_s` | `real` | sim | — |
 | `claim_ids` | `jsonb` | não | `'[]'::jsonb` |
+| `media_review_required` | `boolean` | não | `false` |
 
 **Chave primária:** `id`
 
@@ -1566,7 +1684,7 @@ erDiagram
 - `scenes_pkey`: `CREATE UNIQUE INDEX scenes_pkey ON studio.scenes USING btree (id)`
 - `scenes_video_id_idx_key`: `CREATE UNIQUE INDEX scenes_video_id_idx_key ON studio.scenes USING btree (video_id, idx)`
 
-**Migrações que citam esta tabela:** 0001_init, 0002_editorial
+**Migrações que citam esta tabela:** 0001_init, 0002_editorial, 0042_scene_stable_identity, 0046_scene_revisions
 
 ### `studio.schema_migrations`
 
@@ -1585,7 +1703,7 @@ erDiagram
 
 - `schema_migrations_pkey`: `CREATE UNIQUE INDEX schema_migrations_pkey ON studio.schema_migrations USING btree (version)`
 
-**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config, 0041_production_run_operation
+**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config, 0041_production_run_operation, 0042_scene_stable_identity, 0044_script_edit_requests, 0046_scene_revisions
 
 ### `studio.script_approvals`
 
@@ -1619,6 +1737,34 @@ erDiagram
 - `script_approvals_pkey`: `CREATE UNIQUE INDEX script_approvals_pkey ON studio.script_approvals USING btree (video_id, version)`
 
 **Migrações que citam esta tabela:** 0023_longform_script_approval
+
+### `studio.script_edit_requests`
+
+| Coluna | Tipo | Nulo | Padrão |
+| --- | --- | --- | --- |
+| `video_id` | `text` | não | — |
+| `idempotency_key` | `text` | não | — |
+| `payload_sha256` | `text` | não | — |
+| `result_json` | `jsonb` | não | — |
+| `created_at` | `timestamp with time zone` | não | `now()` |
+
+**Chave primária:** `video_id`, `idempotency_key`
+
+**Restrições:**
+
+- `script_edit_requests_idempotency_key_check` (check): `CHECK ((idempotency_key ~ '^[a-z0-9._:-]{1,200}$'::text))`
+- `script_edit_requests_payload_sha256_check` (check): `CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))`
+- `script_edit_requests_pkey` (PK): `PRIMARY KEY (video_id, idempotency_key)`
+
+**Chaves estrangeiras:**
+
+- `script_edit_requests_video_id_fkey`: (video_id) → `videos` (id)
+
+**Índices:**
+
+- `script_edit_requests_pkey`: `CREATE UNIQUE INDEX script_edit_requests_pkey ON studio.script_edit_requests USING btree (video_id, idempotency_key)`
+
+**Migrações que citam esta tabela:** 0044_script_edit_requests
 
 ### `studio.script_plans`
 
@@ -1681,7 +1827,7 @@ erDiagram
 - `scripts_pkey`: `CREATE UNIQUE INDEX scripts_pkey ON studio.scripts USING btree (id)`
 - `scripts_video_id_version_key`: `CREATE UNIQUE INDEX scripts_video_id_version_key ON studio.scripts USING btree (video_id, version)`
 
-**Migrações que citam esta tabela:** 0001_init, 0023_longform_script_approval, 0026_analytics_learning
+**Migrações que citam esta tabela:** 0001_init, 0023_longform_script_approval, 0026_analytics_learning, 0046_scene_revisions
 
 ### `studio.source_snapshots`
 
@@ -1995,7 +2141,7 @@ erDiagram
 - `videos_status_idx`: `CREATE INDEX videos_status_idx ON studio.videos USING btree (status)`
 - `videos_style_idx`: `CREATE INDEX videos_style_idx ON studio.videos USING btree (style_id) WHERE (style_id IS NOT NULL)`
 
-**Migrações que citam esta tabela:** 0001_init, 0002_editorial, 0007_publish, 0013_budget_reservations, 0017_paid_operations, 0018_production_runs, 0026_analytics_learning, 0028_publication_resilience, 0032_render_plan_cache, 0036_video_style, 0038_budget_scope_attribution, 0040_style_patches
+**Migrações que citam esta tabela:** 0001_init, 0002_editorial, 0007_publish, 0013_budget_reservations, 0017_paid_operations, 0018_production_runs, 0026_analytics_learning, 0028_publication_resilience, 0032_render_plan_cache, 0036_video_style, 0038_budget_scope_attribution, 0040_style_patches, 0043_reopen_approved_video, 0044_script_edit_requests
 
 ### `studio.visual_style_revisions`
 
@@ -2148,6 +2294,11 @@ Tabelas citadas por cada migração (busca literal por `studio.<tabela>`).
 | `0039_production_run_config` | `production_runs`, `schema_migrations` |
 | `0040_style_patches` | `channel_profiles`, `videos` |
 | `0041_production_run_operation` | `production_outbox`, `schema_migrations` |
+| `0042_scene_stable_identity` | `scenes`, `schema_migrations` |
+| `0043_reopen_approved_video` | `approval_history`, `assets`, `publications`, `videos` |
+| `0044_script_edit_requests` | `schema_migrations`, `script_edit_requests`, `videos` |
+| `0045_publication_intent_destination_metadata` | `approval_history`, `publication_intents` |
+| `0046_scene_revisions` | `assets`, `scene_revisions`, `scenes`, `schema_migrations`, `scripts` |
 
 ## Como regenerar
 

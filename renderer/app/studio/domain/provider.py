@@ -24,12 +24,14 @@ from types import MappingProxyType
 
 
 class ProviderKind(str, Enum):
-    """Portas de provider, iguais às chaves de `Project.config`."""
+    """Portas de provider. As chaves de ``Project.config`` são as portas de geração; ``SEARCH``
+    é uma capacidade de catálogo que não exige configuração por projeto."""
 
     TEXT = "text"
     IMAGE = "image"
     VOICE = "voice"
     RENDERER = "renderer"
+    SEARCH = "search"
 
 
 class Availability(str, Enum):
@@ -65,6 +67,7 @@ class Capability(str, Enum):
     IMAGE_GENERATE = "image.generate"
     VOICE_SPEAK = "voice.speak"
     RENDER_VIDEO = "render.video"
+    SEARCH_MEDIA = "search.media"
 
 
 REQUIRED_CAPABILITY: Mapping[ProviderKind, Capability] = MappingProxyType({
@@ -72,6 +75,7 @@ REQUIRED_CAPABILITY: Mapping[ProviderKind, Capability] = MappingProxyType({
     ProviderKind.IMAGE: Capability.IMAGE_GENERATE,
     ProviderKind.VOICE: Capability.VOICE_SPEAK,
     ProviderKind.RENDERER: Capability.RENDER_VIDEO,
+    ProviderKind.SEARCH: Capability.SEARCH_MEDIA,
 })
 
 # Nomes canônicos de stand-ins: um adaptador que registra demo/placeholder usa estes nomes (ou

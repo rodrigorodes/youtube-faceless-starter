@@ -37,8 +37,8 @@ _PAUSE = re.compile(r"[.,;:!?…]+|—|–")
 # sem pontuação, números/siglas e um roteiro de ~480 s em 20 cenas. Três execuções;
 # os valores abaixo são a média delas (o Piper varia a duração entre execuções:
 # até +3,8% no texto de 8 palavras, menos de 1% no roteiro longo).
-MEASURED_VOICE = "piper:pt_BR-faber-medium"
-MEASURED_PIPER_VERSION = "1.8.0"
+# (as duas constantes de identidade da voz medida ficam em ``app.studio.tts_calibration``,
+#  fora do domínio: o domínio não cita nome de fornecedor.)
 # Ritmo de fala sem pausas (regressões: 0,2769 / 0,2762 / 0,2760 s por palavra).
 MEASURED_SPEECH_WORDS_PER_MINUTE = 217.1
 # Custo médio de cada marca de pausa (regressões: 0,4016 / 0,3943 / 0,3952 s; par

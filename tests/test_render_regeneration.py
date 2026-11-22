@@ -17,9 +17,11 @@ from app.studio.domain.render_cache import (  # noqa: E402
     NodeId,
     PlanArtifact,
     plan_graph,
+    selective_invalidation,
 )
 from app.studio.domain.render_plan import StyleSnapshot  # noqa: E402
 from app.studio.domain.render_plan_builder import (  # noqa: E402
+    StoryboardOverlay,
     StoryboardScene,
     asset_reference_for,
     build_render_plan,
@@ -204,3 +206,73 @@ def test_the_config_snapshot_does_not_change_cache_fingerprints():
     ]
     first, second = (plan_graph(item) for item in plans)
     assert second == first
+
+
+# ------------------------------------------- VE-01: overlay invalida só a cena hospedeira
+
+
+def overlay_plan(*, revision=1):
+    return build_render_plan(
+        plan_id="plan:video-001", revision=revision, project_id="project-001", video_id="video-001",
+        format=VideoFormat.short,
+        scenes=[
+            StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration="Primeira cena do vídeo.",
+                            speech_seconds=2.0),
+            StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration="Segunda cena do vídeo.",
+                            speech_seconds=2.0),
+        ],
+        assets=[image_ref("asset-01", SHA_A), image_ref("asset-02", SHA_B),
+                image_ref("asset-overlay", "c" * 64)],
+        style_snapshot=StyleSnapshot(style_id="channel-001", version=3),
+        overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="asset-overlay",
+                                    start_s=0.1, duration_s=0.2)],
+    )
+
+
+def test_adding_an_overlay_invalidates_only_its_scene_and_the_aggregates():
+    previous = plan_graph(two_scene_plan())
+    current = plan_graph(overlay_plan())
+    result = selective_invalidation(previous, current)
+    assert A_VISUAL in result.invalidated
+    assert FINAL in result.invalidated
+    assert NodeId("concat", "video") in result.invalidated
+    # as outras cenas continuam reusáveis
+    assert B_VISUAL in result.reusable
+    assert NodeId("narration", "scene-02") in result.reusable
+    assert A_NARRATION in result.reusable
+
+
+# ------------------------------------------- W4.4: troca de mídia por cena (EDIT-03/VE-06)
+
+NEW_MEDIA_SHA = "e" * 64
+
+
+def swapped_media_plan(*, revision=2):
+    """Mesma grade, com a mídia da cena 1 trocada por outro asset (id e conteúdo novos)."""
+    return build_render_plan(
+        plan_id="plan:video-001", revision=revision, project_id="project-001", video_id="video-001",
+        format=VideoFormat.short,
+        scenes=[
+            StoryboardScene(scene_id="scene-01", asset_id="asset-03", narration="Primeira cena do vídeo.",
+                            speech_seconds=2.0),
+            StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration="Segunda cena do vídeo.",
+                            speech_seconds=2.0),
+        ],
+        assets=[image_ref("asset-03", NEW_MEDIA_SHA), image_ref("asset-02", SHA_B)],
+        style_snapshot=StyleSnapshot(style_id="channel-001", version=3),
+    )
+
+
+def test_swapping_one_scene_media_regenerates_only_that_scene_and_the_final():
+    repo = FakePlanRepository()
+    regeneration = PlanRegeneration(repo)
+    regeneration.commit(two_scene_plan(), produced(two_scene_plan()))
+
+    decision = regeneration.decide(swapped_media_plan())
+    assert set(decision.invalidated) == {A_VISUAL, NodeId("concat", "video"), FINAL}
+    assert decision.final_recompose is True
+    # a outra cena e a fala da cena trocada continuam no cache
+    assert B_VISUAL in decision.cache_hits and NodeId("narration", "scene-02") in decision.cache_hits
+    assert A_NARRATION in decision.cache_hits
+    assert A_VISUAL not in decision.cache_hits
+

@@ -340,3 +340,64 @@ def test_a_plan_persisted_before_the_config_snapshot_still_loads():
     restored = RenderPlan.model_validate(old_document)
     assert restored.config_snapshot is None
     assert restored.schema_version == 1
+
+
+# --------------------------------------------------------------------------- #
+# VE-01 — overlay de imagem: referência no manifesto e compatibilidade
+# --------------------------------------------------------------------------- #
+
+def _overlay_scene(**overrides):
+    data = dict(
+        scene_id="scene-01",
+        start_tick=0,
+        duration_ticks=250,
+        shots=[
+            shot(shot_id="shot-01", start_tick=0, duration_ticks=250),
+            Shot(shot_id="overlay:scene-01:0", track_id="visual-overlay", start_tick=50,
+                 duration_ticks=100, asset_ref="asset-overlay-01", role="overlay", z_index=1,
+                 composition=Composition(fit="contain")),
+        ],
+    )
+    data.update(overrides)
+    return Scene(**data)
+
+
+def _overlay_plan(**overrides):
+    data = dict(
+        asset_manifest=[asset("asset-image-01"), asset("asset-overlay-01", content_sha256=SHA_B)],
+        timeline=timeline(
+            tracks=[Track(track_id="visual-main", kind="visual"),
+                    Track(track_id="visual-overlay", kind="visual")],
+            scenes=[_overlay_scene()],
+        ),
+    )
+    data.update(overrides)
+    return plan(**data)
+
+
+def test_T07_overlay_asset_ref_must_exist_in_the_manifest():
+    with pytest.raises(ValidationError, match="unknown asset"):
+        _overlay_plan(asset_manifest=[asset("asset-image-01")])
+
+
+def test_T08_a_plan_without_role_and_z_index_loads_as_base_zero():
+    document = plan().model_dump(mode="json")
+    for scene_document in document["timeline"]["scenes"]:
+        for shot_document in scene_document["shots"]:
+            shot_document.pop("role", None)
+            shot_document.pop("z_index", None)
+    restored = RenderPlan.model_validate(document)
+    for scene_obj in restored.timeline.scenes:
+        for shot_obj in scene_obj.shots:
+            assert shot_obj.role == "base"
+            assert shot_obj.z_index == 0
+
+
+def test_T08_overlay_plan_round_trips_through_json():
+    original = _overlay_plan()
+    dumped = original.model_dump_json()
+    again = RenderPlan.model_validate_json(dumped)
+    assert again == original
+    assert again.model_dump_json() == dumped
+    overlay = again.timeline.scenes[0].overlay_shots[0]
+    assert (overlay.role, overlay.z_index) == ("overlay", 1)

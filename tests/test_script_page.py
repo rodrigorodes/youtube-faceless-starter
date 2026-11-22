@@ -63,6 +63,35 @@ def seed_video(env, topic="Tema longo"):
     return env["videos"].create_video(env["project"].id, topic, VideoFormat.long)
 
 
+def seed_script(env):
+    """Vídeo com roteiro longo já persistido (versão 1, SCRIPTED), pronto para edição."""
+    video = seed_video(env)
+    env["snaps"].add(video.id, "https://example.com/x", SOURCE)
+    env["scripts"].save_planned_version(video.id, "texto", drafts(), [CID], PLAN, H1,
+                                        VideoStatus.IDEA, VideoStatus.SCRIPTED)
+    return video
+
+
+def edited_narration(marker: str) -> str:
+    """Narração com a mesma duração aproximada das cenas do seed, mas texto distinto."""
+    return ("ha " * 100).strip() + f" {marker}."
+
+
+def count(env, sql: str, params: tuple) -> int:
+    """Contagem numa transação nova: enxerga o commit feito pela API em outra conexão."""
+    env["conn"].rollback()
+    return env["conn"].execute(sql, params).fetchone()[0]
+
+
+def post_edit(env, video, scene_idx: int, key: str, *, expected_version: int = 1,
+              narration: str | None = None, **extra):
+    body = {"expected_version": expected_version,
+            "narration": narration or edited_narration("cena editada"),
+            "idempotency_key": key, **extra}
+    return env["client"].post(f"/studio/videos/{video.id}/script/scenes/{scene_idx}",
+                              json=body, headers=POST_HEADER)
+
+
 def page_text(html: str) -> str:
     stripped = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S | re.I)
     return " ".join(re.sub(r"<[^>]+>", " ", stripped).split())
@@ -178,7 +207,7 @@ def test_roteiro_page_uses_the_shared_shell(env):
     nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert nav is not None, "roteiro sem a navegação principal da casca"
     labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert expected in labels, f"roteiro: '{expected}' fora da casca"
 
     assert markup.count('aria-current="page"') == 1
@@ -192,3 +221,225 @@ def test_roteiro_page_preserves_csp(env):
     assert r.status_code == 200
     csp = r.headers["Content-Security-Policy"]
     assert "nonce-" in csp and "no-store" in r.headers.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# W4.1 (EDIT-01): edição de cena com CAS + idempotência
+# ---------------------------------------------------------------------------
+
+
+def test_script_scene_edit_requires_an_idempotency_key(env):
+    video = seed_script(env)
+    r = env["client"].post(f"/studio/videos/{video.id}/script/scenes/0",
+                           json={"expected_version": 1, "narration": edited_narration("sem chave")},
+                           headers=POST_HEADER)
+    assert r.status_code == 400
+    assert "Idempotency-Key" in r.json()["detail"]
+
+
+def test_script_scene_edit_rejects_a_non_canonical_idempotency_key(env):
+    video = seed_script(env)
+    r = env["client"].post(f"/studio/videos/{video.id}/script/scenes/0",
+                           json={"expected_version": 1, "narration": edited_narration("chave inválida")},
+                           headers={**POST_HEADER, "Idempotency-Key": "Not Canonical"})
+    assert r.status_code == 422
+
+
+def test_script_scene_edit_cas_replay_and_key_conflict(env):
+    video = seed_script(env)
+    key = "edit-zero"
+    first = post_edit(env, video, 0, key, narration=edited_narration("cena alfa"))
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["script"]["version"] == 2
+    assert payload["scenes"][0]["narration"] == edited_narration("cena alfa")
+
+    # replay da mesma chave + mesmo payload devolve o resultado gravado, sem criar versão nova
+    replay = post_edit(env, video, 0, key, narration=edited_narration("cena alfa"))
+    assert replay.status_code == 200 and replay.json() == payload
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 1
+
+    # mesma chave com payload diferente é conflito, não replay
+    conflict = post_edit(env, video, 0, key, narration=edited_narration("cena beta"))
+    assert conflict.status_code == 409
+    assert "different payload" in conflict.json()["detail"]
+
+    # CAS: a versão 1 já não é a mais recente; a segunda aba recebe 409 acionável
+    stale = post_edit(env, video, 0, "edit-stale", narration=edited_narration("cena gama"))
+    assert stale.status_code == 409
+    assert "2" in stale.json()["detail"]
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 1
+
+
+def test_second_tab_same_version_is_rejected_and_writes_nothing(env):
+    video = seed_script(env)
+    first = post_edit(env, video, 0, "tab-a", narration=edited_narration("aba a"))
+    assert first.status_code == 200
+
+    second = post_edit(env, video, 1, "tab-b", narration=edited_narration("aba b"))
+    assert second.status_code == 409
+    assert "2" in second.json()["detail"]
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 1
+    # o texto da aba perdedora não foi persistido: o servidor recusou antes de escrever
+    assert env["scripts"].scenes(video.id)[1].narration == drafts()[1].narration
+
+
+def test_add_remove_reorder_keep_scene_identity(env):
+    video = seed_script(env)
+    original = [s.id for s in env["scripts"].scenes(video.id)]
+    assert len(original) == 12
+
+    added = env["client"].post(
+        f"/studio/videos/{video.id}/script/scenes",
+        json={"expected_version": 1, "idempotency_key": "add-1", "position": 2,
+              "narration": edited_narration("cena adicionada"), "caption": "Legenda",
+              "label": "CEN", "image_prompt": "wide empty stage with colored lights",
+              "claim_ids": [CID]}, headers=POST_HEADER)
+    assert added.status_code == 200
+    after_add = added.json()["scenes"]
+    assert len(after_add) == 13
+    new_id = after_add[2]["id"]
+    assert new_id not in original
+    assert [s["id"] for s in after_add if s["id"] in original] == original
+
+    removed = env["client"].request(
+        "DELETE", f"/studio/videos/{video.id}/script/scenes/2",
+        json={"expected_version": 2, "idempotency_key": "remove-1"}, headers=POST_HEADER)
+    assert removed.status_code == 200
+    after_remove = removed.json()["scenes"]
+    assert [s["id"] for s in after_remove] == original
+    assert new_id not in {s["id"] for s in after_remove}
+
+    order = [1, 0] + list(range(2, 12))
+    reordered = env["client"].post(
+        f"/studio/videos/{video.id}/script/scenes/reorder",
+        json={"expected_version": 3, "idempotency_key": "reorder-1", "order": order},
+        headers=POST_HEADER)
+    assert reordered.status_code == 200
+    after_reorder = reordered.json()["scenes"]
+    assert [s["id"] for s in after_reorder] == [original[i] for i in order]
+    assert [s["idx"] for s in after_reorder] == list(range(12))
+
+
+def test_invalid_reorder_is_rejected_without_writing(env):
+    video = seed_script(env)
+    r = env["client"].post(
+        f"/studio/videos/{video.id}/script/scenes/reorder",
+        json={"expected_version": 1, "idempotency_key": "bad-reorder", "order": [0, 0, 2]},
+        headers=POST_HEADER)
+    assert r.status_code == 422
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 1
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 0
+
+
+def test_edit_that_fails_review_writes_nothing(env):
+    video = seed_script(env)
+    bad = ("ha " * 100).strip() + " 987654."
+    r = post_edit(env, video, 0, "bad-review", narration=bad)
+    assert r.status_code == 502
+    assert "review" in r.json()["detail"].lower()
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 1
+    assert count(env, "SELECT count(*) FROM studio.script_plans WHERE video_id=%s", (video.id,)) == 1
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 0
+
+    # a chave não foi consumida: corrigir o texto com a mesma chave pode gravar
+    fixed = post_edit(env, video, 0, "bad-review", narration=edited_narration("texto corrigido"))
+    assert fixed.status_code == 200
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+
+
+def test_editing_is_refused_outside_idea_and_scripted(env):
+    video = seed_script(env)
+    env["conn"].execute("UPDATE studio.videos SET status='FACT_CHECKED' WHERE id=%s", (video.id,))
+    env["conn"].commit()
+    r = post_edit(env, video, 0, "state-conflict", narration=edited_narration("estado"))
+    assert r.status_code == 409
+    assert "IDEA/SCRIPTED" in r.json()["detail"]
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 1
+
+
+# ---------------------------------------------------------------------------
+# W4.5 (EDIT-04): histórico recuperável e "restaurar cria nova revisão"
+# ---------------------------------------------------------------------------
+
+
+def _assign_assets(env, scene_ids):
+    asset_ids = []
+    for i, scene_id in enumerate(scene_ids):
+        asset_id = f"{i + 1:032x}"
+        env["conn"].execute(
+            "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license) "
+            "VALUES (%s, 'image', %s, %s, 'p', 'm', 'CC0')",
+            (asset_id, f"{i + 1:064x}", f"cache/{i}.png"),
+        )
+        env["conn"].execute("UPDATE studio.scenes SET asset_id = %s WHERE id = %s", (asset_id, scene_id))
+        asset_ids.append(asset_id)
+    env["conn"].commit()
+    return asset_ids
+
+
+def test_script_revision_routes_list_read_and_restore(env):
+    video = seed_script(env)
+    scene_ids = [s.id for s in env["scripts"].scenes(video.id)]
+    assets = _assign_assets(env, scene_ids)
+
+    # v2 pela rota de edição: a cena 2 muda e a v1 vira histórico com a mídia congelada.
+    edit = post_edit(env, video, 2, "rev-edit", narration=edited_narration("cena reescrita"))
+    assert edit.status_code == 200
+
+    listing = env["client"].get(f"/studio/videos/{video.id}/script/revisions", headers=AUTH_HEADER)
+    assert listing.status_code == 200
+    data = listing.json()
+    assert [r["version"] for r in data] == [1, 2]
+    assert data[0]["superseded"] is True and data[0]["restorable"] is True
+    assert data[1]["current"] is True and data[1]["restorable"] is True
+
+    revision = env["client"].get(f"/studio/videos/{video.id}/script/revisions/1", headers=AUTH_HEADER)
+    assert revision.status_code == 200
+    scenes = revision.json()["scenes"]
+    assert [s["narration"] for s in scenes] == [d.narration for d in drafts()]
+    assert [s["asset_id"] for s in scenes] == assets
+    assert all(s["media_review_required"] is False for s in scenes)
+
+    restore = env["client"].post(
+        f"/studio/videos/{video.id}/script/revisions/1/restore",
+        json={"expected_version": 2, "idempotency_key": "restore-api"}, headers=POST_HEADER)
+    assert restore.status_code == 200
+    payload = restore.json()
+    assert payload["script"]["version"] == 3
+    assert [s["narration"] for s in payload["scenes"]] == [d.narration for d in drafts()]
+    assert [s["idx"] for s in payload["scenes"]] == list(range(12))
+    assert [s["asset_id"] for s in payload["scenes"]] == assets
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 3
+
+    # replay da mesma chave não cria versão nova; a mesma chave com outra revisão é conflito.
+    replay = env["client"].post(
+        f"/studio/videos/{video.id}/script/revisions/1/restore",
+        json={"expected_version": 2, "idempotency_key": "restore-api"}, headers=POST_HEADER)
+    assert replay.status_code == 200 and replay.json()["script"]["version"] == 3
+    conflict = env["client"].post(
+        f"/studio/videos/{video.id}/script/revisions/2/restore",
+        json={"expected_version": 3, "idempotency_key": "restore-api"}, headers=POST_HEADER)
+    assert conflict.status_code == 409
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 3
+
+
+def test_restore_route_requires_key_and_reports_a_missing_snapshot(env):
+    video = seed_script(env)
+    no_key = env["client"].post(
+        f"/studio/videos/{video.id}/script/revisions/1/restore",
+        json={"expected_version": 1}, headers=POST_HEADER)
+    assert no_key.status_code == 400
+
+    post_edit(env, video, 0, "mk-v2", narration=edited_narration("cena nova"))
+    env["conn"].execute("DELETE FROM studio.scene_revisions WHERE video_id=%s AND version=1", (video.id,))
+    env["conn"].commit()
+    legacy = env["client"].post(
+        f"/studio/videos/{video.id}/script/revisions/1/restore",
+        json={"expected_version": 2, "idempotency_key": "legacy-revision"}, headers=POST_HEADER)
+    assert legacy.status_code == 409
+    assert "snapshot" in legacy.json()["detail"]
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2

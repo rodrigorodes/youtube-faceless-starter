@@ -8,9 +8,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 from app.studio.domain.render_plan import Motion, StyleSnapshot  # noqa: E402
 from app.studio.domain.visual_style import (  # noqa: E402
+    APPLIED_GROUPS,
     KNOWN_PARAMS,
+    LOADED_ONLY_GROUPS,
     MOTIONS,
     PATCH_GROUP_FIELDS,
+    PRESETS,
     ResolvedStyle,
     StylePatch,
     StylePatchInvalid,
@@ -20,6 +23,7 @@ from app.studio.domain.visual_style import (  # noqa: E402
     VisualStyleVersionInvalid,
     apply_style_patch,
     clean_params,
+    preset_params,
     resolve_style,
 )
 
@@ -307,3 +311,41 @@ def test_an_absent_patch_is_an_empty_patch_that_changes_nothing():
     assert StylePatch.from_mapping(None) == StylePatch()
     assert StylePatch().groups == {}
     assert apply_style_patch({"music": {"bpm": 100}}, None) == {"music": {"bpm": 100}}
+
+
+# ---------- W3.2: honestidade dos grupos aplicáveis e presets por nicho ----------
+
+
+def test_applied_and_loaded_only_groups_partition_the_known_params():
+    # A honestidade é exata: todo grupo é ou aplicado pelo render ou carregado-sem-efeito.
+    assert APPLIED_GROUPS | LOADED_ONLY_GROUPS == set(KNOWN_PARAMS)
+    assert APPLIED_GROUPS.isdisjoint(LOADED_ONLY_GROUPS)
+    assert APPLIED_GROUPS == {"motion", "music", "caption", "palette", "voice"}
+    # `transition` de estilo e `extra` são carregados mas não aplicados (não prometem efeito).
+    assert LOADED_ONLY_GROUPS == {"transition", "extra"}
+
+
+def test_presets_only_carry_groups_the_render_applies():
+    # Um preset nunca promete o que o render não faz: só grupos aplicáveis, e passa pelo mesmo
+    # `clean_params` (é params de estilo válido, não um dialeto paralelo).
+    assert set(PRESETS) == {"documentario", "noticia", "curiosidades"}
+    for preset_id in PRESETS:
+        params = preset_params(preset_id)
+        assert set(params) <= APPLIED_GROUPS
+        assert VisualStyle(id=SID, name=f"Preset {preset_id}", params=params).params == params
+
+
+def test_an_unknown_preset_is_refused_instead_of_invented():
+    with pytest.raises(VisualStyleParamsInvalid, match="unknown preset"):
+        preset_params("nao-existe")
+
+
+def test_preset_params_are_isolated_copies_of_the_catalogue():
+    first = preset_params("curiosidades")
+    first["motion"].append("pan_left")
+    first["music"]["bpm"] = 999
+    first["caption"]["font_size"] = 1
+    again = preset_params("curiosidades")
+    assert again["motion"] == ["zoom_in", "zoom_out"]
+    assert again["music"] == {"bpm": 122, "seed": 7}
+    assert again["caption"] == {"font_size": 58, "bottom": 1560}

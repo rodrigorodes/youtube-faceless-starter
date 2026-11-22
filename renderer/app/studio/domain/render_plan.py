@@ -192,17 +192,36 @@ class Transition(_PlanModel):
 
 
 class Shot(_PlanModel):
-    """Elemento visual em uma faixa temporal, dentro de uma cena."""
+    """Elemento visual em uma faixa temporal, dentro de uma cena.
+
+    ``role`` distingue a base (que cobre a cena) do overlay de imagem (VE-01): o overlay
+    vive dentro de um segmento base e não fecha lacuna. ``z_index`` ordena camadas; a base
+    fica em 0 e o overlay em 1+.
+    """
 
     shot_id: NonBlank
     track_id: NonBlank
     start_tick: Tick
     duration_ticks: DurationTick
     asset_ref: NonBlank
+    role: Literal["base", "overlay"] = "base"
+    z_index: Annotated[int, Field(ge=0, strict=True)] = 0
     composition: Composition | None = None
     effects: Effects = Field(default_factory=Effects)
     transition: Transition | None = None
     paid_operation_key: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def _role_and_z_index(self):
+        if self.role == "base" and self.z_index != 0:
+            raise ValueError("a base shot must keep z_index 0")
+        if self.role == "overlay" and self.z_index < 1:
+            raise ValueError("an overlay shot needs a positive z_index")
+        if self.role == "overlay" and self.transition is not None:
+            raise ValueError(
+                "an overlay shot carries no transition; the transition belongs to the base segment"
+            )
+        return self
 
 
 class Scene(_PlanModel):
@@ -213,6 +232,24 @@ class Scene(_PlanModel):
     duration_ticks: DurationTick
     shots: list[Shot] = Field(min_length=1)
     paid_operation_key: NonBlank | None = None
+
+    @property
+    def base_shots(self) -> list[Shot]:
+        """Shots que compõem a trajetória visual contínua da cena."""
+        return [shot for shot in self.shots if shot.role == "base"]
+
+    @property
+    def overlay_shots(self) -> list[Shot]:
+        """Camadas de imagem hospedadas dentro de um segmento base."""
+        return [shot for shot in self.shots if shot.role == "overlay"]
+
+    def host_base_for(self, overlay: Shot) -> Shot | None:
+        """Base que contém o overlay inteiro (evita dividir a camada entre segmentos)."""
+        end = overlay.start_tick + overlay.duration_ticks
+        for base in self.base_shots:
+            if base.start_tick <= overlay.start_tick and end <= base.start_tick + base.duration_ticks:
+                return base
+        return None
 
     @model_validator(mode="after")
     def _shots_fit_inside_scene(self):
@@ -341,7 +378,12 @@ class Timeline(_PlanModel):
         for item in self.scenes:
             end = item.start_tick + item.duration_ticks
             cursor = item.start_tick
-            for start, stop in sorted((s.start_tick, s.start_tick + s.duration_ticks) for s in item.shots):
+            # VE-01: só a base fecha a cobertura; o overlay nunca tapa lacuna.
+            for start, stop in sorted(
+                (s.start_tick, s.start_tick + s.duration_ticks)
+                for s in item.shots
+                if s.role == "base"
+            ):
                 if start > cursor:
                     raise ValueError(
                         f"gap in visual coverage of scene {item.scene_id!r}: no shot covers tick {cursor}"
@@ -352,6 +394,22 @@ class Timeline(_PlanModel):
                     f"scene {item.scene_id!r} is not fully covered: coverage ends at tick "
                     f"{cursor}, scene ends at tick {end}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _overlays_need_distinct_z_index_when_they_overlap(self):
+        for scene in self.scenes:
+            overlays = sorted(scene.overlay_shots, key=lambda s: (s.start_tick, s.shot_id))
+            for index, first in enumerate(overlays):
+                first_end = first.start_tick + first.duration_ticks
+                for second in overlays[index + 1:]:
+                    if second.start_tick >= first_end:
+                        break
+                    if first.z_index == second.z_index:
+                        raise ValueError(
+                            f"overlays {first.shot_id!r} and {second.shot_id!r} of scene "
+                            f"{scene.scene_id!r} overlap in time and share z_index {first.z_index}"
+                        )
         return self
 
     @model_validator(mode="after")

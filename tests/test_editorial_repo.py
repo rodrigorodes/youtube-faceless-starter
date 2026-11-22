@@ -1,3 +1,4 @@
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -19,6 +20,34 @@ from app.studio.domain.contracts import FactCheckReport, SceneFactCheck, Unsuppo
 S = VideoStatus
 DRAFTS = [SceneDraft("Primeira narração válida.", "Legenda", "QUA", "wide stage with colorful lights", ["abc"]),
           SceneDraft("Segunda narração válida.", "", "", "crowd silhouettes under neon lights", [])]
+
+
+def _drafts(count):
+    return [SceneDraft(f"Narração {i} válida para o teste.", "", "", f"prompt de imagem {i} válido", [])
+            for i in range(count)]
+
+
+def _assign_assets(env, scene_ids):
+    """Cria um asset por cena e o vincula diretamente: o teste é do repositório, não do fluxo de mídia."""
+    asset_ids = []
+    for i, scene_id in enumerate(scene_ids):
+        asset_id = f"{i + 1:032x}"
+        env["conn"].execute(
+            "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license) "
+            "VALUES (%s, 'image', %s, %s, 'p', 'm', 'CC0')",
+            (asset_id, f"{i + 1:064x}", f"cache/{i}.png"),
+        )
+        env["conn"].execute("UPDATE studio.scenes SET asset_id = %s WHERE id = %s", (asset_id, scene_id))
+        asset_ids.append(asset_id)
+    env["conn"].commit()
+    return asset_ids
+
+
+def _review_flags(env, video_id):
+    env["conn"].commit()
+    return env["conn"].execute(
+        "SELECT id, media_review_required FROM studio.scenes WHERE video_id = %s ORDER BY idx", (video_id,)
+    ).fetchall()
 
 
 @pytest.fixture()
@@ -53,6 +82,147 @@ def test_script_saves_scenes_bumps_version_and_moves_state(env):
     scenes = env["scripts"].scenes(v)
     assert [x.idx for x in scenes] == [0, 1] and scenes[0].claim_ids == ["abc"] and scenes[0].label == "QUA"
     assert env["scripts"].latest(v).version == 2 and env["scripts"].latest(v).text == "t2"
+
+
+def test_scene_ids_survive_a_read_round_trip_and_new_versions(env):
+    v = env["video"].id
+    env["scripts"].save_and_advance(v, "t1", DRAFTS, [], S.IDEA, S.SCRIPTED)
+    first = [s.id for s in env["scripts"].scenes(v)]
+    assert [s.id for s in env["scripts"].scenes(v)] == first  # leitura repetida não muda a identidade
+    env["scripts"].save_and_advance(v, "t2", DRAFTS, [], S.SCRIPTED, S.SCRIPTED)
+    assert [s.id for s in env["scripts"].scenes(v)] == first  # versão nova sem mudança não recria cenas
+
+
+def test_editing_one_scene_keeps_other_ids_and_assets_and_flags_its_media(env):
+    v = env["video"].id
+    drafts = _drafts(4)
+    env["scripts"].save_and_advance(v, "t1", drafts, [], S.IDEA, S.SCRIPTED)
+    first = env["scripts"].scenes(v)
+    assets = _assign_assets(env, [s.id for s in first])
+    env["conn"].execute("UPDATE studio.scenes SET duration_s = 2.5 WHERE id = %s", (first[2].id,))
+    env["conn"].commit()
+
+    edited = list(drafts)
+    edited[2] = SceneDraft("Narração 2 reescrita e diferente.", "", "", "prompt de imagem 2 válido", [])
+    env["scripts"].save_and_advance(v, "t2", edited, [], S.SCRIPTED, S.SCRIPTED)
+
+    second = env["scripts"].scenes(v)
+    assert [s.id for s in second] == [s.id for s in first]  # inclusive a cena editada no lugar
+    assert [s.asset_id for s in second] == [assets[0], assets[1], None, assets[3]]
+    assert second[2].duration_s is None  # timing medido fica stale quando a narração muda
+    assert _review_flags(env, v) == [(first[0].id, False), (first[1].id, False), (first[2].id, True),
+                                     (first[3].id, False)]
+
+
+def test_reordering_scenes_keeps_ids_and_assets_with_the_content(env):
+    v = env["video"].id
+    drafts = _drafts(3)
+    env["scripts"].save_and_advance(v, "t1", drafts, [], S.IDEA, S.SCRIPTED)
+    first = env["scripts"].scenes(v)
+    assets = _assign_assets(env, [s.id for s in first])
+
+    reordered = [drafts[2], drafts[0], drafts[1]]
+    env["scripts"].save_and_advance(v, "t2", reordered, [], S.SCRIPTED, S.SCRIPTED)
+
+    second = env["scripts"].scenes(v)
+    assert [s.narration for s in second] == [d.narration for d in reordered]
+    assert [s.idx for s in second] == [0, 1, 2]
+    assert [s.id for s in second] == [first[2].id, first[0].id, first[1].id]
+    assert [s.asset_id for s in second] == [assets[2], assets[0], assets[1]]
+    assert all(flag is False for _, flag in _review_flags(env, v))
+
+
+def test_reordering_with_new_scenes_does_not_collide_on_position(env):
+    v = env["video"].id
+    drafts = _drafts(2)
+    env["scripts"].save_and_advance(v, "t1", drafts, [], S.IDEA, S.SCRIPTED)
+    first = env["scripts"].scenes(v)
+
+    inserted = SceneDraft("Cena nova no fim da lista.", "", "", "prompt de imagem novo e válido", [])
+    changed = [drafts[1], drafts[0], inserted]
+    env["scripts"].save_and_advance(v, "t2", changed, [], S.SCRIPTED, S.SCRIPTED)
+
+    scenes = env["scripts"].scenes(v)
+    assert [s.narration for s in scenes] == [d.narration for d in changed]
+    assert [s.idx for s in scenes] == [0, 1, 2]
+    assert scenes[0].id == first[1].id and scenes[1].id == first[0].id
+    assert scenes[2].id not in {first[0].id, first[1].id}
+
+
+def test_inserting_and_removing_scenes_keeps_unaffected_ids(env):
+    v = env["video"].id
+    drafts = _drafts(3)
+    env["scripts"].save_and_advance(v, "t1", drafts, [], S.IDEA, S.SCRIPTED)
+    first = env["scripts"].scenes(v)
+
+    inserted = SceneDraft("Cena nova inserida no meio.", "", "", "prompt de imagem novo e válido", [])
+    with_insert = [drafts[0], inserted, drafts[1], drafts[2]]
+    env["scripts"].save_and_advance(v, "t2", with_insert, [], S.SCRIPTED, S.SCRIPTED)
+
+    second = env["scripts"].scenes(v)
+    assert [s.narration for s in second] == [d.narration for d in with_insert]
+    assert [s.id for s in second] == [first[0].id, second[1].id, first[1].id, first[2].id]
+    assert second[1].id not in {s.id for s in first} and second[1].asset_id is None
+
+    without_removed = [drafts[0], inserted, drafts[2]]  # a cena 1 sai
+    env["scripts"].save_and_advance(v, "t3", without_removed, [], S.SCRIPTED, S.SCRIPTED)
+    third = env["scripts"].scenes(v)
+    assert [s.narration for s in third] == [d.narration for d in without_removed]
+    assert [s.id for s in third] == [first[0].id, second[1].id, first[2].id]
+    assert first[1].id not in {s.id for s in third}
+
+
+def test_scene_identity_migration_is_additive_and_keeps_existing_rows(conn, tmp_path):
+    migrations = Path(__file__).resolve().parents[1] / "renderer/app/studio/adapters/postgres/migrations"
+    for path in sorted(migrations.glob("*.sql")):
+        if path.name <= "0041":
+            shutil.copy(path, tmp_path / path.name)
+    migrate(conn, tmp_path)
+
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, %s)", ("a" * 32, "canal"))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, %s, %s)",
+                 ("b" * 32, "a" * 32, "tema do vídeo", "short"))
+    conn.execute("INSERT INTO studio.scenes(id, video_id, idx, narration, image_prompt) VALUES (%s, %s, 0, %s, %s)",
+                 ("c" * 32, "b" * 32, "narração já existente", "prompt de imagem já existente"))
+    conn.commit()
+
+    shutil.copy(migrations / "0042_scene_stable_identity.sql", tmp_path / "0042_scene_stable_identity.sql")
+    assert migrate(conn, tmp_path) == ["0042_scene_stable_identity"]
+    row = conn.execute("SELECT id, idx, narration, media_review_required FROM studio.scenes WHERE id = %s",
+                       ("c" * 32,)).fetchone()
+    assert row == ("c" * 32, 0, "narração já existente", False)
+    assert conn.execute("SELECT count(*) FROM studio.scenes").fetchone()[0] == 1
+
+
+def test_script_edit_requests_migration_is_additive_and_cascades(conn, tmp_path):
+    migrations = Path(__file__).resolve().parents[1] / "renderer/app/studio/adapters/postgres/migrations"
+    target = "0044_script_edit_requests.sql"
+    for path in sorted(migrations.glob("*.sql")):
+        if path.name != target:
+            shutil.copy(path, tmp_path / path.name)
+    migrate(conn, tmp_path)
+
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, %s)", ("a" * 32, "canal"))
+    conn.execute("INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, %s, %s)",
+                 ("b" * 32, "a" * 32, "tema do vídeo", "short"))
+    conn.commit()
+
+    shutil.copy(migrations / target, tmp_path / target)
+    assert migrate(conn, tmp_path) == ["0044_script_edit_requests"]
+    assert conn.execute("SELECT count(*) FROM studio.script_edit_requests").fetchone()[0] == 0
+
+    conn.execute("INSERT INTO studio.script_edit_requests(video_id, idempotency_key, payload_sha256, result_json) "
+                 "VALUES (%s, %s, %s, %s::jsonb)", ("b" * 32, "key-1", "a" * 64, '{"script": {}}'))
+    conn.commit()
+
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO studio.script_edit_requests(video_id, idempotency_key, payload_sha256, result_json) "
+                     "VALUES (%s, %s, %s, %s::jsonb)", ("b" * 32, "key-1", "b" * 64, "{}"))
+    conn.rollback()
+
+    conn.execute("DELETE FROM studio.videos WHERE id = %s", ("b" * 32,))
+    conn.commit()
+    assert conn.execute("SELECT count(*) FROM studio.script_edit_requests").fetchone()[0] == 0
 
 
 def test_script_wrong_expected_state_persists_nothing(env):

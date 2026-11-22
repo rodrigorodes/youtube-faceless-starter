@@ -48,6 +48,15 @@ class PostgresAssetRepository(_Base):
                                (check_id(asset_id), check_id(video_id), idx, image_prompt))
             return cur.rowcount == 1
 
+    def swap_scene_asset(self, video_id: str, scene_id: str, asset_id: str, expected_asset_id: str | None) -> bool:
+        """W4.4: troca o asset de UMA cena por id estável, com CAS no vínculo lido; o resto fica intacto."""
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("UPDATE studio.scenes SET asset_id = %s "
+                               "WHERE video_id = %s AND id = %s AND asset_id IS NOT DISTINCT FROM %s",
+                               (check_id(asset_id), check_id(video_id), check_id(scene_id),
+                                check_id(expected_asset_id) if expected_asset_id else None))
+            return cur.rowcount == 1
+
 
 class PostgresProductionLock:
     """Advisory lock de sessão por vídeo, numa conexão própria (autocommit). Não espera: sem o lock, entra com False.

@@ -5,6 +5,8 @@ import struct
 import subprocess
 import sys
 import wave
+import dataclasses
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -206,3 +208,42 @@ def test_storage_refuses_traversal_and_foreign_cleanup(tmp_path):
     storage.cleanup(outside)
     assert outside.exists()
     assert storage.image_path("cache/ab/x.png") == tmp_path / "cache" / "ab" / "x.png"
+
+
+# ------------------------------------------- VE-01: camadas de overlay no RenderSpec
+
+
+def test_build_plan_includes_layer_assets_in_the_manifest(tmp_path):
+    from app.studio.application.ports import OverlayLayer
+
+    spec = spec_for(tmp_path)
+    overlay_path = tmp_path / "overlay.png"
+    Image.new("RGB", SIZE[spec.format], (10, 20, 30)).save(overlay_path)
+    layer = OverlayLayer(scene_id=spec.scenes[0].id, asset_id="overlay-01", image=overlay_path,
+                         license="CC0", start_s=0.1, duration_s=0.5)
+    plan = PlanFfmpegRenderer()._build_plan(dataclasses.replace(spec, layers=(layer,)))
+
+    refs = {reference.asset_id: reference for reference in plan.asset_manifest}
+    assert "overlay-01" in refs
+    assert refs["overlay-01"].media_type == "image"
+    assert refs["overlay-01"].content_sha256 == hashlib.sha256(overlay_path.read_bytes()).hexdigest()
+    assert any(shot.role == "overlay" for scene in plan.timeline.scenes for shot in scene.shots)
+
+
+def test_build_plan_refuses_a_layer_without_license(tmp_path):
+    from app.studio.application.ports import OverlayLayer
+
+    spec = spec_for(tmp_path)
+    overlay_path = tmp_path / "overlay.png"
+    Image.new("RGB", SIZE[spec.format], (10, 20, 30)).save(overlay_path)
+    layer = OverlayLayer(scene_id=spec.scenes[0].id, asset_id="overlay-01", image=overlay_path,
+                         license="", start_s=0.1, duration_s=0.5)
+    with pytest.raises(RuntimeError, match="license"):
+        PlanFfmpegRenderer()._build_plan(dataclasses.replace(spec, layers=(layer,)))
+
+
+def test_build_plan_without_layers_is_identical_to_the_current_plan(tmp_path):
+    spec = spec_for(tmp_path)
+    current = PlanFfmpegRenderer()._build_plan(spec)
+    explicit_empty = PlanFfmpegRenderer()._build_plan(dataclasses.replace(spec, layers=()))
+    assert explicit_empty.model_dump(mode="json") == current.model_dump(mode="json")

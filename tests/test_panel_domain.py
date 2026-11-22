@@ -41,13 +41,16 @@ def test_classify_maps_video_and_background_states_to_operator_stage(status, job
 
 
 def test_is_known_cost_rules():
-    assert is_known_cost("opencode", "google/gemini:free", 0.0) is True
-    assert is_known_cost("placeholder", "placeholder", 0.0) is True
-    assert is_known_cost("demo", "demo", 0.0) is True
-    assert is_known_cost("piper", "piper", 0.0) is True
-    assert is_known_cost("stock", "stock", 0.0) is True
-    assert is_known_cost("opencode", "openai/gpt-4o-mini", 0.0) is False
-    assert is_known_cost("opencode", "openai/gpt-4o-mini", 0.02) is True
+    # O conjunto de fornecedores locais/gratuitos vem da raiz de composição (S1): o domínio
+    # não cita nomes de fornecedor. Aqui o teste declara a política e passa como parâmetro.
+    free_providers = {"placeholder", "demo", "piper", "stock"}
+    assert is_known_cost("opencode", "google/gemini:free", 0.0, free_providers) is True
+    assert is_known_cost("placeholder", "placeholder", 0.0, free_providers) is True
+    assert is_known_cost("demo", "demo", 0.0, free_providers) is True
+    assert is_known_cost("piper", "piper", 0.0, free_providers) is True
+    assert is_known_cost("stock", "stock", 0.0, free_providers) is True
+    assert is_known_cost("opencode", "openai/gpt-4o-mini", 0.0, free_providers) is False
+    assert is_known_cost("opencode", "openai/gpt-4o-mini", 0.02, free_providers) is True
 
 
 def test_cost_text_formats_honestly():

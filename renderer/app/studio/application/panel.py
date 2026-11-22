@@ -2,7 +2,7 @@
 import re
 import urllib.parse
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -41,13 +41,17 @@ class CostKind(str, Enum):
     UNKNOWN = "unknown"     # sem confirmação e sem custo conhecido
 
 
-def cost_kind(kind: str | None, provider: str, model: str, cost_usd: float) -> CostKind:
+def cost_kind(kind: str | None, provider: str, model: str, cost_usd: float,
+              free_providers: Collection[str] = frozenset()) -> CostKind:
     """Classifica um lançamento do ledger nos quatro rótulos, sem inventar separação.
 
     A coluna `cost_confirmation_kind` é a fonte de verdade. Sem confirmação, o valor só é
     conhecido pelas regras de gratuidade já existentes: um zero reconhecido é "Sem custo"; um
     valor positivo não confirmado é uma estimativa (a cobrança ainda não foi comprovada); o
     restante é desconhecido — nunca tratado como zero.
+
+    `free_providers` vem da raiz de composição. O padrão vazio é conservador: sem a política
+    declarada, nada é assumido gratuito (custo desconhecido nunca vira zero).
     """
     if kind == "ACTUAL":
         return CostKind.REAL
@@ -55,7 +59,7 @@ def cost_kind(kind: str | None, provider: str, model: str, cost_usd: float) -> C
         return CostKind.ESTIMATE
     if kind == "FREE":
         return CostKind.FREE
-    if not is_known_cost(provider, model, cost_usd):
+    if not is_known_cost(provider, model, cost_usd, free_providers):
         return CostKind.UNKNOWN
     return CostKind.FREE if cost_usd == 0.0 else CostKind.ESTIMATE
 
@@ -92,11 +96,12 @@ class CostBreakdown:
         return self.real_usd + self.estimate_usd
 
 
-def cost_breakdown(rows: Iterable[tuple[str, str, float, str | None]]) -> CostBreakdown:
+def cost_breakdown(rows: Iterable[tuple[str, str, float, str | None]],
+                   free_providers: Collection[str] = frozenset()) -> CostBreakdown:
     real = estimate = 0.0
     real_calls = estimate_calls = free_calls = unknown_calls = 0
     for provider, model, cost_usd, kind in rows:
-        classified = cost_kind(kind, provider, model, cost_usd)
+        classified = cost_kind(kind, provider, model, cost_usd, free_providers)
         if classified is CostKind.REAL:
             real += cost_usd
             real_calls += 1
@@ -239,16 +244,18 @@ class BuildPanel:
         clock: Callable[[], datetime],
         trends: TrendRepository | None = None,
         categories_repo: CategoryRepository | None = None,
+        free_providers: Collection[str] = frozenset(),
     ):
         self.repo = repo
         self.monthly_cap_usd = monthly_cap_usd
         self.clock = clock
         self.trends = trends
         self.categories_repo = categories_repo
+        self.free_providers = frozenset(free_providers)
 
     def month_cost(self) -> MonthCost:
         """Custo do mês corrente com os quatro rótulos. Usado pelo painel e pelas telas de produção."""
-        m_breakdown = cost_breakdown(self.repo.month_usage())
+        m_breakdown = cost_breakdown(self.repo.month_usage(), self.free_providers)
         m_known = m_breakdown.known_usd
         percent = (m_known / self.monthly_cap_usd * 100.0) if self.monthly_cap_usd > 0 else None
         return MonthCost(
@@ -279,7 +286,7 @@ class BuildPanel:
             st = classify(r.status, job=r.job_status, step_running=r.step_running, publication=r.publication_status)
             totals[st] += 1
 
-            c_summary = cost_breakdown(r.cost_rows)
+            c_summary = cost_breakdown(r.cost_rows, self.free_providers)
 
             actions = []
             if st in (Stage.AWAITING_APPROVAL, Stage.APPROVED, Stage.COMPLETED):
@@ -481,7 +488,7 @@ class BuildPanel:
             [(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) for u in d.usage]
             if d.usage else d.video.cost_rows
         )
-        c_text = cost_summary_text(cost_breakdown(usage_rows))
+        c_text = cost_summary_text(cost_breakdown(usage_rows, self.free_providers))
 
         # PROD-04 (achado 3): a procedência do vídeo base sai do `topic_key` do tema do vídeo
         # casado com a tendência do canal. Sem a porta de tendências não há resolução.

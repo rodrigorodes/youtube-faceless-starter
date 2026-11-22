@@ -29,6 +29,7 @@ from app.studio.domain.render_plan import (
     Timebase,
     Timeline,
     Track,
+    Transition,
 )
 
 SHA_A = "a" * 64
@@ -402,3 +403,126 @@ def test_extended_plan_round_trips_through_json_without_loss():
     again = RenderPlan.model_validate_json(dumped)
     assert again == original
     assert again.model_dump_json() == dumped
+
+
+# --------------------------------------------------------------------------- #
+# VE-01 — overlay de imagem por cena (role/z_index, cobertura, janela)
+# --------------------------------------------------------------------------- #
+
+def _overlay(shot_id="overlay-01", track_id="visual-overlay", start_tick=0, duration_ticks=50,
+             asset_ref="asset-image-01", z_index=1, **overrides):
+    data = dict(shot_id=shot_id, track_id=track_id, start_tick=start_tick,
+                duration_ticks=duration_ticks, asset_ref=asset_ref, role="overlay",
+                z_index=z_index)
+    data.update(overrides)
+    return Shot(**data)
+
+
+def _overlay_tracks():
+    return [Track(track_id="visual-main", kind="visual"),
+            Track(track_id="visual-overlay", kind="visual")]
+
+
+def _overlay_plan(shots, *, duration_ticks=250, tracks=None):
+    return plan(
+        asset_manifest=[asset("asset-image-01", SHA_A), asset("asset-overlay-01", SHA_B)],
+        timeline_obj=timeline(
+            tracks=tracks or _overlay_tracks(),
+            scenes=[scene(duration_ticks=duration_ticks, shots=shots)],
+        ),
+    )
+
+
+def test_T01_base_shot_must_have_zero_z_index_and_overlay_must_have_at_least_one():
+    with pytest.raises(ValidationError):
+        shot(role="base", z_index=1)
+    with pytest.raises(ValidationError):
+        _overlay(z_index=0)
+
+
+def test_T02_overlay_shot_may_not_carry_a_transition():
+    with pytest.raises(ValidationError):
+        _overlay(transition=Transition(kind="fade", duration_ticks=3))
+
+
+def test_T03_scene_fully_covered_by_overlay_only_is_rejected():
+    # A cena precisa de uma base; um overlay sozinho não fecha a cobertura.
+    with pytest.raises(ValidationError, match="gap|not fully covered|cover"):
+        timeline(tracks=_overlay_tracks(),
+                 scenes=[scene(shots=[_overlay(start_tick=0, duration_ticks=250)])])
+
+
+def test_T03_base_gap_covered_by_an_overlay_is_still_a_gap():
+    with pytest.raises(ValidationError, match="gap|not fully covered|cover"):
+        _overlay_plan(
+            shots=[
+                shot(shot_id="base-01", start_tick=0, duration_ticks=100),
+                _overlay(shot_id="overlay-01", start_tick=100, duration_ticks=150),
+            ],
+            duration_ticks=250,
+        )
+
+
+def test_T04_overlay_ending_after_its_scene_is_rejected():
+    with pytest.raises(ValidationError, match="ends after its scene"):
+        Scene(
+            scene_id="scene-01",
+            start_tick=0,
+            duration_ticks=100,
+            shots=[shot(duration_ticks=100), _overlay(start_tick=60, duration_ticks=60)],
+        )
+
+
+def test_T05_overlay_on_the_same_track_as_the_base_is_rejected():
+    with pytest.raises(ValidationError, match="overlap on track"):
+        _overlay_plan(
+            shots=[
+                shot(shot_id="base-01", track_id="visual-main", start_tick=0, duration_ticks=250),
+                _overlay(shot_id="overlay-01", track_id="visual-main", start_tick=50, duration_ticks=50),
+            ],
+        )
+
+
+def test_T06_overlapping_overlays_need_distinct_z_index():
+    with pytest.raises(ValidationError, match="z_index"):
+        _overlay_plan(
+            shots=[
+                shot(shot_id="base-01", start_tick=0, duration_ticks=250),
+                _overlay(shot_id="overlay-01", track_id="visual-overlay", start_tick=50,
+                         duration_ticks=100, z_index=1),
+                _overlay(shot_id="overlay-02", track_id="visual-overlay-2", start_tick=100,
+                         duration_ticks=100, z_index=1),
+            ],
+            tracks=[Track(track_id="visual-main", kind="visual"),
+                    Track(track_id="visual-overlay", kind="visual"),
+                    Track(track_id="visual-overlay-2", kind="visual")],
+        )
+
+
+def test_T06_overlapping_overlays_with_distinct_z_index_are_accepted():
+    p = _overlay_plan(
+        shots=[
+            shot(shot_id="base-01", start_tick=0, duration_ticks=250),
+            _overlay(shot_id="overlay-01", track_id="visual-overlay", start_tick=50,
+                     duration_ticks=100, z_index=1),
+            _overlay(shot_id="overlay-02", track_id="visual-overlay-2", start_tick=100,
+                     duration_ticks=100, z_index=2),
+        ],
+        tracks=[Track(track_id="visual-main", kind="visual"),
+                Track(track_id="visual-overlay", kind="visual"),
+                Track(track_id="visual-overlay-2", kind="visual")],
+    )
+    assert len(p.timeline.scenes[0].overlay_shots) == 2
+
+
+def test_T06_non_overlapping_overlays_may_share_z_index():
+    p = _overlay_plan(
+        shots=[
+            shot(shot_id="base-01", start_tick=0, duration_ticks=250),
+            _overlay(shot_id="overlay-01", track_id="visual-overlay", start_tick=0,
+                     duration_ticks=100, z_index=1),
+            _overlay(shot_id="overlay-02", track_id="visual-overlay", start_tick=100,
+                     duration_ticks=100, z_index=1),
+        ],
+    )
+    assert len(p.timeline.scenes[0].overlay_shots) == 2

@@ -1,0 +1,11 @@
+# Preview local do renderer com o código atual do checkout montado read-only.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.preview.yml up -d --no-deps --force-recreate renderer
+# Reverter: docker compose -f docker-compose.yml up -d --no-deps --force-recreate renderer
+services:
+  renderer:
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./renderer/app:/app/app:ro
+      - ./storage:/data
+      - ./credentials:/app/credentials:ro

@@ -5,7 +5,7 @@
 -- As migrações aparecem em ordem de aplicação e VERBATIM: este é o SQL que cria o
 -- schema, na mesma ordem em que db.migrate() o executa (uma transação por arquivo).
 --
--- Migrações: 36 (0001_init … 0041_production_run_operation)
+-- Migrações: 41 (0001_init … 0046_scene_revisions)
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -1391,3 +1391,169 @@ ALTER TABLE studio.production_outbox
                               'production.stage.claimed', 'production.stage.completed',
                               'production.stage.failed', 'production.stage.revoked',
                               'production.run.operation'));
+
+-- ---------------------------------------------------------------------------
+-- 0042_scene_stable_identity.sql
+-- ---------------------------------------------------------------------------
+-- W4.0 (R2) — identidade estável da cena.
+--
+-- A cena deixa de ser recriada a cada versão: `id` identifica a cena entre versões e `idx` é só
+-- a ordem (inserir/reordenar muda a posição, não o id). Quando a narração ou a intenção visual
+-- muda, o vínculo de mídia não é mantido às cegas: `asset_id` é limpo e a cena é marcada para
+-- revisão (`media_review_required = true`).
+--
+-- Migração ADITIVA: só acrescenta uma coluna com default. Nenhuma linha existente é apagada,
+-- reescrita ou renumerada; cenas já gravadas ficam com `media_review_required = false`.
+--
+-- Rollback manual (não executado automaticamente; preserva histórico):
+--   ALTER TABLE studio.scenes DROP COLUMN media_review_required;
+--   DELETE FROM studio.schema_migrations WHERE version = '0042_scene_stable_identity';
+
+ALTER TABLE studio.scenes ADD COLUMN media_review_required boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- 0043_reopen_approved_video.sql
+-- ---------------------------------------------------------------------------
+-- W4.2 / ADR-002 (P-04): reabrir vídeo aprovado e não publicado para edição.
+--
+-- A aprovação deixa de valer para a nova revisão: a linha ativa de `approvals` e a intenção
+-- de publicação (`publication_intents`) são MOVIDAS para `approval_history` na mesma
+-- transação. Nada é apagado nem reescrito: o histórico guarda render_id, checksum, QA e os
+-- metadados exatamente como estavam. A publicação concluída (UPLOADED/PUBLISHED) continua
+-- intocável; só a publicação que nunca subiu (PENDING/FAILED/UPLOADING sem upload) é marcada
+-- como invalidada, preservando a linha e o `attempt`.
+CREATE TABLE studio.approval_history (
+    id text PRIMARY KEY CHECK (id ~ '^[0-9a-f]{32}$'),
+    video_id text NOT NULL REFERENCES studio.videos(id) ON DELETE RESTRICT,
+    previous_status text NOT NULL CHECK (previous_status IN ('APPROVED', 'PUBLISHED')),
+    decision text CHECK (decision IN ('approved', 'rejected')),
+    reason text NOT NULL DEFAULT '',
+    qa_override boolean NOT NULL DEFAULT false,
+    publish_at timestamptz,
+    output_asset_id text REFERENCES studio.assets(id) ON DELETE RESTRICT,
+    render_id text CHECK (render_id IS NULL OR render_id ~ '^[0-9a-f]{32}$'),
+    media_checksum text CHECK (media_checksum IS NULL OR media_checksum ~ '^[0-9a-f]{64}$'),
+    qa_passed boolean,
+    intent_qa_override boolean,
+    visibility text CHECK (visibility IS NULL OR visibility IN ('private', 'unlisted', 'public')),
+    public_confirmed boolean,
+    idempotency_key text,
+    qa_report jsonb,
+    approved_at timestamptz,
+    archived_at timestamptz NOT NULL DEFAULT now(),
+    archive_reason text NOT NULL DEFAULT 'reopen_for_editing'
+);
+CREATE INDEX ix_approval_history_video ON studio.approval_history (video_id, archived_at DESC);
+
+-- A linha de publicação que nunca subiu não é apagada: fica fora do caminho ativo e preserva
+-- o histórico (id, attempt, upload_uri e o que já tiver sido registrado).
+ALTER TABLE studio.publications
+    ADD COLUMN invalidated_at timestamptz,
+    ADD COLUMN invalidation_reason text;
+ALTER TABLE studio.publications DROP CONSTRAINT publications_video_id_key;
+CREATE UNIQUE INDEX uq_publications_active_video ON studio.publications (video_id) WHERE invalidated_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 0044_script_edit_requests.sql
+-- ---------------------------------------------------------------------------
+-- W4.1 (EDIT-01) — idempotência de edição de roteiro por chave + hash de payload.
+--
+-- Cada requisição de edição (editar/adicionar/remover/reordenar cena) grava uma linha com o hash
+-- canônico do payload e o resultado persistido. Replay da mesma chave com o mesmo hash devolve o
+-- resultado gravado (sem criar versão nova); a mesma chave com hash diferente é conflito.
+--
+-- Migração ADITIVA: cria apenas uma tabela nova. Nenhuma tabela, linha ou coluna existente muda.
+-- Não guarda segredo: o payload é representado pelo hash e o resultado são dados editoriais.
+--
+-- Rollback manual (não executado automaticamente, preserva histórico):
+--   DROP TABLE studio.script_edit_requests;
+--   DELETE FROM studio.schema_migrations WHERE version = '0044_script_edit_requests';
+
+CREATE TABLE studio.script_edit_requests (
+    video_id text NOT NULL REFERENCES studio.videos(id) ON DELETE CASCADE,
+    idempotency_key text NOT NULL CHECK (idempotency_key ~ '^[a-z0-9._:-]{1,200}$'),
+    payload_sha256 text NOT NULL CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
+    result_json jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (video_id, idempotency_key)
+);
+
+-- ---------------------------------------------------------------------------
+-- 0045_publication_intent_destination_metadata.sql
+-- ---------------------------------------------------------------------------
+-- W5.1 (PUB-01): a intenção de publicação passa a lembrar o DESTINO e os METADADOS confirmados.
+--
+-- A19/A37: mudar o canal do YouTube ou título/descrição/tags/visibilidade depois da confirmação
+-- torna a intenção obsoleta; o executor falha fechado e exige confirmação nova. As colunas são
+-- anuláveis para não invalidar intenções antigas (gravadas antes desta fatia).
+ALTER TABLE studio.publication_intents
+    ADD COLUMN youtube_channel_id text,
+    ADD COLUMN metadata_fingerprint text
+        CHECK (metadata_fingerprint IS NULL OR metadata_fingerprint ~ '^[0-9a-f]{64}$');
+
+-- O arquivo de reabertura (ADR-002) preserva exatamente o que foi confirmado, incluindo o
+-- destino e a impressão dos metadados.
+ALTER TABLE studio.approval_history
+    ADD COLUMN youtube_channel_id text,
+    ADD COLUMN metadata_fingerprint text
+        CHECK (metadata_fingerprint IS NULL OR metadata_fingerprint ~ '^[0-9a-f]{64}$');
+
+-- ---------------------------------------------------------------------------
+-- 0046_scene_revisions.sql
+-- ---------------------------------------------------------------------------
+-- W4.5 (EDIT-04) — histórico recuperável de revisões de cena.
+--
+-- Cada versão do roteiro guarda, por cena, o texto falado, a ordem e o vínculo de mídia
+-- (`asset_id`), além do que é preciso reconstruir a cena (legenda, rótulo, prompt visual,
+-- citações, duração medida e o marcador de mídia a revisar). O snapshot é por
+-- `(video_id, version, scene_id)`.
+--
+-- Como as cenas correntes em `studio.scenes` são reescritas a cada versão (a cena removida sai
+-- da projeção), o snapshot é a única memória daquela revisão. Ele é capturado quando a versão
+-- deixa de ser a corrente e quando nasce uma nova. A versão corrente também tem snapshot, mas a
+-- leitura dela usa as cenas vivas — o snapshot corrente sempre pode ser atualizado.
+--
+-- `asset_id` fica SEM chave estrangeira de propósito: o histórico registra o vínculo que existia,
+-- mesmo que o asset seja removido depois. Quem restaura confere a existência em `studio.assets` e
+-- marca a cena como `media_review_required` quando o asset já não existe — o histórico não é
+-- reescrito nem apagado.
+--
+-- Migração ADITIVA: cria apenas uma tabela nova e preenche, para cada vídeo, o snapshot da versão
+-- corrente a partir das cenas atuais. Nenhuma tabela, linha ou coluna existente muda; versões
+-- antigas sem snapshot continuam legíveis e simplesmente não são restauráveis.
+--
+-- Rollback manual (não executado automaticamente; preserva histórico):
+--   DROP TABLE studio.scene_revisions;
+--   DELETE FROM studio.schema_migrations WHERE version = '0045_scene_revisions';
+
+CREATE TABLE studio.scene_revisions (
+    video_id text NOT NULL,
+    version int NOT NULL CHECK (version >= 1),
+    scene_id text NOT NULL CHECK (scene_id ~ '^[0-9a-f]{32}$'),
+    idx int NOT NULL CHECK (idx >= 0),
+    narration text NOT NULL,
+    caption text NOT NULL DEFAULT '',
+    label text NOT NULL DEFAULT '',
+    image_prompt text NOT NULL,
+    claim_ids jsonb NOT NULL DEFAULT '[]',
+    asset_id text CHECK (asset_id IS NULL OR asset_id ~ '^[0-9a-f]{32}$'),
+    media_review_required boolean NOT NULL DEFAULT false,
+    duration_s real CHECK (duration_s IS NULL OR duration_s >= 0),
+    captured_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (video_id, version, scene_id),
+    FOREIGN KEY (video_id, version) REFERENCES studio.scripts(video_id, version) ON DELETE CASCADE
+);
+CREATE INDEX ix_scene_revisions_video_version ON studio.scene_revisions (video_id, version, idx);
+
+-- Backfill do que dá para recuperar sem inventar: a versão corrente de cada vídeo ganha o
+-- snapshot do estado atual das cenas. Revisões antigas ficam sem snapshot (legado explícito).
+INSERT INTO studio.scene_revisions (
+    video_id, version, scene_id, idx, narration, caption, label, image_prompt, claim_ids,
+    asset_id, media_review_required, duration_s
+)
+SELECT s.video_id, latest.version, s.id, s.idx, s.narration, s.caption, s.label, s.image_prompt,
+       s.claim_ids, s.asset_id, s.media_review_required, s.duration_s
+FROM studio.scenes s
+JOIN (SELECT video_id, MAX(version) AS version FROM studio.scripts GROUP BY video_id) latest
+  ON latest.video_id = s.video_id
+ON CONFLICT (video_id, version, scene_id) DO NOTHING;

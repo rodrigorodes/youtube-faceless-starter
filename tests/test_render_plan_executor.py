@@ -28,6 +28,7 @@ from app.studio.application.ports import RenderSpec  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 from app.studio.domain.contracts import Scene, VideoFormat  # noqa: E402
 from app.studio.domain.render import SIZE, evaluate_qa, make_cues, scene_length  # noqa: E402
+from app.studio.domain.render_cache import NodeId  # noqa: E402
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 
@@ -458,3 +459,101 @@ def test_a_corrupted_cached_artifact_is_not_reused(tmp_path):
 
     # nenhum artefato confere: tudo é regenerado (o "final" inclusive)
     assert len(runner.calls) == 3 and str(tmp_path / "work" / "scene_000.mp4") in _outputs(runner)
+
+
+# ------------------------------------------- VE-02: o executor desenha o overlay compilado
+
+
+def _compiled_with_overlay(work_dir):
+    from app.studio.application.render_compiler import compile_render_plan
+    from app.studio.domain.asset_resolver import AssetDescriptor
+    from app.studio.domain.contracts import Asset, AssetKind
+    from app.studio.domain.render_plan import StyleSnapshot
+    from app.studio.domain.render_plan_builder import (
+        StoryboardOverlay,
+        StoryboardScene,
+        asset_reference_for,
+        build_render_plan,
+    )
+
+    def reference(asset_id, sha):
+        return asset_reference_for(
+            Asset(id=asset_id, kind=AssetKind.image, cache_key=sha, path=f"img/{asset_id}.png",
+                  provider="p", model="m", license="CC0"),
+            content_sha256=sha, media_type="image")
+
+    def descriptor(asset_id, sha):
+        return AssetDescriptor(asset_id=asset_id, asset_version=1, uri=f"img/{asset_id}.png",
+                               content_sha256=sha, media_type="image", license="CC0",
+                               available=True, codec="png", width=1080, height=1920)
+
+    plan = build_render_plan(
+        plan_id="plan:overlay", revision=1, project_id="p", video_id="v", format=VideoFormat.short,
+        scenes=[StoryboardScene(scene_id="scene-01", asset_id="base", narration="Narração de teste.",
+                                speech_seconds=2.0)],
+        assets=[reference("base", "a" * 64), reference("overlay", "b" * 64)],
+        style_snapshot=StyleSnapshot(style_id="s", version=1),
+        overlays=[StoryboardOverlay(scene_id="scene-01", asset_id="overlay", start_s=0.1, duration_s=0.5)],
+    )
+    return compile_render_plan(plan=plan, assets={"base": descriptor("base", "a" * 64),
+                                                  "overlay": descriptor("overlay", "b" * 64)},
+                               work_dir=str(work_dir))
+
+
+def test_execute_draws_a_compiled_plan_with_overlay_instead_of_refusing(tmp_path):
+    """VE-02: o overlay compilado é desenhado no segmento base — não há mais recusa.
+
+    A prova por unidade é o comando do segmento: a imagem do overlay entra como
+    ``-loop 1 -i`` e o ``overlay`` fica habilitado só na janela relativa ao segmento base.
+    """
+    work = tmp_path / "work"
+    work.mkdir(exist_ok=True)
+    compiled = _compiled_with_overlay(work)
+    assert compiled.shots[0].overlays
+    wav = tmp_path / "s.wav"
+    tone_wav(wav)
+    runner = StubRunner()
+    out = PlanFfmpegRenderer(runner=runner).execute(compiled, [wav], tmp_path / "final.mp4")
+    assert out.exists() and out.read_bytes() == b"stub"
+    shot = compiled.shots[0]
+    # a imagem do overlay entra como entrada extra, repetida, e o filtro só vale na janela
+    assert shot.args[shot.args.index("-loop") + 1] == "1"
+    assert "force_original_aspect_ratio" in shot.filter_complex
+    assert "enable='gte(t,0.100)*lt(t,0.600)'" in shot.filter_complex
+    assert len(runner.calls) == len(compiled.shots) + 2  # segmento + concat + mixagem
+
+
+# ------------------- W3.2: presets alimentam o executor; grupos não aplicados não mexem -------------------
+
+
+def test_a_preset_feeds_the_executor_caption_and_palette():
+    # O preset é uma partida honesta: os grupos aplicáveis (caption/palette/motion/music) chegam
+    # ao executor e mudam a legenda/cores de verdade — sem inventar dialeto paralelo.
+    from app.studio.adapters.render_plan_ffmpeg import caption_layout, overlay_colors
+    from app.studio.domain.visual_style import preset_params
+
+    params = preset_params("documentario")
+    style = _resolved(caption=params["caption"], palette=params["palette"],
+                      motion=tuple(params["motion"]), music=params["music"])
+    lay = caption_layout(VideoFormat.short, style)
+    assert lay["caption_font"] == 52 and lay["caption_bottom"] == 1520
+    colors = overlay_colors(style)
+    assert colors["accent"] == (0xD4, 0xAF, 0x37, 255)
+    assert colors["caption_text"] == (0xF2, 0xF2, 0xF2, 255)
+
+
+def test_a_style_transition_does_not_change_the_overlay():
+    # `transition` de estilo é carregada sem efeito: o overlay sai idêntico ao de um estilo sem
+    # ela. A transição que o render consome é a do **plano** (`Shot.transition`), não a do estilo.
+    from app.studio.adapters.render_plan_ffmpeg import caption_layout, overlay_colors
+
+    plain = _resolved()
+    with_transition = _resolved(transition={"kind": "fade", "duration_ticks": 40})
+    assert caption_layout(VideoFormat.short, with_transition) == caption_layout(VideoFormat.short, plain)
+    assert overlay_colors(with_transition) == overlay_colors(plain)
+
+
+def test_resolved_style_carries_no_extra_bag():
+    # `extra` é do agregado `VisualStyle`, não do retrato que o render consome: não há caminho
+    # para um campo de extensão vazar para o executor pelo `ResolvedStyle`.
+    assert not hasattr(_resolved(), "extra")

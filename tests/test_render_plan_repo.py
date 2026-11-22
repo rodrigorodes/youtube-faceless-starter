@@ -18,7 +18,7 @@ from app.studio.adapters.postgres.repo import PostgresVideoRepository  # noqa: E
 from app.studio.application.render_cache import PlanRegeneration  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
 from app.studio.domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph  # noqa: E402
-from app.studio.domain.render_plan import StyleSnapshot  # noqa: E402
+from app.studio.domain.render_plan import Composition, Shot, StyleSnapshot, Track  # noqa: E402
 from app.studio.domain.render_plan_builder import (  # noqa: E402
     StoryboardScene,
     asset_reference_for,
@@ -79,6 +79,33 @@ def test_save_and_load_a_plan_by_revision(env):
     assert plans.revisions(plan.plan_id) == [1]
     assert plans.get_plan(plan.plan_id, 99) is None
     assert plans.latest_plan("plan:desconhecido") is None
+
+
+def test_T08_plan_with_overlay_round_trips_through_the_repository(env):
+    """T08 (+ banco): o overlay persiste e volta idêntico, sem perder role/z_index."""
+    plans, video = env["plans"], env["video"]
+    base = plan_for(video.id)
+    scene = base.timeline.scenes[0]
+    overlay = Shot(
+        shot_id=f"overlay:{scene.scene_id}:0", track_id="visual-overlay",
+        start_tick=scene.start_tick + 10, duration_ticks=20, asset_ref="asset-overlay",
+        role="overlay", z_index=1, composition=Composition(fit="contain"),
+    )
+    plan = base.model_copy(update={
+        "asset_manifest": [*base.asset_manifest, image_ref("asset-overlay", SHA_B, "img/asset-overlay.png")],
+        "timeline": base.timeline.model_copy(update={
+            "tracks": [*base.timeline.tracks, Track(track_id="visual-overlay", kind="visual")],
+            "scenes": [
+                scene.model_copy(update={"shots": [*scene.shots, overlay]}),
+                *base.timeline.scenes[1:],
+            ],
+        }),
+    })
+    plans.save_plan(plan)
+    loaded = plans.get_plan(plan.plan_id, 1)
+    assert loaded == plan
+    assert loaded.timeline.scenes[0].overlay_shots[0].role == "overlay"
+    assert loaded.timeline.scenes[0].overlay_shots[0].z_index == 1
 
 
 def test_revisions_accumulate_and_latest_is_the_highest(env):

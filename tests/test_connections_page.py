@@ -208,8 +208,9 @@ def test_connections_page_keeps_the_active_channel_in_the_topbar(env):
 def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     html = page(env).text
     items = nav_items(html)
-    # UX V3: o menu principal tem cinco destinos e nenhum deles é falso-ativo nesta tela.
-    assert [_nav_text(i) for i in items] == ["Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"]
+    # W1.5: menu do protótipo (rótulos novos + Biblioteca) e nenhum item falso-ativo nesta tela.
+    assert [_nav_text(i) for i in items] == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias",
+                                            "Desempenho", "Biblioteca"]
     assert not [item for item in items if 'aria-current="page"' in item]
     # A entrada ativa é Configurações, no rodapé da casca.
     config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
@@ -221,9 +222,10 @@ def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     assert len(section_active) == 1 and "Conexões" in _nav_text(section_active[0])
     assert re.search(r'href="/studio/panel/conexoes(?:\?project_id=[^"]+)?"', section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
-    # Estilos, Conexões e Equipe seguem como destinos reais; nada de "Configurações — em breve".
-    labels = " ".join(_nav_text(item) for item in sections)
-    assert "Estilos" in labels and "Conexões" in labels and "Equipe" in labels
+    # As sete seções do protótipo seguem como destinos reais; nada de "Configurações — em breve".
+    assert [_nav_text(item) for item in sections] == [
+        "Canais", "Estratégia editorial", "Marca e estilo", "Produção e orçamento",
+        "Conexões e providers", "Conta e equipe", "Avançado e diagnóstico"]
     assert "em breve" not in html
     assert not any('aria-disabled="true"' in item for item in items + sections)
 

@@ -21,6 +21,12 @@ MOCKUP_ONLY_TEXT = (
     "run_7f31",
     "840 mil views",
     "Finanças Descomplicadas",
+    # W1.4: temas e nomes de demonstração do protótipo novo (`prototype/index.html`, S.videos/ideas).
+    "O que quase ninguém sabe sobre este lugar",
+    "Três perguntas para entender o futuro",
+    "Uma descoberta que mudou nossa história",
+    "Além do planeta",
+    "Histórias em 5 minutos",
 )
 
 
@@ -124,7 +130,7 @@ def test_video_detail_uses_the_shell_and_videos_has_a_real_destination():
     items = _nav_items(html)
     labels = [_visible_text(item) for item in items]
 
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências"):
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias"):
         assert any(expected in label for label in labels), f"painel/vídeo: '{expected}' fora da casca"
 
     videos = next(item for item in items if "Vídeos" in _visible_text(item))

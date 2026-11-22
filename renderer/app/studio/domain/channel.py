@@ -306,18 +306,22 @@ def verify_publication_authorization(
     ``youtubeChannelId`` esperado. A verificação é sobre a **identidade do canal** — nunca sobre os
     valores dos tokens (dois tokens isolados não provam restrição a um canal).
 
-    - Canal **sem destino** (``youtube_channel_id is None``): ``ALLOW`` — preserva o comportamento
-      de hoje (caminho antigo por projeto; nenhum canal tem destino no banco).
+    - Canal **sem destino** (``youtube_channel_id is None``): ``BLOCK`` com motivo acionável. O gate
+      **falha fechado** (W0B.2/R8): sem destino configurado não há como provar a identidade do
+      canal, então a publicação é recusada — nunca se presume o caminho antigo por omissão.
     - Canal **com destino**: exige uma autorização ``CONNECTED`` que case com o destino
       (``resolve_publication_authorization``) **e** que o token usado pertença ao mesmo canal. Sem
       autorização vigente, com token de outro canal ou com canal do token **desconhecido**, bloqueia:
       na dúvida sobre a identidade, não se publica (falha fechada).
+
+    Nota: o caso "repositórios de canal não injetados" (``channels``/``authorizations`` ausentes) é
+    tratado em ``RunPublication._authorization_gate``, não aqui.
     """
     target = channel.youtube_channel_id
     if target is None:
         return PublicationAuthorizationVerdict(
-            PublicationAuthorizationDecision.ALLOW,
-            "the channel has no YouTube target; the legacy per-project path is preserved")
+            PublicationAuthorizationDecision.BLOCK,
+            "no YouTube destination is configured for this channel; connect the channel in Canais → Conexão")
     authorization = resolve_publication_authorization(channel, authorizations)
     if authorization is None:
         return PublicationAuthorizationVerdict(

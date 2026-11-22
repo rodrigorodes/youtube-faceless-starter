@@ -3501,7 +3501,9 @@ def _video_run_card(view: VideoDetailView) -> str:
     """
 
 
-def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[str, str]]:
+def render_video(view: VideoDetailView, *, style_view=None,
+                 video_channel: str = "",
+                 free_providers: frozenset[str] = frozenset()) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     v = view.video
 
@@ -3540,7 +3542,8 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         usage_html.append('<tr><td colspan="4" class="empty">Sem registro de uso de IA para este vídeo.</td></tr>')
     else:
         for usage in view.usage:
-            kind = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model, usage.cost_usd)
+            kind = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model,
+                             usage.cost_usd, free_providers)
             if kind is CostKind.REAL:
                 cost_str = f"Real: US$ {usage.cost_usd:.2f}".replace(".", ",")
             elif kind is CostKind.ESTIMATE:
@@ -3986,6 +3989,7 @@ def render_video(view: VideoDetailView, *, style_view=None) -> tuple[str, dict[s
         project_id="",
         cost_note="",
         page_js=page_js,
+        video_channel=video_channel,
     )
     return html_content, _headers(nonce)
 
@@ -4009,7 +4013,7 @@ def _fact_check_text(fact_check) -> str:
     return "reprovado"
 
 
-def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
+def render_script(view: ScriptPageView, *, video_channel: str = "") -> tuple[str, dict[str, str]]:
     """Página do Roteiro (mockup #roteiro) com dado real ou estado vazio explícito."""
     nonce = secrets.token_urlsafe(16)
 
@@ -4174,6 +4178,7 @@ def render_script(view: ScriptPageView) -> tuple[str, dict[str, str]]:
         project_id="",
         cost_note="",
         page_js=page_js,
+        video_channel=video_channel,
     )
     return html_content, _headers(nonce)
 

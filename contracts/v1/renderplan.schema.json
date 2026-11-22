@@ -92,6 +92,35 @@
       "title": "Composition",
       "type": "object"
     },
+    "ConfigSnapshot": {
+      "additionalProperties": false,
+      "description": "Referência da **configuração efetiva congelada** que governou voz e render (F03.T03).\n\nO plano grava a identidade (`content_hash` + `schema_version`) e a proveniência criativa\nrelevante ao render (``style`` e ``audiovisual.*``). O documento completo da configuração\ncontinua sendo o snapshot do run (F03.T02); aqui só entra a prova de qual revisão foi usada,\npara auditar um plano sem copiar nem credencial nem política operacional.\n\nCampo **aditivo**: planos persistidos antes desta fatia não o têm e continuam válidos\n(``None``). Ele não participa dos fingerprints do cache (``domain.render_cache``), então\ntambém não invalida artefatos já registrados.",
+      "properties": {
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Provenance",
+          "type": "object"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "content_hash",
+        "schema_version"
+      ],
+      "title": "ConfigSnapshot",
+      "type": "object"
+    },
     "Effects": {
       "additionalProperties": false,
       "description": "Movimento explícito por shot (substitui o ``index % 4`` do renderer legado).",
@@ -321,7 +350,7 @@
     },
     "Shot": {
       "additionalProperties": false,
-      "description": "Elemento visual em uma faixa temporal, dentro de uma cena.",
+      "description": "Elemento visual em uma faixa temporal, dentro de uma cena.\n\n``role`` distingue a base (que cobre a cena) do overlay de imagem (VE-01): o overlay\nvive dentro de um segmento base e não fecha lacuna. ``z_index`` ordena camadas; a base\nfica em 0 e o overlay em 1+.",
       "properties": {
         "asset_ref": {
           "minLength": 1,
@@ -360,6 +389,15 @@
           "default": null,
           "title": "Paid Operation Key"
         },
+        "role": {
+          "default": "base",
+          "enum": [
+            "base",
+            "overlay"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
         "shot_id": {
           "minLength": 1,
           "title": "Shot Id",
@@ -385,6 +423,12 @@
             }
           ],
           "default": null
+        },
+        "z_index": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Z Index",
+          "type": "integer"
         }
       },
       "required": [
@@ -606,6 +650,17 @@
       },
       "title": "Asset Manifest",
       "type": "array"
+    },
+    "config_snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConfigSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "generated_audio": {
       "items": {

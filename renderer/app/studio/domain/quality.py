@@ -17,24 +17,31 @@ O adaptador (``adapters/quality_ffmpeg.py``) é quem toca a mídia; aqui a decis
   o ``domain.asset_resolver.verify_descriptor`` existente (reuso, não redigitação).
 - **Plano (advisório)** — duração perto do limite do formato (``warning``), asset do
   manifesto sem uso (``warning``) e trilha de música silenciosa declarada (``info``).
+- **Overlay (VE-05, técnico)** — quando o plano declara camadas, o QA confere o que é
+  verificável sem IA: presença na janela, janela dentro do render/segmento base e
+  tamanho/fit do asset. A medição vem do adaptador (ffprobe/ffmpeg) em
+  ``OverlayEvidence``; sem medição a cobertura é ``not_verified``, nunca "sem overlay".
 
 **O que este avaliador NÃO avalia** (declarado, nunca um score inventado):
 
 - **Avaliação semântica multimodal** — "a imagem corresponde à narração?", "o
   enquadramento é agradável?", "a legenda está bem posicionada?". Isso exige um
-  provedor/LLM de visão e fica para quando existir provedor (o
-  ``VisualQualityEvaluator`` multimodal). O avaliador determinístico **não** devolve
-  score visual e não finge cobertura: a ausência do provedor é declarada em
-  ``MULTIMODAL_EVALUATION`` e a falta de evidência vira cobertura ``not_verified``,
-  nunca aprovação por omissão.
+  provedor/LLM de visão. A porta ``SemanticChecker`` (``application/ports.py``) recebe
+  o resultado tipado (``SemanticResult``); sem provedor real o adaptador devolve
+  ``not_verified`` e o achado é ``info``/``editorial``. O avaliador determinístico
+  **não** devolve score visual e não finge cobertura: a ausência do provedor continua
+  declarada em ``MULTIMODAL_EVALUATION`` e a falta de evidência vira cobertura
+  ``not_verified``, nunca aprovação por omissão.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal, get_args
 
-from .asset_resolver import AssetDescriptor, AssetManifest, AssetResolutionError, verify_descriptor
+from .asset_resolver import AssetDescriptor, AssetManifest, AssetResolutionError, check_fit, verify_descriptor
 from .qa_report import QaCoverage, QaFinding, QaReport
 from .render import _REQUIRED, MAX_SECONDS, evaluate_qa
 from .render_plan import RenderPlan
@@ -60,8 +67,21 @@ CHECK_ASSET = "render.asset_resolution"
 CHECK_MANIFEST = "render.manifest"
 CHECK_TIMELINE = "render.timeline"
 CHECK_MUSIC = "render.music"
+# VE-05: verificação técnica do overlay (presença/janela/tamanho) e a declaração
+# explícita de que a avaliação semântica não foi verificada (sem provedor).
+CHECK_OVERLAY = "render.overlay"
+CHECK_SEMANTIC = "render.semantic"
+
+# Fração mínima do quadro que a presença do overlay precisa alterar para não virar
+# aviso. VE-01 desenha o overlay em tela cheia; abaixo disto ele é imperceptível.
+MIN_OVERLAY_COVERAGE = 0.01
 
 BLOCKING, WARNING, INFO = "blocking", "warning", "info"
+
+# Resultado tipado da porta ``SemanticChecker`` (VE-05). "failed" é conteúdo que a
+# verificação semântica **reprovou** (bloqueante); "not_verified" é ausência de
+# verificação (sem provedor), nunca sinônimo de "passou".
+SemanticVerdict = Literal["verified", "not_verified", "failed"]
 
 # Prefixo da mensagem de `evaluate_qa` -> (check_id, severidade). Todo defeito de mídia
 # medido é **bloqueante**: um vídeo mudo, curto, preto ou com resolução errada não
@@ -93,10 +113,83 @@ _ACTIONS = {
     CHECK_MANIFEST: "Remover do manifesto ou vincular a um shot.",
     CHECK_TIMELINE: "Revisar a duração do plano antes de publicar.",
     CHECK_MUSIC: "Nenhuma ação: trilha silenciosa declarada no plano.",
+    CHECK_OVERLAY: "Revisar a camada de overlay: janela, presença e tamanho no vídeo renderizado.",
+    CHECK_SEMANTIC: "Configurar um provedor de verificação semântica ou revisar o conteúdo manualmente.",
 }
 
 # `expected_s` não vem do analisador: o avaliador o deriva do próprio plano.
 _MEASURED_KEYS = tuple(key for key in _REQUIRED if key != "expected_s")
+
+
+@dataclass(frozen=True)
+class SemanticResult:
+    """Resultado tipado da verificação semântica (VE-05).
+
+    ``verified`` é conteúdo conferido por um provedor real; ``not_verified`` é a
+    ausência honesta de verificação (sem provedor); ``failed`` é reprovação semântica.
+    ``not_verified`` e ``failed`` exigem motivo: um resultado sem motivo não é
+    verificável e falha fechado na construção.
+    """
+
+    verdict: SemanticVerdict
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.verdict not in get_args(SemanticVerdict):
+            raise ValueError(f"unknown semantic verdict {self.verdict!r}")
+        if self.verdict != "verified" and not (self.reason or "").strip():
+            raise ValueError(f"a {self.verdict} semantic verdict requires a reason")
+
+
+@dataclass(frozen=True)
+class OverlayEvidence:
+    """Medição técnica de uma camada de overlay no vídeo renderizado (VE-05).
+
+    ``present`` é a presença medida na janela planejada; ``window_ok`` diz se a janela
+    planejada é coerente com o render e o segmento base; ``coverage_ratio`` é a fração
+    do quadro alterada pela camada (tamanho efetivo). ``measured=False`` representa uma
+    medição que **não aconteceu** (falha do ffprobe/ffmpeg): o domínio a trata como
+    ``not_verified``, nunca como "sem overlay" nem como aprovação por omissão.
+    """
+
+    shot_id: str
+    scene_id: str
+    start_s: float
+    end_s: float
+    present: bool = False
+    window_ok: bool = True
+    measured: bool = True
+    coverage_ratio: float | None = None
+    width: int | None = None
+    height: int | None = None
+    frame_width: int | None = None
+    frame_height: int | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("shot_id", "scene_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required")
+        if not (isinstance(self.start_s, (int, float)) and not isinstance(self.start_s, bool)):
+            raise ValueError("start_s must be a finite number")
+        if not (isinstance(self.end_s, (int, float)) and not isinstance(self.end_s, bool)):
+            raise ValueError("end_s must be a finite number")
+        if not (math.isfinite(self.start_s) and math.isfinite(self.end_s)):
+            raise ValueError("overlay evidence window must be finite")
+        if self.start_s < 0 or self.end_s <= self.start_s:
+            raise ValueError("overlay evidence window must be a positive interval")
+        if self.coverage_ratio is not None:
+            if not (isinstance(self.coverage_ratio, (int, float)) and not isinstance(self.coverage_ratio, bool)):
+                raise ValueError("coverage_ratio must be a finite number")
+            if not math.isfinite(self.coverage_ratio) or not (0.0 <= self.coverage_ratio <= 1.0):
+                raise ValueError("coverage_ratio must be within [0, 1]")
+        for name in ("width", "height", "frame_width", "frame_height"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                raise ValueError(f"{name} must be a positive integer when provided")
+        if not self.measured and not (self.reason or "").strip():
+            raise ValueError("an unmeasured overlay requires a reason")
 
 
 @dataclass(frozen=True)
@@ -108,6 +201,10 @@ class QualityEvidence:
     ``QaAnalyzer`` — sem ``expected_s``, que o avaliador deriva do plano. ``assets`` são
     os descriptors resolvidos, conferidos contra o manifesto do plano. ``generated_at``
     é o instante do relatório (default: agora, com fuso).
+
+    ``overlays`` e ``semantic`` são aditivos (VE-05): vazios/``None`` significam "não
+    medido", exatamente o comportamento anterior — plano sem overlay e sem verificador
+    semântico produz o mesmo relatório de sempre.
     """
 
     render_id: str
@@ -115,6 +212,8 @@ class QualityEvidence:
     media: Mapping[str, object] | None = None
     assets: tuple[AssetDescriptor, ...] = ()
     generated_at: datetime | None = None
+    overlays: tuple[OverlayEvidence, ...] = ()
+    semantic: SemanticResult | None = None
 
 
 def evaluate_quality(plan: RenderPlan, evidence: QualityEvidence) -> QaReport:
@@ -136,6 +235,8 @@ def evaluate_quality(plan: RenderPlan, evidence: QualityEvidence) -> QaReport:
 
     _collect_media_checks(plan, evidence, checks, findings, gaps)
     _collect_asset_checks(plan, evidence, checks, findings, gaps)
+    _collect_overlay_checks(plan, evidence, checks, findings, gaps)
+    _collect_semantic_checks(evidence, checks, findings)
     _collect_plan_advisories(plan, checks, findings)
 
     coverage = (
@@ -193,6 +294,89 @@ def _collect_asset_checks(plan, evidence, checks, findings, gaps) -> None:
             checks.append(CHECK_ASSET)
 
 
+def _collect_overlay_checks(plan, evidence, checks, findings, gaps) -> None:
+    """Verificação técnica das camadas de overlay (VE-05), por cima do QA de hoje.
+
+    Plano sem overlay não acrescenta check, achado nem lacuna: o relatório é idêntico
+    ao de hoje. Com overlay, a ausência de medição é ``not_verified`` (não há evidência
+    de que a camada apareceu) e os defeitos medidos — janela fora do render/base,
+    camada ausente, tamanho incompatível — são ``blocking``.
+    """
+    planned = [(scene, shot) for scene in plan.timeline.scenes for shot in scene.overlay_shots]
+    if not planned:
+        return
+    if not evidence.overlays:
+        gaps.append("no overlay evidence was measured for the render")
+        return
+    measured = {item.shot_id: item for item in evidence.overlays}
+    descriptors = {descriptor.asset_id: descriptor for descriptor in evidence.assets}
+    tps = plan.timeline.ticks_per_second
+    for scene, shot in planned:
+        checks.append(CHECK_OVERLAY)
+        item = measured.get(shot.shot_id)
+        expected_start = shot.start_tick / tps
+        expected_end = (shot.start_tick + shot.duration_ticks) / tps
+        if item is None:
+            gaps.append(f"overlay {shot.shot_id} was not measured")
+            continue
+        if abs(item.start_s - expected_start) > 0.001 or abs(item.end_s - expected_end) > 0.001:
+            findings.append(_finding(
+                f"overlay-window-evidence-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, BLOCKING,
+                f"overlay {shot.shot_id} was measured at {item.start_s:.3f}-{item.end_s:.3f}s, "
+                f"but the plan puts it at {expected_start:.3f}-{expected_end:.3f}s",
+            ))
+        if not item.measured:
+            gaps.append(item.reason or f"overlay {shot.shot_id} could not be measured")
+            continue
+        if scene.host_base_for(shot) is None:
+            findings.append(_finding(
+                f"overlay-host-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, BLOCKING,
+                f"overlay {shot.shot_id} crosses a base segment boundary",
+            ))
+        if not item.window_ok:
+            findings.append(_finding(
+                f"overlay-window-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, BLOCKING,
+                item.reason or f"overlay {shot.shot_id} is outside its render/base window",
+            ))
+        if not item.present:
+            findings.append(_finding(
+                f"overlay-presence-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, BLOCKING,
+                item.reason or f"overlay {shot.shot_id} is not visible in its window",
+            ))
+        descriptor = descriptors.get(shot.asset_ref)
+        if descriptor is not None:
+            fit = shot.composition.fit if shot.composition is not None else "cover"
+            try:
+                check_fit(descriptor, plan.output, fit=fit, shot_duration_ticks=shot.duration_ticks)
+            except AssetResolutionError as exc:
+                findings.append(_finding(
+                    f"overlay-size-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, BLOCKING, str(exc),
+                ))
+        if item.coverage_ratio is not None and item.coverage_ratio < MIN_OVERLAY_COVERAGE:
+            findings.append(_finding(
+                f"overlay-coverage-{scene.scene_id}-{shot.shot_id}", CHECK_OVERLAY, WARNING,
+                f"overlay {shot.shot_id} changes only {item.coverage_ratio:.1%} of the frame",
+            ))
+
+
+def _collect_semantic_checks(evidence, checks, findings) -> None:
+    """Declara a cobertura semântica (VE-05) sem inventar aprovação.
+
+    Sem resultado semântico não há check nem achado: o comportamento de hoje fica
+    intacto. Com resultado, ``not_verified`` vira ``info`` (a semântica não foi
+    verificada), ``failed`` vira ``blocking`` (a semântica reprovou) e ``verified`` não
+    produz achado — em nenhum caso o relatório afirma qualidade visual que não mediu.
+    """
+    result = evidence.semantic
+    if result is None:
+        return
+    checks.append(CHECK_SEMANTIC)
+    if result.verdict == "failed":
+        findings.append(_finding("semantic-failed", CHECK_SEMANTIC, BLOCKING, result.reason, category="editorial"))
+    elif result.verdict == "not_verified":
+        findings.append(_finding("semantic-not-verified", CHECK_SEMANTIC, INFO, result.reason, category="editorial"))
+
+
 def _collect_plan_advisories(plan, checks, findings) -> None:
     checks.append(CHECK_TIMELINE)
     fmt = plan.output.format
@@ -226,11 +410,12 @@ def _classify(failure: str) -> tuple[str, str]:
     return CHECK_MEDIA, BLOCKING  # desconhecido: falha fechada, nunca aprova por omissão
 
 
-def _finding(finding_id: str, check_id: str, severity: str, evidence: str) -> QaFinding:
+def _finding(finding_id: str, check_id: str, severity: str, evidence: str,
+             category: str = "technical") -> QaFinding:
     return QaFinding(
         finding_id=finding_id,
         check_id=check_id,
-        category="technical",
+        category=category,
         severity=severity,
         evidence=evidence,
         suggested_action=_ACTIONS.get(check_id, "Revisar o render antes de publicar."),

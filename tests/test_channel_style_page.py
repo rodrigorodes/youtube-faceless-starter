@@ -131,6 +131,17 @@ def test_view_marks_transition_and_extra_as_declared_but_not_applied():
     assert extra.applied is False and extra.overridden is True
 
 
+def test_the_page_controls_only_the_groups_the_render_applies():
+    # W3.2: a tela não inventa grupos. O que ganha controle é exatamente `APPLIED_GROUPS`; o que
+    # aparece rotulado sem controle é subconjunto de `LOADED_ONLY_GROUPS`. Se o render passar a
+    # aplicar (ou deixar de aplicar) um grupo, este teste quebra — a tela não pode divergir.
+    from app.studio.application.channel_style_page import _APPLIED_SPECS, _LOADED_ONLY_SPECS
+    from app.studio.domain.visual_style import APPLIED_GROUPS, LOADED_ONLY_GROUPS
+
+    assert {spec.group for spec in _APPLIED_SPECS} == APPLIED_GROUPS
+    assert {spec.group for spec in _LOADED_ONLY_SPECS} <= LOADED_ONLY_GROUPS
+
+
 def test_view_without_style_falls_back_to_engine_defaults():
     view = _view(_profile(), [])
     assert view.style_id is None

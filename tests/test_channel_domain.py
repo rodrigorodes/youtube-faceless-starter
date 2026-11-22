@@ -192,10 +192,12 @@ def test_resolver_ignores_authorizations_for_other_channels():
 # --------------------------------- verificação de identidade antes de publicar (YT-03)
 
 
-def test_verification_allows_when_the_channel_has_no_youtube_target():
-    # Estado de hoje (0 canais com destino): a publicação segue pelo caminho antigo, sem bloqueio.
-    assert verify_publication_authorization(profile(), [], token_channel_id="UCqualquer").allowed
-    assert verify_publication_authorization(profile(), [], token_channel_id=None).allowed
+def test_verification_blocks_when_the_channel_has_no_youtube_target():
+    # W0B.2: sem destino configurado a publicação é recusada (fail-closed), com motivo acionável.
+    verdict = verify_publication_authorization(profile(), [], token_channel_id="UCqualquer")
+    assert not verdict.allowed
+    assert "destination" in verdict.reason and "Canais" in verdict.reason
+    assert not verify_publication_authorization(profile(), [], token_channel_id=None).allowed
 
 
 def test_verification_allows_when_the_token_belongs_to_the_resolved_channel():

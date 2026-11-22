@@ -23,6 +23,8 @@ Limite explícito desta fatia: RP-023 é o esqueleto determinístico. Composiç�
 **camadas** (shots visuais sobrepostos em tracks diferentes) e transições não triviais
 são RP-024; o compilador recusa o plano em vez de produzir um vídeo errado. O executor
 (RP-05) é que materializa os overlays (Pillow), sintetiza a trilha e roda o FFmpeg.
+A VE-02 estende este compilador para compor o overlay de imagem **dentro** do segmento
+base hospedeiro (entrada extra + ``overlay`` com ``enable``), sem criar segmento novo.
 """
 from __future__ import annotations
 
@@ -42,11 +44,14 @@ from ..domain.render_plan import (
     Motion,
     RenderPlan,
     Shot,
+    Transition,
 )
 
 # Movimentos explícitos que o plano pode pedir (``Effects.motion``). O ``Literal`` do
 # contrato é a fonte de verdade; a tupla é só a documentação da política do compilador.
 MOTION_NAMES = ("none", "zoom_in", "zoom_out", "pan_left", "pan_right")
+# VE-01: o domínio aceita N overlays por cena; esta fase compila no máximo um por cena.
+MAX_OVERLAYS_PER_SCENE = 1
 # Mesmo grafo de mixagem do renderer legado (rich.py/render_ffmpeg.py): a trilha é
 # comprimida por sidechain com a narração e a mistura mira -16 LUFS.
 MIX_FILTER = (
@@ -80,6 +85,25 @@ class OverlayImage:
 
 
 @dataclass(frozen=True)
+class LayerExecution:
+    """Overlay de imagem hospedado por um segmento base (VE-01/VE-02).
+
+    ``start_ticks`` é **relativo ao início do segmento base** que hospeda a camada. A
+    janela semiaberta ``[start_ticks, start_ticks+duration_ticks)`` é composta no
+    ``filter_complex`` do segmento base (VE-02), com ``fit`` e ``z_index`` já ordenados.
+    """
+
+    shot_id: str
+    asset_id: str
+    media_type: str
+    source: str
+    z_index: int
+    start_ticks: int
+    duration_ticks: int
+    fit: str
+
+
+@dataclass(frozen=True)
 class ShotExecution:
     """Um segmento de vídeo: a mídia do shot com selo, legendas e fade já compilados."""
 
@@ -98,6 +122,7 @@ class ShotExecution:
     filter_complex: str
     output: str
     args: tuple[str, ...]
+    overlays: tuple[LayerExecution, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -237,12 +262,13 @@ def compile_render_plan(
     fps_num, fps_den = plan.timeline.timebase.fps_num, plan.timeline.timebase.fps_den
     rate = str(fps_num) if fps_den == 1 else f"{fps_num}/{fps_den}"
 
-    ordered_shots = _ordered_shots(plan)
-    _require_single_layer(ordered_shots, plan.timeline.duration_ticks)
+    ordered_bases = _ordered_bases(plan)
+    _require_base_trajectory(ordered_bases, plan.timeline.duration_ticks)
+    _validate_overlays(plan, manifest, by_id)
 
     subtitles = sorted(plan.timeline.subtitles, key=lambda c: c.start_tick)
     shots: list[ShotExecution] = []
-    for index, (scene, shot) in enumerate(ordered_shots):
+    for index, (scene, shot) in enumerate(ordered_bases):
         reference = manifest.get(shot.asset_ref)
         if reference is None:
             raise CompileError(f"shot {shot.shot_id!r} references asset {shot.asset_ref!r} absent from the plan manifest")
@@ -252,10 +278,12 @@ def compile_render_plan(
         _check_descriptor(reference, descriptor)
         if not descriptor.available:
             raise CompileError(f"asset {shot.asset_ref!r} is unavailable at {descriptor.uri!r}")
+        layers = _compile_layers(scene, shot, manifest, by_id)
         shots.append(
             _compile_shot(
                 plan, scene, shot, reference, descriptor, index, work, tps, rate,
                 (output.width, output.height), subtitles, label_by_scene.get(scene.scene_id, ""),
+                overlays=layers,
             )
         )
 
@@ -324,20 +352,24 @@ def _labels(labels: Mapping[str, str] | None) -> dict[str, str]:
     return {str(scene_id): str(label) for scene_id, label in labels.items()}
 
 
-def _ordered_shots(plan: RenderPlan) -> list[tuple[object, Shot]]:
-    pairs = [(scene, shot) for scene in plan.timeline.scenes for shot in scene.shots]
+def _ordered_bases(plan: RenderPlan) -> list[tuple[object, Shot]]:
+    pairs = [(scene, shot) for scene in plan.timeline.scenes for shot in scene.shots if shot.role == "base"]
     return sorted(pairs, key=lambda pair: (pair[1].start_tick, pair[0].scene_id, pair[1].shot_id))
 
 
-def _require_single_layer(ordered: list[tuple[object, Shot]], total_ticks: int) -> None:
-    """RP-023 compila uma única trajetória visual; camadas sobrepostas são RP-024."""
+def _ordered_overlays(scene) -> list[Shot]:
+    return sorted(scene.overlay_shots, key=lambda overlay: (overlay.z_index, overlay.start_tick, overlay.shot_id))
+
+
+def _require_base_trajectory(ordered: list[tuple[object, Shot]], total_ticks: int) -> None:
+    """RP-023 compila uma única trajetória de **base**; overlays são camadas hospedadas."""
     if not ordered:
-        raise CompileError("the plan has no visual shots to compile")
+        raise CompileError("the plan has no visual base shots to compile")
     cursor = 0
     for scene, shot in ordered:
         if shot.start_tick > cursor:
             raise CompileError(
-                f"gap at tick {cursor}: shot {shot.shot_id!r} starts at {shot.start_tick}"
+                f"gap at tick {cursor}: base shot {shot.shot_id!r} starts at {shot.start_tick}"
             )
         if shot.start_tick < cursor:
             raise CompileError(
@@ -347,7 +379,67 @@ def _require_single_layer(ordered: list[tuple[object, Shot]], total_ticks: int) 
             )
         cursor = shot.start_tick + shot.duration_ticks
     if cursor != total_ticks:
-        raise CompileError(f"visual coverage ends at tick {cursor}, but the timeline ends at {total_ticks}")
+        raise CompileError(
+            f"gap at tick {cursor}: base coverage ends at tick {cursor}, but the timeline ends at tick {total_ticks}"
+        )
+
+
+def _validate_overlays(plan: RenderPlan, manifest: dict[str, AssetReference], by_id: dict[str, AssetDescriptor]) -> None:
+    for scene in plan.timeline.scenes:
+        overlays = scene.overlay_shots
+        if len(overlays) > MAX_OVERLAYS_PER_SCENE:
+            raise CompileError(
+                f"scene {scene.scene_id!r} declares {len(overlays)} overlays; "
+                f"at most {MAX_OVERLAYS_PER_SCENE} overlay per scene is supported in VE-01"
+            )
+        for overlay in overlays:
+            reference = manifest.get(overlay.asset_ref)
+            if reference is None:
+                raise CompileError(
+                    f"overlay {overlay.shot_id!r} references unknown asset {overlay.asset_ref!r}"
+                )
+            if reference.media_type not in ("image", "graphic"):
+                raise CompileError(
+                    f"overlay {overlay.shot_id!r} uses {reference.media_type!r} media; "
+                    f"VE-01 supports image/graphic overlays only (video/text arrive in VE-02)"
+                )
+            descriptor = by_id.get(overlay.asset_ref)
+            if descriptor is None:
+                raise CompileError(
+                    f"asset {overlay.asset_ref!r} was not resolved before compiling the plan"
+                )
+            _check_descriptor(reference, descriptor)
+            if not descriptor.available:
+                raise CompileError(f"asset {overlay.asset_ref!r} is unavailable at {descriptor.uri!r}")
+            if scene.host_base_for(overlay) is None:
+                raise CompileError(
+                    f"overlay {overlay.shot_id!r} crosses a base segment boundary; "
+                    f"an overlay must fit entirely inside one base shot"
+                )
+
+
+def _compile_layers(scene, base: Shot, manifest: dict[str, AssetReference],
+                    by_id: dict[str, AssetDescriptor]) -> tuple[LayerExecution, ...]:
+    layers: list[LayerExecution] = []
+    for overlay in _ordered_overlays(scene):
+        host = scene.host_base_for(overlay)
+        if host is None or host.shot_id != base.shot_id:
+            continue
+        reference = manifest[overlay.asset_ref]
+        descriptor = by_id[overlay.asset_ref]
+        layers.append(
+            LayerExecution(
+                shot_id=overlay.shot_id,
+                asset_id=overlay.asset_ref,
+                media_type=reference.media_type,
+                source=descriptor.location or descriptor.uri,
+                z_index=overlay.z_index,
+                start_ticks=overlay.start_tick - base.start_tick,
+                duration_ticks=overlay.duration_ticks,
+                fit=overlay.composition.fit if overlay.composition is not None else "cover",
+            )
+        )
+    return tuple(layers)
 
 
 def _check_descriptor(reference: AssetReference, descriptor: AssetDescriptor) -> None:
@@ -383,6 +475,8 @@ def _compile_shot(
     size: tuple[int, int],
     subtitles: list,
     label: str,
+    *,
+    overlays: tuple[LayerExecution, ...] = (),
 ) -> ShotExecution:
     width, height = size
     frames = _frames(shot.duration_ticks, plan.timeline.timebase.fps_num, plan.timeline.timebase.fps_den, tps)
@@ -419,9 +513,6 @@ def _compile_shot(
         label=label,
         disclosure=plan.output.disclosure,
     )
-    parts.append("[b0][1:v]overlay=0:0:format=auto[o1]")
-    last = "o1"
-
     captions: list[OverlayImage] = []
     for cue in subtitles:
         if not (shot.start_tick <= cue.start_tick < shot.start_tick + shot.duration_ticks):
@@ -434,10 +525,6 @@ def _compile_shot(
                 f"splitting a caption across shots is RP-024"
             )
         enable = f"gte(t,{_seconds(start_ticks, tps):.3f})*lt(t,{_seconds(end_ticks, tps):.3f})"
-        # inputs: 0 = mídia, 1 = selo/disclosure, 2.. = legendas (na ordem dos argumentos)
-        number = len(captions) + 2
-        parts.append(f"[{last}][{number}:v]overlay=0:0:format=auto:enable='{enable}'[o{number}]")
-        last = f"o{number}"
         captions.append(
             OverlayImage(
                 kind="caption",
@@ -449,14 +536,32 @@ def _compile_shot(
             )
         )
 
-    fade_out = max(0.0, seconds - FADE_S)
-    parts.append(f"[{last}]fade=t=in:st=0:d={FADE_S},fade=t=out:st={fade_out:.3f}:d={FADE_S}[v]")
+    # VE-02: as camadas de imagem são entradas extras (depois das legendas) e entram no
+    # grafo **abaixo** do selo/disclosure e das legendas, só na janela relativa ao segmento
+    # base. Sem overlay, ``parts``/``args`` são exatamente os de antes (I13).
+    overlay_args: list[str] = []
+    last = "b0"
+    for offset, layer in enumerate(overlays):
+        # inputs: 0 = mídia, 1 = selo/disclosure, 2.. = legendas, depois as camadas
+        number = len(captions) + 2 + offset
+        parts.append(_overlay_filter(layer, number, width, height, tps, last))
+        last = f"ov{number}"
+        overlay_args += ["-loop", "1", "-i", layer.source]
+    parts.append(f"[{last}][1:v]overlay=0:0:format=auto[o1]")
+    last = "o1"
+
+    for number, caption in enumerate(captions, start=2):
+        parts.append(f"[{last}][{number}:v]overlay=0:0:format=auto:enable='{caption.enable}'[o{number}]")
+        last = f"o{number}"
+
+    parts.append(f"[{last}]{_fade_filter(shot.transition, seconds, tps, shot.shot_id)}[v]")
     filter_complex = ";".join(parts)
 
     output = f"{work}/scene_{index:03d}.mp4"
     args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", static.path]
     for caption in captions:
         args += ["-i", caption.path]
+    args += overlay_args
     args += [
         "-filter_complex", filter_complex,
         "-map", "[v]", "-frames:v", str(frames), "-r", rate,
@@ -478,6 +583,37 @@ def _compile_shot(
         filter_complex=filter_complex,
         output=output,
         args=tuple(args),
+        overlays=overlays,
+    )
+
+
+def _overlay_filter(layer: LayerExecution, number: int, width: int, height: int,
+                    tps: int, previous: str) -> str:
+    """Composição de uma camada de imagem (VE-02) sobre o segmento base hospedeiro.
+
+    ``fit`` decide a geometria: ``cover`` preenche o quadro e recorta o excedente;
+    ``contain`` cabe inteiro e centraliza com transparência. ``enable`` limita o overlay à
+    janela semiaberta ``[start, start+duration)`` relativa ao segmento base — o mesmo
+    vocabulário de ``enable`` das legendas, para o vídeo não exibir a camada fora da janela.
+    """
+    if layer.fit == "cover":
+        geometry = (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={width}:{height},format=rgba"
+        )
+    elif layer.fit == "contain":
+        geometry = (
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+        )
+    else:  # pragma: no cover - Composition.fit é Literal fechado
+        raise CompileError(f"overlay {layer.shot_id!r} has unsupported fit {layer.fit!r}")
+    start = _seconds(layer.start_ticks, tps)
+    end = _seconds(layer.start_ticks + layer.duration_ticks, tps)
+    enable = f"gte(t,{start:.3f})*lt(t,{end:.3f})"
+    return (
+        f"[{number}:v]{geometry}[g{number}];"
+        f"[{previous}][g{number}]overlay=0:0:format=auto:enable='{enable}'[ov{number}]"
     )
 
 
@@ -498,6 +634,29 @@ def _zoompan(effects: Effects, frames: int, width: int, height: int, rate: str) 
     else:  # pragma: no cover - Motion é Literal fechado
         raise CompileError(f"unknown motion {mode!r}")
     return f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={rate}"
+
+
+def _fade_filter(transition: Transition | None, seconds: float, tps: int, shot_id: str) -> str:
+    """Filtro de fade do segmento: entrada ``FADE_S`` e saída pela ``Shot.transition``.
+
+    ``Shot.transition`` é a transição **para o próximo shot**: um ``fade`` declarado de ``n``
+    ticks escurece este segmento em ``n / tps`` segundos; ausente ou ``none`` (o default do
+    contrato) mantém o fade legado de ``FADE_S`` — planos sem transição não mudam (paridade,
+    D4). O fade de **entrada** continua ``FADE_S``: a transição descreve a borda de saída.
+    Refusa (``CompileError``) um fade maior que o próprio shot, antes de qualquer FFmpeg.
+    """
+    declared = transition is not None and transition.kind == "fade"
+    if not declared:
+        # byte a byte igual ao renderer legado (`d=0.25`), para a paridade dos planos sem transição
+        return f"fade=t=in:st=0:d={FADE_S},fade=t=out:st={max(0.0, seconds - FADE_S):.3f}:d={FADE_S}"
+    fade = transition.duration_ticks / tps
+    if fade > seconds:
+        raise CompileError(
+            f"shot {shot_id!r} declares a {transition.duration_ticks}-tick fade "
+            f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
+        )
+    return (f"fade=t=in:st=0:d={FADE_S},"
+            f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}")
 
 
 def _compile_narration(plan: RenderPlan, work: str) -> NarrationTrack:
@@ -553,6 +712,20 @@ def _shot_dict(shot: ShotExecution) -> dict:
         "filter_complex": shot.filter_complex,
         "output": shot.output,
         "args": list(shot.args),
+        "overlays": [_layer_dict(layer) for layer in shot.overlays],
+    }
+
+
+def _layer_dict(layer: LayerExecution) -> dict:
+    return {
+        "shot_id": layer.shot_id,
+        "asset_id": layer.asset_id,
+        "media_type": layer.media_type,
+        "source": layer.source,
+        "z_index": layer.z_index,
+        "start_ticks": layer.start_ticks,
+        "duration_ticks": layer.duration_ticks,
+        "fit": layer.fit,
     }
 
 

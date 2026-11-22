@@ -214,6 +214,9 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
             )
         )
         for shot in sorted(scene.shots, key=lambda s: (s.start_tick, s.shot_id)):
+            if shot.role != "base":
+                # VE-01: o overlay não tem segmento físico; só a base vira nó ``visual``.
+                continue
             reference = manifest.get(shot.asset_ref)
             content_sha256 = reference.content_sha256 if reference is not None else ""
             media_type = reference.media_type if reference is not None else ""
@@ -223,6 +226,7 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
                 for cue in sorted(subtitles_by_scene.get(scene.scene_id, []), key=lambda c: (c.start_tick, c.text))
                 if shot.start_tick <= cue.start_tick < shot.start_tick + shot.duration_ticks
             )
+            hosted = _hosted_overlays(scene, shot, manifest)
             visual_id = NodeId("visual", shot.shot_id)
             nodes.append(
                 CacheNode(
@@ -241,6 +245,7 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
                         badges.get(scene.scene_id, ""),
                         disclosure,
                         captions,
+                        hosted,
                     ),
                 )
             )
@@ -335,6 +340,29 @@ def selective_invalidation(
 
 
 def _ordered_shots(plan: RenderPlan):
-    pairs = [(scene, shot) for scene in plan.timeline.scenes for shot in scene.shots]
+    pairs = [(scene, shot) for scene in plan.timeline.scenes for shot in scene.shots if shot.role == "base"]
     pairs.sort(key=lambda pair: (pair[1].start_tick, pair[0].scene_id, pair[1].shot_id))
     return [shot for _scene, shot in pairs]
+
+
+def _hosted_overlays(scene, base, manifest: Mapping[str, object]) -> tuple:
+    """Overlays hospedados pelo segmento base, na ordem do contrato (§3.4).
+
+    O conteúdo entra no fingerprint do base: adicionar, remover, trocar asset, mudar a
+    janela relativa ou o ``z_index`` invalida só aquela cena (VE-01 §5).
+    """
+    hosted = [overlay for overlay in scene.overlay_shots if scene.host_base_for(overlay) is base]
+    hosted.sort(key=lambda overlay: (overlay.z_index, overlay.start_tick, overlay.shot_id))
+    entries: list[tuple] = []
+    for overlay in hosted:
+        reference = manifest.get(overlay.asset_ref)
+        entries.append((
+            overlay.asset_ref,
+            reference.content_sha256 if reference is not None else "",
+            reference.media_type if reference is not None else "",
+            overlay.z_index,
+            overlay.start_tick - base.start_tick,
+            overlay.duration_ticks,
+            overlay.composition.fit if overlay.composition is not None else None,
+        ))
+    return tuple(entries)

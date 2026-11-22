@@ -645,7 +645,7 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
     items = _primary_nav(html)
     labels = [_nav_text(item) for item in items]
 
-    for expected in ("Início", "Novo vídeo", "Vídeos", "Tendências", "Desempenho"):
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert any(expected in label for label in labels), expected
     assert not any("Produção" in label for label in labels), labels
 
@@ -658,9 +658,9 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
 
     for label, href in (
         ("Início", "/studio/panel"),
-        ("Novo vídeo", "/studio/panel/novo-video"),
+        ("Criar vídeo", "/studio/panel/novo-video"),
         ("Vídeos", "/studio/panel/videos"),
-        ("Tendências", "/studio/panel/tendencias"),
+        ("Tendências e ideias", "/studio/panel/tendencias"),
         ("Desempenho", "/studio/panel/analytics"),
     ):
         item = next(item for item in items if label in _nav_text(item))

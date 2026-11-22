@@ -91,6 +91,12 @@ class FileRenderStorage:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def narration_path(self, project_id: str, video_id: str, scene_id: str) -> Path:
+        """W4.3: WAV de narração de uma cena, fora do `work/` descartável do render."""
+        path = video_dir(self.root, project_id, video_id) / "narration" / f"{check_id(scene_id)}.wav"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
     def publish(self, project_id: str, video_id: str, job_id: str, mp4: Path, srt: str) -> str:
         """Arquivo próprio do job (`final-<job>.mp4/.srt`): render novo nunca sobrescreve o que está sendo servido.
         O .srt vai primeiro; o .mp4 (que o asset aponta) só aparece quando o par está completo."""

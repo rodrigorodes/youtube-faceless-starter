@@ -34,7 +34,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from .channel import ChannelProfile
 from .contracts import Asset, Scene as StoryboardRow, VideoFormat
@@ -69,6 +69,7 @@ DEFAULT_DISCLOSURE = "Ilustração gerada por IA"
 # Parâmetros determinísticos da trilha sintetizada por `rich.synth_music` (seed fixa = 7, bpm 122).
 DEFAULT_MUSIC_PARAMS = {"bpm": 122, "seed": 7}
 VISUAL_TRACK = "visual-main"
+OVERLAY_TRACK = "visual-overlay"
 NARRATION_TRACK = "narration-main"
 SUBTITLE_TRACK = "subtitle-main"
 MUSIC_SOURCE = "music"
@@ -99,6 +100,23 @@ class StoryboardScene:
     label: str = ""
     paid_operation_key: str | None = None
     voice_id: str = ""
+
+
+@dataclass(frozen=True)
+class StoryboardOverlay:
+    """Overlay de imagem relativo à cena, sem caminho de arquivo (VE-01).
+
+    ``start_s``/``duration_s`` são relativos ao início da cena. O asset já deve estar no
+    manifesto (o builder não resolve arquivos); ``z_index`` ordena camadas e ``fit`` é a
+    composição dentro do quadro.
+    """
+
+    scene_id: str
+    asset_id: str
+    start_s: float
+    duration_s: float
+    z_index: int = 1
+    fit: Literal["cover", "contain"] = "contain"
 
 
 def style_snapshot_for_channel(profile: ChannelProfile) -> StyleSnapshot:
@@ -179,6 +197,7 @@ def build_render_plan(
     music_params: Mapping[str, Any] | None = None,
     created_at: datetime | None = None,
     config_snapshot: ConfigSnapshot | None = None,
+    overlays: Sequence[StoryboardOverlay] = (),
 ) -> RenderPlan:
     """Constrói um ``RenderPlan`` v1 válido a partir do storyboard medido.
 
@@ -199,6 +218,7 @@ def build_render_plan(
     ordered = _ordered_scenes(scenes)
     manifest = _manifest_by_id(assets)
     motion_by_scene = _motions(motions, ordered)
+    overlays_by_scene = _overlays_by_scene(overlays, ordered, manifest)
 
     lengths: list[float] = []
     offsets: list[float] = []
@@ -237,12 +257,19 @@ def build_render_plan(
             effects=Effects(motion=motion_by_scene[scene.scene_id]),
             paid_operation_key=scene.paid_operation_key,
         )
+        scene_shots = [shot]
+        scene_shots.extend(
+            _overlay_shots(
+                scene.scene_id, start_tick, end_tick,
+                overlays_by_scene.get(scene.scene_id, ()), tps,
+            )
+        )
         plan_scenes.append(
             PlanScene(
                 scene_id=scene.scene_id,
                 start_tick=start_tick,
                 duration_ticks=duration_ticks,
-                shots=[shot],
+                shots=scene_shots,
                 paid_operation_key=scene.paid_operation_key,
             )
         )
@@ -294,11 +321,7 @@ def build_render_plan(
         ),
         timeline=Timeline(
             timebase=timebase,
-            tracks=[
-                Track(track_id=VISUAL_TRACK, kind="visual"),
-                Track(track_id=NARRATION_TRACK, kind="narration"),
-                Track(track_id=SUBTITLE_TRACK, kind="subtitle"),
-            ],
+            tracks=_tracks(overlays_by_scene),
             scenes=plan_scenes,
             narration=narration,
             subtitles=subtitles,
@@ -362,6 +385,97 @@ def _motions(motions: Mapping[str, Motion] | None, scenes: Sequence[StoryboardSc
     if unknown:
         raise PlanBuildError(f"motion declared for unknown scene(s): {unknown!r}")
     return {scene.scene_id: motions.get(scene.scene_id, "none") for scene in scenes}
+
+
+def _tracks(overlays_by_scene: Mapping[str, Sequence[StoryboardOverlay]]) -> list[Track]:
+    """Tracks do plano; a faixa de overlay só existe quando há overlay."""
+    tracks = [Track(track_id=VISUAL_TRACK, kind="visual")]
+    if any(overlays_by_scene.values()):
+        tracks.append(Track(track_id=OVERLAY_TRACK, kind="visual"))
+    tracks.extend([
+        Track(track_id=NARRATION_TRACK, kind="narration"),
+        Track(track_id=SUBTITLE_TRACK, kind="subtitle"),
+    ])
+    return tracks
+
+
+def _overlays_by_scene(
+    overlays: Sequence[StoryboardOverlay],
+    scenes: Sequence[StoryboardScene],
+    manifest: Mapping[str, AssetReference],
+) -> dict[str, list[StoryboardOverlay]]:
+    """Agrupa e valida os overlays por cena (I15) antes de converter para ticks."""
+    if isinstance(overlays, (str, bytes, bytearray)):
+        raise PlanBuildError("overlays must be a sequence of StoryboardOverlay")
+    try:
+        items = tuple(overlays)
+    except TypeError as exc:
+        raise PlanBuildError("overlays must be a sequence of StoryboardOverlay") from exc
+    known = {scene.scene_id for scene in scenes}
+    grouped: dict[str, list[StoryboardOverlay]] = {}
+    for index, overlay in enumerate(items):
+        if not isinstance(overlay, StoryboardOverlay):
+            raise PlanBuildError(f"overlay {index} is not a StoryboardOverlay")
+        if overlay.scene_id not in known:
+            raise PlanBuildError(f"overlay {index} references unknown scene {overlay.scene_id!r}")
+        if overlay.asset_id not in manifest:
+            raise PlanBuildError(
+                f"overlay {index} references asset {overlay.asset_id!r} that is not in the manifest"
+            )
+        grouped.setdefault(overlay.scene_id, []).append(overlay)
+    return grouped
+
+
+def _overlay_shots(
+    scene_id: str,
+    start_tick: int,
+    end_tick: int,
+    overlays: Sequence[StoryboardOverlay],
+    tps: int,
+) -> list[Shot]:
+    """Converte os overlays da cena em shots relativos, ordenados por ``(z_index, start_s, asset_id)``."""
+    scene_duration = end_tick - start_tick
+    ordered = sorted(overlays, key=lambda overlay: (overlay.z_index, overlay.start_s, overlay.asset_id))
+    shots: list[Shot] = []
+    for index, overlay in enumerate(ordered):
+        start_s = _finite_number(overlay.start_s, "start_s", scene_id)
+        duration_s = _finite_number(overlay.duration_s, "duration_s", scene_id)
+        if start_s < 0:
+            raise PlanBuildError(f"overlay {index} of scene {scene_id!r} has a negative start_s")
+        if duration_s <= 0:
+            raise PlanBuildError(f"overlay {index} of scene {scene_id!r} needs a positive duration_s")
+        relative_start = seconds_to_ticks(start_s, tps)
+        relative_duration = seconds_to_ticks(duration_s, tps)
+        if relative_duration < 1:
+            raise PlanBuildError(
+                f"overlay {index} of scene {scene_id!r} is below one tick at {tps} ticks/s"
+            )
+        if relative_start + relative_duration > scene_duration:
+            raise PlanBuildError(
+                f"overlay {index} of scene {scene_id!r} ends outside its scene: "
+                f"{start_s!r}s + {duration_s!r}s exceeds {scene_duration / tps!r}s"
+            )
+        shots.append(
+            Shot(
+                shot_id=f"overlay:{scene_id}:{index}",
+                track_id=OVERLAY_TRACK,
+                start_tick=start_tick + relative_start,
+                duration_ticks=relative_duration,
+                asset_ref=overlay.asset_id,
+                role="overlay",
+                z_index=overlay.z_index,
+                composition=Composition(fit=overlay.fit),
+            )
+        )
+    return shots
+
+
+def _finite_number(value: object, name: str, scene_id: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PlanBuildError(f"overlay of scene {scene_id!r} has a non-numeric {name}")
+    if not math.isfinite(value):
+        raise PlanBuildError(f"overlay of scene {scene_id!r} has a non-finite {name}")
+    return float(value)
 
 
 def _speech_seconds(scene: StoryboardScene) -> float:

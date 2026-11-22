@@ -5,10 +5,18 @@ vários canais (`ChannelProfile.style_id`). O estilo é imutável e versionado: 
 atualização carrega a `version`, e o repositório incrementa de forma otimista, gravando um
 snapshot auditável por versão — o mesmo padrão de `channel_profile_revisions`.
 
-`params` é o retrato aplicável pelo render. Só entram os parâmetros que o render **de fato**
-entende (motion · music · transition · caption · palette · voice). O que o render ainda não
-aplica vai em `extra` — versionado e carregado desde o dia 1, ignorado pelo renderer até o
-knob existir. É o "conforme o uso vamos melhorando" com contrato, não com promessa.
+`params` é o retrato do estilo. Os grupos que o render **de fato** aplica hoje são
+motion · music · caption · palette · voice; `transition` (de estilo) e `extra` são **carregados
+sem efeito** — versionados e preservados desde o dia 1, mas nenhum deles muda o vídeo até o
+compilador/executor ligar a ponta. É o "conforme o uso vamos melhorando" com contrato, não com
+promessa.
+
+A honestidade é explícita (W3.2): ``APPLIED_GROUPS`` são os grupos que o compilador/executor
+levam ao vídeo hoje e ``LOADED_ONLY_GROUPS`` o que é carregado sem efeito (``transition`` de
+estilo e ``extra``). ``PRESETS``/``preset_params`` oferecem presets por nicho **só** com grupos
+aplicáveis — um preset nunca promete o que o render não faz. Note que ``Shot.transition`` (a
+transição **do plano**, por shot) é consumida pelo compilador; o que não é aplicado é a
+``transition`` **de estilo**, que ainda não vira ``Shot.transition``.
 
 ## Patch tipado (F05.T01)
 
@@ -61,6 +69,18 @@ TRANSITION_KINDS = frozenset({"none", "fade"})
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
 # Chaves de `params` que o contrato conhece. Qualquer outra é recusada — a extensão é `extra`.
 KNOWN_PARAMS = ("motion", "music", "transition", "caption", "palette", "voice", "extra")
+# W3.2: quais grupos o render **de fato** leva ao vídeo hoje. Só estes podem ganhar controle: o
+# compilador/executor consomem `motion` (Ken Burns), `music` (bpm/seed da trilha), `caption`
+# (geometria da legenda), `palette` (cores do overlay) e `voice` (modelo de fala). Um grupo fora
+# daqui é carregado e versionado sem efeito — a UI deve rotulá-lo "declarado e não aplicado", não
+# fingir suporte. `LOADED_ONLY_GROUPS` é o complemento **exato** (`APPLIED ∥ LOADED_ONLY` = KNOWN).
+#
+# `transition` fica em carregado-e-não-aplicado por honestidade: o compilador **já consome**
+# ``Shot.transition`` de um plano (o fade do segmento, W3.2), mas nada vira a transição de um
+# **estilo** em ``Shot.transition`` ainda — ligar essa ponta é fatia futura. Enquanto isso, um
+# estilo com `transition` continua sem alterar o render.
+APPLIED_GROUPS: frozenset[str] = frozenset({"motion", "music", "caption", "palette", "voice"})
+LOADED_ONLY_GROUPS: frozenset[str] = frozenset(set(KNOWN_PARAMS) - APPLIED_GROUPS)
 CREATABLE_FIELDS = ("organization_id", "params", "archived")
 UPDATABLE_FIELDS = ("name", "params", "archived")
 
@@ -574,3 +594,49 @@ def resolve_style(profile: ChannelProfile | None, style: VisualStyle | None,
         palette=dict(params.get("palette", {})),
         voice=dict(params.get("voice", {})),
     )
+
+
+# ---------- W3.2: presets por nicho (catálogo puro, só grupos aplicáveis) ----------
+
+# Presets de partida — o "conforme o uso vamos melhorando" com um ponto de partida honesto.
+# Cada preset declara **apenas** grupos de `APPLIED_GROUPS`: nada aqui promete efeito que o
+# render não faça. Não são estilos persistidos: quem cria um `VisualStyle` copia os `params`
+# (via ``preset_params``) e a biblioteca segue sendo a fonte versionada.
+PRESETS: Mapping[str, dict[str, Any]] = MappingProxyType({
+    # Ritmo lento, âncora dourada, legenda discreta — o tom de documentário.
+    "documentario": {
+        "motion": ["zoom_in", "pan_right"],
+        "music": {"bpm": 96, "seed": 7},
+        "caption": {"font_size": 52, "bottom": 1520},
+        "palette": {"caption_text": "#F2F2F2", "caption_box": "#000000A5", "accent": "#D4AF37"},
+    },
+    # Câmera parada e legenda grande, para leitura rápida de manchete.
+    "noticia": {
+        "motion": ["none"],
+        "music": {"bpm": 128, "seed": 11},
+        "caption": {"font_size": 62, "bottom": 1580},
+        "palette": {"caption_text": "#FFFFFF", "caption_box": "#0B0B11CC", "accent": "#E11D48"},
+    },
+    # Alterna zoom in/out; sotaque na paleta de marca do estúdio.
+    "curiosidades": {
+        "motion": ["zoom_in", "zoom_out"],
+        "music": {"bpm": 122, "seed": 7},
+        "caption": {"font_size": 58, "bottom": 1560},
+        "palette": {"caption_text": "#FFFFFF", "caption_box": "#1A0B2ECC", "accent": "#FF008C"},
+    },
+})
+
+
+def preset_params(preset_id: str) -> dict[str, Any]:
+    """Parâmetros de um preset, validados pelo **mesmo** ``clean_params`` do estilo.
+
+    Devolve uma cópia profunda (o chamador não muta o catálogo do módulo) já na forma canônica do
+    estilo — a mesma validação da biblioteca, nunca uma frouxa. Preset desconhecido é recusado
+    com ``VisualStyleParamsInvalid``: quem chama decide o fallback (manter o estilo atual), nunca
+    um preset inventado.
+    """
+    try:
+        raw = PRESETS[preset_id]
+    except (KeyError, TypeError):
+        raise VisualStyleParamsInvalid(f"unknown preset {preset_id!r}") from None
+    return clean_params(copy.deepcopy(dict(raw)))

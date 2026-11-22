@@ -26,7 +26,14 @@ from app.studio.application.render_compiler import (  # noqa: E402
 from app.studio.domain.asset_resolver import AssetDescriptor  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
 from app.studio.domain.render import FADE_S, FPS  # noqa: E402
-from app.studio.domain.render_plan import RenderPlan, StyleSnapshot  # noqa: E402
+from app.studio.domain.render_plan import (  # noqa: E402
+    Composition,
+    RenderPlan,
+    Shot,
+    StyleSnapshot,
+    Track,
+    Transition,
+)
 from app.studio.domain.render_plan_builder import (  # noqa: E402
     DEFAULT_TICKS_PER_SECOND,
     StoryboardScene,
@@ -391,3 +398,250 @@ def test_compiler_rejects_a_text_asset_without_text_metadata():
     text = descriptor_for("asset-01", media_type="text", codec=None, width=None, height=None, location="")
     with pytest.raises(CompileError, match="text"):
         compile_simple(plan, assets={"asset-01": text})
+
+
+# ------------------------------------------------------------------ VE-01 — overlay
+
+
+def _with_overlays(base, *, bases, overlays, extra_assets=None):
+    """Replaces the single scene's shots with explicit base segments and overlays."""
+    scene = base.timeline.scenes[0]
+    base_asset = scene.shots[0].asset_ref
+    shots = [
+        Shot(shot_id=f"base:{index}", track_id="visual-main", start_tick=start,
+             duration_ticks=duration, asset_ref=base_asset, role="base", z_index=0)
+        for index, (start, duration) in enumerate(bases)
+    ]
+    for index, spec in enumerate(overlays):
+        shots.append(Shot(
+            shot_id=f"overlay:{index}", track_id="visual-overlay",
+            start_tick=spec["start"], duration_ticks=spec["duration"],
+            asset_ref=spec.get("asset_ref", base_asset), role="overlay",
+            z_index=spec.get("z_index", 1),
+            composition=Composition(fit=spec.get("fit", "contain")),
+        ))
+    new_scene = scene.model_copy(update={"shots": shots})
+    tracks = [Track(track_id="visual-main", kind="visual"), Track(track_id="visual-overlay", kind="visual")]
+    timeline = base.timeline.model_copy(update={"tracks": tracks, "scenes": [new_scene]})
+    manifest = list(base.asset_manifest)
+    for reference in extra_assets or []:
+        manifest.append(reference)
+    return base.model_copy(update={"timeline": timeline, "asset_manifest": manifest})
+
+
+def _overlay_plan(*, bases=None, overlays=None, extra_assets=None):
+    base = simple_plan()
+    total = base.timeline.scenes[0].duration_ticks
+    bases = bases or [(0, total)]
+    overlays = overlays or [{"start": 100, "duration": 200}]
+    return _with_overlays(base, bases=bases, overlays=overlays, extra_assets=extra_assets)
+
+
+def _compile_overlay(plan, **overrides):
+    assets = overrides.pop("assets", None)
+    if assets is None:
+        assets = {a.asset_id: descriptor_for(a.asset_id, a.uri, a.content_sha256, a.media_type)
+                  for a in plan.asset_manifest}
+    return compile_simple(plan, assets=assets, **overrides)
+
+
+def test_T09_base_gap_is_still_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(bases=[(0, total // 2)], overlays=[])
+    with pytest.raises(CompileError, match="gap"):
+        _compile_overlay(plan)
+
+
+def test_T10_overlay_crossing_a_base_boundary_is_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total // 2), (total // 2, total - total // 2)],
+        overlays=[{"start": total // 4, "duration": total // 2}],
+    )
+    with pytest.raises(CompileError, match="boundary|base segment|host"):
+        _compile_overlay(plan)
+
+
+def test_T11_two_overlays_in_the_same_scene_are_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 0, "duration": 100}, {"start": 200, "duration": 100}],
+    )
+    with pytest.raises(CompileError, match="at most 1 overlay|MAX_OVERLAYS|one overlay per scene"):
+        _compile_overlay(plan)
+
+
+@pytest.mark.parametrize("media_type", ["video", "text"])
+def test_T12_overlay_media_must_be_image_or_graphic(media_type):
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    overlay_ref = image_ref("asset-overlay").model_copy(update={"media_type": media_type})
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 0, "duration": 100, "asset_ref": "asset-overlay"}],
+        extra_assets=[overlay_ref],
+    )
+    if media_type == "video":
+        descriptor = descriptor_for("asset-overlay", media_type="video", codec="h264", duration_ticks=100)
+    else:
+        descriptor = descriptor_for("asset-overlay", media_type="text", codec=None, width=None,
+                                    height=None, location="")
+    with pytest.raises(CompileError, match="VE-02|image|graphic"):
+        _compile_overlay(plan, assets={"asset-01": descriptor_for("asset-01"), "asset-overlay": descriptor})
+
+
+def test_T13_overlay_without_a_resolved_descriptor_is_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 0, "duration": 100, "asset_ref": "asset-overlay"}],
+        extra_assets=[image_ref("asset-overlay")],
+    )
+    with pytest.raises(CompileError, match="asset-overlay"):
+        _compile_overlay(plan, assets={"asset-01": descriptor_for("asset-01")})
+
+
+def test_T13_unavailable_overlay_is_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 0, "duration": 100, "asset_ref": "asset-overlay"}],
+        extra_assets=[image_ref("asset-overlay")],
+    )
+    with pytest.raises(CompileError, match="unavailable"):
+        _compile_overlay(plan, assets={
+            "asset-01": descriptor_for("asset-01"),
+            "asset-overlay": descriptor_for("asset-overlay", available=False),
+        })
+
+
+def test_T13_overlay_with_a_different_hash_is_refused():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 0, "duration": 100, "asset_ref": "asset-overlay"}],
+        extra_assets=[image_ref("asset-overlay")],
+    )
+    with pytest.raises(CompileError, match="content_sha256|hash"):
+        _compile_overlay(plan, assets={
+            "asset-01": descriptor_for("asset-01"),
+            "asset-overlay": descriptor_for("asset-overlay", sha="c" * 64),
+        })
+
+
+def test_T14_base_plus_one_overlay_keeps_one_segment_and_nests_the_layer():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 100, "duration": 200, "z_index": 2, "fit": "cover"}],
+    )
+    compiled = _compile_overlay(plan)
+    assert len(compiled.shots) == 1
+    [shot] = compiled.shots
+    assert shot.overlays and len(shot.overlays) == 1
+    layer = shot.overlays[0]
+    assert layer.start_ticks == 100 and layer.duration_ticks == 200
+    assert layer.z_index == 2 and layer.fit == "cover"
+    # A montagem final só conhece o segmento base (o overlay não vira segmento).
+    assert [segment["scene_id"] for segment in compiled.to_dict()["shots"]] == [shot.scene_id]
+
+
+def test_T15_compiling_twice_is_deterministic_and_ignores_shot_order():
+    total = simple_plan().timeline.scenes[0].duration_ticks
+    plan = _overlay_plan(
+        bases=[(0, total)],
+        overlays=[{"start": 100, "duration": 200}],
+    )
+    first = _compile_overlay(plan)
+    second = _compile_overlay(plan)
+    assert first.digest() == second.digest()
+    scene = plan.timeline.scenes[0]
+    shuffled = plan.model_copy(update={
+        "timeline": plan.timeline.model_copy(update={
+            "scenes": [scene.model_copy(update={"shots": list(reversed(scene.shots))})],
+        }),
+    })
+    assert _compile_overlay(shuffled).digest() == first.digest()
+
+
+def test_T16_plan_without_overlay_keeps_empty_overlays_and_identical_commands():
+    plan = simple_plan()
+    compiled = _compile_overlay(plan)
+    assert compiled.shots[0].overlays == ()
+    explicit = plan.model_copy(update={
+        "timeline": plan.timeline.model_copy(update={
+            "scenes": [scene.model_copy(update={
+                "shots": [shot.model_copy(update={"role": "base", "z_index": 0}) for shot in scene.shots],
+            }) for scene in plan.timeline.scenes],
+        }),
+    })
+    compiled_explicit = _compile_overlay(explicit)
+    assert compiled.shots[0].filter_complex == compiled_explicit.shots[0].filter_complex
+    assert compiled.shots[0].args == compiled_explicit.shots[0].args
+
+
+# ------------------------------------------------------------------ W3.2 — Shot.transition consumido
+
+
+def _with_transition(plan, transition, *, scene_index=0):
+    """Plano com a transição declarada no shot base de uma cena (sem mexer no resto)."""
+    scenes = list(plan.timeline.scenes)
+    scene = scenes[scene_index]
+    shots = [scene.shots[0].model_copy(update={"transition": transition})] + list(scene.shots[1:])
+    scenes[scene_index] = scene.model_copy(update={"shots": shots})
+    return plan.model_copy(update={"timeline": plan.timeline.model_copy(update={"scenes": scenes})})
+
+
+def test_a_plan_without_transition_compiles_to_the_exact_legacy_fade():
+    # Paridade D4: sem transição, o fade é byte a byte o do renderer legado (d=0.25 por borda).
+    graph = compile_simple().shots[0].filter_complex
+    assert f"fade=t=in:st=0:d={FADE_S},fade=t=out:st={2.8 - FADE_S:.3f}:d={FADE_S}" in graph
+
+
+def test_a_declared_fade_transition_drives_the_segment_fade_out():
+    legacy = compile_simple()
+    declared = compile_simple(_with_transition(simple_plan(), Transition(kind="fade", duration_ticks=2500)))
+    graph = declared.shots[0].filter_complex
+    # a entrada continua o fade legado; a saída usa a transição declarada (2500 ticks = 0,1 s)
+    assert "fade=t=in:st=0:d=0.25" in graph
+    assert "fade=t=out:st=2.700:d=0.100" in graph
+    assert graph != legacy.shots[0].filter_complex
+    assert declared.digest() != legacy.digest()
+
+
+def test_a_none_transition_is_the_legacy_fade_and_changes_nothing():
+    without = compile_simple()
+    explicit_none = compile_simple(_with_transition(simple_plan(), Transition(kind="none")))
+    assert explicit_none.shots[0].filter_complex == without.shots[0].filter_complex
+    assert explicit_none.shots[0].args == without.shots[0].args
+    assert explicit_none.digest() == without.digest()
+
+
+def test_a_fade_transition_only_touches_its_own_segment():
+    plan = plan_with(
+        [StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration="Primeira cena do vídeo.", speech_seconds=2.0),
+         StoryboardScene(scene_id="scene-02", asset_id="asset-02", narration="Segunda cena do vídeo.", speech_seconds=2.0)],
+        assets=[image_ref(), image_ref("asset-02", sha=SHA_B)],
+    )
+    declared = compile_simple(_with_transition(plan, Transition(kind="fade", duration_ticks=5000)), assets={
+        "asset-01": descriptor_for("asset-01"),
+        "asset-02": descriptor_for("asset-02", sha=SHA_B),
+    })
+    plain = compile_simple(plan, assets={
+        "asset-01": descriptor_for("asset-01"),
+        "asset-02": descriptor_for("asset-02", sha=SHA_B),
+    })
+    assert declared.shots[0].filter_complex != plain.shots[0].filter_complex  # a cena da transição muda
+    assert declared.shots[1].filter_complex == plain.shots[1].filter_complex  # a outra não é tocada
+
+
+def test_a_fade_transition_longer_than_the_shot_is_refused_before_ffmpeg():
+    # 100 000 ticks = 4 s > 2,8 s da cena: nada de um fade que começa antes do shot existir.
+    plan = _with_transition(simple_plan(), Transition(kind="fade", duration_ticks=100_000))
+    with pytest.raises(CompileError, match="fade|longer"):
+        compile_simple(plan)
+
+
+def test_compiling_a_transition_plan_twice_is_deterministic():
+    plan = _with_transition(simple_plan(), Transition(kind="fade", duration_ticks=2500))
+    assert compile_simple(plan).digest() == compile_simple(plan).digest()

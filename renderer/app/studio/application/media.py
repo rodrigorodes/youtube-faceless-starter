@@ -4,18 +4,28 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from ..domain.contracts import Asset, AssetKind, VideoStatus
+from ..domain.contracts import Asset, AssetKind, Scene, Video, VideoStatus
 from ..domain.ids import asset_cache_key
-from ..domain.media import ASPECT_FOR, build_image_prompt
+from ..domain.media import ASPECT_FOR, build_image_prompt, strip_style
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import CostGuard, StateConflict, _require_video
-from .ports import AssetRepository, AssetStore, ImageModel, ProductionLock, ScriptRepository, UsageRepository, VideoRepository
+from .errors import ServiceUnavailable
+from .ports import (AssetRepository, AssetStore, ImageModel, MediaCandidate, MediaFetcher, MediaSearch, ProductionLock,
+                    ScriptRepository, UsageRepository, VideoRepository)
 
 ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
 
 
 class AssetRefused(ValueError):
     """Imagem do provedor recusada (sem licença, tipo não raster ou arquivo inválido); nada é gravado nem vinculado."""
+
+
+class SceneNotFound(LookupError):
+    """A cena referenciada não existe neste vídeo (id estável)."""
+
+
+class SceneMediaRefused(ValueError):
+    """Troca de mídia recusada por escolha inválida (nada gravado): candidato e asset juntos, asset inexistente ou sem fetcher."""
 
 
 class PrepareStoryboard:
@@ -125,8 +135,136 @@ class ListAssets:
         return [SceneAsset(s.idx, self.assets.get(s.asset_id) if s.asset_id else None) for s in self.scripts.scenes(video_id)]
 
 
+def _scene_by_id(scenes: list[Scene], scene_id: str) -> Scene | None:
+    return next((scene for scene in scenes if scene.id == scene_id), None)
+
+
+@dataclass(frozen=True)
+class SceneCandidates:
+    """Candidatos de mídia de uma cena; ``query`` é o tema usado (prompt sem o sufixo de estilo)."""
+
+    scene_id: str
+    query: str
+    candidates: tuple[MediaCandidate, ...]
+
+
+class ListSceneCandidates:
+    """Lista candidatos de mídia para uma cena via ``MediaSearch`` (W4.4/VE-06).
+
+    A busca é agnóstica de fornecedor e sai do tema do prompt da cena; busca vazia devolve lista
+    vazia — o chamador mantém a mídia atual (fallback), sem cena sem imagem.
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, search: MediaSearch):
+        self.videos, self.scripts, self.search = videos, scripts, search
+
+    def execute(self, video_id: str, scene_id: str, *, per_page: int = 10,
+                media_type: str = "image") -> SceneCandidates:
+        video = _require_video(self.videos, video_id)
+        scene = _scene(self.scripts, video_id, scene_id)
+        if self.search is None:
+            raise ServiceUnavailable("media search is not configured")
+        query = strip_style(scene.image_prompt).strip() or scene.caption.strip()
+        if not query:
+            return SceneCandidates(scene_id=scene.id, query="", candidates=())
+        orientation = "portrait" if ASPECT_FOR[video.format] == "9:16" else "landscape"
+        found = self.search.search(query, media_type=media_type, orientation=orientation, per_page=per_page)
+        return SceneCandidates(scene_id=scene.id, query=query, candidates=tuple(found))
+
+
+@dataclass(frozen=True)
+class SceneMediaResult:
+    """Resultado da troca: asset final da cena e se houve escrita (``changed``); ``reason`` explica o no-op."""
+
+    scene_id: str
+    asset: Asset | None
+    changed: bool
+    reason: str = ""
+
+
+class SwapSceneMedia:
+    """Troca a mídia de **uma** cena (id estável) sem tocar nas outras (W4.4/EDIT-03/VE-06).
+
+    Aceita um ``asset_id`` já existente **ou** um ``candidate`` materializado pelo ``MediaFetcher``.
+    Sem escolha (ambos nulos) mantém a mídia atual: nenhuma escrita, o fallback "sem candidato".
+    Licença obrigatória nos dois caminhos; a troca é idempotente e compara-e-troca no vínculo lido
+    (CAS) para não sobrescrever mudança concorrente. Só a cena alvo é escrita — o cache/render
+    invalida apenas ela e o final por dependência (``PlanRegeneration``).
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, store: AssetStore,
+                 fetcher: MediaFetcher | None = None, guard: CostGuard | None = None,
+                 usage: UsageRepository | None = None):
+        self.videos, self.scripts, self.assets, self.store = videos, scripts, assets, store
+        self.fetcher, self.guard, self.usage = fetcher, guard, usage
+
+    def execute(self, video_id: str, scene_id: str, *, asset_id: str | None = None,
+                candidate: MediaCandidate | None = None, expected_asset_id: str | None = None,
+                expected_version: int | None = None) -> SceneMediaResult:
+        video = _require_video(self.videos, video_id)
+        scene = _scene(self.scripts, video_id, scene_id)
+        if expected_version is not None:
+            latest = self.scripts.latest(video_id)
+            if latest is None or latest.version != expected_version:
+                raise StateConflict("script version changed underneath the media swap")
+        if asset_id is None and candidate is None:
+            current = self.assets.get(scene.asset_id) if scene.asset_id else None
+            return SceneMediaResult(scene_id=scene.id, asset=current, changed=False, reason="no_candidate")
+        if asset_id is not None and candidate is not None:
+            raise SceneMediaRefused("choose either a candidate or an asset, not both")
+        if candidate is not None:
+            asset = self._materialize(video, candidate)
+        else:
+            asset = self.assets.get(asset_id)
+            if asset is None:
+                raise SceneMediaRefused(f"asset {asset_id!r} does not exist")
+            if not (asset.license or "").strip():
+                raise AssetRefused("asset without a registered license")
+        if scene.asset_id == asset.id:
+            return SceneMediaResult(scene_id=scene.id, asset=asset, changed=False, reason="already-linked")
+        if expected_asset_id is not None and (scene.asset_id or "") != expected_asset_id:
+            raise StateConflict("scene media changed underneath; reload before swapping")
+        if not self.assets.swap_scene_asset(video_id, scene.id, asset.id, expected_asset_id=scene.asset_id):
+            raise StateConflict("scene media changed underneath; nothing was written")
+        return SceneMediaResult(scene_id=scene.id, asset=asset, changed=True)
+
+    def _materialize(self, video: Video, candidate: MediaCandidate) -> Asset:
+        if self.fetcher is None:
+            raise SceneMediaRefused("no media fetcher is configured to apply a candidate")
+        provider = self.fetcher.name
+        aspect = ASPECT_FOR[video.format]
+        estimate = Decimal(str(candidate.cost_usd)) if candidate.cost_usd is not None else Decimal("0")
+        if self.guard is not None and estimate > 0:
+            self.guard.check(video.id, float(estimate))  # antes de baixar: candidato pago respeita o teto
+        result = self.fetcher.fetch(candidate)
+        if not (result.license or "").strip():
+            raise AssetRefused("candidate without a registered license")
+        if result.mime not in ALLOWED_MIME:
+            raise AssetRefused(f"unsupported image mime {result.mime!r}")
+        key = asset_cache_key("image", provider, candidate.media_id or candidate.url, candidate.url, {"aspect": aspect})
+        existing = self.assets.find(key)
+        if existing is not None:
+            return existing  # mesmo candidato com o mesmo aspecto: reaproveita o asset já vinculável
+        path = self.store.put(key, result.data, aspect)
+        asset = Asset(id=uuid.uuid4().hex, kind=AssetKind.image, cache_key=key, path=path, provider=provider,
+                      model=candidate.media_id or provider, license=result.license, attribution=result.attribution,
+                      source_url=result.source_url, cost_usd=result.usage.cost_usd)
+        if self.usage is not None:
+            self.usage.record(video.id, result.usage)
+        return self.assets.add(asset)
+
+
+def _scene(scripts: ScriptRepository, video_id: str, scene_id: str) -> Scene:
+    scene = _scene_by_id(scripts.scenes(video_id), scene_id)
+    if scene is None:
+        raise SceneNotFound(scene_id)
+    return scene
+
+
 @dataclass(frozen=True)
 class Media:
     storyboard: PrepareStoryboard
     produce: ProduceAssets
     list_assets: ListAssets
+    list_candidates: "ListSceneCandidates | None" = None
+    swap: "SwapSceneMedia | None" = None

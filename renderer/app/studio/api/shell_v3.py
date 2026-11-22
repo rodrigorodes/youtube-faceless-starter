@@ -402,14 +402,21 @@ _ICONS = {
     "desempenho": _SVG.format('<path d="M3 20h18M6 16V9m6 7V4m6 12v-5"/>'),
     "configuracoes": _SVG.format(
         '<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>'),
+    "biblioteca": _SVG.format(
+        '<path d="M4 4h5v16H4zM10 4h4v16h-4zM16 5l4 1-3 15-4-1z"/>'),
 }
+
+# W1.5 (SET): item "Biblioteca" do protótipo (`prototype/index.html:583`) apontando para a
+# biblioteca de estilos que já existe. Vozes e mídias entram quando houver provider/ativo a listar.
+BIBLIOTECA_HREF = "/studio/panel/estilos"
 
 NAV_OPERACAO: tuple[tuple[str, str, str], ...] = (
     ("inicio", "Início", "/studio/panel"),
-    ("novo-video", "Novo vídeo", "/studio/panel/novo-video"),
+    ("novo-video", "Criar vídeo", "/studio/panel/novo-video"),
     ("videos", "Vídeos", "/studio/panel/videos"),
-    ("tendencias", "Tendências", "/studio/panel/tendencias"),
+    ("tendencias", "Tendências e ideias", "/studio/panel/tendencias"),
     ("desempenho", "Desempenho", "/studio/panel/analytics"),
+    ("biblioteca", "Biblioteca", BIBLIOTECA_HREF),
 )
 CONFIG_HREF = "/studio/configuracoes/canais"
 
@@ -422,20 +429,23 @@ _ALIASES = {
     "execucao": "videos",
     "preview": "videos",
     "canais": "configuracoes",
-    "estilos": "configuracoes",
+    "estilos": "biblioteca",
+    "biblioteca": "biblioteca",
     "conexoes": "configuracoes",
     "equipe": "configuracoes",
 }
 
+# W1.5: sete seções de Configurações, com os rótulos do protótipo (`CFG`,
+# `prototype/index.html:585`). Cada item aponta para conteúdo real: páginas próprias
+# (`/studio/configuracoes/{secao}`) ou a tela que já existe.
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
-    # Ordem do protótipo, com as rotas reais do produto. "Identidade do canal" leva à sanfona
-    # de identidade dentro de Canais (âncora real, sem duplicar formulário).
-    ("identidade", "Identidade do canal", "/studio/canais#painel-perfil"),
-    ("canais", "Canais", "/studio/canais"),
-    ("conexoes", "Conexões", "/studio/panel/conexoes"),
-    ("estilos", "Estilos", "/studio/panel/estilos"),
-    ("equipe", "Equipe", "/studio/panel/equipe"),
-    ("avancado", "Avançado", "/studio/panel/avancado"),
+    ("canais", "Canais", "/studio/configuracoes/canais"),
+    ("estrategia", "Estratégia editorial", "/studio/configuracoes/estrategia"),
+    ("marca", "Marca e estilo", "/studio/configuracoes/marca"),
+    ("producao", "Produção e orçamento", "/studio/configuracoes/producao"),
+    ("conexoes", "Conexões e providers", "/studio/panel/conexoes"),
+    ("equipe", "Conta e equipe", "/studio/panel/equipe"),
+    ("avancado", "Avançado e diagnóstico", "/studio/panel/avancado"),
 )
 
 
@@ -465,6 +475,24 @@ def render_settings_page_body(*, active_section: str, section_title: str, conten
           </div>
         </div>
       </section>"""
+
+
+def render_library_page_body(*, title: str, lead: str, content_html: str) -> str:
+    """Corpo da página **Biblioteca** (W1.5): destino de topo, não uma seção de Configurações.
+
+    O protótipo trata a biblioteca como item próprio do menu (`NAV` → `library`), fora de `CFG`;
+    por isso a página não carrega a navegação de configurações. O conteúdo é o mesmo componente
+    da biblioteca de estilos, só sem o layout de Configurações.
+    """
+    return f"""      <section class="pagina" id="pagina-biblioteca" aria-labelledby="t-biblioteca">
+        <p class="eyebrow">BIBLIOTECA</p>
+        <h1 class="h1" id="t-biblioteca">{e(title)}</h1>
+        <p class="lead" style="margin-bottom:24px">{e(lead)}</p>
+        <div class="config-corpo">
+          {content_html}
+        </div>
+      </section>"""
+
 
 _NAV_LABELS = {key: label for key, label, _ in NAV_OPERACAO}
 _NAV_LABELS["configuracoes"] = "Configurações"
@@ -502,8 +530,14 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
   </aside>"""
 
 
-def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: str) -> str:
-    if projects:
+def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: str,
+                  video_channel: str = "") -> str:
+    if video_channel:
+        # W1.2 (R6): nas páginas do vídeo a casca mostra o canal **dono** em leitura. Trocar de canal
+        # ativo não move o vídeo (`active_channel.py`), então aqui não há seletor: há identificação.
+        select = (f'<span class="canal-video" id="canal-do-video" title="Canal dono deste vídeo">'
+                  f'<span class="micro">Canal do vídeo</span> <b>{e(video_channel)}</b></span>')
+    elif projects:
         options = "".join(
             f'<option value="{e(pid)}"{" selected" if pid == project_id else ""}>{e(name)}</option>'
             for pid, name in projects
@@ -697,8 +731,11 @@ SHELL_JS = """
 
 def render_document(*, title: str, active: str, crumb: str, body_html: str, nonce: str,
                     projects: list[tuple[str, str]], project_id: str, cost_note: str = "",
-                    page_js: str = "", extra_css: str = "") -> str:
-    """Documento completo da tela V3. `body_html` é o conteúdo de `<div class="content">`."""
+                    page_js: str = "", extra_css: str = "", video_channel: str = "") -> str:
+    """Documento completo da tela V3. `body_html` é o conteúdo de `<div class="content">`.
+
+    `video_channel` (W1.2/R6): nome do canal dono do vídeo, em leitura, para as páginas de vídeo.
+    """
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -716,7 +753,7 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
 <div class="app">
   {render_sidebar(active=active, cost_note=cost_note, project_id=project_id)}
   <main class="main">
-    {render_topbar(crumb=crumb, projects=projects, project_id=project_id)}
+    {render_topbar(crumb=crumb, projects=projects, project_id=project_id, video_channel=video_channel)}
     <div class="content" id="conteudo">
 {propagate(body_html, project_id)}
     </div>

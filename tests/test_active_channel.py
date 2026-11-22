@@ -96,6 +96,31 @@ def test_settings_root_redirect_keeps_the_active_channel():
     assert r.status_code == 302
     assert r.headers["location"] == f"/studio/canais?project_id={B}"
 
+def test_the_video_page_shell_shows_the_owner_channel_and_not_the_empty_state():
+    """W1.2 (R6): páginas do vídeo mostram o canal **dono** (leitura), nunca a casca vazia."""
+    from app.studio.api.shell_v3 import render_document
+
+    html = render_document(
+        title="Vídeo", active="videos", crumb="Vídeos / Detalhe", nonce="n",
+        body_html="<p>x</p>", projects=[], project_id="", cost_note="",
+        video_channel="Canal B",
+    )
+    assert "Canal B" in html
+    assert 'id="canal-do-video"' in html      # rótulo de leitura do dono do vídeo
+    assert 'id="sem-canal"' not in html       # nada de "Nenhum canal"
+    assert "Nenhum canal cadastrado" not in html
+
+
+def test_without_a_video_channel_the_shell_keeps_the_previous_behavior():
+    """Sem canal de vídeo, a casca continua mostrando o seletor (ou o estado vazio) como antes."""
+    from app.studio.api.shell_v3 import render_document
+
+    html = render_document(title="Vídeos", active="videos", crumb="Vídeos", nonce="n",
+                           body_html="<p>x</p>", projects=[(A, "Canal A")], project_id=A, cost_note="")
+    assert '<select class="canal-select" id="canal-ativo">' in html
+    assert 'id="canal-do-video"' not in html
+
+
 def test_a_rendered_page_keeps_the_channel_in_nav_and_body_but_not_in_the_video():
     """Aceite F02.T01: escolher o Canal B mantém B na casca e no corpo; o vídeo não muda."""
     from app.studio.api.shell_v3 import render_document

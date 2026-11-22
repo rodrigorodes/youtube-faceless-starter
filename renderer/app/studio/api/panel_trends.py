@@ -160,14 +160,6 @@ TRENDS_JS = """
       }, { rootMargin: '600px 0px' }).observe(mais);
     }
   }
-
-  // ---- Criar vídeo deste tema ----
-  document.addEventListener('click', function (ev) {
-    var alvo = ev.target.closest ? ev.target.closest('[data-usar-tendencia]') : null;
-    if (!alvo) return;
-    var tema = alvo.getAttribute('data-usar-tendencia') || '';
-    location.href = '/studio/panel?topic=' + encodeURIComponent(tema);
-  });
 })();
 """
 
@@ -233,13 +225,26 @@ def _lote_html(view: PanelView, filtro: str, offset: int, limite: int, itens: li
     fim = offset + len(itens)
     tem_mais = fim < total
     proximo = _trends_cards_url(view, filtro, fim) if tem_mais else ""
-    cards = "".join(_trend_card(t) for t in itens)
+    project_id = view.project_id or (view.projects[0][0] if view.projects else "")
+    cards = "".join(_trend_card(t, project_id) for t in itens)
     return (f'<div class="lote-tendencias" data-tem-mais="{str(tem_mais).lower()}"\n'
             f'     data-proximo="{e(proximo, quote=True)}" data-mostrados="{fim}"\n'
             f'     data-total="{total}">\n{cards}</div>')
 
 
-def _trend_card(trend: TrendItemView) -> str:
+def _create_video_url(project_id: str | None, topic: str) -> str:
+    """Link do Início que preserva o canal ativo (KEEP-01): criar a partir de uma tendência
+    não pode trocar o canal em silêncio."""
+    from urllib.parse import urlencode
+
+    params: dict[str, str] = {}
+    if project_id:
+        params["project_id"] = project_id
+    params["topic"] = topic
+    return "/studio/panel?" + urlencode(params)
+
+
+def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
     region = panel_home._REGIOES.get(trend.region or "", trend.region or "Não informada")
     pillar = f'<span class="chip-pilar">Pilar: {e(trend.category_name)}</span>' if trend.category_name else ""
     stale = '<span class="selo">Desatualizada</span>' if trend.stale else ""
@@ -259,12 +264,13 @@ def _trend_card(trend: TrendItemView) -> str:
     items = "".join(f"<li><span>{k}</span><span>{v}</span></li>" for k, v in rows)
     reg_val = trend.region or "UNKNOWN"
     cat_val = trend.category_id or ""
+    create_href = _create_video_url(project_id, trend.topic)
     return f"""<article class="cartao-tendencia" data-regiao="{e(reg_val)}" data-pilar="{e(cat_val)}">
             <div class="pilha"><span class="origem">{e(panel_home._origin(trend))}</span>{pillar}{stale}</div>
             <h3>{e(trend.topic)}</h3>
             <ul class="evidencias">{items}</ul>
             <div class="pilha">
-              <button class="btn btn-primario" type="button" data-usar-tendencia="{e(trend.topic, quote=True)}">Criar vídeo deste tema</button>
+              <a class="btn btn-primario" href="{e(create_href, quote=True)}" data-usar-tendencia="{e(trend.topic, quote=True)}">Criar vídeo deste tema</a>
             </div>
           </article>"""
 
@@ -363,7 +369,7 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
         cards_html = ""
         vazio_msg = ('<p class="vazio" id="tendencias-vazio">Nenhuma tendência encontrada para este filtro.</p>')
     elif view.trends:
-        cards_html = "".join(_trend_card(t) for t in do_lote)
+        cards_html = "".join(_trend_card(t, project_id) for t in do_lote)
         vazio_msg = '<p class="vazio" id="tendencias-vazio" hidden style="display:none;"></p>'
     else:
         cards_html = ""

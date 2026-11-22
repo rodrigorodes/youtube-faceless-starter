@@ -576,12 +576,13 @@ def _action_card_html(view: ExecutionView) -> str:
     return ""
 
 
-def _usage_rows_html(view: ExecutionView) -> str:
+def _usage_rows_html(view: ExecutionView, free_providers: frozenset[str] = frozenset()) -> str:
     if not view.usage:
         return '<p class="muted">Sem registro de uso de modelos para este vídeo.</p>'
     rows = []
     for usage in view.usage:
-        classified = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model, usage.cost_usd)
+        classified = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model,
+                               usage.cost_usd, free_providers)
         rows.append(
             f'<div class="kv"><span>{e(usage.step)} · {e(usage.provider)}/{e(usage.model)}</span>'
             f'<span>{e(_cost_cell(classified, usage.cost_usd))}</span></div>'
@@ -604,7 +605,7 @@ def _event_rows_html(view: ExecutionView) -> str:
     return "".join(rows)
 
 
-def _advanced_html(view: ExecutionView) -> str:
+def _advanced_html(view: ExecutionView, free_providers: frozenset[str] = frozenset()) -> str:
     return f"""
       <details class="advanced" id="advanced-diagnostics">
         <summary class="advanced-summary">Avançado — diagnóstico (IDs, eventos, uso de modelos)</summary>
@@ -614,7 +615,7 @@ def _advanced_html(view: ExecutionView) -> str:
           <p><b>Eventos da execução</b></p>
           {_event_rows_html(view)}
           <p><b>Registro de uso de modelos</b></p>
-          {_usage_rows_html(view)}
+          {_usage_rows_html(view, free_providers)}
         </div>
       </details>
     """
@@ -640,7 +641,8 @@ def _rail_actions_html(view: ExecutionView) -> str:
     """
 
 
-def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
+def render_execution(view: ExecutionView, *, video_channel: str = "",
+                     free_providers: frozenset[str] = frozenset()) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     steps_html, index, total = _steps_html(view)
     position = f'Etapa <b>{index} de {total}</b>. ' if total else ""
@@ -730,7 +732,7 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
 
             {action_card}
 
-            {_advanced_html(view)}
+            {_advanced_html(view, free_providers)}
           </div>
 
           <div>
@@ -759,6 +761,7 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
         cost_note="",
         page_js=js_code,
         extra_css=PRODUCTION_CSS,
+        video_channel=video_channel,
     )
     return page, shell._headers(nonce)
 

@@ -13,7 +13,8 @@ SEARCH_URL = "https://api.pexels.com/v1/search"
 MAX_BYTES = 20 * 1024 * 1024
 
 
-def _trusted_image_url(url: object) -> bool:
+def trusted_image_url(url: object) -> bool:
+    """URL de imagem https em domínio confiável do provedor (reutilizado pelo adapter de busca)."""
     try:
         if not isinstance(url, str) or url != url.strip() or any(c in url for c in " \t\r\n\\"):
             return False
@@ -22,6 +23,10 @@ def _trusted_image_url(url: object) -> bool:
         return bool(parts) and parts.scheme == "https" and (host == "pexels.com" or host.endswith(".pexels.com"))
     except ValueError:
         return False
+
+
+# Compatibilidade com o nome privado usado pelo ``PexelsImage``.
+_trusted_image_url = trusted_image_url
 
 
 class PexelsImage:

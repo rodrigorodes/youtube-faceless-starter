@@ -93,7 +93,7 @@ def test_document_shape_is_the_versioned_contract():
                                             "duration_s", "cta"]
     assert list(document["audiovisual"]) == ["voice", "motion", "music", "transition", "caption",
                                              "palette", "extra"]
-    assert document["provider_policy"] == {"profile": "BALANCED", "version": 1}
+    assert document["provider_policy"] == {"profile": "BALANCED", "version": 2}
     assert config.content_hash == config.content_hash and len(config.content_hash) == 64
 
 
@@ -278,11 +278,51 @@ def test_a_nested_extension_is_one_declared_value_in_the_provenance():
 def test_the_provider_policy_is_only_a_frozen_reference():
     config = resolve(provider_profile=EconomicProfile.PREMIUM)
     assert config.provider_profile is EconomicProfile.PREMIUM
-    assert config.to_document()["provider_policy"] == {"profile": "PREMIUM", "version": 1}
+    assert config.to_document()["provider_policy"] == {"profile": "PREMIUM", "version": 2}
     assert config.provenance["provider_policy"] == "declared"
     assert set(config.to_document()["provider_policy"]) == {"profile", "version"}
     with pytest.raises(EffectiveConfigInvalid, match="profile"):
         resolve(provider_profile="TURBO")
+
+
+def test_the_provider_selection_is_frozen_as_an_optional_reference():
+    selection = {"text": "opencode:gpt-4", "image": "pexels:landscape",
+                 "voice": "piper:pt_BR-faber-medium", "renderer": "ffmpeg:rich"}
+    config = resolve(provider_selection=selection)
+    document = config.to_document()
+    assert document["provider_policy"]["selection"] == selection
+    assert set(document["provider_policy"]) == {"profile", "version", "selection"}
+    restored = EffectiveConfig.from_document(document)
+    assert restored == config
+    assert dict(restored.provider_selection) == selection
+
+
+def test_a_legacy_document_without_a_selection_keeps_working():
+    config = resolve(provider_profile="PREMIUM")
+    document = config.to_document()
+    assert "selection" not in document["provider_policy"]
+    restored = EffectiveConfig.from_document(document)
+    assert restored == config
+    assert restored.provider_selection is None
+
+
+def test_the_provider_selection_refuses_unknown_capability_or_invalid_spec():
+    for selection in ({"video": "x:y"}, {"text": ""}, {"text": ":"}, {"text": 123}):
+        with pytest.raises(EffectiveConfigInvalid):
+            resolve(provider_selection=selection)
+
+
+def test_the_provider_selection_never_carries_a_secret():
+    with pytest.raises(EffectiveConfigInvalid) as exc:
+        resolve(provider_selection={"text": "opencode:sk-live-123"})
+    assert "sk-live-123" not in str(exc.value)
+    # o modelo pode conter `:`; um segredo em qualquer segmento também é recusado
+    with pytest.raises(EffectiveConfigInvalid):
+        resolve(provider_selection={"text": "opencode:vendor:sk-live-123"})
+    config = resolve(provider_selection={"text": "opencode:gpt-4",
+                                         "voice": "piper:pt_BR-faber-medium"})
+    assert "sk-live-123" not in config.canonical_json()
+    assert "token" not in config.canonical_json().lower()
 
 
 # ---------- recusa de inválido e de segredo ----------

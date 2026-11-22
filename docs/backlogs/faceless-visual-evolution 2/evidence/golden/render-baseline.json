@@ -1,0 +1,96 @@
+{
+  "cases": {
+    "long_2scenes_music": {
+      "digest": "636a5dc1d2865b9787580fe31b8698cf383383880cf70cf6ea6503b96abd6dd7",
+      "digest_stable": true,
+      "envelope": {
+        "_tolerances": {
+          "duration_s": 0.05,
+          "lufs": 1.5
+        },
+        "audio_channels": 2,
+        "audio_codec": "aac",
+        "audio_sample_rate": 96000,
+        "black_ratio": 0.0,
+        "duration_s": 5.16,
+        "frame_rate": "25/1",
+        "frames": 129,
+        "has_audio": true,
+        "height": 1080,
+        "integrated_lufs": -15.3,
+        "narration_lufs": -12.5,
+        "pix_fmt": "yuv420p",
+        "silence_ratio": 0.0,
+        "video_codec": "h264",
+        "width": 1920
+      },
+      "format": "long",
+      "mp4_byte_identical": true,
+      "shots": 2,
+      "signature_stable": true,
+      "total_ticks": 129000
+    },
+    "short_1scene_music": {
+      "digest": "949fefe7da7fbe0318d00b5e7ec59ec3acf984fd553f9ede637ee8cd21bb2d79",
+      "digest_stable": true,
+      "envelope": {
+        "_tolerances": {
+          "duration_s": 0.05,
+          "lufs": 1.5
+        },
+        "audio_channels": 2,
+        "audio_codec": "aac",
+        "audio_sample_rate": 96000,
+        "black_ratio": 0.0,
+        "duration_s": 2.8,
+        "frame_rate": "25/1",
+        "frames": 70,
+        "has_audio": true,
+        "height": 1920,
+        "integrated_lufs": -16.0,
+        "narration_lufs": -12.4,
+        "pix_fmt": "yuv420p",
+        "silence_ratio": 0.0,
+        "video_codec": "h264",
+        "width": 1080
+      },
+      "format": "short",
+      "mp4_byte_identical": true,
+      "shots": 1,
+      "signature_stable": true,
+      "total_ticks": 70000
+    },
+    "short_1scene_silent_music": {
+      "digest": "6e63e840a3a0044a3f5d25256f4bae8367d5d1fd6904deb07c9e29f053634720",
+      "digest_stable": true,
+      "envelope": {
+        "_tolerances": {
+          "duration_s": 0.05,
+          "lufs": 1.5
+        },
+        "audio_channels": 2,
+        "audio_codec": "aac",
+        "audio_sample_rate": 96000,
+        "black_ratio": 0.0,
+        "duration_s": 2.8,
+        "frame_rate": "25/1",
+        "frames": 70,
+        "has_audio": true,
+        "height": 1920,
+        "integrated_lufs": -16.0,
+        "narration_lufs": -12.4,
+        "pix_fmt": "yuv420p",
+        "silence_ratio": 0.1805,
+        "video_codec": "h264",
+        "width": 1080
+      },
+      "format": "short",
+      "mp4_byte_identical": true,
+      "shots": 1,
+      "signature_stable": true,
+      "total_ticks": 70000
+    }
+  },
+  "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "ffprobe": "ffprobe version 7.1.5-0+deb13u1 Copyright (c) 2007-2026 the FFmpeg developers"
+}

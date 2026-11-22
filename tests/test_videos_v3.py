@@ -76,3 +76,50 @@ def test_videos_satisfies_ux_contract():
     html, _ = _videos_page(videos=rows)
     assert_ux_contract(html, page="painel/vídeos")
     assert not re.search(r"\son[a-z]+=", html)
+
+
+def test_videos_filters_follow_the_prototype_labels():
+    """Os quatro filtros da UX de referência, com o rótulo honesto do protótipo."""
+    html, _ = _videos_page()
+    for label in ("Todos", "Em criação", "Esperando você", "Publicados"):
+        assert f"> {label}</label>" in html, label
+
+
+# ------------------------------------------- UX-01/W1.1: "Aprovado" não é "Publicado"
+
+
+def _card_of(html: str, video_id: str) -> str:
+    cards = re.findall(r'<article class="cartao-projeto".*?</article>', html, re.S)
+    picked = [c for c in cards if f'"/studio/panel/videos/{video_id}"' in c]
+    assert len(picked) == 1, f"cartão de {video_id} não é único: {len(picked)}"
+    return picked[0]
+
+
+def test_approved_video_shows_as_approved_and_stays_out_of_published():
+    """UX-01 (R5, cenário A21): aprovar não publica.
+
+    Um vídeo apenas aprovado, sem upload, aparece como "Aprovado" e não pode ser
+    apresentado como publicado nem entrar no filtro "Publicados".
+    """
+    rows = [_row("v1", "Aprovado sem upload", VideoStatus.APPROVED, updated_at=NOW)]
+    html, _ = _videos_page(videos=rows)
+    card = _card_of(html, "v1")
+    assert "Aprovado" in card
+    assert "Publicado" not in card
+    assert 'data-situacao="publicados"' not in card
+
+
+def test_only_effectively_published_videos_are_in_the_published_filter():
+    """Publicar é status PUBLISHED ou publicação UPLOADED; aprovado continua de fora."""
+    from app.studio.domain.contracts import PublicationStatus
+
+    rows = [
+        _row("v1", "Publicado pelo status", VideoStatus.PUBLISHED, updated_at=NOW),
+        _row("v2", "Aprovado e enviado", VideoStatus.APPROVED,
+             pub=PublicationStatus.UPLOADED, updated_at=NOW),
+        _row("v3", "Apenas aprovado", VideoStatus.APPROVED, updated_at=NOW),
+    ]
+    html, _ = _videos_page(videos=rows)
+    assert 'data-situacao="publicados"' in _card_of(html, "v1")
+    assert 'data-situacao="publicados"' in _card_of(html, "v2")
+    assert 'data-situacao="publicados"' not in _card_of(html, "v3")

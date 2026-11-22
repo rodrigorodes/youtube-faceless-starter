@@ -338,9 +338,14 @@ def test_advanced_page_requires_authentication(env):
 
 
 def test_settings_area_links_to_the_seven_groups(env):
-    for section in ("canais", "estrategia", "estilos", "producao", "conexoes", "equipe", "avancado"):
+    # W1.5: sete seções. As de tela canônica redirecionam (302); `estrategia`, `marca` e `producao`
+    # ganharam página própria (200), renderizada pela aplicação.
+    for section in ("canais", "estilos", "conexoes", "equipe", "avancado"):
         r = env["client"].get(f"/studio/configuracoes/{section}", headers=AUTH_HEADER, follow_redirects=False)
         assert r.status_code == 302, section
+    for section in ("estrategia", "marca", "producao"):
+        r = env["client"].get(f"/studio/configuracoes/{section}", headers=AUTH_HEADER, follow_redirects=False)
+        assert r.status_code == 200, section
 
 
 def test_new_video_preset_reads_the_channel_language_and_voice(env):

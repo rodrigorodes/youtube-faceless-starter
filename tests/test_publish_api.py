@@ -211,7 +211,8 @@ def test_preview_page_is_escaped_locked_down_and_complete(migrated, dsn, tmp_pat
     nonce = csp.split("script-src 'nonce-")[1].split("'")[0]
     assert f'<script nonce="{nonce}">' in page and "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and r.headers["cache-control"] == "no-store"
     assert f'src="/studio/videos/{vid}/file?output_asset_id={output_id(client, vid)}"' in page and 'kind="captions"' in page and "AWAITING_APPROVAL" in page
-    assert 'id="approve"' in page and 'for="title"' in page and 'role="status"' in page and "QA aprovado" in page
+    for marker in ('id="approve"', 'for="title"', 'role="status"', "QA Aprovado"):  # um por vez: a falha aponta qual faltou
+        assert marker in page, f"a prévia não contém {marker!r}"
     assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)}).status_code == 422  # o título padrão tem "<"
     assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "title": "Título limpo"}).status_code == 200
     approved = client.get(f"/studio/videos/{vid}/preview").text
@@ -230,3 +231,18 @@ def test_thumbnail_and_vtt_endpoints(migrated, dsn, tmp_path):
     pid = client.post("/studio/projects", json={"name": "vazio"}).json()["id"]
     empty = client.post("/studio/videos", json={"project_id": pid, "topic": "ADE 2026", "format": "short"}).json()["id"]
     assert client.get(f"/studio/videos/{empty}/thumbnail").status_code == 404 and client.get(f"/studio/videos/{empty}/subtitles.vtt").status_code == 404
+
+
+def test_publication_tab_renders_the_approval_form_with_csp(migrated, dsn, tmp_path):
+    """W5.1/PUB-01: o formulário de aprovação vive na aba Publicação, com a CSP estrita do workspace."""
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    response = client.get(f"/studio/panel/videos/{vid}/publicacao")
+    page, csp = response.text, response.headers["content-security-policy"]
+    assert response.status_code == 200
+    for marker in ('id="review"', 'id="approve"', 'id="reject"', 'for="title"', 'id="publicacao-intencao"'):
+        assert marker in page, f"a aba Publicação não contém {marker!r}"
+    nonce = csp.split("script-src 'nonce-")[1].split("'")[0]
+    assert f'<script nonce="{nonce}">' in page and "getElementById('review')" in page
+    assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
+    assert response.headers["cache-control"] == "no-store"

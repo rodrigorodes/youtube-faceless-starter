@@ -65,6 +65,14 @@ services:
       STUDIO_ALLOW_NAMES: ${STUDIO_ALLOW_NAMES:-}
       MAX_COST_USD_PER_VIDEO: ${MAX_COST_USD_PER_VIDEO:-}
       MAX_COST_USD_PER_MONTH: ${MAX_COST_USD_PER_MONTH:-}
+      # R1/P-07 (W0B.1): estas duas variáveis eram lidas pelo código mas NÃO chegavam ao container —
+      # sem isso o guard de orçamento nunca ligava e os limites por canal não protegiam nada.
+      # Default LIGADO (a prova por teste, inclusive sob concorrência, está em
+      # tests/test_budget_guard_wiring.py). PRÉ-REQUISITO: teto definido, em MAX_COST_USD_PER_VIDEO/
+      # MAX_COST_USD_PER_MONTH do .env ou em `channel_budgets` do canal — com teto 0 nenhuma chamada
+      # paga é executada (403). Desligar: STUDIO_BUDGET_GUARD=0 no .env privado.
+      STUDIO_BUDGET_GUARD: ${STUDIO_BUDGET_GUARD:-1}
+      STUDIO_PRODUCTION_MODE: ${STUDIO_PRODUCTION_MODE:-BUDGET_GUARDED}
       MAX_DURATION_SECONDS: '60'
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # OAuth do Google (F8-05): o client secret é um arquivo montado em /app/credentials (read-only).

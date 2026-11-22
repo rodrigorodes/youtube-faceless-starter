@@ -9,6 +9,14 @@ class InvalidInput(ValueError):
     """Dado recusado pela persistência (ex.: byte NUL em texto)."""
 
 
+class ScriptEditIdempotencyConflict(ValueError):
+    """A chave de idempotência já foi usada com outro payload (replay inseguro é recusado)."""
+
+
+class ScriptRevisionUnavailable(ValueError):
+    """A revisão pedida não existe ou não tem snapshot recuperável (versão legada)."""
+
+
 class ProjectNotFound(LookupError):
     pass
 
