@@ -35,7 +35,10 @@ def test_advanced_page_is_the_v3_shell_and_says_what_is_real():
     html, headers = render_advanced(_view())
     assert html.count("<h1") == 1
     assert "Diagnóstico do Estúdio" in html
-    assert "CONFIGURAÇÕES / AVANÇADO" in html
+    # Fica dentro da área de Configurações, com o item "Avançado" ativo no menu lateral.
+    cfg = re.search(r'<nav aria-label="Seções de configuração">(.*?)</nav>', html, re.S).group(1)
+    ativo = re.search(r'<a[^>]*aria-current="page"[^>]*>(.*?)</a>', cfg, re.S).group(0)
+    assert "Avançado" in ativo
     assert "Banco de dados: respondendo." in html
     assert "opencode:luna" in html and "piper" in html
     assert "indisponível: binário ausente" in html     # motivo real, não "erro"
@@ -58,7 +61,7 @@ def test_advanced_page_never_shows_a_secret_or_a_writable_control():
     visivel = re.sub(r"<[^>]+>", " ", re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S))
     for proibido in ("api_key", "API_KEY", "secret", "Bearer", "access_token"):
         assert proibido not in visivel
-    pagina = re.search(r'<section class="pagina" id="pagina-avancado".*?</section>', html, re.S).group(0)
+    pagina = re.search(r'<section class="pagina" id="pagina-configuracoes".*?</section>', html, re.S).group(0)
     assert "<input" not in pagina and "<textarea" not in pagina and "<select" not in pagina
     assert "<form" not in pagina and "<button" not in pagina
     assert not re.search(r"\son[a-z]+=", html)

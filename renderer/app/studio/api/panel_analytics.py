@@ -46,7 +46,7 @@ ANALYTICS_CSS = """
   border: 1px solid var(--border); background: var(--surface-raised); border-radius: 14px;
   padding: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; min-height: 152px;
 }
-.tile.na { border-style: dashed; background: #0e1524; }
+.tile.na { border-style: dashed; background: var(--panel2); }
 .tile .tile-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 .tile .metric { font-size: 1.45rem; font-weight: 700; line-height: 1.15; }
 .tile .label { font-size: 0.76rem; color: var(--text-muted); }
@@ -363,17 +363,35 @@ def render_analytics(view: AnalyticsDashboardView,
         else "Não disponível: nenhuma chamada registrada neste mês."
     )
 
+    project_options = "".join(
+        f'<option value="{e(pid)}"{" selected" if pid == view.project_id else ""}>{e(name)}</option>'
+        for pid, name in proj_list
+    )
+
     period_options = "".join(
         f'<option value="{d}"{" selected" if d == view.period.days else ""}>Últimos {d} dias</option>'
         for d in (7, 28, 90)
     )
 
+    # FS31-A1: experimento registrado por API (201) precisa aparecer mesmo sem medição —
+    # esconder o histórico fazia parecer que nada foi salvo. Métricas/insights continuam
+    # dependendo de medição; o histórico é registro, não número inventado.
+    experiments_card = f"""
+        <div class="card" style="margin-bottom:18px">
+          <h2>Histórico de experimentos</h2>
+          {_experiments_html(view.experiments)}
+        </div>"""
+
     if not view.has_measurements:
-        content_html = """
+        # O vazio diz o que falta de fato: canal sem vídeo não é "sem medição", é "sem vídeo".
+        motivo = ("Nenhum vídeo neste canal ainda." if not view.videos
+                  else "Nenhuma publicação medida neste período.")
+        content_html = f"""
         <div id="desempenho-vazio" class="vazio">
           <p><b>Sem medição neste período.</b></p>
-          <p class="micro" style="margin:0">Publique um vídeo e conecte o canal para ver os números reais aqui.</p>
-        </div>"""
+          <p class="micro" style="margin:0">{e(motivo)} Publique um vídeo e conecte o canal para ver os números reais aqui.</p>
+        </div>
+        {experiments_card}"""
     else:
         tiles = "".join(_tile_html(tile) for tile in view.tiles)
         subtitle = f"Recorte de {e(view.period_label)} · última coleta: {e(view.last_collected_text)}."
@@ -408,10 +426,7 @@ def render_analytics(view: AnalyticsDashboardView,
           <div id="analytics-feedback" class="feedback" role="status" aria-live="polite"></div>
         </div>
 
-        <div class="card" style="margin-bottom:18px">
-          <h2>Histórico de experimentos</h2>
-          {_experiments_html(view.experiments)}
-        </div>
+        {experiments_card}
 
         {_advanced_html(view)}"""
 
@@ -422,11 +437,17 @@ def render_analytics(view: AnalyticsDashboardView,
             <h1 class="h1" id="t-desempenho">Desempenho</h1>
             <p class="lead">Acompanhe o resultado sem perder o foco na criação.</p>
           </div>
-          <div class="campo" style="margin:0">
-            <label for="periodo">Período</label>
-            <select id="periodo" class="campo" style="min-width:150px">
-              {period_options}
-            </select>
+          <div class="pilha" style="align-items:flex-end">
+            <div class="campo" style="margin:0">
+              <label for="analytics-project">Canal</label>
+              <select id="analytics-project" style="min-width:180px">{project_options}</select>
+            </div>
+            <div class="campo" style="margin:0">
+              <label for="periodo">Período</label>
+              <select id="periodo" class="campo" style="min-width:150px">
+                {period_options}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -436,6 +457,14 @@ def render_analytics(view: AnalyticsDashboardView,
 
     page_js = """
 (function () {
+  var selCanal = document.getElementById('analytics-project');
+  if (selCanal) {
+    selCanal.addEventListener('change', function () {
+      var u = new URL(location.href);
+      u.searchParams.set('project', selCanal.value);
+      location.href = u.toString();
+    });
+  }
   var sel = document.getElementById('periodo');
   if (sel) {
     sel.addEventListener('change', function () {

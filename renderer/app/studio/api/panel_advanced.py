@@ -45,13 +45,15 @@ def render_advanced(view: AdvancedView) -> tuple[str, dict[str, str]]:
     notas = "".join(f'<li>{e(note)}</li>' for note in view.notes)
     notas_bloco = f'<ul class="lista-avancado">{notas}</ul>' if notas else ""
 
-    body = f"""      <section class="pagina" id="pagina-avancado" aria-labelledby="t-avancado">
-        <div class="secao-cab">
-          <div>
-            <p class="eyebrow">CONFIGURAÇÕES / AVANÇADO</p>
-            <h1 class="h1" id="t-avancado">Diagnóstico do Estúdio</h1>
-            <p class="lead">O que está ligado agora — sem chaves, sem tokens e sem botão que possa
-              estragar a operação.</p>
+    content = f"""
+        <div class="card">
+          <div class="spread">
+            <div>
+              <h2>Diagnóstico do Estúdio</h2>
+              <p class="micro" style="margin:0">O que está ligado agora — sem chaves, sem tokens
+              e sem botão que possa estragar a operação.</p>
+            </div>
+            <span class="selo">SOMENTE LEITURA</span>
           </div>
         </div>
 
@@ -81,8 +83,14 @@ def render_advanced(view: AdvancedView) -> tuple[str, dict[str, str]]:
               <th scope="col">Qualidade</th></tr></thead>
             <tbody>{prov_rows}</tbody>
           </table>
-        </div>
-      </section>"""
+        </div>"""
+
+    body = shell_v3.render_settings_page_body(
+        active_section="avancado",
+        section_title="Avançado",
+        content_html=content,
+        project_id=project_id or "",
+    )
 
     html = shell_v3.render_document(
         title="Faceless Studio — Avançado",

@@ -761,3 +761,70 @@ def render_execution(view: ExecutionView) -> tuple[str, dict[str, str]]:
         extra_css=PRODUCTION_CSS,
     )
     return page, shell._headers(nonce)
+
+def render_production_page(view) -> tuple[str, dict[str, str]]:
+    """Produção (FS31-A3): quadro de execução na **casca V3**, só com dado real.
+
+    Cada vídeo mostra o estado da produção, a etapa atual e o custo **rotulado** (sem registro
+    de uso não é zero). A casca antiga (sidebar V2, links de API/n8n) não é mais renderizada.
+    """
+    import secrets
+
+    from ..application.panel import PanelView, Stage  # noqa: F401  (tipo só para leitura)
+    from . import panel as legacy
+    from . import panel_home
+    from . import shell_v3
+
+    nonce = secrets.token_urlsafe(16)
+    project_id = view.project_id or (view.projects[0][0] if view.projects else "")
+    videos = [video for topic in view.topics for video in topic.videos]
+    videos.sort(key=lambda item: item.updated_at, reverse=True)
+
+    if videos:
+        cards = "".join(_production_card(video, panel_home) for video in videos)
+        empty = ""
+    else:
+        cards = ""
+        empty = ('<p class="vazio" id="producao-vazio">Nenhum vídeo em produção neste canal ainda. '
+                 'Comece por <a href="/studio/panel/novo-video">Novo vídeo</a>.</p>')
+
+    body = f"""      <section class="pagina" id="pagina-producao" aria-labelledby="t-producao">
+        <div class="secao-cab">
+          <div>
+            <p class="eyebrow">EXECUÇÃO DO CANAL</p>
+            <h1 class="h1" id="t-producao">Produção</h1>
+            <p class="lead">Onde cada vídeo está e quanto custou — estado real, sem estimativa inventada.</p>
+          </div>
+          <a class="btn btn-primario" href="/studio/panel/novo-video">＋ Novo vídeo</a>
+        </div>
+        <div class="grade" id="lista-producao">{cards}</div>
+        {empty}
+      </section>"""
+
+    html = shell_v3.render_document(
+        title="Faceless Studio — Produção",
+        active="producao",
+        crumb="Produção",
+        body_html=body,
+        nonce=nonce,
+        projects=list(view.projects),
+        project_id=project_id,
+        cost_note=panel_home.cost_note(view),
+    )
+    return html, legacy._headers(nonce)
+
+
+def _production_card(video, panel_home) -> str:
+    label, css, step = panel_home._SITUACAO.get(video.stage, (video.stage.value, "parado", ""))
+    title = video.title or video.topic
+    return f"""<article class="cartao-projeto" data-situacao="{e(css)}">
+            <a href="/studio/panel/videos/{e(video.id)}" aria-label="Abrir o vídeo {e(title)}">
+              <div class="miniatura"><b>{e(panel_home._format_label(video))}</b></div>
+              <div class="cartao-corpo">
+                <h3>{e(title)}</h3>
+                <p class="linha-meta"><span class="situacao {e(css)}"><i aria-hidden="true"></i>{e(label)}</span></p>
+                <p class="etapa-atual">{e(step)}</p>
+                <p class="linha-meta">Custo: {e(video.cost_text)}</p>
+              </div>
+            </a>
+          </article>"""

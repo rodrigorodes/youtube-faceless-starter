@@ -10,8 +10,9 @@ Serve para não haver dois donos no mesmo arquivo nem promessa de tela sem backe
 | `/studio/panel/canais` | **personalizar estilo do canal**: origem do valor (canal/estilo/padrão), valor efetivo e **reset**; revisão otimista (409 visível) | F05.T04 | `api/panel_channels.py`, `api/routes.py`, novo `panel_channel_style.py` | **feito** (`c77dbd5`) |
 | `/studio/panel/canais` (Configurações) | **preferências de produção**: perfil econômico, limites vigentes, indisponibilidade, custo desconhecido, BYOK cadastrada × usada | F06.T03 | `api/panel_channels.py`, `application/channel_budget.py` | **feito** (`832dc9f`) |
 | `/studio/panel/producao` | ações de **lifecycle** do run: pausar, retomar, tentar de novo, regenerar (rotuladas como execução nova) | F03.T04 | `api/panel_production.py`, `api/routes.py` | backend **feito** (`a77f661`); UI de produção pendente |
-| `/studio/panel/avancado` | mostrar a **configuração efetiva persistida** e a proveniência do último run (read-only, sem edição) | F03.T02/T03 | `application/advanced_page.py` | opcional; só depois de T04 |
-| `/studio/panel/producao` (casca) | ainda renderiza casca **V2** (`aside.sidebar`, “Faceless Studio V2”, API Docs/n8n) — achado do stream G | F07.T01 | `api/panel_production.py` | **achado**, não corrigido |
+| `/studio/panel/avancado` | mostrar a **configuração efetiva persistida** e a proveniência do último run (read-only, sem edição) | F03.T02/T03 | `application/advanced_page.py`, `api/panel_advanced.py` | **feito** — agora dentro da casca de Configurações |
+| `/studio/panel/producao` (casca) | casca **V3** com quadro de produção real (`id="pagina-producao"`), sem sidebar V2/API Docs/n8n | F07.T01 / FS31-A3 | `api/panel_production.py`, `api/routes.py` | **feito** |
+| `/studio/canais` (Configurações) | **paridade visual** com a proposta: canal ativo no topo com `ATIVO`/`Trocar`, identidade em `item-config`, estilo em galeria de cartões; menu de 6 áreas na ordem do protótipo | pedido do operador | `api/panel_channels.py`, `api/shell_v3.py`, `api/shell_v3_css.py` | **feito** |
 
 ## Regras que valem para qualquer stream de UI
 

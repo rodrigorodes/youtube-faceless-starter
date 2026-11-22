@@ -492,8 +492,12 @@ def _sidebar_card(view: StylesPageView) -> str:
     """
 
 
-def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
-    """Página de Estilos: casca aprovada + lista real + criar/editar/arquivar."""
+def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | None = None,
+                  project_id: str = "") -> tuple[str, dict[str, str]]:
+    """Página de Estilos: casca aprovada + lista real + criar/editar/arquivar.
+
+    Recebe o canal ativo para a topbar e o menu de Configurações não perderem o contexto.
+    """
     nonce = secrets.token_urlsafe(16)
     body = _empty_card() if view.is_empty else _list_card(view)
     content_html = f"""
@@ -515,6 +519,7 @@ def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
         active_section="estilos",
         section_title="Estilos",
         content_html=content_html,
+        project_id=project_id,
     )
     html = shell_v3.render_document(
         title="Faceless Studio — Estilos",
@@ -522,8 +527,8 @@ def render_styles(view: StylesPageView) -> tuple[str, dict[str, str]]:
         crumb="Configurações / Estilos",
         body_html=body_page,
         nonce=nonce,
-        projects=[],
-        project_id="",
+        projects=projects or [],
+        project_id=project_id,
         cost_note="",
         page_js=STYLES_SCRIPT,
         extra_css=STYLES_CSS,

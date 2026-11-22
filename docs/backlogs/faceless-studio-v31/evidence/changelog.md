@@ -50,3 +50,22 @@
   skipped, 2 xfailed** (396 s); as 21 são as pré-existentes (17 FFmpeg/PIL, 2 pydantic, 2 ordem).
   Ver `evidence/test-results.md`.
 
+- 22/11/2026 (paridade visual com a proposta, sem push): correções dos achados FS31-A1/A2/A3
+  com testes de regressão, mais a rodada de paridade das telas.
+  - Tokens/CSS: `.pills`/`.pill` voltaram à forma do protótipo (borda + `panel2`; checked =
+    `accentfill`/`soft`/`accent`); `.hero` usa `var(--hero)` e `--muted` (claro no tema claro);
+    `.btn-primario` usa `accentfill`/`onaccent` e o hover do protótipo; criados `--ok`, `--err`,
+    `--success`, `--panel3`; removida a sombra fixa dos cards; `select` com opções legíveis no
+    tema claro; `.muted` não encolhe mais o "Studio" da marca.
+  - Novo vídeo: ícone 16:9/9:16 em cada formato e estilo em cartões `.cartao-estilo` com amostra
+    do **nome real** da biblioteca (sem catálogo fictício).
+  - Configurações: menu na ordem do protótipo (`Identidade do canal`, `Canais`, `Conexões`,
+    `Estilos`, `Equipe`, `Avançado`), todos os links levando o canal ativo; h1 volta a ser
+    "Configurações"; topbar de Estilos/Conexões/Equipe/Avançado passa a mostrar o canal real.
+  - Identidade do canal: Voz e Idioma em linhas `item-config` pré-preenchidas pelo perfil;
+    detalhes do perfil atrás de "Detalhes do perfil"; estilo padrão em galeria de cartões.
+  - Canais: card fixo "Canal ativo" no topo com seletor, selo `ATIVO` e botão `Trocar` por canal.
+  - Avançado: entra na casca de Configurações (menu lateral + h1 único), tabela com CSS.
+  - Produção: `render_production_page` (casca V3) substitui `render_producao` (casca V2).
+  - Testes: contratos antigos atualizados para o novo desenho (galeria, h1 de Configurações,
+    links com `project_id`), com testes novos para o card de canal ativo e o menu completo.

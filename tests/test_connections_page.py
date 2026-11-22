@@ -198,6 +198,13 @@ def test_connections_page_escapes_xss_from_real_data(env):
 # ------------------------------------------------------------------- menu
 
 
+def test_connections_page_keeps_the_active_channel_in_the_topbar(env):
+    html = page(env).text
+    assert 'id="canal-ativo"' in html
+    assert "Canal H" in html
+    assert "Nenhum canal cadastrado" not in html
+
+
 def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     html = page(env).text
     items = nav_items(html)
@@ -212,7 +219,7 @@ def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     sections = settings_nav_items(html)
     section_active = [item for item in sections if 'aria-current="page"' in item]
     assert len(section_active) == 1 and "Conexões" in _nav_text(section_active[0])
-    assert 'href="/studio/panel/conexoes"' in section_active[0]
+    assert re.search(r'href="/studio/panel/conexoes(?:\?project_id=[^"]+)?"', section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
     # Estilos, Conexões e Equipe seguem como destinos reais; nada de "Configurações — em breve".
     labels = " ".join(_nav_text(item) for item in sections)

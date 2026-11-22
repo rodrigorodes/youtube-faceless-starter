@@ -53,7 +53,7 @@ CONNECTIONS_CSS = """
   border-radius: 12px;
   padding: 0.85rem 1rem;
   margin-top: 0.75rem;
-  background: #0e1524;
+  background: var(--panel2);
 }
 .conn-channel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .conn-name { font-weight: 600; }
@@ -523,7 +523,9 @@ def _sidebar_card(accounts: list[dict]) -> str:
     """
 
 
-def render_connections(board: dict, profiles: list[ChannelProfile]) -> tuple[str, dict[str, str]]:
+def render_connections(board: dict, profiles: list[ChannelProfile], *,
+                       projects: list[tuple[str, str]] | None = None,
+                       project_id: str = "") -> tuple[str, dict[str, str]]:
     """Página de Conexões: casca aprovada + conta → canais real + conectar/confirmar/revogar."""
     nonce = secrets.token_urlsafe(16)
     accounts = list(board.get("accounts") or [])
@@ -552,6 +554,7 @@ def render_connections(board: dict, profiles: list[ChannelProfile]) -> tuple[str
         active_section="conexoes",
         section_title="Conexões",
         content_html=content_html,
+        project_id=project_id,
     )
     html = shell_v3.render_document(
         title="Faceless Studio — Conexões",
@@ -559,8 +562,8 @@ def render_connections(board: dict, profiles: list[ChannelProfile]) -> tuple[str
         crumb="Configurações / Conexões",
         body_html=body_page,
         nonce=nonce,
-        projects=[],
-        project_id="",
+        projects=projects or [],
+        project_id=project_id,
         cost_note="",
         page_js=CONNECTIONS_SCRIPT,
         extra_css=CONNECTIONS_CSS,

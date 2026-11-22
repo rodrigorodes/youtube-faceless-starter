@@ -34,6 +34,14 @@ PRODUCT_CSS = """
 .tabela-lista th, .tabela-lista td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); }
 .tabela-lista th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .tabela-lista a { font-weight: 650; }
+.tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela th, .tabela td { text-align: left; padding: 11px 9px; border-bottom: 1px solid var(--line); }
+.tabela th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.tabela tbody tr:last-child td { border-bottom: 0; }
+.lista-avancado { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+.lista-avancado li { margin: 4px 0; }
+.aviso[data-tipo="ok"] { border-left-color: var(--good); }
+.aviso[data-tipo="erro"] { border-left-color: var(--err); }
 .rolagem-x { overflow-x: auto; }
 
 /* Compatibilidade e layout para telas de Configurações, Execução e formulários */
@@ -44,17 +52,29 @@ PRODUCT_CSS = """
   --surface: var(--panel);
   --surface-raised: var(--panel2);
   --input-bg: var(--panel2);
+  --text: var(--txt);
   --text-dim: var(--sub);
   --text-muted: var(--muted);
+  --accent-soft: var(--soft);
+  --bad-bg: var(--soft);
+  --success-surface: var(--soft);
+  --warn-bg: color-mix(in srgb, var(--warn) 14%, transparent);
   --primary: var(--accent);
   --primary-focus: var(--accent);
   --gold: var(--warn);
   --info: var(--accent);
   --warn-surface: var(--soft);
   --info-surface: var(--soft);
+  --ok: var(--good);
+  --err: light-dark(#a3324c, #ff8a9b);
+  --success: var(--good);
   --bad: var(--err);
+  /* hover de card/botão do protótipo: não existe --panel3 lá; usar o painel real */
+  --panel3: var(--panel);
 }
-.card, .painel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin-bottom: 18px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12); }
+.card, .painel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+.card { margin-bottom: 18px; }   /* telas do produto empilham cards; o protótipo usa grid com gap */
+.painel { padding: 25px; }
 .card h2, .painel h2 { font-size: 16px; margin: 0 0 10px; font-weight: 750; color: light-dark(#111116, #ffffff); letter-spacing: -0.3px; }
 .card h3, .painel h3 { font-size: 15px; margin: 0 0 8px; font-weight: 700; color: light-dark(#111116, #ffffff); letter-spacing: -0.2px; }
 .card.empty, .painel.empty { text-align: center; padding: 36px 20px; color: var(--muted); }
@@ -63,6 +83,7 @@ PRODUCT_CSS = """
 .acoes-linha { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .dim { color: var(--sub); font-size: 12px; }
 .muted { color: var(--muted); font-size: 13px; }
+.brand .muted { font-size: inherit; }   /* "Studio" tem o mesmo corpo de "Faceless" */
 .fine, .micro { color: var(--sub); font-size: 11.5px; line-height: 1.45; }
 .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .kv:last-child { border-bottom: 0; }
@@ -72,19 +93,18 @@ PRODUCT_CSS = """
 
 /* Botões do Design System V3 */
 .btn {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-.btn:hover:not(:disabled) {
-  background: var(--panel3, #22222d);
-  border-color: #595268;
-}
+.btn:hover:not(:disabled) { background: var(--panel); transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
 .btn.primary, .btn-primary, .btn-primario {
-  background: var(--accent); color: #100d17 !important; border-color: var(--accent); font-weight: 700;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accentfill); color: var(--onaccent); border-color: var(--accentfill); font-weight: 700;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accentfill) 32%, transparent);
 }
 .btn.primary:hover:not(:disabled), .btn-primary:hover:not(:disabled), .btn-primario:hover:not(:disabled) {
-  background: #ab90ff !important; border-color: #ab90ff !important; color: #100d17 !important;
-  box-shadow: 0 6px 22px color-mix(in srgb, #ab90ff 52%, transparent);
+  filter: brightness(1.08); color: var(--onaccent);
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--accentfill) 48%, transparent);
 }
 .btn-danger, .btn-perigo { background: #7a2436; color: #fff; border-color: #7a2436; font-weight: 650; }
 .btn-danger:hover, .btn-perigo:hover { background: #8e2b40; filter: brightness(1.08); }
@@ -120,14 +140,14 @@ select, .field select, .campo select, select.input {
   cursor: pointer;
 }
 select option, .field select option, .campo select option, select.input option {
-  background-color: var(--panel2, #1a1a22) !important;
-  color: #ffffff !important;
+  background-color: var(--panel2) !important;
+  color: light-dark(#111116, #ffffff) !important;
   padding: 10px 14px !important;
   font-size: 13px;
 }
 select option:checked {
-  background-color: var(--accentfill, #7928ca) !important;
-  color: #ffffff !important;
+  background-color: var(--accentfill) !important;
+  color: var(--onaccent) !important;
 }
 @supports (appearance: base-select) {
   select, .field select, .campo select, select.input, select.canal-select {
@@ -138,12 +158,12 @@ select option:checked {
     color: var(--muted, #a19cad);
   }
   select::picker(select) {
-    background-color: var(--panel2, #1a1a22);
-    border: 1px solid var(--line, #2a2833);
+    background-color: var(--panel2);
+    border: 1px solid var(--line);
     border-radius: 10px;
     padding: 6px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-    color: #ffffff;
+    box-shadow: var(--shadow);
+    color: var(--txt);
   }
 }
 
@@ -265,10 +285,12 @@ select option:checked {
 .act-card { border-color: var(--warn); border-left-width: 4px; background: var(--soft); }
 
 /* Início / Hero V3 Mockup */
-.hero { padding: 38px 42px 36px; background: linear-gradient(120deg, #1c1a2a, #17171f 68%); border: 1px solid #343041; border-radius: 19px; position: relative; overflow: hidden; }
-.hero::after { content: '✦'; position: absolute; right: 37px; top: -42px; font-size: 200px; color: rgba(150, 117, 251, 0.055); pointer-events: none; line-height: 1; user-select: none; }
+.hero { padding: 38px 42px 36px; background: var(--hero); border: 1px solid var(--line);
+  border-radius: 19px; position: relative; overflow: hidden; }
+.hero::after { content: '✦'; position: absolute; right: 37px; top: -42px; font-size: 200px;
+  color: light-dark(rgba(107,76,214,.08), rgba(150,117,251,.055)); pointer-events: none; line-height: 1; user-select: none; }
 .hero h1 { font-size: 32px; letter-spacing: -1.2px; line-height: 1.2; margin: 0 0 9px; color: light-dark(#111116, #ffffff); }
-.hero p { color: #a9a6b9; margin: 0 0 26px; font-size: 14px; }
+.hero p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
 .promptrow, .hero-linha { display: flex; align-items: stretch; gap: 10px; position: relative; z-index: 1; }
 .prompt, .campo-tema input { flex: 1; border-radius: 11px; border: 1px solid #4a435e; background: rgba(11, 11, 17, 0.7); color: white; padding: 15px 16px; outline: none; min-width: 0; font-size: 14px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 .prompt:focus, .campo-tema input:focus { border-color: var(--accent) !important; outline: none; box-shadow: 0 0 0 3px rgba(150, 117, 251, 0.18); }
@@ -330,21 +352,18 @@ span.pill {
 
 /* Filtros por rádio e pílulas interativas (Tela de vídeos e formulários) */
 .pills {
-  border: 0; padding: 4px; margin: 0; display: inline-flex; gap: 5px; flex-wrap: wrap;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  border: 0; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap;
 }
 .filtros { border: 0; padding: 0; margin: 0; }
 .filtros legend { font-size: 13px; font-weight: 650; margin-bottom: 8px; padding: 0; }
 
 label.pill, .pills .pill {
-  display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent;
-  background: transparent; border-radius: 8px; padding: 7px 13px; font-size: 12.5px;
-  font-weight: 600; color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: normal;
-  transition: all 0.15s ease; user-select: none;
+  display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line);
+  background: var(--panel2); border-radius: 9px; padding: 9px 12px; font-size: 13px;
+  font-weight: 600; color: var(--txt); cursor: pointer; text-transform: none; letter-spacing: normal;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease; user-select: none;
 }
-label.pill:hover, .pills .pill:hover {
-  color: light-dark(#111116, #ffffff); background: var(--panel2);
-}
+label.pill:hover, .pills .pill:hover { background: var(--panel); }
 
 /* Custom radio visual elegante */
 label.pill input[type="radio"], .pills .pill input[type="radio"] {
@@ -365,8 +384,7 @@ label.pill input[type="radio"]:checked::before, .pills .pill input[type="radio"]
   transform: scale(1);
 }
 label.pill:has(input[type="radio"]:checked), .pills .pill:has(input[type="radio"]:checked) {
-  border-color: var(--line); background: var(--panel2); color: light-dark(#111116, #ffffff);
-  font-weight: 680; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  border-color: var(--accentfill); background: var(--soft); color: var(--accent); font-weight: 650;
 }
 
 .nav-item-unavailable { opacity: 0.55; cursor: not-allowed; }
@@ -410,18 +428,22 @@ _ALIASES = {
 }
 
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
+    # Ordem do protótipo, com as rotas reais do produto. "Identidade do canal" leva à sanfona
+    # de identidade dentro de Canais (âncora real, sem duplicar formulário).
+    ("identidade", "Identidade do canal", "/studio/canais#painel-perfil"),
     ("canais", "Canais", "/studio/canais"),
-    ("estilos", "Estilos", "/studio/panel/estilos"),
     ("conexoes", "Conexões", "/studio/panel/conexoes"),
+    ("estilos", "Estilos", "/studio/panel/estilos"),
     ("equipe", "Equipe", "/studio/panel/equipe"),
+    ("avancado", "Avançado", "/studio/panel/avancado"),
 )
 
 
-def render_settings_nav(active_section: str) -> str:
+def render_settings_nav(active_section: str, project_id: str = "") -> str:
     items = []
     for key, label, href in SETTINGS_SECTIONS:
         curr = ' aria-current="page"' if key == active_section else ""
-        items.append(f'<li><a href="{href}"{curr}>{e(label)}</a></li>')
+        items.append(f'<li><a href="{e(with_channel(href, project_id))}"{curr}>{e(label)}</a></li>')
     return f"""<nav aria-label="Seções de configuração">
       <ul class="menu-config" id="menu-config">
         {"".join(items)}
@@ -429,15 +451,16 @@ def render_settings_nav(active_section: str) -> str:
     </nav>"""
 
 
-def render_settings_page_body(*, active_section: str, section_title: str, content_html: str) -> str:
+def render_settings_page_body(*, active_section: str, section_title: str, content_html: str,
+                              project_id: str = "") -> str:
     return f"""      <section class="pagina" id="pagina-configuracoes" aria-labelledby="t-config">
         <p class="eyebrow">SEU ESTÚDIO</p>
-        <h1 class="h1" id="t-config">Configurações · {e(section_title)}</h1>
+        <h1 class="h1" id="t-config">Configurações</h1>
         <p class="lead" style="margin-bottom:24px">Fora do caminho quando você está criando.</p>
 
         <div class="grade-config">
-          {render_settings_nav(active_section)}
-          <div class="config-corpo">
+          {render_settings_nav(active_section, project_id)}
+          <div class="config-corpo" aria-label="{e(section_title)}">
             {content_html}
           </div>
         </div>
@@ -474,6 +497,7 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
       {cost}
       <div class="side-note"><span class="avatar" aria-hidden="true">E</span>
         <div>Estúdio do canal<br><span class="micro">Dados reais do Studio</span></div></div>
+      <p class="mock-flag">Proposta V3 · pt-BR</p>
     </div>
   </aside>"""
 
@@ -495,7 +519,7 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
         <button class="icon-btn" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="icon-btn" type="button" id="btn-tema" aria-pressed="false" hidden
                 title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button>
-        <a class="icon-btn" href="{CONFIG_HREF}" title="Configurações" aria-label="Configurações">⚙</a>
+        <a class="icon-btn" href="{e(with_channel(CONFIG_HREF, project_id))}" title="Configurações" aria-label="Configurações">⚙</a>
       </div>
     </header>"""
 

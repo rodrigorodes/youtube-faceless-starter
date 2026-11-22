@@ -187,7 +187,7 @@ def test_channels_page_uses_the_approved_shell(env):
     assert len(section_active) == 1 and "Canais" in _nav_text(section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert html.count("<h1") == 1
-    assert "Canais" in re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S).group(1)
+    assert re.search(r'<h1[^>]*>\s*Configurações\s*</h1>', html)
 
 
 def test_channels_page_marks_unavailable_nav_items_as_non_focusable(env):
@@ -242,6 +242,47 @@ def test_channels_shows_niche_as_read_only_and_does_not_fake_editable_field(env)
     assert 'id="nicho"' not in html
 
 
+# ------------------------------------------------------- menu de Configurações
+
+
+def test_settings_menu_matches_the_prototype_and_keeps_the_active_channel(env):
+    """Menu de Configurações na ordem do protótipo, com todos os destinos reais.
+
+    Cada link carrega o canal ativo: trocar de seção não pode voltar para o primeiro canal.
+    """
+    html = page(env).text
+    labels = [_nav_text(item) for item in settings_nav_items(html)]
+    assert labels == ["Identidade do canal", "Canais", "Conexões", "Estilos", "Equipe", "Avançado"]
+    for item in settings_nav_items(html):
+        assert f"project_id={env['project'].id}" in item, item
+
+
+# --------------------------------------------------------- canal ativo no topo
+
+
+def test_active_channel_is_the_first_decision_and_lists_every_channel(env):
+    """Pedido do operador: trocar de canal é a primeira decisão da tela e fica visível.
+
+    O protótipo mostra a lista com selo ATIVO e botão Trocar; o seletor da topbar continua
+    existindo como caminho nativo, e os dois precisam apontar para o mesmo conjunto real.
+    """
+    outro = env["videos"].create_project("Canal Secundário", niche="Tecnologia")
+    html = page(env).text
+
+    assert 'id="canal-ativo-card"' in html
+    card = html[html.index('id="canal-ativo-card"'):html.index('id="painel-identidade"')]
+    assert "Canal ativo" in card
+    assert '<span class="selo">ATIVO</span>' in card
+    assert f'data-trocar-canal="{outro.id}"' in card
+    assert "Canal Secundário" in page_text(card)
+    # o seletor nativo lista todos e marca o atual
+    assert f'<option value="{env["project"].id}" selected>Canal H</option>' in card
+    assert f'<option value="{outro.id}">Canal Secundário</option>' in card
+    # o card vem antes da identidade — é a primeira decisão, não um detalhe escondido
+    assert html.index('id="canal-ativo-card"') < html.index('id="painel-perfil"')
+    assert_ux_contract(html, page="canais/canal-ativo")
+
+
 # ------------------------------------------------------------------- aparência
 
 
@@ -252,14 +293,19 @@ def _seed_style(env, name, params=None):
     return r.json()
 
 
-def test_channel_appearance_selects_the_current_style(env):
+def test_channel_appearance_marks_the_current_style_in_the_gallery(env):
+    """UX V3: o estilo é escolhido em cartões (galeria), não em combo; o atual vem marcado."""
     style = _seed_style(env, "Documentário Cinemático")
     _seed_profile(env, style_id=style["id"])
 
     html = page(env).text
-    assert 'id="canal-estilo"' in html
-    assert 'for="canal-estilo"' in html
-    assert re.search(rf'<option value="{style["id"]}" selected>Documentário Cinemático</option>', html)
+    bloco = re.search(r'<fieldset class="pills"[^>]*aria-describedby="canal-estilo-hint".*?</fieldset>',
+                      html, re.S).group(0)
+    assert bloco.count('class="cartao-estilo"') == 2   # padrão do estúdio + o estilo real
+    assert '<span class="amostra" aria-hidden="true">DOCUMENTÁRIO CINEMÁTICO</span>' in bloco
+    assert re.search(rf'name="style_id" value="{style["id"]}" checked>', bloco)
+    # "seguir o padrão" continua sendo uma escolha possível, não marcada agora
+    assert not re.search(r'name="style_id" value="" checked', bloco)
     assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', html)
     assert "Criar novo estilo" in page_text(html)
     assert_ux_contract(html, page="canais/aparencia")
@@ -270,14 +316,15 @@ def test_channel_appearance_defaults_to_the_studio_default_without_a_style(env):
     _seed_profile(env)
 
     html = page(env).text
-    assert re.search(r'<option value="" selected>Segue o padrão do estúdio \(nenhum estilo\)</option>', html)
+    assert re.search(r'name="style_id" value="" checked', html)
+    assert "Segue o padrão do estúdio" in page_text(html)
     assert_ux_contract(html, page="canais/aparencia-sem-estilo")
 
 
 def test_channel_appearance_form_has_label_hint_and_live_feedback(env):
     _seed_profile(env)
     html = page(env).text
-    assert 'for="canal-estilo"' in html
+    assert "<legend>Estilo visual padrão</legend>" in html
     assert 'aria-describedby="canal-estilo-hint"' in html
     assert 'id="canal-estilo-hint"' in html
     assert 'id="appearance-feedback"' in html

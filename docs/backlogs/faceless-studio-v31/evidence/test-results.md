@@ -43,6 +43,11 @@ Comando: `pytest tests -q` com `STUDIO_TEST_DSN=postgresql://postgres:test@127.0
 | Baseline (F00, `e254b61`) | 2625 passed, **63 failed**, 58 skipped | 400 s |
 | Após F02 | 2679 passed, 63 failed, 58 skipped | 380 s |
 | **Final (ondas 1–5)** | **2953 passed, 21 failed, 58 skipped, 2 xfailed** | 396 s |
+| **Final (paridade visual)** | **2964 passed, 21 failed, 58 skipped** | 447 s |
+
+A rodada de paridade visual (22/11/2026) fechou em **2964 passed, 21 failed, 58 skipped** — as
+mesmas 21 pré-existentes abaixo; os `xfail` dos achados FS31-A1/A2/A3 foram removidos porque os
+bugs foram corrigidos, e 11 testes novos cobrem o desenho atualizado.
 
 As **21 falhas são exatamente as pré-existentes** já classificadas em
 [pre-existing-failures](pre-existing-failures.md): 17 dependem de FFmpeg/PIL ausentes no host

@@ -50,7 +50,7 @@ TEAM_CSS = """
   color: var(--text-muted); font-size: 0.72rem; font-weight: 700; text-transform: lowercase;
 }
 .role-badge.owner { color: var(--gold); border-color: #6b4a1c; background: var(--warn-surface); }
-.role-badge.reviewer { color: var(--info); border-color: #14567a; background: var(--info-surface); }
+.role-badge.reviewer { color: var(--info); border-color: var(--accent); background: var(--info-surface); }
 .mask {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text-muted); background: var(--input-bg); border: 1px solid var(--border-soft);
@@ -443,7 +443,9 @@ def _side_card(month: MonthCost | None) -> str:
     return shell.budget_side_card(month)
 
 
-def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str, dict[str, str]]:
+def render_team(view: TeamView, *, month: MonthCost | None = None,
+                projects: list[tuple[str, str]] | None = None,
+                project_id: str = "") -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
     organization_state = (
         _selo("idle", "○", "Sem organização cadastrada") if view.organization is None
@@ -499,6 +501,7 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
         active_section="equipe",
         section_title="Equipe",
         content_html=content_html,
+        project_id=project_id,
     )
     html = shell_v3.render_document(
         title="Faceless Studio — Equipe",
@@ -506,8 +509,8 @@ def render_team(view: TeamView, *, month: MonthCost | None = None) -> tuple[str,
         crumb="Configurações / Equipe",
         body_html=body,
         nonce=nonce,
-        projects=[],
-        project_id="",
+        projects=projects or [],
+        project_id=project_id,
         cost_note=cost_str,
         page_js=TEAM_JS,
         extra_css=TEAM_CSS,

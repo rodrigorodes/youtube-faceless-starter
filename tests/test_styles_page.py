@@ -143,6 +143,13 @@ def test_styles_page_escapes_xss_from_real_data(env):
 # ------------------------------------------------------------------- menu
 
 
+def test_styles_page_keeps_the_active_channel_in_the_topbar(env):
+    html = page(env).text
+    assert 'id="canal-ativo"' in html
+    assert "Canal H" in html
+    assert "Nenhum canal cadastrado" not in html
+
+
 def test_styles_page_menu_has_estilos_active_and_no_dead_configuracoes(env):
     html = page(env).text
     items = nav_items(html)
@@ -156,7 +163,7 @@ def test_styles_page_menu_has_estilos_active_and_no_dead_configuracoes(env):
     sections = settings_nav_items(html)
     section_active = [item for item in sections if 'aria-current="page"' in item]
     assert len(section_active) == 1 and "Estilos" in _nav_text(section_active[0])
-    assert 'href="/studio/panel/estilos"' in section_active[0]
+    assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert "em breve" not in html
     # nenhum item indisponível na casca: "Configurações — em breve" virou área real

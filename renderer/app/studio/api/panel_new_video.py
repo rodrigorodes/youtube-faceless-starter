@@ -161,14 +161,28 @@ def _style_options(view: NewVideoView, disabled: str) -> str:
     """
     if view.inherited_style_name:
         inherit = f"Herdar do canal — {e(view.inherited_style_name)}"
+        inherit_sample = "HERDAR DO CANAL"
     else:
         inherit = "Padrão do estúdio (canal sem estilo)"
-    options = [f'<label class="pill"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
-               f' {inherit}</label>']
-    for style_id, name in view.styles:
-        options.append(f'<label class="pill"><input type="radio" name="estilo-novo" '
-                       f'value="{e(style_id, quote=True)}"{disabled}> {e(name)}</label>')
-    return "\n              ".join(options)
+        inherit_sample = "PADRÃO DO ESTÚDIO"
+    if not view.styles:
+        # Sem biblioteca não há galeria: a herança é a única escolha real.
+        return (f'<label class="pill"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
+                f' {inherit}</label>')
+    # Com biblioteca, todas as escolhas viram cartões (inclusive herdar): a amostra é o **nome
+    # real** do estilo, não uma imagem inventada — a biblioteca é do operador.
+    cards = [
+        f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{inherit_sample}</span>'
+        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
+        f' {inherit}</span></label>'
+    ]
+    cards.extend(
+        f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{e(name.upper())}</span>'
+        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" '
+        f'value="{e(style_id, quote=True)}"{disabled}> {e(name)}</span></label>'
+        for style_id, name in view.styles
+    )
+    return f'<div class="galeria" style="width:100%">{"".join(cards)}</div>' 
 
 
 def _cost_note(view: NewVideoView) -> str:
@@ -228,17 +242,21 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
             </div>
             <fieldset class="pills">
               <legend>Formato</legend>
-              <label class="pill"><input type="radio" name="formato-novo" value="long" checked{disabled}>
+              <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long" checked{disabled}>
+                <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20M2 15h20"/></svg>
                 Vídeo · horizontal 16:9</label>
-              <label class="pill"><input type="radio" name="formato-novo" value="short"{disabled}>
+              <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{disabled}>
+                <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M7 6h10M7 18h10"/></svg>
                 Short · vertical 9:16</label>
             </fieldset>
-            <fieldset class="pills" style="margin-top:18px">
+            <fieldset class="pills" style="margin-top:18px;display:block;width:100%">
               <legend>Estilo visual</legend>
 {style_options}
             </fieldset>
             <p class="micro" style="margin:8px 0 0">
-              <a href="/studio/configuracoes/estilos">Gerenciar estilos da biblioteca →</a></p>
+              <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a></p>
             <div class="acoes">
               <span class="micro">Voz, idioma e identidade vêm do canal.</span>
               <button class="btn btn-primario" type="button" id="btn-para-revisao"{disabled}>Continuar →</button>
@@ -287,7 +305,7 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
               <tr><th scope="row">Estilo</th><td>{estilo}</td></tr>
             </table>
             <p class="micro" style="margin:14px 0 0">
-              <a href="/studio/configuracoes/canais">Personalizar identidade do canal →</a></p>
+              <a href="/studio/canais#painel-perfil">Personalizar identidade do canal →</a></p>
           </aside>
         </div>
       </section>"""

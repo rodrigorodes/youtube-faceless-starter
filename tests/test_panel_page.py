@@ -535,25 +535,26 @@ def test_panel_has_project_selector_and_create_project_modal(client_env):
     assert "Canal Visual" in r2.text and "Canal Secundário" in r2.text
 
 
-def test_panel_renders_workflow_funnel_and_modern_video_cards(client_env):
+def test_panel_renders_production_board_and_modern_video_cards(client_env):
     client = client_env["client"]
     videos = client_env["videos"]
     p_id = client_env["project_id"]
 
     v = videos.create_video(p_id, "Workflow Modern Cards Video", VideoFormat.short)
-    # IA-01: o funil de produção vive na tela Produção (/studio/panel/producao)...
+    # IA-01: o quadro de produção vive na tela Produção (/studio/panel/producao)...
     r_prod = client.get("/studio/panel/producao", headers=AUTH_HEADER)
     assert r_prod.status_code == 200
 
-    # Funnel cards with colored borders
-    assert '<div class="grid-summary">' in r_prod.text
-    assert "border-left: 4px solid var(--info)" in r_prod.text or "border-left: 4px solid #38bdf8" in r_prod.text
-    assert "border-left: 4px solid var(--warn)" in r_prod.text or "border-left: 4px solid #fbbf24" in r_prod.text
-    assert "border-left: 4px solid var(--ok)" in r_prod.text or "border-left: 4px solid #4ade80" in r_prod.text
-    assert "border-left: 4px solid var(--accent)" in r_prod.text
-    assert "Jobs de render/áudio ativos" in r_prod.text
-    assert "Exigem revisão humana" in r_prod.text
-    assert "Concluídos / Publicados" in r_prod.text or "CONCLUÍDOS / PUBLICADOS" in r_prod.text
+    # FS31-A3/UX V3: quadro de execução na casca V3, com dado real do vídeo e custo rotulado.
+    assert 'id="pagina-producao"' in r_prod.text
+    assert "Workflow Modern Cards Video" in r_prod.text
+    assert "Short · 9:16" in r_prod.text
+    assert "Não iniciado" in r_prod.text
+    assert "Custo:" in r_prod.text
+    # O funil V2 (grid-summary e bordas coloridas) não volta.
+    assert '<div class="grid-summary">' not in r_prod.text
+    assert "border-left: 4px solid" not in r_prod.text
+    assert "Faceless Studio V2" not in r_prod.text and 'class="sidebar"' not in r_prod.text
 
     # ...e os cartões modernos de vídeo continuam no Início, no bloco Vídeos.
     r = client.get("/studio/panel", headers=AUTH_HEADER)
@@ -1088,19 +1089,19 @@ def test_panel_ia01_each_route_renders_only_its_own_section(client_env):
     # Cada tela tem a sua própria seção...
     assert 'id="pagina-inicio"' in inicio.text
     assert 'id="videos"' in inicio.text
-    assert 'id="producao-section"' in producao.text
+    assert 'id="pagina-producao"' in producao.text
     assert 'id="pagina-tendencias"' in tendencias.text
 
     # ...e o HTML completo de uma tela nunca aparece dentro da outra.
-    assert 'id="producao-section"' not in inicio.text
+    assert 'id="pagina-producao"' not in inicio.text
     assert 'id="pagina-tendencias"' not in inicio.text
-    assert '<div class="grid-summary">' not in inicio.text
+    assert 'id="lista-producao"' not in inicio.text
     assert 'id="pagina-inicio"' not in producao.text
     assert 'id="pagina-tendencias"' not in producao.text
-    assert '<div class="grade-tendencias"' not in producao.text
+    assert 'id="grade-tendencias"' not in producao.text
     assert 'id="pagina-inicio"' not in tendencias.text
-    assert 'id="producao-section"' not in tendencias.text
-    assert '<div class="grid-summary">' not in tendencias.text
+    assert 'id="pagina-producao"' not in tendencias.text
+    assert 'id="lista-producao"' not in tendencias.text
 
     # Exatamente um aria-current="page" por página, no item certo da nav.
     for r, label in ((inicio, "Início"), (producao, "Vídeos"), (tendencias, "Tendências")):
@@ -1132,10 +1133,12 @@ def test_panel_ia01_producao_and_tendencias_are_isolated_from_the_home(client_en
     producao = client.get("/studio/panel/producao", headers=AUTH_HEADER)
     assert inicio.status_code == 200 and producao.status_code == 200
 
-    # O funil completo (grid-summary + status por fase) fica só em Produção...
-    assert '<div class="grid-summary">' in producao.text
-    assert "Status por fase" in producao.text
-    assert '<div class="grid-summary">' not in inicio.text
+    # O quadro completo de produção (lista + custo por vídeo) fica só em Produção...
+    assert 'id="pagina-producao"' in producao.text
+    assert "Vídeo para funil" in producao.text
+    assert "Custo:" in producao.text
+    assert 'id="pagina-producao"' not in inicio.text
+    assert "Custo:" not in inicio.text
     # ...e o Início traz o resumo de produção, com link para a tela cheia.
     assert re.search(r'href="/studio/panel/producao(?:\?project_id=[^"]+)?"', inicio.text)
     assert "Acompanhar produção" in inicio.text

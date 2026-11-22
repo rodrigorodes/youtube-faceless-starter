@@ -31,6 +31,7 @@ PAGES_WITH_CHANNEL: tuple[str, ...] = (
     "/studio/panel/estilos",
     "/studio/panel/conexoes",
     "/studio/panel/equipe",
+    "/studio/panel/avancado",
     "/studio/configuracoes",
 )
 

@@ -403,6 +403,9 @@ select option:checked {
   font-weight:680; box-shadow:0 2px 8px rgba(0, 0, 0, 0.22);
 }
 .tabela-kv { width:100%; font-size:13px; border-collapse:collapse; }
+/* ícone do formato no seletor (16:9 e 9:16): traço igual ao do menu, herda a cor do item */
+.pill-formato .icone-formato { width:18px; height:18px; flex:0 0 18px; fill:none;
+  stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
 .tabela-kv th, .tabela-kv td { text-align:left; padding:11px 0; border-bottom:1px solid var(--line);
   font-weight:500; }
 .tabela-kv th { color:var(--muted); font-weight:500; width:48%; }

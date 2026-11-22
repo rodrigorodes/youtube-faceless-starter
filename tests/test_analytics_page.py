@@ -243,10 +243,6 @@ def test_collect_without_publication_returns_an_honest_not_ready_state(env):
         "SELECT count(*) FROM studio.metric_observations").fetchone()[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "achado FS31-A1: panel_analytics.py só renderiza o Histórico de experimentos quando há "
-    "medições; experimento criado por API (201) fica invisível no estado vazio "
-    "(ver evidence/findings-v31.md)"))
 def test_experiment_registration_shows_history_and_refuses_platform_ab(env):
     create_project(env, videos=VIDEOS[:1])
     response = env["client"].post("/studio/analytics/experiments", headers=POST_HEADERS, json={
@@ -279,10 +275,6 @@ def test_finished_experiment_without_conclusion_is_refused(env):
     assert response.status_code == 422
     assert "Traceback" not in response.text
 
-@pytest.mark.xfail(strict=True, reason=(
-    "achado FS31-A2: a rota chama render_analytics(view, month) sem os projetos, então o select "
-    "de canal tem 1 opção (controle falso); o filtro ?project= funciona, mas não há UI "
-    "(ver evidence/findings-v31.md)"))
 def test_channel_selector_lists_real_projects_and_switches(env):
     create_project(env, videos=VIDEOS[:1])
     env["conn"].execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'Outro Canal')",

@@ -57,7 +57,7 @@ from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, YouTubeApiError
 from .preview import render_preview
-from .panel import render_panel, render_producao, render_script, render_tendencias, render_video
+from .panel import render_panel, render_script, render_tendencias, render_video
 from .panel_channels import render_channels
 from .panel_styles import render_styles
 from .panel_connections import render_connections
@@ -71,6 +71,7 @@ from .panel_production import (
     PipelineStage,
     render_execution,
     render_new_video,
+    render_production_page,
 )
 from .panel_new_video import render_new_video_v3
 from .active_channel import with_channel as _with_channel
@@ -1276,7 +1277,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             p_id = _active_channel(uc, project_id)
-            return render_producao(uc.panel.execute(days=days, project_id=p_id))
+            return render_production_page(uc.panel.execute(days=days, project_id=p_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1353,20 +1354,21 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def get_page(uc):
             if uc.advanced_page is None:
                 raise HTTPException(503, "diagnostic services unavailable")
-            p_id = _active_channel(uc, project_id)
+            _, p_id = _topbar(uc, project_id)
             view = uc.advanced_page.execute(p_id, database_ok=bool(ping()))
             return render_advanced(view)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/panel/equipe", response_class=HTMLResponse)
-    def panel_team_html(org_id: str | None = None):
+    def panel_team_html(org_id: str | None = None, project_id: str | None = None):
         def get_page(uc):
             if uc.team_view is None:
                 raise HTTPException(503, "team services unavailable")
             view = uc.team_view.execute(org_id=org_id)
             month = uc.panel.month_cost() if uc.panel is not None else None
-            return render_team(view, month=month)
+            projects, p_id = _topbar(uc, project_id)
+            return render_team(view, month=month, projects=projects, project_id=p_id or "")
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
@@ -1855,7 +1857,10 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "panel services unavailable")
             if uc.production is None:
                 raise HTTPException(503, "production services unavailable")
-            p_id = _active_channel(uc, project_id) or ""
+            # Sem `project_id` a tela usa o primeiro canal — o mesmo que a topbar mostra. Sem
+            # isso a predefinição dizia "canal sem perfil" enquanto o canal real estava ativo.
+            _, p_id = _topbar(uc, project_id)
+            p_id = p_id or ""
             # F02.T02/G15: estilos reais da biblioteca + o nome que o canal selecionado herda.
             styles: list[tuple[str, str]] = []
             inherited = None
@@ -1921,6 +1926,19 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if service is None:
             raise HTTPException(503, message)
         return service
+
+    def _topbar(uc, project_id: str | None) -> tuple[list[tuple[str, str]], str]:
+        """Canal ativo + lista real de canais para a topbar das Configurações.
+
+        Sem `project_id` a tela assume o primeiro canal (mesma regra das demais telas), em vez de
+        mostrar "nenhum canal cadastrado" e perder o seletor.
+        """
+        repo = getattr(getattr(uc, "panel", None), "repo", None)
+        projects = list(repo.projects()) if repo is not None else []
+        p_id = _active_channel(uc, project_id)
+        if p_id is None and projects:
+            p_id = projects[0][0]
+        return projects, p_id
 
     def _active_channel(uc, project_id: str | None) -> str | None:
         """Canal ativo da página (F02.T01/G11), validado no Core.
@@ -2023,16 +2041,17 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         return run(go)
 
     @router.get("/panel/estilos", response_class=HTMLResponse)
-    def styles_page_html():
+    def styles_page_html(project_id: str | None = None):
         def get_page(uc):
             if uc.styles_page is None:
                 raise HTTPException(503, "style services unavailable")
-            return render_styles(uc.styles_page.execute())
+            projects, p_id = _topbar(uc, project_id)
+            return render_styles(uc.styles_page.execute(), projects=projects, project_id=p_id or "")
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/panel/conexoes", response_class=HTMLResponse)
-    def connections_page_html():
+    def connections_page_html(project_id: str | None = None):
         """YT-04b: a tela de Conexões (conta → canais) reusa os casos de uso da YT-04a.
 
         A projeção é o próprio `list_connections` (mesma fonte do `GET /connections`) somado à
@@ -2044,7 +2063,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 raise HTTPException(503, "connection services unavailable")
             board = uc.list_connections.execute()
             profiles = uc.list_channel_profiles.execute(True) if uc.list_channel_profiles else []
-            return render_connections(board, profiles)
+            projects, p_id = _topbar(uc, project_id)
+            return render_connections(board, profiles, projects=projects, project_id=p_id or "")
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

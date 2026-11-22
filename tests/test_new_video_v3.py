@@ -98,7 +98,8 @@ def test_new_video_channel_preset_aside():
     html, _ = render_new_video_v3(_view(selected_project_id="p1"))
     assert "Predefinição do canal" in html
     assert "Canal Gamer" in html
-    assert 'href="/studio/configuracoes/canais"' in html
+    # A identidade do canal é a sanfona real, não o topo genérico de Configurações.
+    assert re.search(r'href="/studio/canais(?:\?project_id=[^"]*)?#painel-perfil"', html)
 
 
 def test_new_video_empty_state_without_channels():
@@ -138,6 +139,47 @@ def test_new_video_style_options_are_the_real_library():
         assert ficticio not in bloco
 
 
+def test_format_options_carry_an_icon_each():
+    """Protótipo: cada formato tem ícone próprio (16:9 horizontal × 9:16 vertical)."""
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view())
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="formato-novo"' in m][0]
+    icones = re.findall(r'<svg class="icone-formato"[^>]*aria-hidden="true"[^>]*>(.*?)</svg>', bloco, re.S)
+    assert len(icones) == 2, "um ícone por formato"
+    assert "width=\"20\" height=\"14\"" in icones[0]      # 16:9 deitado
+    assert "width=\"10\" height=\"20\"" in icones[1]      # 9:16 em pé
+    assert "focusable=\"false\"" in bloco
+
+
+def test_style_options_are_cards_with_the_real_name_when_the_library_has_styles():
+    """Protótipo: estilo vira cartão com amostra. A amostra é o nome real do estilo."""
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno"), ("s2", "Clean Tech")]))
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    # herdar do canal + um cartão por estilo real
+    assert bloco.count('class="cartao-estilo"') == 3
+    assert bloco.count('class="amostra"') == 3
+    for nome in ("Cinema Noturno", "Clean Tech"):
+        # amostra em caixa alta, como no protótipo
+        assert f'<span class="amostra" aria-hidden="true">{nome.upper()}</span>' in bloco
+    # herdar continua sendo a escolha marcada (e agora também é um cartão, como as demais)
+    assert re.search(r'name="estilo-novo"[^>]*value=""[^>]*checked', bloco)
+    assert 'class="galeria"' in bloco
+
+
+def test_style_gallery_is_absent_when_the_library_is_empty():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view(styles=()))
+    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
+             if 'name="estilo-novo"' in m][0]
+    assert 'class="galeria"' not in bloco and 'cartao-estilo' not in bloco
+
+
 def test_new_video_style_inherit_shows_the_channel_style_name():
     from app.studio.api.panel_new_video import render_new_video_v3
 
@@ -160,7 +202,7 @@ def test_new_video_without_styles_sends_to_the_library_and_does_not_fake_options
     assert 'name="estilo-novo"' in bloco
     assert 'value=""' in bloco and 'checked' in bloco
     assert "Cinema Noturno" in bloco  # o canal tem estilo: herdar aponta o nome real
-    assert re.search(r'href="/studio/configuracoes/estilos(?:\?project_id=[^"]+)?"', html)
+    assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', html)
     for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
         assert ficticio not in html
 

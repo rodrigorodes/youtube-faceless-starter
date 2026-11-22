@@ -163,3 +163,35 @@ def test_execution_page_lists_unavailable_stages_with_reason(env):
     r = client.get(f"/studio/panel/videos/{video.id}/production-runs/{run.run_id}", headers=AUTH_HEADER)
     assert "Indisponível nesta versão" in r.text
     assert "Fontes" in r.text and "Publicação" in r.text
+
+
+# -- página de produção (FS31-A3: sai da casca V2) ---------------------------
+
+
+def test_production_page_uses_the_v3_shell_and_real_data(env):
+    client = env["client"]
+    env["videos"].create_video(env["project_id"], "Tema de produção real", VideoFormat.short)
+    r = client.get("/studio/panel/producao", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert_ux_contract(r.text, page="painel/produção")
+    assert 'id="pagina-producao"' in r.text
+    assert "Tema de produção real" in r.text
+    assert "Não iniciado" in r.text and "sem registro de uso" in r.text
+
+    # a casca antiga não pode voltar: sem sidebar V2, sem links de API/n8n
+    assert "Faceless Studio V2" not in r.text
+    assert 'class="sidebar"' not in r.text
+    assert "API Docs" not in r.text and "n8n" not in r.text
+
+    markup = re.sub(r"<(style|script)\b.*?</\1>", "", r.text, flags=re.S)
+    nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S).group(1)
+    assert nav.count('aria-current="page"') == 1
+    assert "Vídeos" in re.search(r'<a[^>]*aria-current="page">(.*?)</a>', nav, re.S).group(1)
+
+
+def test_production_page_empty_state_is_explicit(env):
+    r = env["client"].get("/studio/panel/producao", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert "Nenhum vídeo" in r.text
+    assert_ux_contract(r.text, page="painel/produção/vazio")
+

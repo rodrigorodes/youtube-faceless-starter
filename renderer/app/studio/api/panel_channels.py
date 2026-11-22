@@ -472,20 +472,17 @@ def _summary_rows(view: ChannelsPageView) -> str:
 def _channel_card(view: ChannelsPageView) -> str:
     project = view.project
     assert project is not None
-    name = view.profile.name if view.profile else project.name
     version = f"perfil versionado <code>channel_v{view.profile.version}</code>" if view.profile else (
         "sem perfil de canal registrado"
     )
-    options = "".join(
-        f'<option value="{e(pid)}"{" selected" if pid == project.id else ""}>{e(label)}</option>'
-        for pid, label in view.projects
-    )
+    # O nome do canal ativo e o seletor vivem no card do topo; aqui fica só o que ainda não
+    # tem outro lugar: criar o próximo canal. Sem duplicar o cabeçalho do canal atual.
     return f"""
       <details class="card painel-sanfona" id="painel-identidade">
         <summary class="sanfona-cabecalho">
           <div class="sanfona-titulos">
-            <h2>{e(name)}</h2>
-            <p class="dim sanfona-subtitulo">Canal ativo · {version}</p>
+            <h2>Adicionar canal</h2>
+            <p class="dim sanfona-subtitulo">Criar outro canal neste estúdio · atual: {version}</p>
           </div>
           <div class="sanfona-meta">
             <span class="sanfona-seta" aria-hidden="true">
@@ -494,38 +491,28 @@ def _channel_card(view: ChannelsPageView) -> str:
           </div>
         </summary>
         <div class="sanfona-corpo">
-          <div class="spread" style="margin-bottom:12px;align-items:center">
-            <span class="muted" style="font-size:13px">Trocar canal ativo:</span>
-            <div class="row">
-              <label class="sr-only" for="canal-switcher">Canal ativo</label>
-              <select id="canal-switcher" class="input" style="width:auto">{options}</select>
+          <form id="new-channel-form" class="grid-2" style="margin-top:0.2rem">
+            <div class="field">
+              <label for="novo-canal-nome">Nome do canal</label>
+              <input class="input" type="text" id="novo-canal-nome" name="name" maxlength="120" required>
             </div>
-          </div>
-          <details class="new-channel">
-            <summary>Adicionar canal</summary>
-            <form id="new-channel-form" class="grid-2" style="margin-top:0.6rem">
-              <div class="field">
-                <label for="novo-canal-nome">Nome do canal</label>
-                <input class="input" type="text" id="novo-canal-nome" name="name" maxlength="120" required>
-              </div>
-              <div class="field">
-                <label for="novo-canal-nicho">Nicho editorial</label>
-                <input class="input" type="text" id="novo-canal-nicho" name="niche" maxlength="200">
-              </div>
-              <div class="field">
-                <label for="novo-canal-idioma">Idioma</label>
-                <select class="input" id="novo-canal-idioma" name="language">
-                  <option value="pt-BR" selected>Português (Brasil)</option>
-                  <option value="en-US">Inglês (EUA)</option>
-                  <option value="es-ES">Espanhol</option>
-                </select>
-              </div>
-              <div class="field" style="justify-content:end">
-                <button class="btn btn-primary" type="submit" id="btn-novo-canal">Criar canal</button>
-                <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-              </div>
-            </form>
-          </details>
+            <div class="field">
+              <label for="novo-canal-nicho">Nicho editorial</label>
+              <input class="input" type="text" id="novo-canal-nicho" name="niche" maxlength="200">
+            </div>
+            <div class="field">
+              <label for="novo-canal-idioma">Idioma</label>
+              <select class="input" id="novo-canal-idioma" name="language">
+                <option value="pt-BR" selected>Português (Brasil)</option>
+                <option value="en-US">Inglês (EUA)</option>
+                <option value="es-ES">Espanhol</option>
+              </select>
+            </div>
+            <div class="field" style="justify-content:end">
+              <button class="btn btn-primary" type="submit" id="btn-novo-canal">Criar canal</button>
+              <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
+            </div>
+          </form>
         </div>
       </details>
     """
@@ -573,9 +560,9 @@ def _profile_card(view: ChannelsPageView) -> str:
       <details class="card painel-sanfona" id="painel-perfil">
         <summary class="sanfona-cabecalho">
           <div class="sanfona-titulos">
-            <h2>Estratégia e identidade</h2>
+            <h2>Identidade do canal</h2>
             <p class="dim sanfona-subtitulo">
-              Cada alteração cria uma versão auditável do perfil do canal. Nada de editar arquivo de configuração.
+              O que está definido aqui vale para cada vídeo novo. Cada alteração cria uma versão auditável.
             </p>
           </div>
           <div class="sanfona-meta">
@@ -588,53 +575,64 @@ def _profile_card(view: ChannelsPageView) -> str:
         <div class="sanfona-corpo">
           {empty_note}
           <form id="channel-form" data-profile-id="{e(profile_id)}" data-profile-version="{version}"
-                data-project-id="{e(project.id)}" style="margin-top:14px">
-            <div class="grid-2">
-              <div class="field">
-                <label for="canal-nome">Nome do perfil</label>
-                <input class="input" type="text" id="canal-nome" name="name" maxlength="120"
-                       value="{e(default_name)}" required>
-              </div>
-              <div class="field">
-                <label for="canal-nicho">Nicho</label>
-                <input class="input" type="text" id="canal-nicho" value="{e(niche)}" disabled
-                       aria-describedby="canal-nicho-hint">
-                <span class="hint" id="canal-nicho-hint">Definido na criação do canal; não é editável neste formulário.</span>
-              </div>
-              <div class="field">
-                <label for="canal-estrategia">Estratégia</label>
-                <input class="input" type="text" id="canal-estrategia" name="strategy" maxlength="500"
-                       value="{e(strategy)}">
-              </div>
-              <div class="field">
-                <label for="canal-idioma">Idioma</label>
-                <select class="input" id="canal-idioma" name="language">{language_options}</select>
-              </div>
-              <div class="field">
-                <label for="canal-publico">Público</label>
-                <input class="input" type="text" id="canal-publico" name="audience" maxlength="500"
-                       value="{e(audience)}">
-              </div>
-              <div class="field">
-                <label for="canal-voz">Voz padrão</label>
-                <input class="input" type="text" id="canal-voz" name="voice" maxlength="200"
-                       value="{e(voice)}">
-                <span class="hint">Especificação do provider de voz (ex.: provedor:modelo).</span>
-              </div>
-              <div class="field">
-                <label for="canal-pilares">Pilares editoriais</label>
-                <input class="input" type="text" id="canal-pilares" name="pillars" maxlength="600"
-                       value="{e(pillars)}">
-                <span class="hint">Separe os pilares por vírgula; repetidos são descartados.</span>
-              </div>
-              <div class="field">
-                <label for="canal-identidade">Identidade visual</label>
-                <input class="input" type="text" id="canal-identidade" name="visual_identity" maxlength="2000"
-                       value="{e(visual)}">
-                <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span>
-              </div>
+                data-project-id="{e(project.id)}" style="margin-top:6px">
+            <!-- Paridade com o protótipo: as escolhas do dia a dia ficam na linha, pré-preenchidas
+                 pelo perfil real do canal. O resto do perfil continua disponível, sem competir
+                 visualmente com voz e idioma. -->
+            <div class="item-config">
+              <div><b><label for="canal-voz">Voz do narrador</label></b>
+                <small>Voz usada nos vídeos novos deste canal</small></div>
+              <input class="input" type="text" id="canal-voz" name="voice" maxlength="200"
+                     value="{e(voice)}" style="max-width:280px" placeholder="provedor:modelo"
+                     aria-describedby="canal-voz-hint">
+              <span class="sr-only" id="canal-voz-hint">Especificação do provider de voz, no formato provedor:modelo.</span>
             </div>
-            <div class="spread" style="margin-top:1rem">
+            <div class="item-config">
+              <div><b><label for="canal-idioma">Idioma padrão</label></b>
+                <small>Idioma de roteiro e narração</small></div>
+              <select class="input" id="canal-idioma" name="language" style="max-width:190px">{language_options}</select>
+            </div>
+            <details class="advanced" id="perfil-detalhes">
+              <summary class="advanced-summary">Detalhes do perfil</summary>
+              <div class="advanced-body">
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="canal-nome">Nome do perfil</label>
+                    <input class="input" type="text" id="canal-nome" name="name" maxlength="120"
+                           value="{e(default_name)}" required>
+                  </div>
+                  <div class="field">
+                    <label for="canal-nicho">Nicho</label>
+                    <input class="input" type="text" id="canal-nicho" value="{e(niche)}" disabled
+                           aria-describedby="canal-nicho-hint">
+                    <span class="hint" id="canal-nicho-hint">Definido na criação do canal; não é editável neste formulário.</span>
+                  </div>
+                  <div class="field">
+                    <label for="canal-estrategia">Estratégia</label>
+                    <input class="input" type="text" id="canal-estrategia" name="strategy" maxlength="500"
+                           value="{e(strategy)}">
+                  </div>
+                  <div class="field">
+                    <label for="canal-publico">Público</label>
+                    <input class="input" type="text" id="canal-publico" name="audience" maxlength="500"
+                           value="{e(audience)}">
+                  </div>
+                  <div class="field">
+                    <label for="canal-pilares">Pilares editoriais</label>
+                    <input class="input" type="text" id="canal-pilares" name="pillars" maxlength="600"
+                           value="{e(pillars)}">
+                    <span class="hint">Separe os pilares por vírgula; repetidos são descartados.</span>
+                  </div>
+                  <div class="field">
+                    <label for="canal-identidade">Identidade visual</label>
+                    <input class="input" type="text" id="canal-identidade" name="visual_identity" maxlength="2000"
+                           value="{e(visual)}">
+                    <span class="hint">Aplicada a thumbnail, cartelas e legendas.</span>
+                  </div>
+                </div>
+              </div>
+            </details>
+            <div class="spread" style="margin-top:14px">
               <div>
                 <button class="btn btn-primary" type="submit" id="btn-salvar-canal">{e(submit_label)}</button>
                 <div id="channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
@@ -647,16 +645,24 @@ def _profile_card(view: ChannelsPageView) -> str:
     """
 
 
-def _style_options(view: ChannelsPageView, selected: str | None) -> str:
-    """Opções reais do seletor de Aparência: "padrão do estúdio" + os estilos da biblioteca."""
-    options = [
-        f'<option value=""{" selected" if selected is None else ""}>'
-        "Segue o padrão do estúdio (nenhum estilo)</option>"
-    ]
-    for style in view.styles:
-        chosen = " selected" if style.id == selected else ""
-        options.append(f'<option value="{e(style.id)}"{chosen}>{e(style.name)}</option>')
-    return "".join(options)
+def _style_gallery(view: ChannelsPageView, selected: str | None, disabled: str = "") -> str:
+    """Estilo como cartões (paridade com o protótipo), com amostra e rádio junto do nome.
+
+    A lista é a biblioteca real. "Segue o padrão do estúdio" continua existindo como cartão
+    porque é uma escolha real (não um estilo inventado) — e limpar a escolha precisa ser possível.
+    """
+    def card(value: str, name: str, amostra: str | None = None) -> str:
+        checked = " checked" if (selected or "") == value else ""
+        return (
+            f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{e((amostra or name).upper())}</span>'
+            f'<span class="cartao-rodape"><input type="radio" name="style_id" value="{e(value)}"'
+            f'{checked}{disabled}> {e(name)}</span></label>'
+        )
+
+    cards = [card("", "Segue o padrão do estúdio", "Padrão")]
+    cards.extend(card(style.id, style.name) for style in view.styles)
+    joined = "".join(cards)
+    return f'<div class="galeria" style="width:100%">{joined}</div>'
 
 
 def _appearance_card(view: ChannelsPageView) -> str:
@@ -667,21 +673,21 @@ def _appearance_card(view: ChannelsPageView) -> str:
     """
     profile = view.profile
     selected = profile.style_id if profile else None
-    options = _style_options(view, selected)
+    gallery = _style_gallery(view, selected)
+    gallery_disabled = _style_gallery(view, selected, disabled=" disabled")
     create_link = '<a class="btn" href="/studio/panel/estilos">Criar novo estilo</a>'
     if profile is not None:
-        intro = ("O canal segue um estilo da biblioteca; cada vídeo pode sobrepor. "
-                 "Sem estilo escolhido, o render usa o padrão do estúdio.")
+        intro = ("O estilo escolhido aqui é aplicado a cada vídeo novo. "
+                 "Cada vídeo ainda pode sobrepor; sem estilo escolhido, o render usa o padrão do estúdio.")
         control = f"""
           <form id="appearance-form" data-profile-id="{e(profile.id)}"
                 data-profile-version="{profile.version}">
-            <div class="field">
-              <label for="canal-estilo">Segue o estilo</label>
-              <select class="input" id="canal-estilo" name="style_id" aria-describedby="canal-estilo-hint">
-                {options}
-              </select>
-              <span class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais: editar na biblioteca vale para todos que o usam.</span>
-            </div>
+            <fieldset class="pills" style="display:block;width:100%" aria-describedby="canal-estilo-hint">
+              <legend>Estilo visual padrão</legend>
+              {gallery}
+            </fieldset>
+            <p class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais: editar na
+            biblioteca vale para todos que o usam.</p>
             <div class="spread" style="margin-top:1rem">
               <div class="pill-row">
                 <button class="btn btn-primary" type="submit" id="btn-salvar-aparencia">Salvar aparência</button>
@@ -694,14 +700,12 @@ def _appearance_card(view: ChannelsPageView) -> str:
     else:
         intro = "Crie o perfil do canal para escolher um estilo; por ora ele segue o padrão do estúdio."
         control = f"""
-          <div class="field">
-            <label for="canal-estilo">Segue o estilo</label>
-            <select class="input" id="canal-estilo" name="style_id" disabled
-                    aria-describedby="canal-estilo-hint">
-              {options}
-            </select>
-            <span class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais; a escolha fica disponível depois de criar o perfil.</span>
-          </div>
+          <fieldset class="pills" style="display:block;width:100%" aria-describedby="canal-estilo-hint">
+            <legend>Estilo visual padrão</legend>
+            {gallery_disabled}
+          </fieldset>
+          <p class="hint" id="canal-estilo-hint">O estilo é compartilhado entre canais; a escolha
+          fica disponível depois de criar o perfil.</p>
           <div class="pill-row" style="margin-top:1rem">{create_link}</div>
         """
     count = len(view.styles)
@@ -711,7 +715,7 @@ def _appearance_card(view: ChannelsPageView) -> str:
       <details class="card painel-sanfona" id="canal-aparencia">
         <summary class="sanfona-cabecalho">
           <div class="sanfona-titulos">
-            <h2>Aparência</h2>
+            <h2>Estilo visual do canal</h2>
             <p class="dim sanfona-subtitulo">{e(intro)}</p>
           </div>
           <div class="sanfona-meta">
@@ -1212,19 +1216,43 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
     nonce = secrets.token_urlsafe(16)
     project = view.project
     channel_style_html = render_channel_style(channel_style) if channel_style is not None else ""
-    content_html = f"""
-      <div class="card">
-        <div class="spread">
+    # FS31 pedido do operador: o canal ativo é a primeira decisão da tela e vale para tudo —
+    # estilo, voz, idioma e orçamento. Por isso ele fica fixo no topo, não escondido na sanfona.
+    switch_options = "".join(
+        f'<option value="{e(pid)}"{" selected" if pid == project.id else ""}>{e(label)}</option>'
+        for pid, label in view.projects
+    )
+    channel_rows = "".join(
+        (
+            f'<div class="item-config" data-canal="{e(pid)}">'
+            f'<div><b>{e(label)}</b><small>'
+            + ("O canal que está ativo agora" if pid == project.id
+               else "Trocar para este canal em todas as telas")
+            + "</small></div>"
+            + ('<span class="selo">ATIVO</span>' if pid == project.id else
+               f'<button class="btn btn-sm" type="button" data-trocar-canal="{e(pid)}">Trocar</button>')
+            + "</div>"
+        )
+        for pid, label in view.projects
+    )
+    channel_switch_html = f"""
+      <div class="card" id="canal-ativo-card">
+        <div class="spread" style="align-items:center;gap:12px;flex-wrap:wrap">
           <div>
-            <h2>Identidade e configuração do canal</h2>
-            <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
-              Ação primária: <b>configurar canal</b>. A configuração vive no Studio, não em arquivo de ambiente.
+            <h2 style="margin:0">Canal ativo</h2>
+            <p class="dim" style="margin:2px 0 0;font-size:13px">
+              Um canal por vez fica ativo — ele define estilo, voz, idioma e orçamento em todas as telas.
             </p>
           </div>
-          <span class="screen-no dim">Configuração · Canais</span>
+          <div class="campo" style="margin:0;min-width:220px">
+            <label for="canal-switcher">Trocar canal ativo</label>
+            <select id="canal-switcher" class="input">{switch_options}</select>
+          </div>
         </div>
-      </div>
-      {_channel_card(view)}
+        <div style="margin-top:10px">{channel_rows}</div>
+      </div>"""
+    content_html = f"""
+      {channel_switch_html}
       {_profile_card(view)}
       {_appearance_card(view)}
       {channel_style_html}
@@ -1233,29 +1261,35 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
       {_youtube_card(view)}
       {_prefs_card(view)}
       {_advanced_card(view)}
+      {_channel_card(view)}
     """
     body_page = shell_v3.render_settings_page_body(
         active_section="canais",
         section_title="Canais",
         content_html=content_html,
+        project_id=project.id,
     )
     page_js = f"""
     try {{
       document.querySelectorAll('details.painel-sanfona').forEach((det) => {{
-        if (det.id !== 'canais-avancado') {{
+        if (det.id !== 'canais-avancado' && det.id !== 'painel-identidade') {{
           det.open = true;
         }}
       }});
     }} catch (e) {{}}
 
     const projectId = "{e(project.id)}";
+    const trocarCanal = (id) => {{
+      if (window.StudioLoading) window.StudioLoading.start('Trocando canal ativo…');
+      window.location.href = '/studio/canais?project_id=' + encodeURIComponent(id);
+    }};
     const switcher = document.getElementById('canal-switcher');
     if (switcher) {{
-      switcher.addEventListener('change', () => {{
-        if (window.StudioLoading) window.StudioLoading.start('Trocando canal ativo…');
-        window.location.href = '/studio/canais?project_id=' + encodeURIComponent(switcher.value);
-      }});
+      switcher.addEventListener('change', () => trocarCanal(switcher.value));
     }}
+    document.querySelectorAll('[data-trocar-canal]').forEach((button) => {{
+      button.addEventListener('click', () => trocarCanal(button.getAttribute('data-trocar-canal')));
+    }});
 
     const newChannel = document.getElementById('new-channel-form');
     if (newChannel) {{
@@ -1358,10 +1392,10 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
         ev.preventDefault();
         const feedback = document.getElementById('appearance-feedback');
         const button = document.getElementById('btn-salvar-aparencia');
-        const select = document.getElementById('canal-estilo');
+        const chosen = appearanceForm.querySelector('input[name="style_id"]:checked');
         const profileId = appearanceForm.getAttribute('data-profile-id') || '';
         const version = Number(appearanceForm.getAttribute('data-profile-version') || '0');
-        const value = select ? select.value : '';
+        const value = chosen ? chosen.value : '';
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
         if (window.StudioLoading) window.StudioLoading.start('Salvando aparência…');
         if (feedback) feedback.textContent = 'Salvando aparência...';
