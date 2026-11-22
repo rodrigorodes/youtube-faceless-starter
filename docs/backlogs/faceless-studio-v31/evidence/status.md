@@ -8,11 +8,11 @@ HEAD de base `e254b61`; mudanças da F02 **não commitadas** (commit não autori
 | F00 | Em revisão (execução técnica concluída) | Operador | A designar | 21/11/2026 | T01/T03 aceitas tecnicamente; T02 com ADRs validados e o operador autorizando o avanço (aprovação formal do responsável técnico segue pendente); T04 aguarda commit |
 | F01 | T01/T02/T03 integradas; T04 com contingência pronta | Operador | A designar | 21/11/2026 | parcial: falta decisão de política do `budget_guard` |
 | F02 | Em revisão (T01–T04 implementadas e testadas) | Operador | A designar | 21/11/2026 | Falta validação em navegador e aceite humano |
-| F03 | T01/T02 integradas; T03 em integração; T04 em stream | Operador | A designar | 21/11/2026 | parcial |
+| F03 | T01–T04 integradas | Operador | A designar | 21/11/2026 | fechada tecnicamente |
 | F04 | T01/T02 integradas; T03 é levantamento de consumidores | Operador | A designar | 21/11/2026 | parcial: campos fora do schema 1 declarados como não governados |
-| F05 | T01/T02 integradas; T04 pendente | Operador | A designar | 21/11/2026 | parcial |
-| F06 | T01 integrada; T02/T03 pendentes | Operador | A designar | 21/11/2026 | parcial |
-| F07 | T01 em andamento (testes V2 modernizados); T02–T04 bloqueadas | Operador | A designar | 21/11/2026 | bloqueado por ambiente/credenciais |
+| F05 | T01/T02/T04 integradas (T03 coberto por F03.T04) | Operador | A designar | 21/11/2026 | fechada tecnicamente |
+| F06 | T01/T02/T03 integradas | Operador | A designar | 21/11/2026 | fechada tecnicamente |
+| F07 | T01 executada (2953 passed / 21 pré-existentes); T02–T04 bloqueadas | Operador | A designar | 21/11/2026 | bloqueado por ambiente/credenciais |
 
 ## Autorizações do operador (21/11/2026, 2ª rodada)
 

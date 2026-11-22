@@ -762,13 +762,18 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
     assert r.text.count("<h1") == 1
 
     # O contrato de filtro de tendências mudou de página: agora é da tela Tendências.
+    # E o filtro passou a viver na URL (link, não botão): o scroll infinito precisa do mesmo
+    # recorte no servidor para o próximo lote — filtrar só o lote atual seria enganoso.
     r_trend = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r_trend.status_code == 200
-    assert '<button class="chip-filtro" type="button" data-filtro="todas" aria-pressed="true">Todas (8)</button>' in r_trend.text
-    assert 'data-filtro="regiao:BR" aria-pressed="false"' in r_trend.text
+    assert ('<a class="chip-filtro" href="/studio/panel/tendencias?filtro=todas&amp;project_id='
+            in r_trend.text)
+    assert 'data-filtro="todas" aria-current="true">Todas (8)</a>' in r_trend.text
+    assert 'data-filtro="regiao:BR"' in r_trend.text
     assert "Em Alta Brasil (8)" in r_trend.text
-    # Todas as 8 tendências são publicadas (a V3 não esconde itens atrás de "ver mais").
+    # Com 8 tendências (menos que um lote), todas são publicadas e não há "carregar mais".
     assert r_trend.text.count('class="cartao-tendencia"') == 8
+    assert 'id="btn-carregar-mais"' not in r_trend.text
 
 
 def test_panel_shell_escapes_trend_topic_and_source(client_env):

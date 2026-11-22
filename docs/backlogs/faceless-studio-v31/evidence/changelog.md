@@ -42,3 +42,11 @@
 - 21/11/2026 (**commit local `ea5782f`**, sem push): ondas 1–4 do backlog + scroll infinito em
   Tendências. Operador autorizou commit local, manteve o `budget_guard` desligado e não autorizou
   publicação real. 147 arquivos; `docs/`, `renderer/`, `tests/` e `workflows/`.
+- 21/11/2026 (commits `832dc9f`, `a77f661`, `c77dbd5`, sem push): F06.T03 (preferências de
+  produção na tela de Canais), F03.T04 (lifecycle com entradas congeladas + migração 0041),
+  F05.T04 (personalizar canal separado da biblioteca, componente + rota de patch) e as rotas
+  `style-patch`/`regenerate`. F03.T03 e F06.T02 já estavam nas ondas anteriores.
+- 21/11/2026 (**gate de regressão**): `pytest tests` com banco → **2953 passed, 21 failed, 58
+  skipped, 2 xfailed** (396 s); as 21 são as pré-existentes (17 FFmpeg/PIL, 2 pydantic, 2 ordem).
+  Ver `evidence/test-results.md`.
+

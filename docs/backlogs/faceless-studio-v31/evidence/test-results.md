@@ -33,3 +33,30 @@ falhas). Antes de qualquer release, repetir com a versão pinada de pydantic e c
 ## Suíte completa após F02
 
 Ver [test-results-f02](test-results-f02.md) — mesmo comando e mesmo banco do baseline.
+## Suíte completa final (21/11/2026, commits `ea5782f`…`c77dbd5`)
+
+Comando: `pytest tests -q` com `STUDIO_TEST_DSN=postgresql://postgres:test@127.0.0.1:55433/postgres`
+(F00 descartável) e as mesmas variáveis do baseline; `-p no:cacheprovider`.
+
+| Rodada | Resultado | Tempo |
+|---|---|---|
+| Baseline (F00, `e254b61`) | 2625 passed, **63 failed**, 58 skipped | 400 s |
+| Após F02 | 2679 passed, 63 failed, 58 skipped | 380 s |
+| **Final (ondas 1–5)** | **2953 passed, 21 failed, 58 skipped, 2 xfailed** | 396 s |
+
+As **21 falhas são exatamente as pré-existentes** já classificadas em
+[pre-existing-failures](pre-existing-failures.md): 17 dependem de FFmpeg/PIL ausentes no host
+(`test_render_plan_executor`, `test_render_reuse`, `test_render_plan_repo`), 2 são o contrato
+gerado com pydantic divergente (`test_contracts_snapshot` e o pacote extraído em
+`test_secrets_hygiene`) e 2 são sensíveis à ordem (`test_port_contracts`; passam isoladas).
+Nenhuma regressão nova.
+
+As 42 falhas de tela que existiam desde o port V3 foram **modernizadas**, não escondidas: os
+testes agora verificam o comportamento V3 real. Duas delas provaram comportamento correto que o
+produto ainda não entrega e ficaram `xfail(strict=True)` com id de achado (FS31-A1/A2) — ver
+[findings-v31](findings-v31.md).
+
+Observação operacional que custou tempo real: rodar dois `pytest` ao mesmo tempo contra o **mesmo**
+PostgreSQL descartável derruba o schema de um no meio do outro (`duplicate key pg_namespace`) e
+produz falhas falsas e execuções de 6–25 min. A regra adotada é uma suíte por banco por vez; com
+isso, grupos que levavam 393–1527 s caíram para 9–34 s.
