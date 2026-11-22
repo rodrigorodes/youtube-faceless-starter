@@ -14,6 +14,17 @@ HEAD de base `e254b61`; mudanças da F02 **não commitadas** (commit não autori
 | F06 | T01 integrada; T02/T03 pendentes | Operador | A designar | 21/11/2026 | parcial |
 | F07 | T01 em andamento (testes V2 modernizados); T02–T04 bloqueadas | Operador | A designar | 21/11/2026 | bloqueado por ambiente/credenciais |
 
+## Autorizações do operador (21/11/2026, 2ª rodada)
+
+- **Commit local: autorizado.** Onda 1–4 commitada em `ea5782f` (147 arquivos), sem push.
+- **`budget_guard`: permanece desligado** por decisão do operador; a contingência
+  `STUDIO_PUBLICATION_ENABLED` continua sendo o caminho de desligar publicação.
+- **Publicação/render reais: não autorizados** — F07.T02–T04 seguem bloqueadas por ambiente,
+  credenciais e autorização específica.
+- Efeito colateral declarado: o documento-fonte `docs/backlogs/Faceless Studio V3.1 — UX &
+  Settings Redesign.md` (antes não rastreado, decisão pendente) entrou no commit por estar sob
+  `docs/`. Se a decisão for mantê-lo fora do repositório, remover em commit próprio.
+
 ## O que foi autorizado nesta execução
 
 - O operador autorizou seguir sem pausa entre as atividades e definiu três critérios: UX e

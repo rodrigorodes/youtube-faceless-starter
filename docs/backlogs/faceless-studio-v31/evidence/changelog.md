@@ -39,3 +39,6 @@
   otimista e escrita dedicada (migração `0040_style_patches.sql`); `{}` recusado e allowlist
   aplicada antes do SQL. Grupo integrado: 261 passed. Fiação de patch na composição feita em
   seguida (junto com `editorial_for`): 146 passed nos testes de fiação.
+- 21/11/2026 (**commit local `ea5782f`**, sem push): ondas 1–4 do backlog + scroll infinito em
+  Tendências. Operador autorizou commit local, manteve o `budget_guard` desligado e não autorizou
+  publicação real. 147 arquivos; `docs/`, `renderer/`, `tests/` e `workflows/`.
