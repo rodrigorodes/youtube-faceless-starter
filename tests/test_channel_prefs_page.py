@@ -145,12 +145,11 @@ def _put_budget(client, project_id, *, profile="BALANCED"):
 
 def test_budget_card_offers_the_three_real_profiles_and_marks_the_active_one(env):
     html = page(env).text
-    select = re.search(r'<select[^>]*id="perfil-economico"[^>]*>(.*?)</select>', html, re.S)
-    assert select is not None, "seletor de perfil econômico ausente"
-    assert 'name="economic_profile"' in select.group(0)
-    values = re.findall(r'<option value="(\w+)"', select.group(1))
+    # UX (protótipo `settingsProduction`, `prototype/index.html:627`): o perfil é uma escolha em
+    # cartões — radios nativos com o mesmo nome de campo, dentro do formulário de orçamento.
+    values = re.findall(r'<input type="radio" name="economic_profile" value="(\w+)"[^>]*>', html)
     assert values == ["ECONOMY", "BALANCED", "PREMIUM"]
-    assert re.search(r'<option value="BALANCED" selected>', select.group(1))
+    assert re.search(r'<input type="radio" name="economic_profile" value="BALANCED" checked>', html)
     visible = page_text(html)
     assert "Perfil econômico" in visible
     assert "Perfil ativo" in visible
@@ -183,12 +182,15 @@ def test_budget_month_spend_keeps_real_and_estimate_labelled(env):
     assert "US$ 0,00" not in html
 
 
-def test_profile_select_is_a_real_control_not_a_placeholder(env):
+def test_profile_choice_is_a_real_control_not_a_placeholder(env):
     html = page(env).text
     form = re.search(r'<form id="budget-form".*?</form>', html, re.S)
     assert form is not None
     assert 'name="economic_profile"' in form.group(0)
-    assert "disabled" not in re.search(
-        r'<select[^>]*id="perfil-economico"[^>]*>', form.group(0)).group(0)
+    # Os três cartões de escolha são controles reais e habilitados (radio nativo, sem JS).
+    radios = re.findall(r'<input type="radio" name="economic_profile" value="\w+"[^>]*>',
+                        form.group(0))
+    assert len(radios) == 3
+    assert all("disabled" not in radio for radio in radios)
     # Sem handler inline: o envio é por addEventListener (CSP sem unsafe-inline).
     assert not re.search(r"\son[a-z]+=", html, re.I)

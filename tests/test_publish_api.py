@@ -13,10 +13,22 @@ pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg n
 
 from PIL import Image  # noqa: E402
 
-from test_render_api import make_client, ready_video, status  # noqa: E402
+from test_render_api import Boom, NoSound, ToneVoice, make_client, ready_video, status  # noqa: E402
 
 URI = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=AbC123"
 YT = "oNQ2KN37sfQ"
+
+
+@pytest.fixture(autouse=True)
+def _fake_voice_and_renderer_providers(registered_providers):
+    """`make_client` usa `voice="tone:ok"` por padrão; os fakes vivem em `test_render_api`.
+
+    Desde o achado 11 eles não são mais registrados na coleta (o `_REGISTRY` global vazava para
+    `test_port_contracts`), então quem os usa **fora** daquele módulo precisa registrá-los.
+    """
+    registered_providers("voice", "tone", ToneVoice)
+    registered_providers("renderer", "nosound", NoSound)
+    registered_providers("renderer", "boom", Boom)
 
 
 @pytest.fixture()

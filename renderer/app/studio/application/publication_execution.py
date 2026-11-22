@@ -30,16 +30,14 @@ from ..domain.ids import InvalidId
 from ..domain.publish import build_description, default_title, youtube_insert_body
 from ..domain.publication_policy import (
     FailureClass,
-    PublicationGateError,
     PublicationPolicyError,
     RetryPolicy,
     idempotency_key,
     next_action,
     publication_window_state,
     retry_delay,
-    verify_publication_gate,
-    verify_publication_intent,
 )
+from .publication_gate import confirmed_destination, publication_block_reason
 from ..domain.youtube_oauth import OAuthError, OAuthReconnectRequired, OAuthTransientError
 from .youtube_oauth import ChannelNotConnected
 from .editorial import StateConflict
@@ -201,43 +199,20 @@ class RunPublication:
                                    pub.publish_at, visibility=intent.visibility)
 
     def _confirmed_destination(self, video, intent) -> str | None:
-        """Destino do YouTube que a intenção confirmou (A19); `None` quando não há como verificar.
-
-        Sem os repositórios de canal (construção legada), não há como comparar: devolve o próprio
-        destino da intenção para que a comparação de destino não acuse uma mudança que não foi
-        observada. O caminho do servidor sempre injeta os repositórios (`composition.py`).
-        """
-        if self.channels is None:
-            return intent.youtube_channel_id
-        try:
-            channel = self.channels.get_by_project(video.project_id)
-        except InvalidId:
-            channel = None
-        return channel.youtube_channel_id if channel is not None else None
+        """Destino confirmado da intenção — delega ao gate único (`publication_gate`)."""
+        return confirmed_destination(video, intent, self.channels)
 
     def _prepare(self, pub: Publication) -> tuple[UploadRequest, str] | PublicationRun:
         video = self.videos.get_video(pub.video_id)
         if video is None:
             return self._blocked(pub, "the video no longer exists")
+        # A19/A37 + W5.1: o gate é o mesmo do claim (`application/publication_gate.py`).
+        blocked = publication_block_reason(video, intents=self.intents, approvals=self.approvals,
+                                           jobs=self.jobs, channels=self.channels)
+        if blocked is not None:
+            return self._blocked(pub, blocked)
         intent = self.intents.get(video.id)
-        if intent is None:
-            return self._blocked(pub, "the publication intent is missing; re-approve the video with a reviewed render")
-        approval = self.approvals.get(video.id)
-        job = self.jobs.latest(video.id)
         output = self.jobs.approved_output(video.id)
-        if job is None or output is None:
-            return self._blocked(pub, "there is no successful render to publish")
-        try:
-            # A19/A37: destino ou metadados mudaram depois da confirmação → intenção obsoleta.
-            verify_publication_intent(
-                intent, youtube_channel_id=self._confirmed_destination(video, intent),
-                title=video.title or default_title(video.topic), description=video.description or "",
-                tags=video.tags)
-            verify_publication_gate(intent, render_id=job.id, checksum=output.cache_key, output_asset_id=output.id,
-                                    qa_report_passed=bool(video.qa_report and video.qa_report.is_publishable),
-                                    approval_output_asset_id=approval.output_asset_id if approval else None)
-        except PublicationGateError as exc:
-            return self._blocked(pub, str(exc))
         window = publication_window_state(pub.publish_at, self.clock())
         if window in ("EXPIRED", "TOO_LATE"):
             return self._blocked(pub, "publication schedule has expired or is too close; reschedule before publishing")

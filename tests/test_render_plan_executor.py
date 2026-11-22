@@ -465,7 +465,7 @@ def test_a_corrupted_cached_artifact_is_not_reused(tmp_path):
 
 
 def _compiled_with_overlay(work_dir):
-    from app.studio.application.render_compiler import compile_render_plan
+    from app.studio.adapters.render_plan_compiler import compile_render_plan
     from app.studio.domain.asset_resolver import AssetDescriptor
     from app.studio.domain.contracts import Asset, AssetKind
     from app.studio.domain.render_plan import StyleSnapshot

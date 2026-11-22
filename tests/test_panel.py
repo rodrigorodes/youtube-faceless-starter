@@ -667,7 +667,7 @@ def test_render_panel_shell_marks_exactly_one_active_nav_item():
         # F02.T01: a navegação carrega o canal ativo (?project_id=)
         assert re.search(rf'href="{re.escape(href)}(?:\?project_id=[^"]+)?"', item)
 
-    cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
+    cfg = next(item for item in items if "Configurações" in _nav_text(item))
     assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
     assert "Configurações" in cfg
 
@@ -697,7 +697,7 @@ def test_render_panel_shell_has_no_disabled_nav_items_and_estilos_is_a_real_link
     items = _primary_nav(html)
 
     assert not any('aria-disabled="true"' in item for item in items)
-    cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
+    cfg = next(item for item in items if "Configurações" in _nav_text(item))
     assert 'aria-disabled="true"' not in cfg
     assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
 
@@ -946,8 +946,12 @@ def test_render_panel_matches_approved_mockup_structure_without_illustrative_dat
     html = _render_panel_html()
     visible = _visible_text(html)
 
-    for group in ("Operação", "Configurações"):
-        assert group in visible
+    # NAV do protótipo (`prototype/index.html:583`): **um** menu, sem caption de grupo, com
+    # "Configurações" como 7º item (deixou de ser um `<nav>` separado no rodapé).
+    assert "Operação" not in visible, "a caption 'Operação' saiu: o protótipo tem uma lista só"
+    for item in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho",
+                 "Biblioteca", "Configurações"):
+        assert item in visible, item
 
     assert 'class="hero"' in html
     assert "O que você vai criar hoje?" in visible

@@ -12,6 +12,7 @@ from ..domain.publication_policy import resolve_visibility
 from .editorial import StateConflict, VideoNotFound, _require_video
 from .ports import (ApprovalRepository, AssetRepository, PublicationRepository, RenderJobRepository, RenderStorage, ScriptRepository,
                     SnapshotRepository, ThumbnailMaker, VideoRepository)
+from .publication_gate import publication_block_reason
 
 Clock = Callable[[], datetime]
 SERVABLE = (VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED, VideoStatus.PUBLISHED)
@@ -108,8 +109,13 @@ class ClaimItem:
 
 class ClaimPublication:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
-                 snaps: SnapshotRepository, pubs: PublicationRepository, files: RenderStorage):
+                 snaps: SnapshotRepository, pubs: PublicationRepository, files: RenderStorage, *,
+                 approvals=None, intents=None, channels=None):
         self.videos, self.scripts, self.assets, self.jobs, self.snaps, self.pubs, self.files = videos, scripts, assets, jobs, snaps, pubs, files
+        # Achado 1: o claim passa pelo MESMO gate da publicação efetiva. Sem estes repositórios
+        # (construção legada/testes) o gate não roda — a composição sempre os injeta
+        # (`composition.py`), então o caminho servido é fail-closed.
+        self.approvals, self.intents, self.channels = approvals, intents, channels
 
     def execute(self, lease_seconds: int = 1800, max_attempts: int = MAX_ATTEMPTS) -> ClaimItem | None:
         pub = self.pubs.claim(lease_seconds, max_attempts)
@@ -121,6 +127,11 @@ class ClaimPublication:
                     raise _ScheduleExpired("publication schedule expired and claim cannot be safely cancelled; human reconciliation required")
                 raise _ScheduleExpired("publication schedule has expired; reschedule before claiming")
             video = _require_video(self.videos, pub.video_id)
+            if self.intents is not None and self.approvals is not None:
+                blocked = publication_block_reason(video, intents=self.intents, approvals=self.approvals,
+                                                   jobs=self.jobs, channels=self.channels)
+                if blocked is not None:
+                    raise InvalidPublishData(blocked)
             output = self.jobs.approved_output(video.id)
             path = self.files.resolve(output.path, "mp4") if output else None
             if path is None:

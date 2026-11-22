@@ -28,6 +28,17 @@ from test_publication_execution import (  # noqa: E402
 )
 
 P = "b" * 32
+
+
+@pytest.fixture(autouse=True)
+def _fake_voice_provider(registered_providers):
+    """`make_client` (de `test_render_api`) usa `voice="tone:ok"` por padrão.
+
+    Desde o achado 11 o fake não é mais registrado na coleta; quem o usa fora daquele módulo
+    precisa registrá-lo.
+    """
+    from test_render_api import ToneVoice
+    registered_providers("voice", "tone", ToneVoice)
 # O id exato da linha legada que existe no banco do app (AWAITING_APPROVAL, aprovada pela métrica antiga).
 LEGACY_ID = "b68b62d9ad994bc5b1b6d9bf7675784f"
 # Shape legado exato, como gravado por `contracts.QaReport` antes da adoção do contrato novo.

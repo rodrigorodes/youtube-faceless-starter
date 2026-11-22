@@ -95,6 +95,22 @@ class PostgresApprovalRepository(_Base):
                                              metadata_fingerprint=row["metadata_fingerprint"])
 
 
+class PostgresPublicationIntentRepository:
+    """Adapta a leitura da intenção de publicação à porta `PublicationIntentRepository`.
+
+    A intenção e a aprovação são gravadas na mesma transação por `PostgresApprovalRepository.decide`,
+    mas as duas portas pedem o método `get()` — um objeto só não pode servir às duas. Aqui `get()`
+    devolve `PublicationIntentEvidence`, que é o que o gate de publicação compara. Antes, a composição
+    passava o repositório de aprovação como `intents` e o gate lia um `Approval` (sem `render_id`).
+    """
+
+    def __init__(self, approvals: PostgresApprovalRepository):
+        self._approvals = approvals
+
+    def get(self, video_id: str) -> PublicationIntentEvidence | None:
+        return self._approvals.intent(video_id)
+
+
 class PostgresPublicationRepository(_Base):
     def claim(self, lease_seconds: int, max_attempts: int, video_id: str | None = None) -> Publication | None:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:

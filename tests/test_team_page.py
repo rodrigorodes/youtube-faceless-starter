@@ -184,3 +184,33 @@ def test_route_serves_the_team_page_from_real_data(conn, dsn, tmp_path):
     assert "Owner Rota" in r.text
     assert "US$ 0,00" not in r.text
     assert r.headers.get("Cache-Control") == "no-store"
+
+def test_team_page_roles_matrix_comes_from_the_real_rbac():
+    """Análise de Configurações 3.3: matriz Papel × permissão gerada de `ROLE_PERMISSIONS`.
+
+    Diverge **de propósito** do protótipo (que é ilustrativo): aqui vale o RBAC que o servidor
+    aplica — o Editor **publica** (o protótipo dizia que não); Reviewer aprova e não publica;
+    Viewer só lê.
+    """
+    view = BuildTeamView(_populated_repo(), lambda: NOW).execute()
+    html, _ = render_team(view)
+    assert '<table class="papeis-matriz">' in html
+    for column in ("Papel", "Editar / gerar", "Aprovar", "Publicar"):
+        assert column in html, column
+
+    def cells(role: str) -> list[tuple[str, str]]:
+        row = re.search(
+            rf'<tr><th scope="row"><span class="role-badge {role}">{role}</span></th>(.*?)</tr>',
+            html, re.S).group(1)
+        return re.findall(r'<td class="(sim|nao)">(Sim|Não)</td>', row)
+
+    assert cells("owner") == [("sim", "Sim"), ("sim", "Sim"), ("sim", "Sim")]
+    assert cells("editor") == [("sim", "Sim"), ("nao", "Não"), ("sim", "Sim")]
+    assert cells("reviewer") == [("nao", "Não"), ("sim", "Sim"), ("nao", "Não")]
+    assert cells("viewer") == [("nao", "Não"), ("nao", "Não"), ("nao", "Não")]
+
+
+def test_team_page_matrix_present_even_without_an_organization():
+    """A matriz é dos papéis canônicos (não da organização): aparece também no estado vazio."""
+    html = _empty_view()
+    assert '<table class="papeis-matriz">' in html

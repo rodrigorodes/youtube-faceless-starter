@@ -49,3 +49,16 @@ def test_env_example_documents_the_guard_the_mode_and_the_ceiling_prerequisite()
     assert re.search(r"^STUDIO_PRODUCTION_MODE=BUDGET_GUARDED$", text, flags=re.M)
     assert "INTERACTIVE" in text and "BUDGET_GUARDED" in text, "os valores aceitos precisam estar documentados"
     assert "MAX_COST_USD_PER_VIDEO" in text, "o pré-requisito dos tetos precisa estar documentado"
+
+
+def test_compose_forwards_the_provider_production_flag_and_the_secrets_root():
+    """Achado 4: as duas variáveis lidas por `Settings.from_env` também precisam chegar ao container."""
+    environment = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    assert environment["STUDIO_PROVIDER_PRODUCTION"] == "${STUDIO_PROVIDER_PRODUCTION:-}"
+    assert environment["STUDIO_SECRETS_ROOT"] == "${STUDIO_SECRETS_ROOT:-}"
+
+
+def test_env_example_documents_the_provider_production_flag():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert re.search(r"^STUDIO_PROVIDER_PRODUCTION=$", text, flags=re.M)
+    assert re.search(r"^STUDIO_SECRETS_ROOT=$", text, flags=re.M)

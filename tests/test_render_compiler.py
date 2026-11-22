@@ -18,11 +18,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
-from app.studio.application.render_compiler import (  # noqa: E402
-    CompileError,
+from app.studio.adapters.render_plan_compiler import (  # noqa: E402
     CompiledRender,
     compile_render_plan,
 )
+from app.studio.application.render_compiler import CompileError  # noqa: E402
 from app.studio.domain.asset_resolver import AssetDescriptor  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
 from app.studio.domain.render import FADE_S, FPS  # noqa: E402

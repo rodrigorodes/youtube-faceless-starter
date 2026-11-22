@@ -63,7 +63,42 @@ class BudgetOperationError(RuntimeError):
 
 
 class BudgetDenied(BudgetOperationError):
-    """A reserva foi recusada pela política de orçamento."""
+    """A reserva foi recusada pela política de orçamento.
+
+    `detail` diz **qual** teto barrou, com os números, para a mensagem ao operador ser acionável
+    (achado 3); `None` quando o repositório não sabe informar — a recusa continua válida, só não
+    é detalhada.
+    """
+
+    def __init__(self, message: str, *, detail: "BudgetDenial | None" = None):
+        super().__init__(message)
+        self.detail = detail
+
+
+# Escopo da recusa quando o que bloqueia é custo sem evidência de cobrança (não um teto numérico).
+UNKNOWN_COST_SCOPE = "custo desconhecido"
+
+
+@dataclass(frozen=True)
+class BudgetDenial:
+    """Qual teto barrou a operação paga, com os números do escopo (achado 3).
+
+    `scope` nomeia o escopo ("GLOBAL (mês)", "CANAL (mês)", "VÍDEO") ou `UNKNOWN_COST_SCOPE`;
+    `ceiling_usd` é o teto do escopo; `committed_usd` é o gasto + reservas já comprometidos nele;
+    `estimate_usd` é o valor que a operação ia somar.
+    """
+
+    scope: str
+    ceiling_usd: Decimal
+    committed_usd: Decimal
+    estimate_usd: Decimal
+
+    def describe(self) -> str:
+        if self.scope == UNKNOWN_COST_SCOPE:
+            return ("a cost with no evidence of charge blocks the operation; reconcile the ledger "
+                    "before spending again")
+        return (f"{self.scope} ceiling US$ {self.ceiling_usd:.2f} would be exceeded "
+                f"(committed US$ {self.committed_usd:.2f} + estimate US$ {self.estimate_usd:.2f})")
 
 
 class OperationInProgress(BudgetOperationError):
@@ -227,6 +262,15 @@ class PaidOperationRepository(Protocol):
         """Numa transação: grava o lançamento (ACTUAL/ESTIMATE/FREE) no ledger, confirma e libera a reserva."""
         ...
 
+    def denial(self, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
+               video_limit_usd: Decimal, *, global_monthly_limit_usd: Decimal | None = None) -> BudgetDenial:
+        """Diagnóstico **read-only** de uma reserva recusada: qual escopo estourou e com que números.
+
+        Não escreve nada e não muda estado: só explica o `DENIED` para a mensagem ser acionável
+        (achado 3). Mesmo contrato de escopos de `begin`.
+        """
+        ...
+
     def reconcile_actual(self, key: str, charged_usd: Decimal, *, reference: str, confirmed_by: str) -> None:
         """Reconcilia uma operação com a cobrança comprovada (humano).
 
@@ -309,7 +353,8 @@ class PaidOperationGuard:
         if result is BeginResult.CREATED:
             return result
         if result is BeginResult.DENIED:
-            raise BudgetDenied(f"budget denied for paid operation {key}")
+            raise BudgetDenied(f"budget denied for paid operation {key}",
+                               detail=self._denial(video_id, estimate_usd, monthly, video))
         if result is BeginResult.IN_PROGRESS:
             raise OperationInProgress(f"paid operation {key} is already in progress")
         if result is BeginResult.UNCERTAIN:
@@ -320,6 +365,22 @@ class PaidOperationGuard:
             # Defensivo: o repositório reabre RELEASED; se chegar aqui, não executar sem reconciliação.
             raise OperationSettled(f"paid operation {key} was already released", state="RELEASED")
         raise BudgetOperationError(f"unexpected begin result {result!r}")
+
+    def _denial(self, video_id: str | None, estimate_usd: Decimal, monthly: Decimal,
+                video: Decimal) -> BudgetDenial | None:
+        """Explica o `DENIED` (achado 3) sem transformar uma recusa em erro do servidor.
+
+        O diagnóstico é leitura pura e **best-effort**: qualquer falha ao montar a explicação não
+        pode converter o 403 de orçamento em 500 — sem detalhe, a recusa continua correta.
+        """
+        denial = getattr(self.repo, "denial", None)
+        if not callable(denial):
+            return None
+        try:
+            return denial(video_id, estimate_usd, monthly, video,
+                          global_monthly_limit_usd=self.monthly_limit_usd)
+        except Exception:  # noqa: BLE001 — diagnóstico nunca derruba o caminho de proteção
+            return None
 
     def confirm(self, key: str, entry: UsageEntry, confirmation: CostConfirmation) -> None:
         self.repo.confirm(key, entry, confirmation)

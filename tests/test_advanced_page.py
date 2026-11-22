@@ -69,10 +69,10 @@ def test_advanced_page_never_shows_a_secret_or_a_writable_control():
 
 def test_advanced_page_marks_the_settings_area_as_active():
     html, _ = render_advanced(_view())
-    main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S)
-    assert main is None or 'aria-current="page"' in main.group(1) or True
-    cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert 'aria-current="page"' in cfg
+    main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
+    # NAV: "Configurações" é o 7º item do menu principal e fica ativo nesta tela.
+    config_item = [li for li in re.findall(r"<li>.*?</li>", main, re.S) if "Configurações" in li]
+    assert config_item and 'aria-current="page"' in config_item[0]
 
 
 def test_empty_catalog_is_an_explicit_state():

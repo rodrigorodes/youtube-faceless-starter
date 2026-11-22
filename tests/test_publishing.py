@@ -463,3 +463,69 @@ def test_public_approval_requires_an_explicit_second_confirmation():
     use2, a2 = approver(v2)
     use2.execute(V, output_asset_id="9" * 32, visibility="unlisted")
     assert a2.calls[0][2]["visibility"] == "unlisted" and a2.calls[0][2]["public_confirmed"] is False
+
+
+# ---------- claim: o caminho legado passa pelo MESMO gate de publicação (achado 1) ----------
+
+
+class _GateApprovals:
+    """Porta de aprovação: `get` devolve a `Approval` real do vídeo."""
+
+    def __init__(self, output_asset_id="9" * 32):
+        self.output_asset_id = output_asset_id
+
+    def get(self, video_id):
+        return Approval(video_id=V, decision="approved", output_asset_id=self.output_asset_id)
+
+
+class _GateIntents:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self, video_id):
+        return self.value
+
+
+class _GateJobs(Jobs):
+    def latest(self, video_id):
+        from app.studio.domain.contracts import JobStatus, RenderJob
+        return RenderJob(id="9" * 32, video_id=V, status=JobStatus.SUCCEEDED, attempt=1, output_asset_id="9" * 32)
+
+
+def _gate_intent(**changes):
+    from app.studio.domain.publication_policy import PublicationIntentEvidence, idempotency_key
+    base = dict(video_id=V, render_id="9" * 32, checksum="d" * 64, output_asset_id="9" * 32,
+                qa_passed=True, qa_override=False, visibility="private", public_confirmed=False)
+    merged = {**base, **changes}
+    merged.setdefault("idempotency_key",
+                      idempotency_key(merged["video_id"], merged["render_id"], merged["checksum"]))
+    return PublicationIntentEvidence(**merged)
+
+
+def _claiming(tmp_path, *, intents, pubs=None):
+    v = Videos(S.APPROVED, qa_report(True))
+    v.video = v.video.model_copy(update={"title": "Título", "description": "Resumo", "tags": ["ade"]})
+    pubs = pubs or Pubs()
+    claim = ClaimPublication(v, Scripts(), Assets(), _GateJobs(True), Snaps(), pubs, Files(tmp_path, True),
+                             approvals=_GateApprovals(), intents=intents)
+    return claim, pubs
+
+
+def test_claim_refuses_without_a_valid_publication_intent(tmp_path):
+    """Achado 1: o claim só entrega arquivo e `youtube_body` com a intenção aprovada válida.
+
+    Sem intenção, ou com render diferente do aprovado, o claim não devolve arquivo nem corpo:
+    registra a falha da publicação e devolve None (fail-closed).
+    """
+    missing, pubs = _claiming(tmp_path, intents=_GateIntents(None))
+    assert missing.execute(900, 4) is None
+    assert any(call[0] == "fail" for call in pubs.calls), "a recusa é registrada como falha"
+
+    stale, pubs = _claiming(tmp_path, intents=_GateIntents(_gate_intent(render_id="7" * 32)))
+    assert stale.execute(900, 4) is None
+    assert any(call[0] == "fail" for call in pubs.calls)
+
+    ok, pubs = _claiming(tmp_path, intents=_GateIntents(_gate_intent()))
+    item = ok.execute(900, 4)
+    assert item is not None and item.content_type == "video/mp4"
+    assert not any(call[0] == "fail" for call in pubs.calls)

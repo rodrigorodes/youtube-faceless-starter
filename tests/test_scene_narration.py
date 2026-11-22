@@ -18,7 +18,6 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.studio.api.routes import make_router  # noqa: E402
-from app.studio.application.config import register  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 
 SOURCE = (
@@ -48,7 +47,15 @@ class ToneVoice:
         return 1.0
 
 
-register("voice", "tone-narr", ToneVoice)
+@pytest.fixture(autouse=True)
+def _register_tone_voice(registered_providers):
+    """Achado 11: registra a voz de teste **dentro** do teste, com restauração do `_REGISTRY`.
+
+    Antes era `register("voice", "tone-narr", ToneVoice)` no nível do módulo: rodava na coleta e
+    vazava para `test_port_contracts`, que compara o catálogo do produto com o registro — a mesma
+    falha falsa que a fixture `registered_providers` resolveu em `test_editorial_api`/`test_render_api`.
+    """
+    registered_providers("voice", "tone-narr", ToneVoice)
 
 
 class SyncExecutor:

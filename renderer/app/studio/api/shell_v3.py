@@ -409,7 +409,12 @@ _ICONS = {
 # W1.5 (SET): item "Biblioteca" do protótipo (`prototype/index.html:583`) apontando para a
 # biblioteca de estilos que já existe. Vozes e mídias entram quando houver provider/ativo a listar.
 BIBLIOTECA_HREF = "/studio/panel/estilos"
+CONFIG_HREF = "/studio/configuracoes/canais"
 
+# Navegação principal = `NAV` do protótipo (`prototype/index.html:583`): **sete itens numa lista
+# só**, com "Configurações" como o sétimo. Antes, Configurações vivia num `<nav>` separado no rodapé
+# da casca — duas listas para a mesma navegação e o item "escondido" (comparação em
+# `docs/backlogs/faceless-visual-evolution 2/analysis/NAVEGACAO-COMPARACAO.md`).
 NAV_OPERACAO: tuple[tuple[str, str, str], ...] = (
     ("inicio", "Início", "/studio/panel"),
     ("novo-video", "Criar vídeo", "/studio/panel/novo-video"),
@@ -417,8 +422,8 @@ NAV_OPERACAO: tuple[tuple[str, str, str], ...] = (
     ("tendencias", "Tendências e ideias", "/studio/panel/tendencias"),
     ("desempenho", "Desempenho", "/studio/panel/analytics"),
     ("biblioteca", "Biblioteca", BIBLIOTECA_HREF),
+    ("configuracoes", "Configurações", CONFIG_HREF),
 )
-CONFIG_HREF = "/studio/configuracoes/canais"
 
 # Telas que existem fora do menu e herdam o item atual do menu mais próximo.
 _ALIASES = {
@@ -463,10 +468,11 @@ def render_settings_nav(active_section: str, project_id: str = "") -> str:
 
 def render_settings_page_body(*, active_section: str, section_title: str, content_html: str,
                               project_id: str = "") -> str:
+    # W1.5/UX: textos do protótipo (`prototype/index.html:622` → `heading('CONFIGURAÇÕES', ...)`).
     return f"""      <section class="pagina" id="pagina-configuracoes" aria-labelledby="t-config">
-        <p class="eyebrow">SEU ESTÚDIO</p>
-        <h1 class="h1" id="t-config">Configurações</h1>
-        <p class="lead" style="margin-bottom:24px">Fora do caminho quando você está criando.</p>
+        <p class="eyebrow">CONFIGURAÇÕES</p>
+        <h1 class="h1" id="t-config">Seu estúdio, do seu jeito</h1>
+        <p class="lead" style="margin-bottom:24px">Identidade do canal, produção, integrações e controles avançados.</p>
 
         <div class="grade-config">
           {render_settings_nav(active_section, project_id)}
@@ -515,13 +521,9 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
       <div>Faceless <span class="muted">Studio</span><small>ESTÚDIO DO CANAL</small></div>
     </div>
     <nav aria-label="Principal">
-      <p class="side-caption" id="rotulo-operacao">Operação</p>
-      <ul class="nav-list" aria-labelledby="rotulo-operacao">{items}</ul>
+      <ul class="nav-list">{items}</ul>
     </nav>
     <div class="side-bottom">
-      <nav aria-label="Configuração">
-        <ul class="nav-list">{_nav_item("configuracoes", "Configurações", with_channel(CONFIG_HREF, project_id), active)}</ul>
-      </nav>
       {cost}
       <div class="side-note"><span class="avatar" aria-hidden="true">E</span>
         <div>Estúdio do canal<br><span class="micro">Dados reais do Studio</span></div></div>
@@ -567,18 +569,18 @@ def render_novo_canal_dialog() -> str:
     <div class="dialogo-corpo">
       <form id="form-canal">
         <div class="campo">
-          <label for="canal-nome">Nome do canal</label>
-          <input type="text" id="canal-nome" name="name" minlength="1" maxlength="120" required
+          <label for="dlg-canal-nome">Nome do canal</label>
+          <input type="text" id="dlg-canal-nome" name="name" minlength="1" maxlength="120" required
                  placeholder="Ex.: Curiosidades do Mundo">
         </div>
         <div class="campo">
-          <label for="canal-nicho">Nicho editorial <span class="micro">(opcional)</span></label>
-          <input type="text" id="canal-nicho" name="niche" maxlength="200"
+          <label for="dlg-canal-nicho">Nicho editorial <span class="micro">(opcional)</span></label>
+          <input type="text" id="dlg-canal-nicho" name="niche" maxlength="200"
                  placeholder="Ex.: Música, mistérios, curiosidades">
         </div>
         <div class="campo">
-          <label for="canal-idioma">Idioma</label>
-          <select id="canal-idioma" name="language">
+          <label for="dlg-canal-idioma">Idioma</label>
+          <select id="dlg-canal-idioma" name="language">
             <option value="pt-BR" selected>Português (pt-BR)</option>
             <option value="en-US">English (en-US)</option>
             <option value="es-ES">Español (es-ES)</option>
@@ -588,7 +590,7 @@ def render_novo_canal_dialog() -> str:
           <p class="feedback" id="canal-feedback" role="status"></p>
           <div class="acoes-linha">
             <button class="btn" type="button" data-fechar-dialogo>Fechar</button>
-            <button class="btn btn-primario" type="submit" id="btn-salvar-canal">Cadastrar canal</button>
+            <button class="btn btn-primario" type="submit" id="dlg-btn-salvar-canal">Cadastrar canal</button>
           </div>
         </div>
       </form>
@@ -684,7 +686,7 @@ SHELL_JS = """
   if (dlg && abrir) {
     abrir.addEventListener('click', function () {
       if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
-      var campo = $('#canal-nome'); if (campo) campo.focus();
+      var campo = $('#dlg-canal-nome'); if (campo) campo.focus();
     });
     dlg.addEventListener('click', function (ev) {
       if (ev.target === dlg || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlg.close();
@@ -693,16 +695,16 @@ SHELL_JS = """
     var fb = $('#canal-feedback');
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      var nome = $('#canal-nome').value.trim();
+      var nome = $('#dlg-canal-nome').value.trim();
       if (!nome) return;
-      var btn = $('#btn-salvar-canal');
+      var btn = $('#dlg-btn-salvar-canal');
       btn.disabled = true;
       btn.classList.add('carregando');
       window.StudioLoading.start();
       fb.removeAttribute('data-tipo'); fb.textContent = 'Cadastrando canal…';
       fetch('/studio/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: nome, niche: $('#canal-nicho').value.trim(), language: $('#canal-idioma').value })
+        body: JSON.stringify({ name: nome, niche: $('#dlg-canal-nicho').value.trim(), language: $('#dlg-canal-idioma').value })
       }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; }); })
         .then(function (par) {
           var r = par[0], d = par[1];

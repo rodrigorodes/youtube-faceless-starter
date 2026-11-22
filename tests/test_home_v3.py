@@ -51,12 +51,13 @@ def test_home_navigation_is_the_approved_ia():
     html = _home()
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
     labels = [re.sub(r"<[^>]+>", "", li).strip() for li in re.findall(r"<li>(.*?)</li>", main, re.S)]
-    assert labels == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho", "Biblioteca"]
+    # NAV do protótipo (`prototype/index.html:583`): sete itens numa lista só, Configurações incluso.
+    assert labels == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho",
+                      "Biblioteca", "Configurações"]
     assert main.count('aria-current="page"') == 1
     # F02.T01: o item ativo pode carregar o canal ativo (?project_id=)
     assert re.search(r'<a href="/studio/panel(?:\?project_id=[^"]+)?" aria-current="page">', main)
-    cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert "Configurações" in cfg
+    cfg = [li for li in re.findall(r"<li>(.*?)</li>", main, re.S) if "Configurações" in li][0]
     assert re.search(r'href="/studio/configuracoes/canais(?:\?project_id=[^"]+)?"', cfg)
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1

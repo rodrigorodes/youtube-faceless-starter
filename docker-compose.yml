@@ -73,6 +73,12 @@ services:
       # paga é executada (403). Desligar: STUDIO_BUDGET_GUARD=0 no .env privado.
       STUDIO_BUDGET_GUARD: ${STUDIO_BUDGET_GUARD:-1}
       STUDIO_PRODUCTION_MODE: ${STUDIO_PRODUCTION_MODE:-BUDGET_GUARDED}
+      # Achado 4 (W0B.1 deixou de fora): estas duas são lidas por `Settings.from_env` e NÃO
+      # chegavam ao container. `STUDIO_PROVIDER_PRODUCTION` liga o roteamento de provider em modo
+      # produção (exclui demo/placeholder); vazio = desligado (padrão seguro do código).
+      # `STUDIO_SECRETS_ROOT` aponta o cofre de segredos (F10-07); vazio = <storage_root>/secrets.
+      STUDIO_PROVIDER_PRODUCTION: ${STUDIO_PROVIDER_PRODUCTION:-}
+      STUDIO_SECRETS_ROOT: ${STUDIO_SECRETS_ROOT:-}
       MAX_DURATION_SECONDS: '60'
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # OAuth do Google (F8-05): o client secret é um arquivo montado em /app/credentials (read-only).

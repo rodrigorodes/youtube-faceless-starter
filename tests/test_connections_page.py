@@ -208,14 +208,13 @@ def test_connections_page_keeps_the_active_channel_in_the_topbar(env):
 def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     html = page(env).text
     items = nav_items(html)
-    # W1.5: menu do protótipo (rótulos novos + Biblioteca) e nenhum item falso-ativo nesta tela.
+    # W1.5 + NAV: menu do protótipo (rótulos novos + Biblioteca + Configurações — sete itens).
     assert [_nav_text(i) for i in items] == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias",
-                                            "Desempenho", "Biblioteca"]
-    assert not [item for item in items if 'aria-current="page"' in item]
-    # A entrada ativa é Configurações, no rodapé da casca.
-    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    config_active = re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
-    assert config_active is not None
+                                            "Desempenho", "Biblioteca", "Configurações"]
+    # A entrada ativa no menu principal é "Configurações" (o item que contém a área de Conexões).
+    config_active = [item for item in items if 'aria-current="page"' in item]
+    assert len(config_active) == 1 and "Configurações" in _nav_text(config_active[0])
+    assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_active[0])
     # A tela Conexões é o item ativo da navegação de configurações.
     sections = settings_nav_items(html)
     section_active = [item for item in sections if 'aria-current="page"' in item]

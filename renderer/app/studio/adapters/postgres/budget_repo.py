@@ -5,9 +5,10 @@ from decimal import Decimal
 
 import psycopg
 
-from ...application.budget import (BeginResult, CostConfirmation, CostConfirmationError, IdempotencyConflict,
-                                   InvalidOperationTransition, PaidOperationState, PendingReconciliation,
-                                   ReservationResult, STALLED_AFTER, UnknownPaidOperation)
+from ...application.budget import (BeginResult, BudgetDenial, CostConfirmation, CostConfirmationError,
+                                   IdempotencyConflict, InvalidOperationTransition, PaidOperationState,
+                                   PendingReconciliation, ReservationResult, STALLED_AFTER,
+                                   UNKNOWN_COST_SCOPE, UnknownPaidOperation)
 from ...domain.contracts import UsageEntry
 from ...domain.ids import check_id
 from .repo import _translated
@@ -202,6 +203,62 @@ class PostgresPaidOperationRepository:
                 (key, video_id, project_id, estimate_usd, monthly_limit_usd, video_limit_usd),
             )
             return BeginResult.CREATED
+
+    def denial(self, video_id: str | None, estimate_usd: Decimal, monthly_limit_usd: Decimal,
+               video_limit_usd: Decimal, *, global_monthly_limit_usd: Decimal | None = None) -> BudgetDenial:
+        """Leitura pura: qual escopo estourou o teto, com os números (achado 3).
+
+        Mesmos três escopos de `_reserve_within` (GLOBAL, CANAL, VÍDEO), na mesma ordem de
+        precedência. Não escreve, não adquire o advisory lock e não altera estado.
+        """
+        if video_id is not None:
+            check_id(video_id)
+        _validate_amounts(estimate_usd, monthly_limit_usd, video_limit_usd)
+        global_limit = monthly_limit_usd if global_monthly_limit_usd is None else global_monthly_limit_usd
+        _validate_amounts(global_limit)
+        with self._connect() as conn:
+            project_id = _scope_project(conn, video_id)
+            row = conn.execute(
+                """WITH bounds AS (
+                    SELECT date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start,
+                           (date_trunc('month', statement_timestamp() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC' AS finish
+                ), spent AS (
+                    SELECT COALESCE(SUM(ul.cost_usd) FILTER (
+                               WHERE ul.created_at >= b.start AND ul.created_at < b.finish), 0) AS month,
+                           COALESCE(SUM(ul.cost_usd) FILTER (
+                               WHERE ul.project_id = %(project)s
+                                 AND ul.created_at >= b.start AND ul.created_at < b.finish), 0) AS project,
+                           COALESCE(SUM(ul.cost_usd) FILTER (WHERE ul.video_id = %(video)s), 0) AS video,
+                           COALESCE(BOOL_OR(
+                               ul.cost_usd = 'NaN'::numeric
+                               AND ((ul.created_at >= b.start AND ul.created_at < b.finish)
+                                    OR ul.video_id = %(video)s)
+                           ), false) AS unknown
+                    FROM studio.usage_ledger ul, bounds b
+                ), reserved AS (
+                    SELECT COALESCE(SUM(amount_usd) FILTER (
+                               WHERE created_at >= b.start AND created_at < b.finish), 0) AS month,
+                           COALESCE(SUM(amount_usd) FILTER (
+                               WHERE project_id = %(project)s
+                                 AND created_at >= b.start AND created_at < b.finish), 0) AS project,
+                           COALESCE(SUM(amount_usd) FILTER (WHERE video_id = %(video)s), 0) AS video
+                    FROM studio.budget_reservations, bounds b
+                )
+                SELECT spent.unknown, spent.month + reserved.month,
+                       spent.project + reserved.project, spent.video + reserved.video
+                FROM spent, reserved""",
+                {"video": video_id, "project": project_id},
+            ).fetchone()
+        unknown, month, project, video = row
+        if unknown:
+            return BudgetDenial(UNKNOWN_COST_SCOPE, Decimal(0), Decimal(0), estimate_usd)
+        if month + estimate_usd > global_limit:
+            return BudgetDenial("GLOBAL (mês)", global_limit, month, estimate_usd)
+        if project_id is not None and project + estimate_usd > monthly_limit_usd:
+            return BudgetDenial("CANAL (mês)", monthly_limit_usd, project, estimate_usd)
+        if video_id is not None and video + estimate_usd > video_limit_usd:
+            return BudgetDenial("VÍDEO", video_limit_usd, video, estimate_usd)
+        return BudgetDenial("política de orçamento", global_limit, month, estimate_usd)
 
     def confirm(self, key: str, entry: UsageEntry, confirmation: CostConfirmation) -> None:
         if not isinstance(key, str) or not key.strip():

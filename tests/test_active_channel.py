@@ -136,8 +136,7 @@ def test_a_rendered_page_keeps_the_channel_in_nav_and_body_but_not_in_the_video(
     for page in ("/studio/panel", "/studio/panel/novo-video", "/studio/panel/videos",
                  "/studio/panel/tendencias", "/studio/panel/analytics"):
         assert f'href="{page}?project_id={B}"' in main
-    cfg = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert f'href="/studio/configuracoes/canais?project_id={B}"' in cfg
+    assert f'href="/studio/configuracoes/canais?project_id={B}"' in main
     assert f'href="/studio/panel/tendencias?project_id={B}"' in html     # corpo
     assert f'href="/studio/panel/videos/{video_id}"' in html             # vídeo intacto
     assert f'/studio/panel/videos/{video_id}?project_id' not in html

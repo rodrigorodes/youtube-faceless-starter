@@ -20,7 +20,7 @@ from datetime import datetime
 
 from ..application.panel import CostBreakdown, MonthCost, cost_summary_text
 from ..application.saas import TeamView
-from ..domain.saas import ByokStatus, MembershipStatus, Role
+from ..domain.saas import ROLE_PERMISSIONS, ByokStatus, MembershipStatus, Permission, Role
 from . import panel as shell
 from . import shell_v3
 
@@ -70,6 +70,17 @@ TEAM_CSS = """
 .team-empty { color: var(--text-muted); }
 .team-fact { margin: 0.35rem 0; }
 .team-fact b { color: var(--text); }
+/* Matriz de papéis (análise de Configurações 3.3): permissão de relance, do RBAC real. */
+.papeis-matriz-wrap { margin-top: 1rem; overflow-x: auto; }
+.papeis-matriz { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.papeis-matriz caption { text-align: left; color: var(--text-dim); font-size: 0.76rem; padding-bottom: 0.5rem; }
+.papeis-matriz th, .papeis-matriz td {
+  text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border-soft); white-space: nowrap;
+}
+.papeis-matriz thead th { color: var(--text-dim); font-weight: 650; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.papeis-matriz tbody th { font-weight: 500; }
+.papeis-matriz .sim { color: var(--ok); font-weight: 650; }
+.papeis-matriz .nao { color: var(--text-dim); }
 @media (max-width: 820px) {
   .team-member, .team-key { grid-template-columns: minmax(0, 1fr); }
   .team-actions .btn { width: 100%; }
@@ -304,7 +315,47 @@ def _roles_card(view: TeamView) -> str:
         <p class="dim" style="margin:0.3rem 0 0.6rem">Quatro papéis canônicos. Papel é permissão
           de acesso, não plano comercial.</p>
         {rows}
+        {_permissions_matrix(view)}
       </section>"""
+
+
+# Colunas da matriz de papéis (análise de Configurações 3.3). Cada coluna é **uma permissão real**
+# do RBAC do domínio (`domain.saas.Permission`), não uma capacidade inventada.
+_MATRIX_COLUMNS: tuple[tuple[str, Permission], ...] = (
+    ("Editar / gerar", Permission.EDIT_VIDEO),
+    ("Aprovar", Permission.APPROVE_PREVIEW),
+    ("Publicar", Permission.PUBLISH),
+)
+
+
+def _permissions_matrix(view: TeamView) -> str:
+    """Tabela Papel × permissão, gerada de `ROLE_PERMISSIONS` (dado real, sem inventar).
+
+    O protótipo (`settingsTeam`, `prototype/index.html:629`) mostra a mesma matriz, mas de forma
+    **ilustrativa** (Editor sem publicar). Aqui ela reflete o RBAC que o servidor aplica de verdade:
+    Editor publica; Reviewer aprova e não publica; Viewer só lê.
+    """
+    header = "".join(f'<th scope="col">{e(label)}</th>' for label, _ in _MATRIX_COLUMNS)
+    body = []
+    for role, _description in view.roles:
+        allowed = ROLE_PERMISSIONS.get(role, frozenset())
+        cells = "".join(
+            f'<td class="{"sim" if permission in allowed else "nao"}">'
+            f'{"Sim" if permission in allowed else "Não"}</td>'
+            for _label, permission in _MATRIX_COLUMNS
+        )
+        body.append(
+            f'<tr><th scope="row"><span class="role-badge {e(role.value)}">{e(role.value)}</span></th>'
+            f'{cells}</tr>'
+        )
+    return (
+        '<div class="papeis-matriz-wrap">'
+        '<table class="papeis-matriz">'
+        '<caption>Permissões aplicadas pelo servidor, por papel.</caption>'
+        f'<thead><tr><th scope="col">Papel</th>{header}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody>'
+        '</table></div>'
+    )
 
 
 def _keys_card(view: TeamView) -> str:

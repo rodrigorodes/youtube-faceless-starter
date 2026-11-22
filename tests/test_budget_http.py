@@ -1,6 +1,7 @@
 """Contrato HTTP: erros do guard de orçamento não podem sair como 500."""
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -14,8 +15,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.studio.api.routes import make_router  # noqa: E402
 from app.studio.application.budget import (  # noqa: E402
-    BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition, OperationInProgress,
-    OperationSettled, OperationUncertain, UnknownPaidOperation,
+    BudgetDenial, BudgetDenied, CostConfirmationError, IdempotencyConflict, InvalidOperationTransition,
+    OperationInProgress, OperationSettled, OperationUncertain, UnknownPaidOperation,
 )
 
 VIDEO = "b" * 32
@@ -50,6 +51,9 @@ def _client(exc):
 
 @pytest.mark.parametrize(("exc", "status", "expected"), [
     (BudgetDenied("budget denied for paid operation secret-key"), 403, "budget denied"),
+    (BudgetDenied("budget denied for paid operation secret-key",
+                  detail=BudgetDenial("VÍDEO", Decimal("0.50"), Decimal("0"), Decimal("0.60"))),
+     403, "vídeo ceiling"),
     (IdempotencyConflict("idempotency key secret-key already used"), 409, "idempotency key"),
     (CostConfirmationError("confirmed amount mismatch for secret-key"), 422, "cost confirmation"),
     (OperationInProgress("paid operation secret-key is already in progress"), 409, "already in progress"),

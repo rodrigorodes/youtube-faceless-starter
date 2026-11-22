@@ -77,8 +77,9 @@ def test_trends_has_action_buttons_and_filter_chips():
     assert "Gerenciar pilares (1)" in html
     assert 'id="barra-tendencias"' in html
     assert 'data-filtro="todas"' in html
-    assert 'data-filtro="regiao:BR"' in html
-    assert 'data-filtro="regiao:US"' in html
+    # Padrão do protótipo: "Todas" + pilares. Sem chip de região na tela.
+    assert 'data-filtro="regiao:BR"' not in html
+    assert 'data-filtro="regiao:US"' not in html
     assert f'data-filtro="pilar:{c_id}"' in html
     assert 'id="btn-novo-pilar"' in html
 
@@ -204,10 +205,21 @@ def test_filter_runs_on_the_server_and_the_next_batch_follows_the_filtered_list(
 
 
 def test_active_filter_is_marked_without_stealing_the_page_current_marker():
-    html = _page_html(_many(2), filtro="regiao:BR")
+    # O chip ativo é o do filtro escolhido — hoje um pilar (o protótipo não tem chip de região).
+    from app.studio.api.panel_trends import render_tendencias_v3
+    from app.studio.domain.categories import ProjectCategory
+
+    c_id = "c" * 32
+    p_id = "1" * 32
+    cats = [ProjectCategory(id=c_id, project_id=p_id, name="Games", queries=["GTA"])]
+    trend_repo = FakeTrendRepo(records=_many(2), last_collected=NOW)
+    panel_repo = FakePanelRepo(projects_list=[(p_id, "Canal Principal")])
+    view = BuildPanel(panel_repo, 15.0, lambda: NOW, trends=trend_repo,
+                      categories_repo=FakeCategoryRepo(cats)).execute(days=7)
+    html, _ = render_tendencias_v3(view, filtro=f"pilar:{c_id}")
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html, flags=re.S)
     assert markup.count('aria-current="page"') == 1        # só o item da navegação
-    assert 'data-filtro="regiao:BR" aria-current="true"' in html
+    assert f'data-filtro="pilar:{c_id}" aria-current="true"' in html
 
 
 def test_bad_or_out_of_range_offset_returns_an_empty_honest_batch():

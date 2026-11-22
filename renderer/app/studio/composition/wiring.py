@@ -1,4 +1,3 @@
-"""Raiz de composição: único lugar que liga casos de uso aos adaptadores concretos."""
 import os
 import threading
 import time
@@ -11,141 +10,120 @@ from pathlib import Path
 
 import psycopg
 
-from .adapters.postgres.db import migrate
-from .domain.ids import InvalidId
-from .adapters.fetcher import HttpxFetcher
-from .adapters.postgres.budget_repo import PostgresPaidOperationRepository
-from .adapters.image_opencode import OpenCodeImage
-from .adapters.image_placeholder import PlaceholderImage
-from .adapters.image_stock import PexelsImage
-from .adapters.image_veo import VeoImage
-from .adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
-from .adapters.postgres.publish_repo import PostgresApprovalRepository, PostgresPublicationRepository
-from .adapters.postgres.analytics_repo import PostgresAnalyticsRepository
-from .adapters.postgres.panel_repo import PostgresPanelRepository
-from .adapters.postgres.saas_repo import PostgresSaasRepository
-from .adapters.postgres.step_repo import PostgresStepRepository
-from .adapters.postgres.trend_repo import PostgresTrendRepository
-from .adapters.postgres.render_repo import PostgresRenderJobRepository
-from .adapters.postgres.render_plan_repo import PostgresRenderPlanRepository
-from .adapters.postgres.production_repo import build_postgres_production_run_repository
-from .adapters.postgres.category_repo import PostgresCategoryRepository
-from .adapters.postgres.analytics_learning_repo import PostgresAnalyticsLearningRepository
-from .adapters.channel_analytics import ChannelAnalyticsAdapter
-from .adapters.postgres.channel_repo import PostgresChannelProfileRepository
-from .adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
-from .adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
+# A raiz de composição é resolvida pelo módulo, não pelo nome importado: consumidores e testes
+# fazem ``monkeypatch.setattr(composition, "build_google_oauth", ...)`` e a fiação precisa honrar
+# o patch. Um ``from .providers import build_google_oauth`` congelaria a referência no import.
+import app.studio.composition as _composition
+
+from ..adapters.postgres.db import migrate
+from ..domain.ids import InvalidId
+from ..adapters.fetcher import HttpxFetcher
+from ..adapters.postgres.budget_repo import PostgresPaidOperationRepository
+from ..adapters.image_opencode import OpenCodeImage
+from ..adapters.image_placeholder import PlaceholderImage
+from ..adapters.image_stock import PexelsImage
+from ..adapters.image_veo import VeoImage
+from ..adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
+from ..adapters.postgres.publish_repo import (PostgresApprovalRepository, PostgresPublicationIntentRepository,
+                                             PostgresPublicationRepository)
+from ..adapters.postgres.analytics_repo import PostgresAnalyticsRepository
+from ..adapters.postgres.panel_repo import PostgresPanelRepository
+from ..adapters.postgres.saas_repo import PostgresSaasRepository
+from ..adapters.postgres.step_repo import PostgresStepRepository
+from ..adapters.postgres.trend_repo import PostgresTrendRepository
+from ..adapters.postgres.render_repo import PostgresRenderJobRepository
+from ..adapters.postgres.render_plan_repo import PostgresRenderPlanRepository
+from ..adapters.postgres.production_repo import build_postgres_production_run_repository
+from ..adapters.postgres.category_repo import PostgresCategoryRepository
+from ..adapters.postgres.analytics_learning_repo import PostgresAnalyticsLearningRepository
+from ..adapters.channel_analytics import ChannelAnalyticsAdapter
+from ..adapters.postgres.channel_repo import PostgresChannelProfileRepository
+from ..adapters.postgres.visual_style_repo import PostgresVisualStyleRepository
+from ..adapters.postgres.channel_budget_repo import (PostgresChannelBudgetRepository,
                                                     PostgresChannelUsageRepository)
-from .adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
-from .adapters.postgres.youtube_identity_repo import (PostgresChannelAuthorizationRepository,
+from ..adapters.postgres.youtube_channel_repo import PostgresYouTubeChannelRepository
+from ..adapters.postgres.youtube_identity_repo import (PostgresChannelAuthorizationRepository,
                                                        PostgresGoogleAccountRepository,
                                                        PostgresOAuthGrantRepository,
                                                        PostgresYouTubeChannelIdentityRepository)
-from .adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
-from .adapters.secret_store import FileSecretStore
-from .adapters.token_env import EnvRefreshTokenProvider
-from .adapters.youtube_publisher import GoogleYouTubeUploader
-from .adapters.provider_probes import HttpReachableProbe, LocalProviderProbe
-from .adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
-from .adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
-from .adapters.thumbnail import PillowThumbnail
-from .adapters.qa_ffmpeg import FfmpegQa
-from .adapters.quality_ffmpeg import FfmpegOverlayVerifier, FfmpegQualityEvaluator, FfmpegQualityProbe
-from .adapters.quality_semantic import NotVerifiedSemanticChecker
-from .adapters.render_disabled import DisabledRenderer
-from .adapters.render_plan_ffmpeg import PlanFfmpegRenderer
-from .adapters.storage import FileAssetStore, FileRenderStorage
-from .adapters.voice_piper import PiperVoice
-from .adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
+from ..adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
+from ..adapters.secret_store import FileSecretStore
+from ..adapters.token_env import EnvRefreshTokenProvider
+from ..adapters.youtube_publisher import GoogleYouTubeUploader
+from ..adapters.provider_probes import HttpReachableProbe, LocalProviderProbe
+from ..adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
+from ..adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
+from ..adapters.thumbnail import PillowThumbnail
+from ..adapters.qa_ffmpeg import FfmpegQa
+from ..adapters.quality_ffmpeg import FfmpegOverlayVerifier, FfmpegQualityEvaluator, FfmpegQualityProbe
+from ..adapters.quality_semantic import NotVerifiedSemanticChecker
+from ..adapters.render_disabled import DisabledRenderer
+from ..adapters.render_plan_ffmpeg import PlanFfmpegRenderer
+from ..adapters.storage import FileAssetStore, FileRenderStorage
+from ..adapters.voice_piper import PiperVoice
+from ..adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
-from .adapters.postgres.scene_duration_repo import PostgresSceneDurationRepository
-from .adapters.postgres.repo import PostgresVideoRepository
-from .adapters.text_demo import DemoText
-from .adapters.text_opencode import OpenCodeText
-from .application.config import ProjectConfig, ProviderNotFound, build, register
-from .application.ideas import ScoreIdeas
-from .application.analytics import Analytics
-from .application.analytics_collection import CollectMetrics
-from .application.analytics_dashboard import BuildAnalyticsDashboard
-from .application.analytics_learning import DecideRecommendation, RegisterExperiment
-from .application.panel import BuildPanel
-from .application.saas import (BuildTeamView, ChangeMemberRole, InviteMember, RegisterByokKey,
+from ..adapters.postgres.scene_duration_repo import PostgresSceneDurationRepository
+from ..adapters.postgres.repo import PostgresVideoRepository
+from ..adapters.text_demo import DemoText
+from ..adapters.text_opencode import OpenCodeText
+from ..application.config import ProjectConfig, ProviderNotFound, build, register
+from ..application.ideas import ScoreIdeas
+from ..application.analytics import Analytics
+from ..application.analytics_collection import CollectMetrics
+from ..application.analytics_dashboard import BuildAnalyticsDashboard
+from ..application.analytics_learning import DecideRecommendation, RegisterExperiment
+from ..application.panel import BuildPanel
+from ..application.saas import (BuildTeamView, ChangeMemberRole, InviteMember, RegisterByokKey,
                                 RemoveMember, ResolveActor, RevokeByokKey, RotateByokKey)
-from .application.trends import IngestTrends
-from .application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
-from .application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
-from .application.channel_style_page import BuildChannelStylePage
-from .application.channels_page import BuildChannelsPage
-from .application.composition_view import BuildCompositionView
-from .application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
+from ..application.trends import IngestTrends
+from ..application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
+from ..application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from ..application.channel_style_page import BuildChannelStylePage
+from ..application.channels_page import BuildChannelsPage
+from ..application.composition_view import BuildCompositionView
+from ..application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                                  UpdateVisualStyle, VisualStyleUsage)
-from .application.styles_page import BuildStylesPage
-from .application.video_style import BuildVideoStyleView, SetChannelStylePatch, SetVideoStyle
-from .application.channel_budget import ChannelBudgetFloor, GetChannelBudget, SetChannelBudget
-from .application.providers import ProviderService
-from .application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
-from .application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
+from ..application.styles_page import BuildStylesPage
+from ..application.video_style import BuildVideoStyleView, SetChannelStylePatch, SetVideoStyle
+from ..application.channel_budget import ChannelBudgetFloor, GetChannelBudget, SetChannelBudget
+from ..application.providers import ProviderService
+from ..application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
+from ..application.youtube_channels import (AssociateYouTubeChannel, DisconnectYouTubeChannel,
                                            GetYouTubeChannel)
-from .domain.effective_config import resolve_effective_config
-from .domain.provider import (CostEstimate, NoProviderAvailable, ProviderImplementation, ProviderKind,
+from ..domain.effective_config import resolve_effective_config
+from ..domain.provider import (CostEstimate, NoProviderAvailable, ProviderImplementation, ProviderKind,
                               ProviderSpecInvalid)
-from .domain.visual_style import resolve_style
-from .application.observability import BridgeAlerts, Resume, record_provider_decision
-from .application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
+from ..domain.visual_style import resolve_style
+from ..application.observability import BridgeAlerts, Resume, record_provider_decision
+from ..application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
                                        Publishing, Reject, RetryPublication, SetUploadUri)
-from .application.publication_execution import (FallbackTokenProvider, MissingTokenProvider, ReconcilePublication,
+from ..application.publication_execution import (FallbackTokenProvider, MissingTokenProvider, ReconcilePublication,
                                                 RunPublication, TargetChannelTokenProvider)
-from .application.channel_grant import EnsureGrantAccessToken
-from .application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAccessToken, GetChannelStatus,
+from ..application.channel_grant import EnsureGrantAccessToken
+from ..application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAccessToken, GetChannelStatus,
                                         RefreshYouTubeChannel, RevokeConsent)
-from .application.connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel,
+from ..application.connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel,
                                       ListConnections, RevokeAuthorization, Unlink)
-from .domain.youtube_oauth import OAuthConfigurationError
-from .application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
-from .application.scene_narration import RegenerateSceneNarration, SceneNarration
-from .application.render_cache import PlanRegeneration
-from .application.media import ListAssets, ListSceneCandidates, Media, PrepareStoryboard, ProduceAssets, SwapSceneMedia
-from .application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
-from .application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
+from ..domain.youtube_oauth import OAuthConfigurationError
+from ..application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
+from ..application.scene_narration import RegenerateSceneNarration, SceneNarration
+from ..application.render_cache import PlanRegeneration
+from ..application.media import ListAssets, ListSceneCandidates, Media, PrepareStoryboard, ProduceAssets, SwapSceneMedia
+from ..application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
+from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
                                    GetScriptRevision, ListScriptRevisions, RemoveScriptScene, ReorderScriptScenes,
                                    RestoreScriptRevision)
-from .application.script_view import BuildScriptView
-from .application.budget import PaidOperationGuard
-from .application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
+from ..application.script_view import BuildScriptView
+from ..application.budget import PaidOperationGuard
+from ..application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
-from .application.advanced_page import BuildAdvancedView
-from .application.use_cases import ServiceUnavailable, UseCases
+from ..application.advanced_page import BuildAdvancedView
+from ..application.use_cases import ServiceUnavailable, UseCases
 
-DEFAULT_ALLOWLIST = ("amsterdam-dance-event.nl",)
-DEFAULT_ALLOW_NAMES = ("amsterda",)  # exônimo pt-BR de Amsterdam
-
-# Fornecedores locais/gratuitos: conhecimento do concreto (nome de fornecedor) declarado só
-# aqui, na raiz de composição. O domínio recebe o conjunto como política e não cita nomes.
-FREE_PROVIDERS = frozenset({"placeholder", "demo", "piper", "stock"})
-
-
-def _csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
-    items = tuple(x.strip().lower() for x in (value or "").split(",") if x.strip())
-    return items or default
-
-
-def _cap(value: str | None, default: float) -> float:
-    try:
-        number = float(value) if value not in (None, "") else default
-    except ValueError:
-        return default
-    return number if number == number and 0 <= number < float("inf") else default
-
-
-def _flag(value: str | None) -> bool:
-    return (value or "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def _production_mode(value: str | None) -> ProductionMode:
-    try:
-        return ProductionMode((value or ProductionMode.INTERACTIVE.value).strip().upper())
-    except ValueError:
-        return ProductionMode.INTERACTIVE
+from .settings import CONNECT_OPTIONS, PING_TTL_SECONDS, RETRY_SECONDS, Settings
+from .providers import (FREE_PROVIDERS, ProviderRouting, _configured_provider_spec,
+                        _provider_implementations, _provider_probes)
 
 
 def channel_guard_limits(videos, budgets):
@@ -295,235 +273,6 @@ def _voice_for_config(video, config, fallback, build_provider):
         return fallback(video.project_id)
     spec = model if ":" in model else f"piper:{model}"
     return build_provider("voice", spec)
-
-
-def _configured_provider_spec(videos, environ: Mapping[str, str], kind: str,
-                              project_id: str | None) -> str:
-    """Spec efetivo do projeto (comportamento legado, preservado byte a byte sem perfil).
-
-    Projeto ausente cai no padrão do ambiente, como antes; chave desconhecida vira
-    ``ProviderNotFound`` (o erro que a execução já publicava).
-    """
-    project = videos.get_project(project_id) if project_id else None
-    try:
-        return getattr(ProjectConfig.resolve(project.config if project else {}, environ), kind)
-    except ValueError as exc:
-        raise ProviderNotFound(str(exc)) from exc
-
-
-class ProviderRouting:
-    """Resolve o provider que a execução usa, consumindo a decisão econômica (F06.T02).
-
-    Sem perfil persistido (`limits_for` devolve None) mantém o comportamento legado: constrói
-    exatamente o spec configurado, sem rotear. Com perfil, a decisão de `ProviderService.route`
-    é executada; se o provider decidido não construir, a avaliação é refeita **explicitamente**
-    excluindo o candidato, e cada tentativa fica auditada. Sem candidato aceitável, o erro de
-    política (`NoProviderAvailable`) sobe — nunca há troca silenciosa nem demo/placeholder
-    inventado.
-    """
-
-    def __init__(self, service, build, configured_spec, limits_for=None, *, production=False):
-        self.service = service
-        self.build = build
-        self.configured_spec = configured_spec
-        self.limits_for = limits_for or (lambda project_id: None)
-        self.production = bool(production)
-
-    def __call__(self, kind: str, project_id: str | None):
-        kind_enum = kind if isinstance(kind, ProviderKind) else ProviderKind(kind)
-        # S8: dentro de um run com snapshot, a seleção congelada vence a política viva. O retry
-        # não re-resolve: executa exatamente o provider/modelo que foi exibido e aprovado.
-        frozen = frozen_provider_selection()
-        if frozen:
-            spec = frozen.get(kind_enum.value)
-            if spec:
-                return self._frozen(kind_enum, spec)
-        limits = self.limits_for(project_id) if project_id else None
-        profile = getattr(limits, "economic_profile", None) if limits is not None else None
-        if profile is None:
-            return self._legacy(kind_enum, project_id)
-        return self._routed(kind_enum, project_id, profile,
-                            getattr(limits, "hard_video_usd", None))
-
-    def _frozen(self, kind: ProviderKind, spec: str):
-        """Executa a seleção congelada; se ela não construir, recusa — nunca troca em silêncio."""
-        try:
-            provider = self.build(kind.value, spec)
-        except (ProviderNotFound, ProviderSpecInvalid) as exc:
-            self._audit(kind, None, spec, None,
-                        f"frozen run selection unavailable: {type(exc).__name__}", attempt=1)
-            raise
-        self._audit(kind, None, spec, provider, "frozen run selection", attempt=1)
-        return provider
-
-    def _legacy(self, kind: ProviderKind, project_id: str | None):
-        spec = self.configured_spec(kind.value, project_id)
-        provider = self.build(kind.value, spec)
-        self._audit(kind, None, spec, provider, "no economic profile: configured spec", attempt=1)
-        return provider
-
-    def _routed(self, kind: ProviderKind, project_id: str | None, profile, max_cost_usd):
-        excluded: tuple[str, ...] = ()
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                decision = self.service.route(project_id, kind, profile, max_cost_usd=max_cost_usd,
-                                              production=self.production, exclude=excluded)
-            except NoProviderAvailable as exc:
-                reason = str(exc)
-                if excluded:
-                    reason = f"explicit re-evaluation after unavailable {sorted(excluded)}: {reason}"
-                self._audit(kind, profile, None, None, reason, attempt=attempt)
-                raise
-            try:
-                provider = self.build(kind.value, decision.primary.spec)
-            except (ProviderNotFound, ProviderSpecInvalid) as exc:
-                # o provider decidido não constrói: reavaliar é explícito (auditado) e a política
-                # continua valendo na próxima tentativa; nunca cair calado no spec configurado.
-                reason = (f"decided provider {decision.primary.spec!r} unavailable: "
-                          f"{type(exc).__name__}: {exc}")
-                self._audit(kind, profile, decision.primary.spec, None, reason, attempt=attempt)
-                excluded = (*excluded, decision.primary.name)
-                continue
-            self._audit(kind, profile, decision.primary.spec, provider, decision.reason,
-                        attempt=attempt)
-            return provider
-
-    def _audit(self, kind: ProviderKind, profile, candidate, provider, reason, *, attempt):
-        name, model = None, ""
-        if provider is not None:
-            name = getattr(provider, "name", None)
-            model = getattr(provider, "model", "")
-            name = name if isinstance(name, str) else None
-            model = model if isinstance(model, str) else ""
-        record_provider_decision(kind=kind.value,
-                                 profile=getattr(profile, "value", profile) if profile else None,
-                                 candidate=candidate, effective=name, model=model, reason=reason,
-                                 attempt=attempt, production=self.production)
-
-
-def build_google_oauth(settings: "Settings",
-                       transport=None) -> GoogleOAuthClient | None:
-    """Monta o cliente OAuth a partir do client secret **no caminho original** (somente leitura).
-
-    App ausente/inválido não derruba a composição: devolve None e a API responde 503 com motivo.
-    """
-    if settings.google_client_secret_file is None:
-        return None
-    try:
-        return google_oauth_from_client_secret(settings.google_client_secret_file,
-                                               redirect_uri=settings.google_oauth_redirect_uri,
-                                               transport=transport)
-    except (OAuthConfigurationError, OSError):
-        return None
-
-
-def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
-    """Implementações registradas e o que cada uma é capaz de fazer (F10-03).
-
-    `validated=False` quando falta credencial ou homologação: o catálogo mostra UNAVAILABLE.
-    """
-    bridge_ok = bool(s.bridge_token)
-    pexels_ok = bool(s.pexels_key)
-    return [
-        ProviderImplementation(ProviderKind.TEXT, "opencode",
-                               capabilities=("text.generate", "text.json"),
-                               cost=CostEstimate.unknown(note="preço do bridge"), quality=4,
-                               validated=bridge_ok, reason=None if bridge_ok else "OPENCODE_BRIDGE_TOKEN ausente"),
-        ProviderImplementation(ProviderKind.TEXT, "demo", capabilities=("text.generate",),
-                               cost=CostEstimate.free(note="texto determinístico local"), quality=1,
-                               validated=True),
-        ProviderImplementation(ProviderKind.IMAGE, "opencode", capabilities=("image.generate",),
-                               cost=CostEstimate.estimate(s.paid_image_usd, note="por imagem"),
-                               quality=4, validated=bridge_ok,
-                               reason=None if bridge_ok else "OPENCODE_BRIDGE_TOKEN ausente"),
-        ProviderImplementation(ProviderKind.IMAGE, "placeholder", capabilities=("image.generate",),
-                               cost=CostEstimate.free(note="placeholder local"), quality=1, validated=True),
-        ProviderImplementation(ProviderKind.IMAGE, "stock", capabilities=("image.generate",),
-                               cost=CostEstimate.free(note="Pexels com licença"), quality=3,
-                               validated=pexels_ok, reason=None if pexels_ok else "PEXELS_API_KEY ausente"),
-        ProviderImplementation(ProviderKind.IMAGE, "veo", capabilities=("image.generate",),
-                               cost=CostEstimate.estimate(s.veo_usd_per_second, note="por segundo"),
-                               quality=5, validated=False, reason="provedor experimental, sem homologação"),
-        ProviderImplementation(ProviderKind.VOICE, "piper", capabilities=("voice.speak",),
-                               cost=CostEstimate.free(note="síntese local"), quality=3, validated=True),
-        ProviderImplementation(ProviderKind.RENDERER, "ffmpeg", capabilities=("render.video",),
-                               cost=CostEstimate.free(note="render local"), quality=4, validated=True),
-        ProviderImplementation(ProviderKind.SEARCH, "pexels", capabilities=("search.media",),
-                               cost=CostEstimate.free(note="busca de mídia gratuita"), quality=4,
-                               validated=pexels_ok, reason=None if pexels_ok else "PEXELS_API_KEY ausente"),
-    ]
-
-
-def _provider_probes(s: "Settings", implementations) -> dict[tuple[str, str], object]:
-    probes: dict[tuple[str, str], object] = {}
-    local = {"demo", "placeholder", "piper", "ffmpeg"}
-    for impl in implementations:
-        if not impl.validated:
-            continue
-        if impl.name == "opencode":
-            probes[(impl.kind.value, impl.name)] = HttpReachableProbe(
-                f"{s.bridge_url.rstrip('/')}/health", timeout=3.0)
-        elif impl.name in local:
-            probes[(impl.kind.value, impl.name)] = LocalProviderProbe()
-    return probes
-
-
-@dataclass(frozen=True)
-class Settings:
-    database_url: str | None = None
-    storage_root: Path = Path("/data")
-    source_allowlist: tuple[str, ...] = DEFAULT_ALLOWLIST
-    allow_names: tuple[str, ...] = DEFAULT_ALLOW_NAMES
-    max_cost_video: float = 0.0   # gasto pago só com o teto do vídeo liberado explicitamente
-    max_cost_month: float = 15.0  # teto mensal do projeto (US$ 15)
-    bridge_token: str = ""
-    bridge_url: str = "http://host.docker.internal:8787"
-    pexels_key: str = ""
-    paid_image_usd: float = 0.05        # estimativa por imagem de modelo não ':free' (o guard decide)
-    veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
-    render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
-    trend_hosts: tuple[str, ...] = ("www.googleapis.com", "www.youtube.com")
-    token_env_path: Path = Path("credentials/token.env")
-    budget_guard: bool = False  # liga a reserva preventiva de orçamento nos caminhos pagos (STUDIO_BUDGET_GUARD=1)
-    production_mode: ProductionMode = ProductionMode.INTERACTIVE  # modo do coordenador (STUDIO_PRODUCTION_MODE)
-    secrets_root: Path | None = None  # cofre de segredos (F10-07); None = <storage_root>/secrets
-    google_client_secret_file: Path | None = None  # app OAuth web do Google (F8-05); lido no lugar, nunca copiado
-    google_oauth_redirect_uri: str = "http://localhost:8000/studio/oauth/callback"
-    # RP-032: disponibilidade do caminho baseado em plano. Não é um dispatch dual (o legado
-    # foi removido): desligar recusa o render e a volta é o redeploy da imagem anterior.
-    render_plan_enabled: bool = True
-    # F01.T04 (contingência): desliga a publicação sem alterar código nem credencial.
-    publication_enabled: bool = True
-    # F06.T02: habilita o roteamento de provider em modo produção (exclui demo/placeholder).
-    # Desligado no padrão preserva o painel/dev; só uma instalação real deve ligar (STUDIO_PROVIDER_PRODUCTION=1).
-    provider_production: bool = False
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
-        env = os.environ if env is None else env
-        secrets_root = env.get("STUDIO_SECRETS_ROOT") or None
-        return cls(env.get("STUDIO_DATABASE_URL") or None, Path(env.get("STUDIO_STORAGE_ROOT", "/data")),
-                   _csv(env.get("STUDIO_SOURCE_ALLOWLIST"), DEFAULT_ALLOWLIST), _csv(env.get("STUDIO_ALLOW_NAMES"), DEFAULT_ALLOW_NAMES),
-                   _cap(env.get("MAX_COST_USD_PER_VIDEO"), 0.0), _cap(env.get("MAX_COST_USD_PER_MONTH"), 15.0),
-                   env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
-                   env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
-                   max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
-                   _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
-                   Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")),
-                   _production_mode(env.get("STUDIO_PRODUCTION_MODE")),
-                   Path(secrets_root) if secrets_root else None,
-                   Path(env["STUDIO_GOOGLE_CLIENT_SECRET_FILE"]) if env.get("STUDIO_GOOGLE_CLIENT_SECRET_FILE") else None,
-                   env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback",
-                   _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")),
-                   _flag(env.get("STUDIO_PUBLICATION_ENABLED", "1")),
-                   _flag(env.get("STUDIO_PROVIDER_PRODUCTION")))
-
-
-RETRY_SECONDS = 5.0
-PING_TTL_SECONDS = 5.0
-CONNECT_OPTIONS = "-c lock_timeout=5000 -c statement_timeout=15000"  # nenhuma consulta espera para sempre
 
 
 class Studio:
@@ -830,7 +579,11 @@ class Studio:
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
-        oauth_client = build_google_oauth(s)
+        # Achado 1: a porta da intenção pede `get()` e a de aprovação também — um objeto só não
+        # serve às duas. Sem este adaptador, o gate de publicação lia um `Approval` (sem `render_id`)
+        # e `/publications/execute` estourava `AttributeError` no caminho real.
+        intents = PostgresPublicationIntentRepository(approvals)
+        oauth_client = _composition.build_google_oauth(s)
         if oauth_client is not None:
             get_channel_status = GetChannelStatus(youtube_repo, secret_store)
             begin_oauth = BeginConsent(oauth_client, secret_store, redirect_uri=s.google_oauth_redirect_uri)
@@ -863,14 +616,16 @@ class Studio:
         uploader = GoogleYouTubeUploader()
         # YT-03: o gate de identidade compara o canal do token com o destino do canal do projeto,
         # resolvendo a autorização validada (channel_authorizations). Wiring só aqui.
-        publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, approvals, pubs, files, uploader, tokens,
+        publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, intents, pubs, files, uploader, tokens,
                                  channels=channel_repo,
                                  authorizations=channel_authorizations,
                                  enabled=s.publication_enabled)
         reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
             approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),
-            claim=ClaimPublication(repo, scripts, assets, jobs, snaps, pubs, files), set_uri=SetUploadUri(pubs), uploaded=MarkUploaded(pubs),
+            claim=ClaimPublication(repo, scripts, assets, jobs, snaps, pubs, files,
+                                   approvals=approvals, intents=intents, channels=channel_repo),
+            set_uri=SetUploadUri(pubs), uploaded=MarkUploaded(pubs),
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
             preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files),

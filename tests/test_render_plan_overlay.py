@@ -25,9 +25,10 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
+from app.studio.adapters.render_plan_compiler import compile_render_plan  # noqa: E402
 from app.studio.adapters.render_plan_ffmpeg import PlanFfmpegRenderer  # noqa: E402
 from app.studio.application.ports import OverlayLayer, RenderSpec  # noqa: E402
-from app.studio.application.render_compiler import CompileError, compile_render_plan  # noqa: E402
+from app.studio.application.render_compiler import CompileError  # noqa: E402
 from app.studio.domain.asset_resolver import AssetDescriptor  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, Scene, VideoFormat  # noqa: E402
 from app.studio.domain.render import SIZE, make_cues, scene_length  # noqa: E402

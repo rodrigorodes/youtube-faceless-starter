@@ -255,15 +255,27 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 .estado-bloco h3 { margin: 0 0 6px; font-size: 13px; font-weight: 750; color: var(--txt); }
 .estado-bloco .kv { align-items: flex-start; gap: 10px; }
 .estado-bloco .kv > span:last-child { text-align: right; line-height: 1.45; }
-.perfis-lista {
-  margin: 10px 0 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 6px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--muted);
+/* Escolha do perfil econômico em cartões — protótipo `settingsProduction` (`pillrow` + `.choice`,
+   `prototype/index.html:488` e 627). Um clique e o "porquê" ao lado; radio nativo, sem JS. */
+.perfis-escolha { border: 0; padding: 0; margin: 0; }
+.perfis-escolha legend { color: var(--muted); font-size: 0.8rem; padding: 0 0 6px; }
+.perfis-escolha .hint { display: block; margin-top: 8px; }
+.choice {
+  display: block;
+  flex: 1;
+  min-width: 190px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel2);
+  cursor: pointer;
+  font-size: 0.82rem;
 }
+.choice:hover { border-color: var(--accent); }
+.choice.ativo { border-color: var(--accent); background: var(--soft); }
+.choice strong { display: block; margin-bottom: 6px; }
+.choice input[type="radio"] { margin: 0 8px 0 0; }
+.choice .sample { display: block; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 @media (max-width: 820px) {
   .grade-providers { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
@@ -509,7 +521,7 @@ def _channel_card(view: ChannelsPageView) -> str:
               </select>
             </div>
             <div class="field" style="justify-content:end">
-              <button class="btn btn-primary" type="submit" id="btn-novo-canal">Criar canal</button>
+              <button class="btn btn-primary" type="submit" id="btn-criar-canal">Criar canal</button>
               <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
             </div>
           </form>
@@ -817,15 +829,17 @@ def _budget_card(view: ChannelsPageView) -> str:
             'Salvar abaixo passa a persistir a configuração deste canal.</p>'
         )
         origin = "padrão do servidor, sem nada persistido para este canal"
-    profile_options = "".join(
-        f'<option value="{e(option.profile.value)}"{" selected" if option.active else ""}>'
-        f"{e(option.profile.value)} — {e(option.label)}</option>"
-        for option in economic_profile_options(profile_value)
-    )
-    profile_list = "".join(
-        f"<li><b>{e(option.profile.value)}</b> — {e(option.label)}: {e(option.description)}"
+    # UX (protótipo `settingsProduction`, `prototype/index.html:627`): o perfil é uma **escolha em
+    # cartões** — um clique e o "porquê" ao lado — em vez de um `<select>` com a explicação à parte.
+    # Continua sendo um radio nativo, com o mesmo nome de campo (`economic_profile`) e sem JS.
+    profile_choices = "".join(
+        f'<label class="choice{" ativo" if option.active else ""}">'
+        f'<input type="radio" name="economic_profile" value="{e(option.profile.value)}"'
+        f'{" checked" if option.active else ""}>'
+        f'<strong>{e(option.profile.value)} — {e(option.label)}</strong>'
+        f'<span class="sample">{e(option.description)}</span>'
         + (f" {_badge('s-done', '✓', 'Perfil ativo')}" if option.active else "")
-        + "</li>"
+        + "</label>"
         for option in economic_profile_options(profile_value)
     )
     limit_rows = "".join(
@@ -854,18 +868,12 @@ def _budget_card(view: ChannelsPageView) -> str:
         <div class="sanfona-corpo">
           {configured_note}
           <form id="budget-form" data-project-id="{e(view.project.id)}" style="margin-top:14px">
-            <div class="field">
-              <label for="perfil-economico">Perfil econômico do canal</label>
-              <select class="input" id="perfil-economico" name="economic_profile"
-                      aria-describedby="perfil-economico-hint">
-                {profile_options}
-              </select>
+            <fieldset class="perfis-escolha" aria-describedby="perfil-economico-hint">
+              <legend>Perfil econômico do canal</legend>
+              <div class="pill-row">{profile_choices}</div>
               <span class="hint" id="perfil-economico-hint">O perfil decide o roteamento de providers
               (seção Providers) e é salvo junto com os limites. Nada de trocar código para mudar de perfil.</span>
-            </div>
-            <ul class="perfis-lista" aria-label="Perfis econômicos e a política vigente">
-              {profile_list}
-            </ul>
+            </fieldset>
             <div class="grid-2" style="margin-top:14px">
               <div class="field">
                 <label for="limite-soft-mensal">Limite soft mensal (US$)</label>
@@ -1259,7 +1267,7 @@ def _channels_page_js(project_id: str) -> str:
       newChannel.addEventListener('submit', async (ev) => {{
         ev.preventDefault();
         const feedback = document.getElementById('new-channel-feedback');
-        const button = document.getElementById('btn-novo-canal');
+        const button = document.getElementById('btn-criar-canal');
         const name = (document.getElementById('novo-canal-nome').value || '').trim();
         if (!name) {{ if (feedback) feedback.textContent = 'Informe o nome do canal.'; return; }}
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
@@ -1406,7 +1414,7 @@ def _channels_page_js(project_id: str) -> str:
           hard_monthly_usd: (document.getElementById('limite-hard-mensal').value || '').trim(),
           soft_video_usd: (document.getElementById('limite-soft-video').value || '').trim(),
           hard_video_usd: (document.getElementById('limite-hard-video').value || '').trim(),
-          economic_profile: document.getElementById('perfil-economico').value
+          economic_profile: (budgetForm.querySelector('input[name="economic_profile"]:checked') || {{}}).value || ''
         }};
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
         if (window.StudioLoading) window.StudioLoading.start('Salvando limites de orçamento…');

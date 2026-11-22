@@ -1,8 +1,45 @@
 # CONTINUITY — retomada em outra sessão
 
-**Atualizado:** 22/11/2026 · **Repo:** `/Users/rodrigomendes/youtube-faceless-starter` · **HEAD:** `a2e6a39` · **Nada commitado** (sem commit, sem push; `git push` é bloqueado).
+**Atualizado:** 22/11/2026 · **Repo:** `/Users/rodrigomendes/youtube-faceless-starter` · **HEAD:** `c90d806` (commit local do W0–W5; `git push` **negado por permissão**, nada saiu da máquina) · **trabalho posterior ao commit:** não commitado.
 **Idioma:** pt-BR. **Testes:** só pelo container (`scripts/test-container.sh`); o host macOS não é ambiente de teste.
 **Leia primeiro:** `phases/INTEGRATION-PLAN.md` (plano, §9 = decisões do operador) e `evidence/REPO-VALIDATION.md` (matriz e riscos R1–R11).
+
+## 0. Sessão atual (resumo no topo)
+
+**Objetivo:** fechar o backlog "faceless visual evolution 2" (W0–W5 ✅) + S3/S4/S5, achados abertos e
+**alinhamento de UX ao protótipo** (`prototype/index.html`), com a regra do PO: *onde o atual for
+melhor, manter; o resto adequar ao protótipo seguindo os docs de análise*.
+
+**Feito nesta sessão (não commitado):**
+- Achados 1, 3, 4, 11 resolvidos; bug B1 (porta da intenção) e B2 (ids duplicados no diálogo de
+  canal) corrigidos — `evidence/VERIFIED-FINDINGS.md`.
+- **S3/S4/S5 portados**: compilador FFmpeg em `adapters/render_plan_compiler.py`; `composition.py` →
+  pacote `composition/`; `api/panel.py` → `panel_shell` + `panel_operacional` + `panel_video` +
+  `panel_script` + agregador de 75 linhas.
+- **UX/navegação**: `NAV_OPERACAO` com **7 itens** (Configurações como 7º, `NAV` do protótipo);
+  um único `<nav aria-label="Principal">`; caption "Operação" e `<nav aria-label="Configuração">`
+  removidos. Chips de Tendências no padrão do protótipo; Biblioteca com h1/lead do protótipo;
+  Configurações com h1/eyebrow/lead do protótipo e perfil econômico em cartões; **matriz de papéis**
+  em Conta e equipe (de `ROLE_PERMISSIONS`).
+- Docs: `analysis/NAVEGACAO-COMPARACAO.md`, `analysis/CONFIG-UX-AVALIACAO.md`,
+  `evidence/VERIFIED-FINDINGS.md`.
+
+**Validação real (container):** focado 393 passed (S4/S5 + nav + team); suíte completa e validação
+no ar no §4 (nav de 7 itens, zero ids duplicados, chips do protótipo, matriz de papéis, criação de
+canal com o nome correto).
+
+**Bloqueios:** `git push` negado por permissão (não contornado); W5.3 (E2E Chrome) bloqueada por
+ambiente (imagem sem Node/Chrome).
+
+**Achados abertos:** casca legada viva em `/studio/oauth/callback` (registrado); `application/config.py`
+com `ffmpeg` nos defaults; `MediaSearch` sem 2ª fonte; QA semântico sem verificador;
+`test_secrets_hygiene` só falha com a árvore suja; import morto de `render_new_video` em `routes.py`;
+Início sem a faixa de benefícios e Biblioteca sem as 3 abas (ambos dependem de expor dado real).
+
+**Próxima ação:** decidir com o PO (a) o commit local das mudanças (o `git add -A` já deixou tudo
+staged; `HEAD` segue `c90d806`), (b) a remoção do canal de teste criado na validação no ar
+(`Prova fix B2 (validacao no ar)`) e (c) a limpeza dos 3 canais "Musica" do banco dev — **nenhuma
+remoção sem autorização**.
 
 ## 1. Objetivo
 Integrar a proposta (revisão 3) **seguindo a UX atual e acrescentando ao core e à UX existentes**. Sem SPA, sem segundo shell/coordenador/renderer. Autorizado até agora: **W0 e W1**. W2 em diante (render, mídia, edição por cena, publicação) **não** foi autorizado.
@@ -71,6 +108,17 @@ Worktrees da onda: `.worktrees/ve-w1-listas` (`ve/w1-listas`), `.worktrees/ve-w1
 - **Rodada completa no checkout principal com W4.0 (`/tmp/ve-main-full.log`): inválida por ambiente** — 8 failed, 3057 passed, 6 skipped, **68 errors** em 1092 s. Os 68 errors são `psycopg.OperationalError [Errno 2] Name or service not known` (o Postgres descartável `faceless-pg-...` desapareceu no meio da rodada) e as 8 falhas são `ffmpeg` morto por `-9` (OOM) e 503 por banco ausente. **Prova de que são ambientais:** as 8 falhas passam isoladas (`18 passed`) e a suíte já era verde em `full5-w1.log`. Precisa de nova rodada limpa quando não houver subagentes concorrentes.
 - **Rodada completa no checkout principal com W4.1 portado (`/tmp/w41-full-main2.log`): 2 failed, 3186 passed, 6 skipped** (388 s), `hash renderer/app=bbe4cd8b8b8ff890`, `migrações=39`. As 2 falhas são `test_port_contracts.py::test_every_registered_provider_satisfies_its_port` e `::test_catalog_and_registry_have_no_drift` — **pré-existentes por vazamento de registro entre testes** (`register(...)` em nível de módulo em `test_editorial_api.py`/`test_render_api.py`): o arquivo isolado dá **8 passed**. O S8 já confirmou as mesmas 2 falhas no HEAD `a2e6a39` sem as mudanças. Os 6 skips = Node.js ausente. Detalhe em [evidence/ve-w4-1-closure.md](evidence/ve-w4-1-closure.md).
 - **Rodada completa no checkout principal após portar W2.2/W2.3/W3.2/W3.3/W4.3/W4.4/W4.5/W5.1/W5.2 (sessão 4): 2 failed, 3307 passed, 6 skipped** (451 s), `hash renderer/app=eac47af427ae6911`, `migrações=41`. As 2 falhas continuam sendo o **mesmo vazamento pré-existente de `_REGISTRY`** (`test_editorial_api` → `test_port_contracts`): reproduzido rodando só `test_editorial_api.py tests/test_port_contracts.py` → **2 failed, 29 passed**; e `test_schema_docs.py tests/test_port_contracts.py` → **15 passed**. Os 6 skips = Node.js ausente.
+- **Rodada completa desta sessão (sessão 5), após S3/S4/S5 + UX/navegação: 3 failed, 3316 passed, 6 skipped** (434 s), `hash renderer/app=b8ab3099d5a1c228`, `migrações=41`. Nenhuma falha é regressão:
+  - `test_port_contracts::test_catalog_and_registry_have_no_drift` — vazamento de `_REGISTRY` por `register("voice","tone-narr",...)` em nível de módulo em `test_scene_narration.py` (**achado 11b**). **Corrigido** (fixture autouse com `registered_providers`).
+  - `test_secrets_hygiene` ×2 — artefato do trabalho não commitado: `package-starter.sh` faz `stat()` no caminho de cada arquivo do **índice**, e `composition.py` estava deletado no disco mas ainda no índice. **Resolvido** com `git add -A` (a deleção entrou no índice).
+  - Verificação focada dos 3: `test_secrets_hygiene + test_port_contracts + test_scene_narration + test_editorial_api + test_render_api + test_tts_calibration` → **89 passed**.
+- **Validação no ar** (imagem `renderer` reconstruída, app em `http://localhost:8000`, `/health` 200):
+  - Nav de **7 itens** sem caption "Operação" em `/studio/panel`, `/studio/canais`, `/studio/panel/tendencias`, `/studio/configuracoes/canais`, `/studio/panel/equipe`.
+  - **Zero ids duplicados** em `/studio/canais`, `/studio/configuracoes/estrategia` e `/studio/configuracoes/producao`; o diálogo do shell usa `dlg-canal-*` e `canal-nome` aparece **1×** (o campo do perfil).
+  - Chips de Tendências = `["Todas", "Flat Iron"]` (pilar), **sem contagem** e sem "Em Alta <região>"; `?filtro=regiao:BR|US|todas` seguem respondendo **200**.
+  - Configurações: eyebrow `CONFIGURAÇÕES`, h1 "Seu estúdio, do seu jeito", lead do protótipo e perfil econômico em `fieldset.perfis-escolha`.
+  - Conta e equipe: `table.papeis-matriz` com as colunas Papel / Editar·gerar / Aprovar / Publicar.
+  - **Bug B2 corrigido end-to-end**: `POST /studio/projects` com nome distinto gravou `Prova fix B2 (validacao no ar)` / nicho `verificacao` (antes gravava "Musica" e `não informado`).
 
 
 ## 5. Próximas ações (ordem)
@@ -79,7 +127,10 @@ Worktrees da onda: `.worktrees/ve-w1-listas` (`ve/w1-listas`), `.worktrees/ve-w1
 - **Falta (não implementado nesta sessão):** W5.3 (bloqueada por ambiente — sem Node/Chrome) e a trilha ISO (ISO-01/02, fora do MVP solo).
 - **Ação imediata:** nenhuma portagem pendente. A suíte completa já rodou sem concorrência (§4); as 2 falhas restantes são pré-existentes de isolamento de teste e estão registradas.
 - Achados abertos: `/publications/claim` fora do gate de identidade; recusa de orçamento sem dizer qual teto estourou; Compose não encaminha `STUDIO_PROVIDER_PRODUCTION`/`STUDIO_SECRETS_ROOT`; `application/config.py` mantém nomes de fornecedor nos defaults (resíduo de S2, registrado); risco de ordem de locks em `reopen` vs `mark_uploaded` (W4.2); vazamento de `_REGISTRY` entre testes (falha de isolamento pré-existente em `test_port_contracts`).
-- **Refatorações S3/S4/S5 (sem mudança de comportamento) — desbloqueadas, não feitas:** S3 (mover compilador para `adapters/`), S4 (dividir `composition.py`) e S5 (dividir `panel.py`) dependiam de W2.2/W3.2/W4.3 e W2.3/W4.4/W4.5/W5.1, que já landaram. Ficam como próximo trabalho de folga. S6 já entrou junto de W3.3.
+- **Refatorações S3/S4/S5 (sem mudança de comportamento) — FEITAS nesta sessão:** S3 (compilador
+  FFmpeg em `adapters/render_plan_compiler.py`), S4 (`composition.py` → pacote `composition/`) e S5
+  (`api/panel.py` → `panel_shell`/`panel_operacional`/`panel_video`/`panel_script` + agregador).
+  Detalhe e verificação em `evidence/VERIFIED-FINDINGS.md` ("Refatorações S3/S4/S5"). S6 entrou com W3.3.
 - **Bloqueado por ambiente:** W5.3 (E2E Chrome headless 390/768/1280) — a imagem não tem Node/Chrome; só dá para cobrir o que é server-rendered com `TestClient` até o ambiente ganhar browser. Registrado, não contornado.
 
 ## 6. Backlog de achados fora de escopo (não corrigir agora)

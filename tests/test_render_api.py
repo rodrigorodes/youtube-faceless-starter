@@ -15,7 +15,6 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.studio.api.routes import make_router  # noqa: E402
-from app.studio.application.config import register  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 
 SOURCE = (
@@ -76,9 +75,16 @@ class NoSound:
         return PlanFfmpegRenderer().qa_inputs(spec)
 
 
-register("voice", "tone", ToneVoice)
-register("renderer", "nosound", NoSound)
-register("renderer", "boom", Boom)
+@pytest.fixture(autouse=True)
+def _fake_voice_and_renderer_providers(registered_providers):
+    """Registra os fakes de voz/renderer **dentro do teste**, com restauração do `_REGISTRY`.
+
+    Antes eram `register(...)` no nível do módulo: rodavam na coleta e vazavam para
+    `test_port_contracts` (achado 11).
+    """
+    registered_providers("voice", "tone", ToneVoice)
+    registered_providers("renderer", "nosound", NoSound)
+    registered_providers("renderer", "boom", Boom)
 
 
 class SyncExecutor:

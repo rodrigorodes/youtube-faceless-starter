@@ -504,21 +504,20 @@ def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | Non
     content_html = f"""
       <div class="card">
         <div class="spread">
-          <div>
-            <h2>Biblioteca de estilos</h2>
-            <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
-              Ação primária: <b>manter estilos reutilizáveis</b>. O estilo é compartilhado — separado do canal, para não virar cópia à mão.
-            </p>
-          </div>
+          <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin: 0">
+            Ação primária: <b>manter estilos reutilizáveis</b>. O estilo é compartilhado — separado do canal, para não virar cópia à mão.
+          </p>
           <span class="chip-metric">{len(view.items)} estilo(s)</span>
         </div>
       </div>
       {body}
       {_create_card()}
     """
+    # UX: o título da página já diz "Biblioteca"; o cartão não repete o mesmo `<h2>` (protótipo
+    # `library`, `prototype/index.html:635`, também não tem cabeçalho duplicado).
     body_page = shell_v3.render_library_page_body(
-        title="Biblioteca",
-        lead="Estilos reutilizáveis do estúdio. Aplicar um padrão não altera vídeos já criados.",
+        title="Estilos reutilizáveis",
+        lead="Os estilos são reutilizados; personalizações do canal permanecem independentes.",
         content_html=content_html,
     )
     html = shell_v3.render_document(

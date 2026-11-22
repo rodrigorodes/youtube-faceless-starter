@@ -77,10 +77,12 @@ def test_the_global_menu_lists_the_prototype_items_and_the_library(env, profile)
     """Menu do protótipo, incluindo **Biblioteca**, apontando para a biblioteca de estilos real."""
     html = _page(env, "/studio/panel")
     items = _nav_items(html, "Principal")
-    assert [_nav_text(item) for item in items] == NAV_LABELS[:-1]  # Configurações fica no rodapé
+    assert [_nav_text(item) for item in items] == NAV_LABELS
     biblioteca = [item for item in items if "Biblioteca" in item][0]
     assert 'href="/studio/panel/estilos' in biblioteca
-    assert 'href="/studio/configuracoes/canais' in html  # Configurações continua no rodapé
+    # NAV: Configurações é o 7º item do menu principal (`prototype/index.html:583`).
+    configuracoes = [item for item in items if "Configurações" in item][0]
+    assert 'href="/studio/configuracoes/canais' in configuracoes
 
 
 def test_the_library_page_marks_biblioteca_as_the_active_item(env, profile):

@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.studio.application.config import register  # noqa: E402
 from app.studio.application.ports import FetchedPage, TextResult  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 from app.studio.api.routes import make_router  # noqa: E402
@@ -51,8 +50,17 @@ class PaidText(BadText):
         self.cost = 0.5
 
 
-register("text", "fake", BadText)
-register("text", "paid", PaidText)
+@pytest.fixture(autouse=True)
+def _fake_text_providers(registered_providers):
+    """Registra os fakes de texto **dentro do teste**, com restauração do `_REGISTRY`.
+
+    Antes eram `register(...)` no nível do módulo: rodavam na coleta e vazavam para
+    `test_port_contracts` (achado 11).
+    """
+    registered_providers("text", "fake", BadText)
+    registered_providers("text", "paid", PaidText)
+    registered_providers("text", "ideas", IdeaText)
+    registered_providers("text", "garbage", Garbage)
 
 
 def make_client(dsn, tmp_path, text="demo:x"):
@@ -228,10 +236,6 @@ class IdeaText(BadText):
 class Garbage(BadText):
     def complete(self, prompt, *, json_schema=None):
         return TextResult("isto não é JSON", UsageEntry(step="x", provider="garbage", model=self.model, cost_usd=0))
-
-
-register("text", "ideas", IdeaText)
-register("text", "garbage", Garbage)
 
 
 def test_score_ideas_ranks_and_records_usage(conn, dsn, tmp_path):

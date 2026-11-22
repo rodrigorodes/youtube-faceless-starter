@@ -178,18 +178,39 @@ def test_channels_state_badges_carry_real_text_not_only_an_icon(env):
 def test_channels_page_uses_the_approved_shell(env):
     html = page(env).text
     items = nav_items(html)
-    # W1.5: menu do protótipo — "Criar vídeo" e "Tendências e ideias" (rótulos) + item Biblioteca.
-    # Configurações continua no rodapé da casca.
+    # W1.5 + NAV: menu do protótipo (`prototype/index.html:583`) — **sete itens numa lista só**,
+    # com "Configurações" como o 7º (deixou de ser um `<nav>` separado no rodapé da casca).
     assert [_nav_text(i) for i in items] == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias",
-                                            "Desempenho", "Biblioteca"]
-    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_nav)
+                                            "Desempenho", "Biblioteca", "Configurações"]
+    config_item = next(i for i in items if "Configurações" in _nav_text(i))
+    assert re.search(r'<a href="/studio/configuracoes/canais[^"]*" aria-current="page"', config_item)
     # Canais é a seção ativa dentro de Configurações.
     section_active = [i for i in settings_nav_items(html) if 'aria-current="page"' in i]
     assert len(section_active) == 1 and "Canais" in _nav_text(section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert html.count("<h1") == 1
-    assert re.search(r'<h1[^>]*>\s*Configurações\s*</h1>', html)
+    # UX: o h1 é o do protótipo (`prototype/index.html:622`); "CONFIGURAÇÕES" fica no eyebrow.
+    assert re.search(r'<p class="eyebrow">\s*CONFIGURAÇÕES\s*</p>', html)
+    assert re.search(r'<h1[^>]*>\s*Seu estúdio, do seu jeito\s*</h1>', html)
+
+
+def test_settings_pages_never_repeat_an_element_id(env):
+    """Regressão do bug "novo canal vem com o nome do perfil" (id duplicado).
+
+    O diálogo do shell (`#dlg-canal`) e os cartões de Configurações usavam os **mesmos** ids
+    (`canal-nome`, `canal-nicho`, `canal-idioma`, `btn-salvar-canal`). Em `/studio/canais` o cartão
+    do perfil vem antes do diálogo, então `document.getElementById('canal-nome')` devolvia o campo
+    do perfil: criar um canal pelo diálogo gravava o **nome do perfil** ("Musica") e o nicho
+    literal "não informado". Nenhum id pode se repetir no documento.
+    """
+    from collections import Counter
+
+    for path in ("/studio/canais", "/studio/configuracoes/estrategia", "/studio/configuracoes/producao"):
+        response = env["client"].get(f"{path}?project_id={env['project'].id}", headers=AUTH_HEADER)
+        assert response.status_code == 200, path
+        ids = re.findall(r'\sid="([^"]+)"', response.text)
+        duplicados = {i: n for i, n in Counter(ids).items() if n > 1}
+        assert duplicados == {}, (path, duplicados)
 
 
 def test_channels_page_marks_unavailable_nav_items_as_non_focusable(env):

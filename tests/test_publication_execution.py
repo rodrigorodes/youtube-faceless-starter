@@ -675,3 +675,39 @@ def test_unchanged_destination_and_metadata_still_upload(tmp_path):
                              channels=Channels(TARGET), authorizations=Authorizations(authorization()),
                              tokens=Tokens(channel_id=TARGET))
     assert run.execute().result is PublicationResult.UPLOADED and len(uploads.uploads) == 1
+
+
+# ---------- achado 1: a porta da intenção não pode ser o repositório de aprovação ----------
+
+
+def test_the_intent_adapter_reads_the_intent_not_the_approval():
+    """O `get()` da porta de intenção devolve `PublicationIntentEvidence` (via `intent()`).
+
+    `PostgresApprovalRepository.get()` é a **aprovação** (`Approval`, sem `render_id`). Antes, a
+    composição passava o mesmo objeto como `intents` e o gate lia um `Approval` — `AttributeError`
+    no caminho real de `/publications/execute`.
+    """
+    from app.studio.adapters.postgres.publish_repo import (PostgresApprovalRepository,
+                                                           PostgresPublicationIntentRepository)
+
+    class _Approvals(PostgresApprovalRepository):
+        def __init__(self, value):
+            self.value = value
+
+        def intent(self, video_id):
+            return self.value
+
+        def get(self, video_id):  # pragma: no cover - o adaptador não pode usar este caminho
+            raise AssertionError("o adaptador de intenção não pode ler a aprovação")
+
+    expected = object()
+    assert PostgresPublicationIntentRepository(_Approvals(expected)).get(V) is expected
+
+
+def test_composition_wires_the_intent_adapter_and_not_the_approval_repository():
+    """Trava a fiação: `intents` recebe o adaptador, não o mesmo objeto de `approvals`."""
+    source = (Path(__file__).resolve().parents[1] / "renderer" / "app" / "studio"
+              / "composition" / "wiring.py").read_text(encoding="utf-8")
+    assert "snaps, approvals, approvals, pubs" not in source, "intents não pode ser o repo de aprovação"
+    assert "intents = PostgresPublicationIntentRepository(approvals)" in source
+    assert "approvals=approvals, intents=intents, channels=channel_repo" in source

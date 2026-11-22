@@ -1,14 +1,15 @@
 """Executor FFmpeg do Render Plan (RP-024..RP-026) — o único lugar com ``subprocess``.
 
-Consome o ``CompiledRender`` do compilador puro (``application/render_compiler.py``,
+Consome o ``CompiledRender`` do compilador FFmpeg (``adapters/render_plan_compiler.py``,
 RP-023): materializa os overlays (selo/disclosure/legendas com **Pillow**), sintetiza a
 trilha de música, monta a faixa de narração, roda um ``ffmpeg`` por shot, concatena sem
 reencode e mixa com *ducking* + ``loudnorm`` — o mesmo grafo que o renderer legado
 produzia. O vídeo final é publicado de forma **atômica** (arquivo temporário +
 ``os.replace``), nunca deixando um ``.mp4`` parcial no destino.
 
-Decisão §5.4 do design: o ``subprocess`` só mora aqui. O compilador continua **puro** —
-nada de FFmpeg/PIL no ``domain``/``application`` (``tests/test_architecture.py``).
+Decisão §5.4 do design: o ``subprocess`` só mora aqui. A validação/estrutura neutra do
+plano fica no ``application`` e a sintaxe FFmpeg no compilador do ``adapters`` — nada de
+FFmpeg/PIL no ``domain``/``application`` (``tests/test_architecture.py``).
 
 Rollout (§5.6/§11-R2, revisto): o **caminho baseado em plano é agora o único**. O
 executor reconstrói o ``RenderPlan`` a partir do ``RenderSpec`` que o ``RunRender``
@@ -42,7 +43,6 @@ from PIL import Image, ImageDraw, ImageFont
 from ... import rich
 from ..application.ports import RenderQaInputs, RenderSpec
 from ..application.render_cache import PlanRegeneration
-from ..application.render_compiler import CompiledRender, compile_render_plan
 from ..domain.asset_resolver import IMAGE_CODECS, AssetDescriptor
 from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
@@ -50,6 +50,7 @@ from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
 from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardOverlay, StoryboardScene, build_render_plan
 from ..domain.visual_style import ResolvedStyle
+from .render_plan_compiler import CompiledRender, compile_render_plan
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 # Bundle neutro usado **apenas quando o vídeo não tem canal/estilo a referenciar** (RP-016):
@@ -284,7 +285,7 @@ class PlanFfmpegRenderer:
         """Reconstrói o plano do ``RenderSpec`` e o compila (puro) — sem tocar FFmpeg.
 
         Separado de ``execute`` para que o grafo/comando possa ser validado por unidade,
-        sem renderizar nada (o compilador em si continua em ``application``).
+        sem renderizar nada (o compilador FFmpeg mora no ``adapters`` e é puro).
         """
         return self._compile(self._build_plan(spec), spec)[0]
 

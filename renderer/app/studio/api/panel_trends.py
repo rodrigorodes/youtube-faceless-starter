@@ -341,27 +341,19 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
     nonce = secrets.token_urlsafe(16)
     project_id = view.project_id or (view.projects[0][0] if view.projects else "")
 
-    count_total = len(view.trends)
-    count_br = sum(1 for t in view.trends if t.region == "BR")
-    count_us = sum(1 for t in view.trends if t.region == "US")
-
     filtro = filtro if isinstance(filtro, str) and filtro else _FILTRO_TODAS
     selecionadas = [t for t in view.trends if _trend_matches(t, filtro)]
     limite = max(1, limite if isinstance(limite, int) else TRENDS_PAGE_SIZE)
     do_lote = selecionadas[:limite]
 
-    chips = [
-        _chip(_trends_url(view, _FILTRO_TODAS), _FILTRO_TODAS, f"Todas ({count_total})",
-              filtro == _FILTRO_TODAS),
-        _chip(_trends_url(view, "regiao:BR"), "regiao:BR", f"Em Alta Brasil ({count_br})",
-              filtro == "regiao:BR"),
-        _chip(_trends_url(view, "regiao:US"), "regiao:US", f"Em Alta EUA ({count_us})",
-              filtro == "regiao:US"),
-    ]
+    # Chips do protótipo (`ideasPage`, `prototype/index.html:633`): "Todas" + os **pilares** do
+    # canal, só com o nome — sem "Em Alta <região>" e sem contagem entre parênteses. A região
+    # continua na evidência de cada cartão e o filtro por região segue válido na URL
+    # (`?filtro=regiao:BR`), para links antigos não quebrarem.
+    chips = [_chip(_trends_url(view, _FILTRO_TODAS), _FILTRO_TODAS, "Todas", filtro == _FILTRO_TODAS)]
     for c in view.categories:
         valor = f"pilar:{c.id}"
-        c_count = sum(1 for t in view.trends if t.category_id == c.id)
-        chips.append(_chip(_trends_url(view, valor), valor, f"{e(c.name)} ({c_count})", filtro == valor))
+        chips.append(_chip(_trends_url(view, valor), valor, e(c.name), filtro == valor))
     chips_html = "".join(chips) + (
         '<button class="chip-filtro novo" type="button" id="btn-novo-pilar">+ Novo pilar</button>')
 

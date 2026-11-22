@@ -1070,7 +1070,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         except YouTubeApiError as exc:
             raise HTTPException(502, str(exc)) from exc
         except BudgetDenied as exc:
-            raise HTTPException(403, "budget denied: cost cap or unknown cost blocks the operation") from exc
+            # Achado 3: a recusa diz **qual** teto estourou, com os números, quando o repositório
+            # sabe informar; sem detalhe, mantém a mensagem genérica (a recusa continua válida).
+            detail = getattr(exc, "detail", None)
+            message = ("budget denied: " + detail.describe() if detail is not None else
+                       "budget denied: cost cap or unknown cost blocks the operation")
+            raise HTTPException(403, message) from exc
         except IdempotencyConflict as exc:
             raise HTTPException(409, "idempotency key was already used with different parameters") from exc
         except CostConfirmationError as exc:

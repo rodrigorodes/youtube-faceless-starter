@@ -118,6 +118,35 @@ def test_the_channel_ceiling_blocks_the_paid_call_before_the_external_effect(pai
     assert guard.repo.state("acima-do-teto") is None, "recusa não deixa operação paga registrada"
 
 
+def test_a_denied_reservation_says_which_ceiling_was_hit(paid_channel):
+    """Achado 3: a recusa de orçamento diz **qual** teto estourou, com os números do escopo."""
+    from app.studio.application.budget import BudgetDenied
+
+    _limits(paid_channel, monthly=Decimal("5"), video=Decimal("0.50"))
+    # Settings mensal 15 > canal 5: isola o escopo do CANAL; settings por vídeo 0,50 isola o VÍDEO.
+    guard = _guard(paid_channel, monthly=Decimal("15"), video=Decimal("0.50"))
+    calls = []
+
+    # Escopo VÍDEO: 0,60 > 0,50 (o mensal do canal tem folga).
+    with pytest.raises(BudgetDenied) as video_denied:
+        _run(guard, "acima-do-video", VIDEO, Decimal("0.60"), calls)
+    detail = video_denied.value.detail
+    assert detail is not None, "a recusa precisa dizer qual teto barrou"
+    assert detail.scope == "VÍDEO"
+    assert detail.ceiling_usd == Decimal("0.50")
+    assert detail.estimate_usd == Decimal("0.60")
+    assert "VÍDEO" in detail.describe() and "0.50" in detail.describe()
+
+    # Escopo CANAL (mês): 0,40 confirmado + 4,80 estoura o teto mensal do canal (5,00).
+    _run(guard, "dentro", VIDEO, Decimal("0.40"), calls)
+    with pytest.raises(BudgetDenied) as canal_denied:
+        _run(guard, "acima-do-canal", OTHER_VIDEO, Decimal("4.80"), calls)
+    assert canal_denied.value.detail.scope == "CANAL (mês)"
+    assert canal_denied.value.detail.ceiling_usd == Decimal("5")
+    assert canal_denied.value.detail.committed_usd == Decimal("0.40")
+    assert calls == [("dentro", VIDEO)]
+
+
 def test_without_a_channel_budget_the_settings_ceiling_applies(paid_channel):
     """Sem limite de canal valem as settings: com teto por vídeo 0, a primeira chamada paga é recusada.
 

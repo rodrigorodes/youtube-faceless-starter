@@ -147,16 +147,16 @@ def test_styles_page_marks_biblioteca_active_and_no_dead_configuracoes(env):
     html = page(env).text
     items = nav_items(html)
     assert [_nav_text(i) for i in items] == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias",
-                                            "Desempenho", "Biblioteca"]
+                                            "Desempenho", "Biblioteca", "Configurações"]
     active = [item for item in items if 'aria-current="page"' in item]
     assert len(active) == 1 and "Biblioteca" in _nav_text(active[0])
     assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', active[0])
-    # A página é a própria Biblioteca: sem a navegação de Configurações.
+    # A página é a própria Biblioteca: sem a navegação de seções de Configurações.
     assert 'id="pagina-biblioteca"' in html
     assert 'id="menu-config"' not in html
-    # Configurações não fica falso-ativa nesta tela.
-    config_nav = re.search(r'<nav aria-label="Configuração">(.*?)</nav>', html, re.S).group(1)
-    assert 'aria-current="page"' not in config_nav
+    # Configurações não fica falso-ativa nesta tela (o item existe no menu, mas sem `aria-current`).
+    config_item = next(i for i in items if "Configurações" in _nav_text(i))
+    assert 'aria-current="page"' not in config_item
     assert _without_style_and_script(html).count('aria-current="page"') == 1
     assert "em breve" not in html
     # nenhum item indisponível na casca: "Configurações — em breve" virou área real

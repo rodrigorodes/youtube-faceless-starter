@@ -282,9 +282,12 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
-    # Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`).
-    assert "Todas (" in r.text
-    assert "Tecnologia (" in r.text
+    # Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`), no padrão do protótipo
+    # (`ideasPage`, `prototype/index.html:633`): "Todas" + os pilares, só com o nome.
+    assert 'data-filtro="todas"' in r.text
+    assert ">Todas</a>" in r.text
+    assert "Tecnologia" in r.text
+    assert 'data-filtro="regiao:BR"' not in r.text
     assert f'data-filtro="pilar:{cat_id}"' in r.text
     assert "+ Novo pilar" in r.text or 'id="btn-novo-pilar"' in r.text
 
@@ -501,17 +504,18 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     r = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r.status_code == 200
 
-    # 1. Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`)
+    # 1. Pílulas de filtro (UX V3: `chip-filtro` + `data-filtro`), no padrão do protótipo:
+    # "Todas" + os pilares, só com o nome. O chip de região saiu da tela; a região continua
+    # na evidência de cada cartão e o filtro por região segue válido na URL.
     assert 'data-filtro="todas"' in r.text
-    assert 'Todas (2)' in r.text
-    assert 'data-filtro="regiao:BR"' in r.text
-    assert 'Em Alta Brasil (1)' in r.text
-    assert 'data-filtro="regiao:US"' in r.text
-    assert 'Em Alta EUA (0)' in r.text
+    assert '>Todas</a>' in r.text
+    assert 'data-filtro="regiao:BR"' not in r.text
+    assert 'data-filtro="regiao:US"' not in r.text
+    assert 'Em Alta Brasil (' not in r.text
     assert 'Em Alta Mundo' not in r.text
     assert 'Origem desconhecida' in r.text  # a tendência sem região continua visível
     assert f'data-filtro="pilar:{cat_id}"' in r.text
-    assert 'Inovação (0)' in r.text
+    assert '>Inovação</a>' in r.text
     assert 'id="btn-novo-pilar"' in r.text
     assert '+ Novo pilar' in r.text
 
@@ -567,7 +571,13 @@ def test_panel_has_project_selector_and_create_project_modal(client_env):
     assert 'id="btn-novo-canal"' in r1.text
     assert 'id="dlg-canal"' in r1.text
     assert 'id="form-canal"' in r1.text
-    assert 'id="btn-salvar-canal"' in r1.text
+    # UX/bug: os ids do diálogo do shell são namespaced (`dlg-`) — `canal-nome`/`canal-nicho`/
+    # `canal-idioma`/`btn-salvar-canal` colidiam com os campos do cartão de perfil em `/studio/canais`
+    # e `document.getElementById` devolvia o campo da página (criava canal com o nome do perfil).
+    assert 'id="dlg-btn-salvar-canal"' in r1.text
+    assert 'id="dlg-canal-nome"' in r1.text
+    assert 'id="dlg-canal-nicho"' in r1.text
+    assert 'id="dlg-canal-idioma"' in r1.text
     assert 'id="canal-feedback"' in r1.text
     assert 'value="pt-BR"' in r1.text
     assert 'value="en-US"' in r1.text
@@ -683,8 +693,8 @@ def test_panel_trends_lists_every_trend_with_an_honest_count(client_env):
     assert r.status_code == 200
     assert 'class="cartao-tendencia"' in r.text
     assert r.text.count('class="cartao-tendencia"') == 8
-    assert "Todas (8)" in r.text
-    assert "Em Alta Brasil (8)" in r.text
+    assert ">Todas</a>" in r.text
+    assert "Em Alta Brasil (" not in r.text
     for i in range(8):
         assert f"Trend Topic {i}" in r.text
 
@@ -695,7 +705,7 @@ def test_panel_trends_lists_every_trend_with_an_honest_count(client_env):
     assert r_empty.status_code == 200
     assert 'class="cartao-tendencia"' not in r_empty.text
     assert "Ainda não há tendências coletadas" in r_empty.text
-    assert "Todas (0)" in r_empty.text
+    assert ">Todas</a>" in r_empty.text
 
     # Script restrito à CSP (sem innerHTML).
     assert "innerHTML" not in r.text
@@ -734,8 +744,9 @@ def test_panel_shell_sidebar_marks_one_active_item_and_has_no_unavailable_ones(c
     items = _nav_items(r.text)
     labels = [" ".join(re.sub(r"<[^>]+>", " ", item).split()) for item in items]
 
-    # W1.5: menu do protótipo (rótulos novos + Biblioteca); Configurações fica no rodapé.
-    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
+    # W1.5 + NAV: menu do protótipo (rótulos novos + Biblioteca + Configurações, sete itens).
+    for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho",
+                     "Biblioteca", "Configurações"):
         assert any(expected in label for label in labels), expected
 
     active = [item for item in items if 'aria-current="page"' in item]
@@ -818,9 +829,8 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
     assert r_trend.status_code == 200
     assert ('<a class="chip-filtro" href="/studio/panel/tendencias?filtro=todas&amp;project_id='
             in r_trend.text)
-    assert 'data-filtro="todas" aria-current="true">Todas (8)</a>' in r_trend.text
-    assert 'data-filtro="regiao:BR"' in r_trend.text
-    assert "Em Alta Brasil (8)" in r_trend.text
+    assert 'data-filtro="todas" aria-current="true">Todas</a>' in r_trend.text
+    assert 'data-filtro="regiao:BR"' not in r_trend.text
     # Com 8 tendências (menos que um lote), todas são publicadas e não há "carregar mais".
     assert r_trend.text.count('class="cartao-tendencia"') == 8
     assert 'id="btn-carregar-mais"' not in r_trend.text

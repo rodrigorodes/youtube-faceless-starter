@@ -56,6 +56,26 @@ def studio_test_credentials():
 
 
 @pytest.fixture()
+def registered_providers():
+    """Registra providers de teste no `_REGISTRY` global e **desfaz** ao final.
+
+    Achado 11: `register()` em nível de módulo (`tests/test_editorial_api.py`,
+    `tests/test_render_api.py`) rodava na coleta e **vazava** para `test_port_contracts`, que
+    compara o catálogo do produto com o registro — duas falhas falsas na suíte completa, com o
+    arquivo isolado passando. O `_REGISTRY` é global; registrar dentro do teste, com restauração,
+    mantém o catálogo do produto visível para os outros testes.
+    """
+    from app.studio.application.config import _REGISTRY, register
+
+    snapshot = dict(_REGISTRY)
+    try:
+        yield register
+    finally:
+        _REGISTRY.clear()
+        _REGISTRY.update(snapshot)
+
+
+@pytest.fixture()
 def dsn(monkeypatch):
     value = os.environ.get("STUDIO_TEST_DSN")
     if not value:
