@@ -36,6 +36,7 @@ from ...domain.production_run import (
     ProductionStage,
     ProgressEventType,
     RunCreation,
+    RunOperation,
     RunState,
     RunTransition,
     RunTransitionResult,
@@ -60,6 +61,10 @@ _CONFIG_COLS = "config_status, config_snapshot, config_hash, config_provenance, 
 _STAGE_COLS = ("run_id, stage_id, state, attempt, lease_owner, lease_expires_at, fencing_token, "
                "checkpoint, checkpoint_version, error, created_at, updated_at")
 _OUTBOX_COLS = "id, run_id, stage_id, event_type, event_version, payload, created_at, acked_at"
+# F03.T04: o payload da decisão é uma whitelist FECHADA — a asserção abaixo impede que um campo do
+# snapshot (ou credencial) entre na trilha por acidente no futuro.
+_OPERATION_PAYLOAD_KEYS = ("run_id", "operation", "label", "reason", "config_status", "config_hash",
+                           "source_run_id", "uses_frozen_config")
 
 _ACTIVE_RUN_STATES = (RunState.CREATED, RunState.RUNNING)
 _RESUMABLE_RUN_STATES = (RunState.WAITING_HUMAN, RunState.PAUSED, RunState.FAILED)
@@ -574,6 +579,47 @@ class PostgresProductionRunRepository:
             self._emit(conn, run_id, ProgressEventType.RUN_STATE_CHANGED,
                        {"from": state.value, "to": RunState.CANCELLED.value, "reason": reason})
             return RunTransition(RunTransitionResult.APPLIED, _run(updated))
+
+    # -- decisão de lifecycle (F03.T04) ------------------------------------
+
+    def record_operation(self, run_id: str, operation: RunOperation, *, reason: str,
+                         config: StoredRunConfig | None = None,
+                         source_run_id: str | None = None) -> OutboxEvent:
+        """Decisão da operação na outbox existente: motivo + referência da config, nunca o documento.
+
+        Payload fechado (`_OPERATION_PAYLOAD_KEYS`): nenhum campo do snapshot e nenhuma credencial
+        entram na trilha. A transição de estado continua sendo escrita atomicamente pelo método
+        próprio; este evento é o registro do motivo/decisão (legado inclusive).
+        """
+        run_id = check_id(run_id)
+        if not isinstance(operation, RunOperation):
+            raise TypeError("operation must be a RunOperation")
+        reason = _text(reason, "operation reason", 2000)
+        if config is not None and not isinstance(config, StoredRunConfig):
+            raise TypeError("config must be a StoredRunConfig or None")
+        if source_run_id is not None:
+            source_run_id = check_id(source_run_id)
+        resolved = config is not None and config.status is RunConfigStatus.RESOLVED
+        payload = {
+            "run_id": run_id,
+            "operation": operation.value,
+            "label": operation.label,
+            "reason": reason,
+            "config_status": config.status.value if config is not None else None,
+            "config_hash": config.content_hash if config is not None else None,
+            "source_run_id": source_run_id,
+            "uses_frozen_config": bool(operation.keeps_the_frozen_config and resolved),
+        }
+        assert tuple(payload) == _OPERATION_PAYLOAD_KEYS  # whitelist fechada, sem credencial
+        with _translated(), _production_errors(), self._connect() as conn, conn.transaction():
+            row = _one(
+                conn,
+                "INSERT INTO studio.production_outbox(run_id, event_type, event_version, payload) "
+                f"VALUES (%s, %s, %s, %s) RETURNING {_OUTBOX_COLS}",
+                (run_id, ProgressEventType.RUN_OPERATION.value, EVENT_VERSION, Jsonb(payload)),
+            )
+        assert row is not None  # INSERT ... RETURNING sempre devolve a linha gravada
+        return _event(row)
 
     # -- outbox ------------------------------------------------------------
 

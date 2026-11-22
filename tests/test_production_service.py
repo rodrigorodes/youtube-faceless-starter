@@ -4,10 +4,19 @@ O defeito original: `POST .../resume` só trocava o estado (`coordinator.resume`
 `submit`, então o run morria em `RUNNING` logo após o primeiro gate humano. Aqui o `submit` é
 espionado — a prova é que ele é chamado com o `run_id` quando a transição é `APPLIED` e nunca
 quando é recusada.
+
+F03.T04: o serviço também fixa o **lifecycle**. Retomar/retentar leem o snapshot persistido e
+**nunca** chamam o resolvedor; regenerate é uma execução nova de ponta a ponta (chave nova,
+snapshot novo, rótulo próprio) e um run legado não finge reproduzir a configuração.
 """
+import json
 import sys
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
@@ -15,18 +24,25 @@ from app.studio.application.production import (  # noqa: E402
     Production,
     ProductionMode,
     ProductionProjection,
+    RunConfigUnavailable,
     has_live_lease,
     orphan_in_flight,
 )
+from app.studio.domain.contracts import Video, VideoFormat  # noqa: E402
+from app.studio.domain.effective_config import resolve_effective_config  # noqa: E402
 from app.studio.domain.production_run import (  # noqa: E402
+    CreateRunResult,
     ProductionRun,
     ProductionStage,
+    RunCreation,
+    RunOperation,
     RunState,
     RunTransition,
     RunTransitionResult,
     StageExecution,
     StageState,
 )
+from app.studio.domain.run_config import RunConfigStatus, StoredRunConfig  # noqa: E402
 
 RUN = "a" * 32
 VIDEO = "b" * 32
@@ -46,15 +62,32 @@ def _pending(stage):
     return StageExecution(run_id=RUN, stage_id=ProductionStage(stage), state=StageState.PENDING)
 
 
+def _stage(stage, state):
+    return StageExecution(run_id=RUN, stage_id=ProductionStage(stage), state=StageState(state))
+
+
 class _Coordinator:
     """Dublê: registra as chamadas e devolve transição/projeção combinadas."""
 
     mode = ProductionMode.INTERACTIVE
 
-    def __init__(self, *, transition, projection=None):
+    def __init__(self, *, transition=None, projection=None, start_result=None, retry_error=None):
         self._transition = transition
         self._projection = projection
+        self._start_result = start_result
+        self._retry_error = retry_error
         self.calls = []
+        self.operations = []
+
+    def start(self, video_id, idempotency_key, *, channel_id=None, stages=None,
+              effective_config_for=None, config_store=None):
+        self.calls.append(("start", video_id, idempotency_key, channel_id, tuple(stages or ())))
+        return self._start_result
+
+    def record_operation(self, run_id, operation, *, reason, config=None, source_run_id=None):
+        self.operations.append(SimpleNamespace(run_id=run_id, operation=operation, reason=reason,
+                                               config=config, source_run_id=source_run_id))
+        return SimpleNamespace(id=len(self.operations))
 
     def resume(self, run_id, *, expected_state=None):
         self.calls.append(("resume", run_id, expected_state))
@@ -62,6 +95,8 @@ class _Coordinator:
 
     def retry(self, run_id, *, expected_state=RunState.FAILED):
         self.calls.append(("retry", run_id, expected_state))
+        if self._retry_error is not None:
+            raise self._retry_error
         return self._transition
 
     def get(self, run_id):
@@ -280,3 +315,184 @@ def test_recover_in_flight_is_a_noop_without_the_reader():
         transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING))),
         worker=None, submit=lambda run_id: None)
     assert service.recover_in_flight() == ()
+
+
+# -- F03.T04: lifecycle e compatibilidade (pause/resume/retry/regenerate/new run)
+
+
+def _video(video_id=VIDEO):
+    return Video(id=video_id, project_id="c" * 32, topic="tema", format=VideoFormat.short)
+
+
+def _config(video_id=VIDEO, **options):
+    return resolve_effective_config(video=_video(video_id), **options)
+
+
+def _resolved(config=None):
+    return StoredRunConfig(RunConfigStatus.RESOLVED, config or _config())
+
+
+class _ConfigStore:
+    """Dublê da porta de leitura do snapshot: conta leituras e nunca escreve."""
+
+    def __init__(self, stored):
+        self.stored = stored
+        self.calls = 0
+
+    def run_config(self, run_id):
+        self.calls += 1
+        return self.stored
+
+
+def _lifecycle(coordinator, *, store=None, resolver=None, submit=None):
+    return Production(coordinator=coordinator, worker=None, submit=submit,
+                      effective_config_for=resolver, config_store=store)
+
+
+def _source_projection(key="req-1"):
+    run = ProductionRun(run_id=RUN, video_id=VIDEO, idempotency_key=key, state=RunState.RUNNING,
+                        channel_id="d" * 32)
+    return _projection(run, [_stage("script", "SUCCEEDED"), _stage("factcheck", "PENDING")])
+
+
+def test_resume_delegates_without_any_second_resolution_path():
+    """O serviço não re-resolve nem relê o snapshot: quem decide a política é o coordenador.
+
+    O serviço já carrega o resolvedor e a porta de leitura para o `start`; se a retomada passasse
+    por eles haveria um segundo caminho de configuração. A garantia é que nenhum dos dois é tocado.
+    """
+    def resolver(_video):  # chamar isto na retomada seria re-resolver a configuração
+        raise AssertionError("resume re-resolved the effective config")
+
+    store = _ConfigStore(_resolved())
+    coordinator = _Coordinator(transition=RunTransition(RunTransitionResult.APPLIED, _run(RunState.RUNNING)))
+    transition = _lifecycle(coordinator, store=store, resolver=resolver).resume(
+        RUN, expected_state=RunState.WAITING_HUMAN)
+
+    assert transition.result is RunTransitionResult.APPLIED
+    assert store.calls == 0  # a decisão/leitura do snapshot é do coordenador, num lugar só
+    assert coordinator.calls == [("resume", RUN, RunState.WAITING_HUMAN)]
+
+
+def test_retry_delegates_without_any_second_resolution_path():
+    def resolver(_video):
+        raise AssertionError("retry re-resolved the effective config")
+
+    store = _ConfigStore(_resolved())
+    coordinator = _Coordinator(transition=RunTransition(RunTransitionResult.APPLIED, _run(RunState.RUNNING)))
+    _lifecycle(coordinator, store=store, resolver=resolver).retry(RUN)
+    assert store.calls == 0
+    assert coordinator.calls == [("retry", RUN, RunState.FAILED)]
+
+
+def test_retry_propagates_the_legacy_refusal_with_a_clear_message():
+    """Serviço não engole a recusa: um run legado não finge reproduzir a configuração."""
+    error = RunConfigUnavailable("retry needs the frozen run config: this run is legacy")
+    coordinator = _Coordinator(transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run()),
+                               retry_error=error)
+    with pytest.raises(RunConfigUnavailable, match="legacy"):
+        _lifecycle(coordinator, store=_ConfigStore(StoredRunConfig(RunConfigStatus.LEGACY))).retry(RUN)
+    assert coordinator.calls == [("retry", RUN, RunState.FAILED)]
+    assert coordinator.operations == []
+
+
+def test_regenerate_is_an_explicit_new_run_and_never_a_disguised_resume():
+    source_key = "req-1"
+    new_run = ProductionRun(run_id="e" * 32, video_id=VIDEO, idempotency_key=f"{source_key}.regenerate",
+                            state=RunState.CREATED, channel_id="d" * 32)
+    submitted = []
+    coordinator = _Coordinator(start_result=RunCreation(CreateRunResult.CREATED, new_run),
+                               projection=_source_projection(source_key))
+    creation = _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config,
+                          submit=submitted.append).regenerate(RUN)
+
+    assert creation.result is CreateRunResult.CREATED
+    assert creation.run.run_id == new_run.run_id
+    # Execução nova: chave nova, mesmas etapas/canal da origem, nunca uma retomada.
+    assert coordinator.calls == [("start", VIDEO, f"{source_key}.regenerate", "d" * 32,
+                                  (ProductionStage.SCRIPT, ProductionStage.FACTCHECK))]
+    assert submitted == [new_run.run_id]
+    [decision] = coordinator.operations
+    assert decision.operation is RunOperation.REGENERATE
+    assert decision.run_id == new_run.run_id and decision.source_run_id == RUN
+    assert "regenerate" in decision.reason.lower() or "nova execução" in decision.reason.lower()
+
+
+def test_regenerate_replay_does_not_duplicate_the_decision():
+    new_run = ProductionRun(run_id="e" * 32, video_id=VIDEO, idempotency_key="req-1.regenerate")
+    coordinator = _Coordinator(start_result=RunCreation(CreateRunResult.EXISTING, new_run),
+                               projection=_source_projection())
+    creation = _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(RUN)
+    assert creation.result is CreateRunResult.EXISTING
+    assert coordinator.operations == []  # a decisão já foi gravada na criação real
+
+
+def test_regenerate_refuses_without_a_resolver_instead_of_creating_a_legacy_run():
+    coordinator = _Coordinator(projection=_source_projection())
+    with pytest.raises(RunConfigUnavailable, match="snapshot"):
+        _lifecycle(coordinator).regenerate(RUN)
+    assert coordinator.calls == []
+
+
+def test_regenerate_is_404_for_an_unknown_source_run():
+    from app.studio.application.production import RunNotFound
+
+    coordinator = _Coordinator(projection=None)
+    with pytest.raises(RunNotFound):
+        _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(RUN)
+
+
+def test_new_run_records_the_new_execution_decision():
+    new_run = ProductionRun(run_id="e" * 32, video_id=VIDEO, idempotency_key="req-2")
+    coordinator = _Coordinator(start_result=RunCreation(CreateRunResult.CREATED, new_run))
+    creation = _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).new_run(
+        VIDEO, "req-2", stages=[ProductionStage.SCRIPT])
+    assert creation.run.run_id == new_run.run_id
+    [decision] = coordinator.operations
+    assert decision.operation is RunOperation.NEW_RUN and decision.run_id == new_run.run_id
+
+
+def test_new_run_replay_does_not_duplicate_the_decision():
+    new_run = ProductionRun(run_id="e" * 32, video_id=VIDEO, idempotency_key="req-2")
+    coordinator = _Coordinator(start_result=RunCreation(CreateRunResult.EXISTING, new_run))
+    _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).new_run(VIDEO, "req-2")
+    assert coordinator.operations == []
+
+
+# -- projeção: referência da configuração, nunca o documento -----------------
+
+
+def test_projection_exposes_only_the_config_reference_and_no_secret():
+    projection = ProductionProjection(
+        run=_run(RunState.WAITING_HUMAN), stages=(_pending("script"),), next_stage=ProductionStage.SCRIPT,
+        next_action="resume", mode=ProductionMode.INTERACTIVE, available_stages=(ProductionStage.SCRIPT,),
+        unavailable_stages=(), config_status=RunConfigStatus.RESOLVED, config_hash="a" * 64)
+    body = json.dumps(asdict(projection), default=str).lower()
+    assert projection.config_status is RunConfigStatus.RESOLVED
+    assert projection.config_hash == "a" * 64
+    # A projeção carrega a referência (status + hash), nunca o documento nem credencial.
+    assert "config_snapshot" not in body and "provenance" not in body and "document" not in body
+    assert "api_key" not in body and "password" not in body and "secret" not in body
+    assert "authorization" not in body and "credential" not in body
+
+
+def test_projection_defaults_to_no_config_reference_when_there_is_no_store():
+    projection = _projection(_run(RunState.CREATED), [_pending("script")])
+    assert projection.config_status is None and projection.config_hash is None
+
+
+def test_regenerate_with_a_revision_is_another_new_execution_with_a_new_key():
+    new_run = ProductionRun(run_id="e" * 32, video_id=VIDEO, idempotency_key="req-1.regenerate.2")
+    coordinator = _Coordinator(start_result=RunCreation(CreateRunResult.CREATED, new_run),
+                               projection=_source_projection())
+    _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(RUN, revision=2)
+    assert coordinator.calls[0][2] == "req-1.regenerate.2"
+
+
+@pytest.mark.parametrize("revision", [0, -1, True, "2"])
+def test_regenerate_revision_must_be_a_positive_integer(revision):
+    coordinator = _Coordinator(start_result=None, projection=_source_projection())
+    with pytest.raises(ValueError):
+        _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(
+            RUN, revision=revision)
+    assert coordinator.calls == []

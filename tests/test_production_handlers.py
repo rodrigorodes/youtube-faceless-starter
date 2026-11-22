@@ -115,7 +115,8 @@ def test_render_handler_runs_inline_and_requires_success():
     run = _Call()
     handler = RenderHandler(start, run, _Jobs(_job(JobStatus.SUCCEEDED)))
     outcome = handler.execute(context(ProductionStage.RENDER))
-    assert start.calls == [((VIDEO,), {})] and run.calls == [((JOB,), {})]
+    # F03.T03: o handler entrega o run_id para o worker ler a config congelada do run
+    assert start.calls == [((VIDEO,), {})] and run.calls == [((JOB, RUN), {})]
     assert outcome.checkpoint.payload["render_job"] == JOB
 
     failing = RenderHandler(start, run, _Jobs(_job(JobStatus.FAILED)))

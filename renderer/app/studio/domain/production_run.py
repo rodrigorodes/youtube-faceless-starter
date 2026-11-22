@@ -56,6 +56,47 @@ class RunState(str, Enum):
     SUCCEEDED = "SUCCEEDED"
 
 
+class RunOperation(str, Enum):
+    """Operação de lifecycle aplicada a um run (F03.T04): um rótulo explícito, nunca inferido do endpoint.
+
+    O rótulo é o que a trilha (outbox) grava e a UI lê: `regenerate` **é** uma execução nova e diz
+    isso; `resume`/`retry` continuam o mesmo run com as entradas já congeladas. As políticas abaixo
+    são puras e fechadas — nenhum chamador decide por conta própria se re-resolve a configuração.
+    """
+
+    PAUSE = "pause"
+    RESUME = "resume"
+    RETRY = "retry"
+    REGENERATE = "regenerate"
+    NEW_RUN = "new_run"
+
+    @property
+    def label(self) -> str:
+        """Rótulo humano da operação (pt-BR, o mesmo vocabulário do painel)."""
+        return {
+            RunOperation.PAUSE: "Pausar",
+            RunOperation.RESUME: "Retomar",
+            RunOperation.RETRY: "Retentar",
+            RunOperation.REGENERATE: "Gerar novamente (execução nova)",
+            RunOperation.NEW_RUN: "Nova execução",
+        }[self]
+
+    @property
+    def keeps_the_frozen_config(self) -> bool:
+        """A operação reusa o snapshot do mesmo run (nunca re-resolve nem adota revisão)."""
+        return self in (RunOperation.RESUME, RunOperation.RETRY)
+
+    @property
+    def requires_frozen_config(self) -> bool:
+        """Sem snapshot não há como reproduzir as entradas: o run legado é recusado, não fingido."""
+        return self is RunOperation.RETRY
+
+    @property
+    def starts_a_new_run(self) -> bool:
+        """A operação cria outro run (chave idempotente nova → snapshot novo)."""
+        return self in (RunOperation.REGENERATE, RunOperation.NEW_RUN)
+
+
 class StageState(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -75,6 +116,8 @@ class ProgressEventType(str, Enum):
     `production.stage.completed`: run_id, stage_id, attempt, fencing_token, checkpoint_version
     `production.stage.failed`: run_id, stage_id, attempt, fencing_token, error
     `production.stage.revoked`: run_id, stage_id, from, to ("PENDING"), attempt, fencing_token
+    `production.run.operation`: run_id, operation, label, reason, config_status, config_hash,
+    source_run_id, uses_frozen_config (decisão de lifecycle, sem documento de configuração)
 
     No `resume_run`, os eventos `stage.revoked` das etapas revogadas precedem o
     `run.state_changed`, todos na mesma transação (ordem de `stage_id`).
@@ -86,6 +129,7 @@ class ProgressEventType(str, Enum):
     STAGE_COMPLETED = "production.stage.completed"
     STAGE_FAILED = "production.stage.failed"
     STAGE_REVOKED = "production.stage.revoked"
+    RUN_OPERATION = "production.run.operation"
 
 
 class StageClaimResult(ExplicitResult):

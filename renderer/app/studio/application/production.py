@@ -19,6 +19,7 @@ sem projeção conhecida o modo guardado é conservador e pausa para humano em v
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -32,12 +33,15 @@ from ..domain.contracts import JobStatus, RenderJob, Video, VideoFormat, VideoSt
 from ..domain.effective_config import EffectiveConfig
 from ..domain.ids import check_id
 from ..domain.production_run import (
+    MAX_IDEMPOTENCY_KEY_LENGTH,
     Checkpoint,
+    CreateRunResult,
     OutboxEvent,
     ProductionRun,
     ProductionRunReferencedEntityNotFound,
     ProductionStage,
     RunCreation,
+    RunOperation,
     RunState,
     RunTransition,
     RunTransitionResult,
@@ -47,6 +51,7 @@ from ..domain.production_run import (
     StageExecution,
     StageState,
     StageTransitionResult,
+    canonical_idempotency_key,
 )
 from ..domain.qa_report import (
     QaGateError,
@@ -55,8 +60,8 @@ from ..domain.qa_report import (
     approve as approve_qa,
     blocking_evidence,
 )
-from ..domain.run_config import RunConfigConflict, StoredRunConfig
-from .editorial import Editorial
+from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
+from .editorial import Editorial, StateConflict
 from .media import Media
 from .publication_execution import PublicationResult, RunPublication
 from .ports import (
@@ -103,6 +108,41 @@ class StageExecutionFailed(CoordinatorError):
 
 class MissingApprovalProof(CoordinatorError):
     """A retomada não traz prova de aprovação humana versionada (gate F6)."""
+
+
+class RunConfigUnavailable(CoordinatorError, StateConflict):
+    """A operação exige o snapshot congelado e o run é **legado** (não há entrada reproduzível).
+
+    Política aprovada de F03.T04: o legado continua legível e aceita pause/resume/cancel, mas
+    nenhuma operação que promete reproduzir as mesmas entradas (retry, por exemplo) é simulada.
+    Herda `StateConflict` porque a API já mapeia esse conflito para 409 com a mensagem — nenhum
+    caminho novo de erro HTTP precisa nascer para isso.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Chave da execução nova (regenerate) — F03.T04
+# ---------------------------------------------------------------------------
+
+REGENERATE_SUFFIX = ".regenerate"
+
+
+def _regeneration_key(source_key: str, revision: int = 1) -> str:
+    """Chave idempotente **nova e determinística** derivada do run de origem.
+
+    `regenerate` é uma execução nova: a chave difere da origem e um duplo clique reusa a mesma
+    execução (idempotência) — nunca devolve o run de origem. `revision > 1` pede outra execução
+    (uma revisão seguinte) sem que o chamador invente chave: o sufixo numérico é canônico.
+    A forma canônica (`[a-z0-9._:-]`) admite o ponto; chaves longas caem para um digest estável.
+    """
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise ValueError("regeneration revision must be an integer >= 1")
+    suffix = REGENERATE_SUFFIX if revision == 1 else f"{REGENERATE_SUFFIX}.{revision}"
+    candidate = f"{source_key}{suffix}"
+    if len(candidate) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+        return canonical_idempotency_key(candidate)
+    digest = hashlib.sha256(f"{source_key}{suffix}".encode("utf-8")).hexdigest()[:32]
+    return canonical_idempotency_key(f"regen.{digest}")
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +508,12 @@ COORDINATOR_DAG = StageDag({
 
 @dataclass(frozen=True)
 class ProductionProjection:
-    """Visão somente-leitura de um run: run, etapas, próxima ação e capacidades."""
+    """Visão somente-leitura de um run: run, etapas, próxima ação e capacidades.
+
+    F03.T04: a configuração aparece só como **referência** (`status` + `hash`) — o documento do
+    snapshot nunca entra na projeção, então nenhum payload carrega token nem campo com credencial.
+    `None`/`None` significa "sem porta de leitura" (deployment sem snapshot), não "legado".
+    """
 
     run: ProductionRun
     stages: tuple[StageExecution, ...]
@@ -477,6 +522,8 @@ class ProductionProjection:
     mode: ProductionMode
     available_stages: tuple[ProductionStage, ...]
     unavailable_stages: tuple[tuple[ProductionStage, str], ...]
+    config_status: RunConfigStatus | None = None
+    config_hash: str | None = None
 
 
 def has_live_lease(stages: Sequence[StageExecution], now: datetime) -> bool:
@@ -631,10 +678,13 @@ class ProductionCoordinator:
             return None
         stages = tuple(self.runs.list_stages(run_id))
         next_stage = self._next_stage(stages)
+        stored = self.config_for(run_id)
         return ProductionProjection(run=run, stages=stages, next_stage=next_stage,
                                     next_action=self._next_action(run, next_stage), mode=self.mode,
                                     available_stages=self.available_stages(),
-                                    unavailable_stages=self.unavailable_stages())
+                                    unavailable_stages=self.unavailable_stages(),
+                                    config_status=stored.status if stored is not None else None,
+                                    config_hash=stored.content_hash if stored is not None else None)
 
     def events(self, run_id: str, limit: int = 100) -> list[OutboxEvent]:
         return self.runs.read_outbox(limit, run_id=run_id)
@@ -642,24 +692,93 @@ class ProductionCoordinator:
     # -- ciclo de vida -----------------------------------------------------
 
     def pause(self, run_id: str, reason: str) -> RunTransition:
-        return self.runs.pause_run(run_id, reason)
+        transition = self.runs.pause_run(run_id, reason)
+        if transition.result is RunTransitionResult.APPLIED:
+            self.record_operation(run_id, RunOperation.PAUSE, reason=reason)
+        return transition
 
-    def resume(self, run_id: str, *, expected_state: RunState | None = None) -> RunTransition:
+    def resume(self, run_id: str, *, expected_state: RunState | None = None,
+               reason: str | None = None) -> RunTransition:
+        """Retoma sem re-resolver: a decisão é registrada na outbox com o snapshot já persistido.
+
+        Reiniciar um run `FAILED` **é** retry (mesmo efeito), então a operação é derivada do estado
+        persistido — não do endpoint — e um run legado é recusado para não fingir reprodução.
+        """
         run = self.runs.get_run(run_id)
         if run is None:
             raise RunNotFound(run_id)
-        return self.runs.resume_run(run_id, expected_state or run.state)
+        operation = RunOperation.RETRY if run.state is RunState.FAILED else RunOperation.RESUME
+        stored = self._require_frozen_config(run_id) if operation.requires_frozen_config \
+            else self.config_for(run_id)
+        transition = self.runs.resume_run(run_id, expected_state or run.state)
+        if transition.result is RunTransitionResult.APPLIED:
+            self.record_operation(run_id, operation, config=stored,
+                                  reason=self._restart_reason(operation, reason, stored))
+        return transition
 
     def cancel(self, run_id: str, reason: str) -> RunTransition:
         return self.runs.cancel_run(run_id, reason)
 
-    def retry(self, run_id: str, *, expected_state: RunState = RunState.FAILED) -> RunTransition:
+    def retry(self, run_id: str, *, expected_state: RunState = RunState.FAILED,
+              reason: str | None = None) -> RunTransition:
+        """Reinicia um run `FAILED` com as **mesmas** entradas congeladas; legado é recusado."""
         run = self.runs.get_run(run_id)
         if run is None:
             raise RunNotFound(run_id)
         if run.state is not expected_state:
             return RunTransition(RunTransitionResult.NOT_ALLOWED, run)
-        return self.runs.resume_run(run_id, expected_state)
+        stored = self._require_frozen_config(run_id)
+        transition = self.runs.resume_run(run_id, expected_state)
+        if transition.result is RunTransitionResult.APPLIED:
+            self.record_operation(run_id, RunOperation.RETRY, config=stored,
+                                  reason=self._restart_reason(RunOperation.RETRY, reason, stored))
+        return transition
+
+    # -- decisão de lifecycle (F03.T04) ------------------------------------
+
+    def record_operation(self, run_id: str, operation: RunOperation, *, reason: str,
+                         config: StoredRunConfig | None = None,
+                         source_run_id: str | None = None) -> OutboxEvent | None:
+        """Grava a decisão na outbox existente; falha de evento não desfaz o estado já aplicado."""
+        if not isinstance(operation, RunOperation):
+            raise TypeError("operation must be a RunOperation")
+        stored = config if config is not None else self.config_for(run_id)
+        try:
+            return self.runs.record_operation(run_id, operation, reason=reason, config=stored,
+                                              source_run_id=source_run_id)
+        except (TypeError, ValueError):
+            raise  # erro de programação (id/razão inválidos) não pode virar trilha "silenciosa"
+        except Exception:  # a transição já foi aplicada: registrar é trilha, não pré-condição
+            logger.warning("could not record %s for production run %s", operation.value, run_id)
+            return None
+
+    def _require_frozen_config(self, run_id: str) -> StoredRunConfig | None:
+        """Recusa explícita (não silenciosa) quando a operação promete reproduzir as entradas.
+
+        Devolve o snapshot lido (uma única leitura, reusada pela decisão) para não reler nem
+        re-resolver. Sem porta de leitura (`config_store` ausente) o comportamento anterior é
+        preservado: não há como afirmar que o run é legado, então a política não inventa a recusa.
+        """
+        stored = self.config_for(run_id)
+        if stored is not None and stored.status is RunConfigStatus.LEGACY:
+            raise RunConfigUnavailable(
+                "this operation needs the frozen run config, but the run was created without a "
+                "snapshot (legacy): its inputs cannot be reproduced. Start a new run to adopt a "
+                "new revision.")
+        return stored
+
+    @staticmethod
+    def _restart_reason(operation: RunOperation, reason: str | None,
+                        stored: StoredRunConfig | None) -> str:
+        """Motivo + decisão: o run legado diz explicitamente que **não** reproduz as entradas."""
+        base = (reason or "").strip() or ("retry pelo operador" if operation is RunOperation.RETRY
+                                          else "retomada pelo operador")
+        if stored is None:
+            return f"{base}; sem snapshot legível (configuração não reproduzida)"
+        if stored.status is RunConfigStatus.LEGACY:
+            return f"{base}; run legado sem snapshot: as entradas NÃO são reproduzidas"
+        return (f"{base}; configuração congelada {str(stored.content_hash)[:12]} relida do snapshot "
+                f"(sem re-resolver)")
 
     # -- laço do worker ----------------------------------------------------
 
@@ -817,11 +936,61 @@ class Production:
 
     def start(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
               stages: Sequence[ProductionStage] | None = None) -> RunCreation:
+        return self._create(video_id, idempotency_key, channel_id=channel_id, stages=stages,
+                            operation=RunOperation.NEW_RUN)
+
+    def new_run(self, video_id: str, idempotency_key: str, *, channel_id: str | None = None,
+                stages: Sequence[ProductionStage] | None = None) -> RunCreation:
+        """Nova execução explícita (mesmo caminho do `start`): chave nova → snapshot novo.
+
+        A trilha grava a decisão `new_run` na criação real; replay da mesma chave não duplica.
+        """
+        return self._create(video_id, idempotency_key, channel_id=channel_id, stages=stages,
+                            operation=RunOperation.NEW_RUN)
+
+    def regenerate(self, run_id: str, *, revision: int = 1,
+                   reason: str | None = None) -> RunCreation:
+        """Gera de novo a partir de um run existente: **execução nova**, nunca um resume disfarçado.
+
+        Chave nova derivada do run de origem (`<origem>.regenerate[.<revisão>]`), mesmas
+        etapas/canal e a configuração efetiva **atual** resolvida antes do INSERT. O snapshot da
+        origem não muda e o novo run nasce resolvido — sem resolvedor a operação é recusada, porque
+        um run legado novo não teria entradas reproduzíveis.
+        """
+        run_id = check_id(run_id)
+        source = self.coordinator.get(run_id)
+        if source is None:
+            raise RunNotFound(run_id)
+        if self.effective_config_for is None or self.config_store is None:
+            raise RunConfigUnavailable(
+                "regenerate needs an effective config resolver: the new run would be created "
+                "without a snapshot (legacy) and its inputs could not be reproduced")
+        key = _regeneration_key(source.run.idempotency_key, revision)
+        stages = tuple(stage.stage_id for stage in source.stages) or None
+        return self._create(source.run.video_id, key, channel_id=source.run.channel_id, stages=stages,
+                            operation=RunOperation.REGENERATE, source_run_id=run_id, reason=reason)
+
+    def _create(self, video_id: str, idempotency_key: str, *, channel_id: str | None,
+                stages: Sequence[ProductionStage] | None, operation: RunOperation,
+                source_run_id: str | None = None, reason: str | None = None) -> RunCreation:
         creation = self.coordinator.start(
             video_id, idempotency_key, channel_id=channel_id, stages=stages,
             effective_config_for=self.effective_config_for, config_store=self.config_store)
         self._enqueue(creation.run.run_id)
+        if creation.result is CreateRunResult.CREATED:
+            self._record_creation(creation, operation, source_run_id=source_run_id, reason=reason)
         return creation
+
+    def _record_creation(self, creation: RunCreation, operation: RunOperation, *,
+                         source_run_id: str | None, reason: str | None) -> None:
+        base = (reason or "").strip()
+        if operation is RunOperation.REGENERATE:
+            decision = (f"{base or 'regenerate'}; execução nova a partir do run {source_run_id} com a "
+                        f"revisão atual congelada — nunca um resume")
+        else:
+            decision = base or "nova execução com chave idempotente nova; revisão atual congelada"
+        self.coordinator.record_operation(creation.run.run_id, operation, reason=decision,
+                                          source_run_id=source_run_id)
 
     def config_for(self, run_id: str) -> StoredRunConfig | None:
         """Configuração congelada do run (retomada, retry e painel leem; nunca re-resolvem)."""

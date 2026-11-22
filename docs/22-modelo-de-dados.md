@@ -1,8 +1,8 @@
 # Modelo de dados (gerado)
 
 > Gerado por `scripts/export_schema.py`. Não edite à mão.
-> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 35 migrações
-> (`0001_init` … `0040_style_patches`).
+> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 36 migrações
+> (`0001_init` … `0041_production_run_operation`).
 > DDL consolidado e executável: `docs/schema/studio.sql`.
 > As colunas, chaves e índices abaixo vêm da **introspecção do banco real** após aplicar
 > as migrações — não de leitura de texto —, para não documentar algo que o banco não tem.
@@ -1191,7 +1191,7 @@ erDiagram
 **Restrições:**
 
 - `production_outbox_ack_order_check` (check): `CHECK (((acked_at IS NULL) OR (acked_at >= created_at)))`
-- `production_outbox_event_type_check` (check): `CHECK ((event_type = ANY (ARRAY['production.run.created'::text, 'production.run.state_changed'::text, 'production.stage.claimed'::text, 'production.stage.completed'::text, 'production.stage.failed'::text, 'production.stage.revoked'::text])))`
+- `production_outbox_event_type_check` (check): `CHECK ((event_type = ANY (ARRAY['production.run.created'::text, 'production.run.state_changed'::text, 'production.stage.claimed'::text, 'production.stage.completed'::text, 'production.stage.failed'::text, 'production.stage.revoked'::text, 'production.run.operation'::text])))`
 - `production_outbox_event_version_check` (check): `CHECK ((event_version >= 1))`
 - `production_outbox_payload_check` (check): `CHECK ((jsonb_typeof(payload) = 'object'::text))`
 - `production_outbox_stage_id_check` (check): `CHECK (((stage_id IS NULL) OR (stage_id = ANY (ARRAY['research'::text, 'script'::text, 'factcheck'::text, 'storyboard'::text, 'assets'::text, 'render'::text, 'qa'::text, 'approval'::text, 'publish'::text]))))`
@@ -1206,7 +1206,7 @@ erDiagram
 - `production_outbox_pkey`: `CREATE UNIQUE INDEX production_outbox_pkey ON studio.production_outbox USING btree (id)`
 - `production_outbox_unacked_idx`: `CREATE INDEX production_outbox_unacked_idx ON studio.production_outbox USING btree (id) WHERE (acked_at IS NULL)`
 
-**Migrações que citam esta tabela:** 0018_production_runs
+**Migrações que citam esta tabela:** 0018_production_runs, 0041_production_run_operation
 
 ### `studio.production_runs`
 
@@ -1585,7 +1585,7 @@ erDiagram
 
 - `schema_migrations_pkey`: `CREATE UNIQUE INDEX schema_migrations_pkey ON studio.schema_migrations USING btree (version)`
 
-**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config
+**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config, 0041_production_run_operation
 
 ### `studio.script_approvals`
 
@@ -2147,6 +2147,7 @@ Tabelas citadas por cada migração (busca literal por `studio.<tabela>`).
 | `0038_budget_scope_attribution` | `budget_reservations`, `paid_operations`, `projects`, `usage_ledger`, `videos` |
 | `0039_production_run_config` | `production_runs`, `schema_migrations` |
 | `0040_style_patches` | `channel_profiles`, `videos` |
+| `0041_production_run_operation` | `production_outbox`, `schema_migrations` |
 
 ## Como regenerar
 

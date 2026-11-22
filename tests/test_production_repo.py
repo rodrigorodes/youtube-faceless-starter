@@ -812,7 +812,8 @@ def test_postgres_adapter_matches_the_production_run_port(production_db):
         assert isinstance(repo, PostgresProductionRunRepository)
         assert callable(getattr(repo, name)), name
         assert shape(getattr(PostgresProductionRunRepository, name)) == shape(member), name
-    assert checked == 11
+    # 12 = os 11 métodos anteriores + `record_operation` (F03.T04: decisão de lifecycle na outbox).
+    assert checked == 12
 
 def test_database_enforces_the_canonical_idempotency_key(conn):
     migrate(conn)

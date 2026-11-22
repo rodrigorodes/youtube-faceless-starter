@@ -28,7 +28,8 @@ from ..domain.publication_policy import PublicationIntentEvidence
 from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.effective_config import EffectiveConfig
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
-                                     RunCreation, RunState, RunTransition, StageClaim, StageExecution, StageTransition)
+                                     RunCreation, RunOperation, RunState, RunTransition, StageClaim, StageExecution,
+                                     StageTransition)
 from ..domain.run_config import StoredRunConfig
 from ..domain.longform import ScriptApproval, ScriptPlan
 
@@ -808,6 +809,21 @@ class ProductionRunRepository(Protocol):
 
     def ack_outbox(self, event_id: int) -> AckResult:
         """Confirma um evento; repetir não falha e não apaga histórico."""
+
+
+    def record_operation(self, run_id: str, operation: RunOperation, *, reason: str,
+                         config: StoredRunConfig | None = None,
+                         source_run_id: str | None = None) -> OutboxEvent:
+        """Grava a decisão de uma operação de lifecycle na outbox **que já existe** (F03.T04).
+
+        Não é uma segunda persistência nem muda o estado: a transição continua sendo escrita
+        atomicamente por `pause_run`/`resume_run`/`cancel_run`/`create_run`, e este evento é o
+        registro do motivo/decisão da operação (inclusive quando o run é legado e não reproduz a
+        configuração). O payload é fechado e **não** carrega o documento de configuração nem
+        credencial: só `operation`, `label`, `reason`, `config_status`, `config_hash`,
+        `source_run_id` e `uses_frozen_config`. Run inexistente é `ProductionRunReferencedEntityNotFound`
+        (nunca um evento órfão).
+        """
 
 
 class ProductionRunConfigStore(Protocol):

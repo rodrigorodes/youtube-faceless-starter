@@ -22,11 +22,25 @@ from app.studio.composition import Settings, Studio  # noqa: E402
 from app.studio.domain.production_run import ProductionStage  # noqa: E402
 
 
+class _NoopExecutor:
+    """Executor determinístico do fluxo: as ações HTTP não disparam efeito/rede em background.
+
+    Sem isto, um `start`/`regenerate` pelo serviço enfileirava o worker real num pool e a próxima
+    fixture derrubava o schema enquanto a thread ainda rodava (falhas cruzadas entre testes).
+    """
+
+    def submit(self, fn, *args, **kwargs):
+        return None
+
+    def shutdown(self, wait=False, cancel_futures=False):
+        return None
+
+
 @pytest.fixture()
 def studio(conn, dsn, tmp_path):
     from app.studio.adapters.postgres.db import migrate
     migrate(conn)
-    return Studio(Settings(database_url=dsn, storage_root=tmp_path))
+    return Studio(Settings(database_url=dsn, storage_root=tmp_path), executor=_NoopExecutor())
 
 
 @pytest.fixture()
@@ -122,3 +136,72 @@ def test_composition_start_persists_an_immutable_effective_config(studio, video_
         effective_config_for=production.effective_config_for, config_store=production.config_store)
     assert replay.result.value == "EXISTING"
     assert production.config_for(replay.run.run_id).config.content_hash == stored.config.content_hash
+
+
+# -- F03.T04: lifecycle no fluxo real (composição) -----------------------------
+
+
+def _production(studio):
+    uc = studio.use_cases()
+    assert uc is not None and uc.production is not None
+    return uc.production
+
+
+def test_regenerate_through_the_composition_is_a_new_run_with_a_new_snapshot(studio, client, video_id):
+    """A execução nova nasce resolvida e a origem fica intacta; a trilha diz que é regenerate."""
+    from app.studio.domain.production_run import CreateRunResult
+    from app.studio.domain.run_config import RunConfigStatus
+
+    production = _production(studio)
+    source = production.coordinator.start(
+        video_id, "flow-regen",
+        effective_config_for=production.effective_config_for, config_store=production.config_store)
+    old = production.config_for(source.run.run_id)
+    assert old is not None and old.status is RunConfigStatus.RESOLVED
+
+    creation = production.regenerate(source.run.run_id)
+    assert creation.result is CreateRunResult.CREATED
+    assert creation.run.run_id != source.run.run_id
+    assert creation.run.idempotency_key == "flow-regen.regenerate"
+
+    new = production.config_for(creation.run.run_id)
+    assert new is not None and new.status is RunConfigStatus.RESOLVED
+    assert production.config_for(source.run.run_id).config.content_hash == old.config.content_hash
+
+    events = production.coordinator.events(creation.run.run_id)
+    decisions = [event for event in events if event.event_type.value == "production.run.operation"]
+    assert [event.payload["operation"] for event in decisions] == ["regenerate"]
+    assert decisions[0].payload["source_run_id"] == source.run.run_id
+    assert decisions[0].payload["config_hash"] == new.config.content_hash
+
+    # A execução nova é legível pelo painel como qualquer outra.
+    response = client.get(f"/studio/videos/{video_id}/production-runs/{creation.run.run_id}")
+    assert response.status_code == 200 and response.json()["state"] == "CREATED"
+
+
+def test_legacy_run_can_be_paused_and_resumed_but_retry_is_refused(studio, client, video_id, dsn):
+    """Legado: pause/resume/cancel seguem; retry (que promete as mesmas entradas) recusa claro."""
+    from conftest import verified_test_connect
+
+    production = _production(studio)
+    legacy = production.coordinator.start(video_id, "flow-legacy")  # sem resolvedor → legado explícito
+    run_id = legacy.run.run_id
+
+    paused = client.post(f"/studio/videos/{video_id}/production-runs/{run_id}/pause", json={"reason": "revisão"})
+    assert paused.status_code == 200, paused.text
+    resumed = client.post(f"/studio/videos/{video_id}/production-runs/{run_id}/resume")
+    assert resumed.status_code == 200, resumed.text
+
+    # Nenhum efeito executou: força FAILED como faria uma etapa quebrada (mesma conexão verificada).
+    connection = verified_test_connect(dsn, os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"])
+    try:
+        connection.execute("UPDATE studio.production_runs SET state = 'FAILED', reason = 'x' "
+                           "WHERE run_id = %s", (run_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+    response = client.post(f"/studio/videos/{video_id}/production-runs/{run_id}/retry")
+    assert response.status_code == 409
+    assert "legacy" in response.json()["detail"] and "new run" in response.json()["detail"]
+    assert client.get(f"/studio/videos/{video_id}/production-runs/{run_id}").json()["state"] == "FAILED"

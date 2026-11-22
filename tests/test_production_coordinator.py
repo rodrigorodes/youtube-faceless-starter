@@ -9,6 +9,8 @@ import pytest
 
 from app.studio.adapters.postgres.db import migrate
 from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+from types import SimpleNamespace
+
 from app.studio.application.production import (
     COORDINATOR_DAG,
     BudgetProjection,
@@ -16,6 +18,7 @@ from app.studio.application.production import (
     ProductionCoordinator,
     ProductionMode,
     ProductionWorker,
+    RunConfigUnavailable,
     StageCapabilityUnavailable,
     StageExecutionFailed,
     StageOutcome,
@@ -27,7 +30,10 @@ from app.studio.domain.production_run import (
     CreateRunResult,
     ProductionRun,
     ProductionStage,
+    ProgressEventType,
+    RunOperation,
     RunState,
+    RunTransition,
     RunTransitionResult,
     StageClaim,
     StageClaimResult,
@@ -37,6 +43,7 @@ from app.studio.domain.production_run import (
     StageTransition,
     StageTransitionResult,
 )
+from app.studio.domain.run_config import RunConfigStatus, StoredRunConfig
 from conftest import verified_test_connect
 
 PROJECT, VIDEO, CHANNEL = "a" * 32, "b" * 32, "d" * 32
@@ -577,3 +584,287 @@ def test_the_service_forwards_the_resolver_and_exposes_the_stored_config(db):
     assert stored.status is RunConfigStatus.RESOLVED
     assert stored.config.content_hash == frozen.content_hash
     assert calls == [VIDEO]
+
+
+# -- F03.T04: lifecycle — resume/retry congelados, regenerate e legado --------
+
+
+class _LifecycleRuns:
+    """Dublê mínimo da porta de escrita/leitura do run: conta leituras e captura a decisão."""
+
+    def __init__(self, run, *, stored, transition=None, record_error=None):
+        self.run = run
+        self.stored = stored
+        self.transition = transition
+        self.record_error = record_error
+        self.config_reads = 0
+        self.resume_calls = []
+        self.operations = []
+
+    def get_run(self, run_id):
+        return self.run if run_id == self.run.run_id else None
+
+    def list_stages(self, run_id):
+        return ()
+
+    def resume_run(self, run_id, expected_state):
+        self.resume_calls.append((run_id, expected_state))
+        return self.transition or RunTransition(RunTransitionResult.APPLIED, self.run)
+
+    def run_config(self, run_id):
+        self.config_reads += 1
+        return self.stored
+
+    def record_operation(self, run_id, operation, *, reason, config=None, source_run_id=None):
+        if self.record_error is not None:
+            raise self.record_error
+        self.operations.append(SimpleNamespace(run_id=run_id, operation=operation, reason=reason,
+                                               config=config, source_run_id=source_run_id))
+        return SimpleNamespace(id=len(self.operations))
+
+
+def _lifecycle_run(state=RunState.WAITING_HUMAN):
+    return ProductionRun(run_id="1" * 32, video_id=VIDEO, idempotency_key="req-1", state=state)
+
+
+def _lifecycle_coordinator(runs):
+    stage = ProductionStage.SCRIPT
+    return ProductionCoordinator(runs, handlers={stage: _StubHandler(stage)},
+                                 pipeline=StageDag({stage: ()}), config_store=runs)
+
+
+def _stored_resolved():
+    from app.studio.domain.run_config import StoredRunConfig
+
+    return StoredRunConfig(RunConfigStatus.RESOLVED, _config())
+
+
+def _stored_legacy():
+    from app.studio.domain.run_config import StoredRunConfig
+
+    return StoredRunConfig(RunConfigStatus.LEGACY)
+
+
+def test_resume_reads_the_snapshot_once_and_records_the_decision():
+    """Retomar não re-resolve: uma única leitura do snapshot, reusada na decisão da trilha."""
+    stored = _stored_resolved()
+    runs = _LifecycleRuns(_lifecycle_run(), stored=stored)
+    transition = _lifecycle_coordinator(runs).resume(runs.run.run_id, expected_state=RunState.WAITING_HUMAN)
+
+    assert transition.result is RunTransitionResult.APPLIED
+    assert runs.config_reads == 1
+    assert runs.resume_calls == [(runs.run.run_id, RunState.WAITING_HUMAN)]
+    [decision] = runs.operations
+    assert decision.operation is RunOperation.RESUME and decision.config is stored
+    assert str(stored.content_hash)[:12] in decision.reason
+    assert "sem re-resolver" in decision.reason
+
+
+def test_retry_refuses_a_legacy_run_before_writing_any_state():
+    runs = _LifecycleRuns(_lifecycle_run(RunState.FAILED), stored=_stored_legacy())
+    with pytest.raises(RunConfigUnavailable, match="legacy") as caught:
+        _lifecycle_coordinator(runs).retry(runs.run.run_id)
+
+    assert "cannot be reproduced" in str(caught.value) and "new run" in str(caught.value)
+    assert runs.resume_calls == [] and runs.operations == []
+
+
+def test_resume_of_a_failed_run_is_a_retry_and_also_requires_the_snapshot():
+    """O rótulo/efeito vem do estado persistido: reiniciar FAILED é retry, não um resume barato."""
+    runs = _LifecycleRuns(_lifecycle_run(RunState.FAILED), stored=_stored_legacy())
+    with pytest.raises(RunConfigUnavailable):
+        _lifecycle_coordinator(runs).resume(runs.run.run_id)
+    assert runs.resume_calls == []
+
+
+def test_resume_of_a_legacy_run_is_allowed_and_marked_as_not_reproduced():
+    runs = _LifecycleRuns(_lifecycle_run(RunState.PAUSED), stored=_stored_legacy())
+    transition = _lifecycle_coordinator(runs).resume(runs.run.run_id)
+
+    assert transition.result is RunTransitionResult.APPLIED
+    [decision] = runs.operations
+    assert decision.operation is RunOperation.RESUME
+    assert decision.config is not None and decision.config.status is RunConfigStatus.LEGACY
+    assert "NÃO são reproduzidas" in decision.reason
+
+
+def test_a_refused_transition_never_records_a_decision():
+    from app.studio.domain.production_run import RunTransition
+
+    runs = _LifecycleRuns(_lifecycle_run(), stored=_stored_resolved(),
+                          transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _lifecycle_run()))
+    assert _lifecycle_coordinator(runs).resume(runs.run.run_id).result is RunTransitionResult.NOT_ALLOWED
+    assert runs.operations == []
+
+
+def test_a_failing_decision_write_never_undoes_an_applied_transition():
+    """A transição já foi aplicada: registrar é trilha, não pré-condição do efeito."""
+    runs = _LifecycleRuns(_lifecycle_run(), stored=_stored_resolved(), record_error=RuntimeError("outbox caiu"))
+    transition = _lifecycle_coordinator(runs).resume(runs.run.run_id)
+    assert transition.result is RunTransitionResult.APPLIED
+    assert runs.operations == []
+
+
+# -- com banco real: regenerate cria execução nova e o legado continua legível --
+
+
+def _frozen_lifecycle(db, *, profile=None):
+    """Serviço com resolvedor mutável: a revisão atual pode mudar entre start e regenerate."""
+    from app.studio.domain.effective_config import resolve_effective_config
+
+    repo, conn = db
+    current = [resolve_effective_config(video=_video(), provider_profile=profile)]
+    calls = []
+
+    def resolver(video):
+        calls.append(video.id)
+        return current[0]
+
+    coordinator = ProductionCoordinator(repo, handlers=handlers(), videos=_Videos({VIDEO: _video()}),
+                                        config_store=repo)
+    service = Production(coordinator=coordinator, worker=ProductionWorker(coordinator, owner="w"),
+                         effective_config_for=resolver, config_store=repo)
+    return service, repo, conn, current, calls
+
+
+def test_regenerate_adopts_a_new_revision_and_leaves_the_old_snapshot_untouched(db):
+    service, repo, conn, current, calls = _frozen_lifecycle(db)
+    source = service.start(VIDEO, "regen-source")
+    old_hash = repo.run_config(source.run.run_id).content_hash
+    assert calls == [VIDEO]
+
+    # A revisão muda (novo perfil econômico) e o regenerate é uma EXECUÇÃO NOVA com a revisão atual.
+    current[0] = _config(provider_profile="PREMIUM")
+    creation = service.regenerate(source.run.run_id)
+
+    assert creation.result is CreateRunResult.CREATED
+    assert creation.run.run_id != source.run.run_id
+    assert creation.run.idempotency_key == "regen-source.regenerate"
+    new_hash = repo.run_config(creation.run.run_id).content_hash
+    assert new_hash != old_hash
+    assert repo.run_config(source.run.run_id).content_hash == old_hash  # a origem não muda
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 2
+    assert [stage.stage_id for stage in repo.list_stages(creation.run.run_id)] == list(AVAILABLE)
+
+    decisions = [event for event in repo.read_outbox(limit=1000, run_id=creation.run.run_id)
+                 if event.event_type is ProgressEventType.RUN_OPERATION]
+    assert [event.payload["operation"] for event in decisions] == ["regenerate"]
+    assert decisions[0].payload["source_run_id"] == source.run.run_id
+    assert decisions[0].payload["config_hash"] == new_hash
+    assert decisions[0].payload["uses_frozen_config"] is False  # execução nova, não retomada
+
+    replay = service.regenerate(source.run.run_id)
+    assert replay.result is CreateRunResult.EXISTING and replay.run.run_id == creation.run.run_id
+
+
+def test_regenerate_requires_a_resolver_and_never_creates_a_legacy_run(db):
+    repo, conn = db
+    coordinator = ProductionCoordinator(repo, handlers=handlers())
+    legacy = coordinator.start(VIDEO, "regen-legacy-source")
+    service = Production(coordinator=coordinator, worker=ProductionWorker(coordinator, owner="w"))
+
+    with pytest.raises(RunConfigUnavailable, match="snapshot"):
+        service.regenerate(legacy.run.run_id)
+    assert conn.execute("SELECT count(*) FROM studio.production_runs").fetchone()[0] == 1
+
+
+def test_legacy_run_stays_readable_for_pause_resume_and_cancel_but_never_fakes_config(db):
+    from app.studio.domain.run_config import RunConfigStatus
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    legacy = coordinator.start(VIDEO, "legacy-lifecycle")  # sem resolvedor: legado explícito
+    run_id = legacy.run.run_id
+    assert repo.run_config(run_id).status is RunConfigStatus.LEGACY
+
+    # pause/resume/cancel continuam disponíveis e o legado não é re-resolvido em nenhum deles.
+    assert coordinator.pause(run_id, "operador").result is RunTransitionResult.APPLIED
+    assert coordinator.resume(run_id).result is RunTransitionResult.APPLIED
+    assert coordinator.cancel(run_id, "desistiu").result is RunTransitionResult.APPLIED
+    assert calls == []  # o resolvedor nunca rodou para este run
+    assert repo.run_config(run_id).status is RunConfigStatus.LEGACY
+
+    decisions = [event.payload for event in repo.read_outbox(limit=1000, run_id=run_id)
+                 if event.event_type is ProgressEventType.RUN_OPERATION]
+    assert [item["operation"] for item in decisions] == ["pause", "resume"]
+    assert [item["config_status"] for item in decisions] == ["legacy", "legacy"]
+    assert all(item["config_hash"] is None for item in decisions)
+    assert all(item["uses_frozen_config"] is False for item in decisions)
+
+
+def test_retry_on_a_legacy_run_is_refused_with_a_clear_message_and_no_write(db):
+    from app.studio.domain.run_config import RunConfigStatus
+
+    coordinator, repo, resolver, calls, frozen = _resolving_coordinator(db)
+    run_id = coordinator.start(VIDEO, "legacy-retry").run.run_id
+    _, conn = db
+    conn.execute("UPDATE studio.production_runs SET state = 'FAILED', reason = 'x' WHERE run_id = %s",
+                 (run_id,))
+    conn.commit()
+    events_before = len(repo.read_outbox(limit=1000, run_id=run_id))
+
+    with pytest.raises(RunConfigUnavailable, match="legacy"):
+        coordinator.retry(run_id)
+
+    assert conn.execute("SELECT state FROM studio.production_runs WHERE run_id = %s",
+                        (run_id,)).fetchone()[0] == "FAILED"
+    assert repo.run_config(run_id).status is RunConfigStatus.LEGACY
+    assert len(repo.read_outbox(limit=1000, run_id=run_id)) == events_before
+    assert calls == []  # recusa não custa resolução
+
+
+def test_lifecycle_decision_payload_is_a_closed_whitelist_without_credentials(db):
+    """A outbox carrega motivo e referência da config — nunca o documento nem credencial."""
+    service, repo, conn, current, calls = _frozen_lifecycle(db)
+    run_id = service.start(VIDEO, "decision-payload").run.run_id
+    ProductionWorker(service.coordinator, owner="w").work(run_id)
+    service.resume(run_id)
+    conn.execute("UPDATE studio.production_runs SET state = 'FAILED', reason = 'x' WHERE run_id = %s",
+                 (run_id,))
+    conn.commit()
+    service.retry(run_id)
+
+    decisions = [event for event in repo.read_outbox(limit=1000, run_id=run_id)
+                 if event.event_type is ProgressEventType.RUN_OPERATION]
+    assert [event.payload["operation"] for event in decisions] == ["new_run", "resume", "retry"]
+    allowed = {"run_id", "operation", "label", "reason", "config_status", "config_hash",
+               "source_run_id", "uses_frozen_config"}
+    for event in decisions:
+        assert set(event.payload) == allowed
+        assert event.payload["config_status"] == "resolved"
+        assert event.payload["config_hash"] == repo.run_config(run_id).content_hash
+        dumped = repr(event.payload).lower()
+        for forbidden in ("config_snapshot", "provenance", "api_key", "password", "secret",
+                          "authorization", "credential"):
+            assert forbidden not in dumped
+
+
+def test_projection_exposes_the_config_reference_but_never_the_document(db):
+    service, repo, conn, current, calls = _frozen_lifecycle(db)
+    run_id = service.start(VIDEO, "projection-config").run.run_id
+    projection = service.coordinator.get(run_id)
+
+    assert projection.config_status is RunConfigStatus.RESOLVED
+    assert projection.config_hash == repo.run_config(run_id).content_hash
+    dumped = repr(projection).lower()
+    assert "config_snapshot" not in dumped and "provenance" not in dumped
+    assert "api_key" not in dumped and "password" not in dumped and "secret" not in dumped
+
+
+def test_a_new_run_with_a_new_key_adopts_the_current_revision_and_the_old_one_does_not_move(db):
+    """Nova execução = chave nova → snapshot novo; a execução anterior continua com o dela."""
+    service, repo, conn, current, calls = _frozen_lifecycle(db)
+    first = service.new_run(VIDEO, "revision-1")
+    first_hash = repo.run_config(first.run.run_id).content_hash
+
+    current[0] = _config(provider_profile="PREMIUM")
+    second = service.new_run(VIDEO, "revision-2")
+
+    assert second.result is CreateRunResult.CREATED and second.run.run_id != first.run.run_id
+    second_hash = repo.run_config(second.run.run_id).content_hash
+    assert second_hash != first_hash
+    assert repo.run_config(first.run.run_id).content_hash == first_hash
+    assert calls == [VIDEO, VIDEO]  # uma resolução por execução nova, nenhuma para a antiga
+
+    decisions = [event.payload for event in repo.read_outbox(limit=1000, run_id=second.run.run_id)
+                 if event.event_type is ProgressEventType.RUN_OPERATION]
+    assert [(item["operation"], item["config_hash"]) for item in decisions] == [("new_run", second_hash)]

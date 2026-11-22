@@ -67,11 +67,13 @@ class _Coordinator:
 
     mode = ProductionMode.INTERACTIVE
 
-    def __init__(self, *, projection=None, start_result=None, start_error=None, transition=None, events=()):
+    def __init__(self, *, projection=None, start_result=None, start_error=None, transition=None,
+                 retry_error=None, events=()):
         self._projection = projection
         self._start_result = start_result
         self._start_error = start_error
         self._transition = transition
+        self._retry_error = retry_error
         self._events = list(events)
         self.started = []
 
@@ -97,6 +99,8 @@ class _Coordinator:
         return self._transition
 
     def retry(self, run_id, *, expected_state=RunState.FAILED):
+        if self._retry_error is not None:
+            raise self._retry_error
         return self._transition
 
 
@@ -216,3 +220,38 @@ def test_retry_is_only_for_failed_runs():
 def test_actions_are_404_for_an_unknown_run():
     coordinator = _Coordinator(projection=None)
     assert client(coordinator).post(f"/studio/videos/{VIDEO}/production-runs/{RUN}/pause").status_code == 404
+
+
+# -- F03.T04: lifecycle — o legado recusa com mensagem clara e a trilha é pública --
+
+
+def test_retry_on_a_legacy_run_is_409_with_a_clear_message():
+    """Run legado não finge reproduzir a configuração: a recusa chega com o motivo, não como 500."""
+    from app.studio.application.production import RunConfigUnavailable
+
+    error = RunConfigUnavailable(
+        "this operation needs the frozen run config, but the run was created without a snapshot "
+        "(legacy): its inputs cannot be reproduced. Start a new run to adopt a new revision.")
+    coordinator = _Coordinator(projection=_projection(), transition=None, retry_error=error)
+    response = client(coordinator).post(f"/studio/videos/{VIDEO}/production-runs/{RUN}/retry")
+    assert response.status_code == 409
+    assert "legacy" in response.json()["detail"] and "new run" in response.json()["detail"]
+    assert "Traceback" not in response.text
+
+
+def test_get_exposes_the_lifecycle_decision_event_without_secrets():
+    event = OutboxEvent(id=9, run_id=RUN, event_type=ProgressEventType.RUN_OPERATION,
+                        payload={"run_id": RUN, "operation": "regenerate", "label": "Gerar novamente (execução nova)",
+                                 "reason": "regenerate; execução nova", "config_status": "resolved",
+                                 "config_hash": "a" * 64, "source_run_id": "c" * 32,
+                                 "uses_frozen_config": False},
+                        created_at=datetime.now(timezone.utc))
+    coordinator = _Coordinator(projection=_projection(state=RunState.CREATED), events=[event])
+    body = client(coordinator).get(f"/studio/videos/{VIDEO}/production-runs/{RUN}").json()
+
+    assert body["events"][0]["event_type"] == "production.run.operation"
+    payload = body["events"][0]["payload"]
+    assert payload["operation"] == "regenerate" and payload["source_run_id"] == "c" * 32
+    dumped = str(body).lower().replace("fencing_token", "")
+    for forbidden in ("api_key", "password", "secret", "config_snapshot", "authorization"):
+        assert forbidden not in dumped
