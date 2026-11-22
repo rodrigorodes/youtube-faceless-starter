@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faceless Studio · Mockup v4 (Rápido + Diretor)</title>
+<style>
+:root{--bg:#0c0d10;--panel:#15171c;--panel2:#111216;--panel3:#1c1e24;--line:#2c2e37;--line2:#3b3353;--text:#f3f3f7;--muted:#a3a6b4;--accent:#8f6ef7;--accent2:#b9a3ff;--accentbg:#221d33;--ok:#7fd0a8;--okbg:#1d6b48;--warn:#ecc27a;--bad:#f08a8a;--radius:12px}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,h4,p{margin:0}
+a{color:var(--accent2)}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.side{background:var(--panel2);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+.logo{display:flex;align-items:center;gap:10px;padding:4px 10px 16px;font-weight:780;font-size:16px}
+.logo i{font-style:normal;color:var(--accent2);font-size:20px}
+.side nav{display:flex;flex-direction:column;gap:2px}
+.side nav button{all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:9px;color:var(--muted);font-weight:560}
+.side nav button:hover{background:var(--panel3);color:var(--text)}
+.side nav button[aria-current=page]{background:var(--accentbg);color:var(--accent2);box-shadow:inset 0 0 0 1px var(--line2)}
+.side nav button:focus-visible,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.side .sp{flex:1}
+.budget{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px;color:var(--muted)}
+.bar{height:6px;background:var(--panel3);border-radius:4px;overflow:hidden;margin-top:6px}
+.bar>b{display:block;height:100%;background:var(--accent);border-radius:4px}
+.main{min-width:0;display:flex;flex-direction:column}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 28px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(12,13,16,.92);backdrop-filter:blur(8px);z-index:20}
+.top .l,.top .r{display:flex;align-items:center;gap:10px}
+.content{padding:26px 28px 120px;max-width:1240px;width:100%;margin:0 auto}
+.eyebrow{font-size:11px;font-weight:750;letter-spacing:.8px;text-transform:uppercase;color:var(--accent2)}
+h1{font-size:26px;font-weight:780;letter-spacing:-.3px}
+h2{font-size:19px;font-weight:720}
+h3{font-size:15px;font-weight:700}
+.sub{color:var(--muted);font-size:13px}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.hero{background:linear-gradient(120deg,#1e1b2d,#16161e 68%);border:1px solid var(--line);border-radius:16px;padding:26px;margin-bottom:24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.card.flat{background:var(--panel2)}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.two{display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start}
+.btn{cursor:pointer;background:var(--panel3);border:1px solid var(--line);color:var(--text);padding:8px 14px;border-radius:9px;font-weight:600;font-size:13px;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#14101f;font-weight:760;box-shadow:0 4px 16px rgba(143,110,247,.28)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ok{background:var(--okbg);border-color:var(--okbg);color:#fff;font-weight:740}
+.btn.ghost{background:transparent}
+.btn.small{padding:4px 10px;font-size:12px;border-radius:7px}
+.btn.long{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed;filter:none}
+.pill{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;background:var(--panel3);border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:12px;color:var(--text)}
+.pill.accent{background:var(--accentbg);border-color:var(--accent);color:var(--accent2);font-weight:650}
+.pill.ok{background:rgba(127,208,168,.13);border-color:rgba(127,208,168,.35);color:var(--ok)}
+.pill.warn{background:rgba(236,194,122,.12);border-color:rgba(236,194,122,.35);color:var(--warn)}
+.pill.bad{background:rgba(240,138,138,.12);border-color:rgba(240,138,138,.35);color:var(--bad)}
+.pill.btnlike{cursor:pointer}.pill.btnlike:hover{border-color:var(--accent)}
+.note{background:rgba(236,194,122,.09);border:1px solid rgba(236,194,122,.28);color:var(--warn);border-radius:10px;padding:10px 14px;font-size:12.5px}
+.note.info{background:var(--accentbg);border-color:var(--line2);color:var(--accent2)}
+.note.okn{background:rgba(127,208,168,.1);border-color:rgba(127,208,168,.3);color:var(--ok)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:22px}
+.tab{all:unset;cursor:pointer;padding:10px 14px;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab[aria-current=page]{color:var(--accent2);border-bottom-color:var(--accent)}
+.tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:6px;background:var(--warn)}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field>label,.lbl{font-size:12px;color:var(--muted);font-weight:600}
+input[type=text],input[type=url],input[type=datetime-local],select,textarea{background:var(--panel3);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;line-height:1.55}
+input[type=range]{accent-color:var(--accent);width:100%}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent)}
+.seg{display:inline-flex;background:var(--panel3);border:1px solid var(--line);border-radius:22px;padding:2px}
+.seg button{all:unset;cursor:pointer;padding:5px 12px;border-radius:18px;font-size:12.5px;color:var(--muted);font-weight:600}
+.seg button[aria-pressed=true]{background:var(--accentbg);color:var(--accent2);box-shadow:inset 0 0 0 1px var(--accent)}
+.modecard{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px;text-align:left;display:block;width:100%}
+.modecard[aria-pressed=true]{border:2px solid var(--accent);background:var(--accentbg);padding:17px}
+.modecard h3{margin:6px 0 4px}
+.thumb{border-radius:9px;display:grid;place-items:center;position:relative;overflow:hidden;border:1px solid var(--line)}
+.thumb .tag{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.66);padding:1px 7px;border-radius:5px;font-size:10px;font-weight:650}
+.thumb .time{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.66);color:var(--accent2);padding:1px 7px;border-radius:5px;font-size:10px}
+.scene{display:grid;grid-template-columns:230px 1fr 210px;gap:16px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:16px;align-items:start}
+.scene.active{border-color:var(--line2)}
+.scene .num{font-size:11px;font-weight:750;color:var(--accent2);letter-spacing:.5px}
+.scene textarea{background:var(--bg);font-size:13.5px}
+.player{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px}
+.prog{height:4px;background:var(--panel3);border-radius:3px;overflow:hidden;margin:8px 0}
+.prog b{display:block;height:100%;width:0;background:var(--accent2)}
+.prog.run b{animation:fill var(--d,4s) linear forwards}
+@keyframes fill{to{width:100%}}
+.dock{position:fixed;left:calc(232px + 28px);right:28px;bottom:18px;max-width:1184px;margin:0 auto;background:rgba(21,23,28,.96);border:1px solid var(--line2);border-radius:14px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px;box-shadow:0 14px 40px rgba(0,0,0,.55);z-index:25;backdrop-filter:blur(8px);flex-wrap:wrap}
+.gate{display:flex;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 14px;align-items:center}
+.gate small{display:block;color:var(--muted);font-size:11.5px}
+.step{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.step:last-child{border:0}
+.ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;flex:none;background:var(--panel3);border:1px solid var(--line);color:var(--muted)}
+.ic.ok{background:var(--okbg);border-color:var(--okbg);color:#fff}
+.ic.run{border-color:var(--accent);color:var(--accent2);animation:pulse 1s infinite}
+.ic.fail{background:#6b1d1d;border-color:#6b1d1d;color:#fff}
+@keyframes pulse{50%{box-shadow:0 0 0 5px rgba(143,110,247,.25)}}
+.vtable{width:100%;border-collapse:collapse}
+.vtable th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+.vtable td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.vtable tr.click{cursor:pointer}.vtable tr.click:hover td{background:var(--panel)}
+.frame{background:#000;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;margin:0 auto;display:grid;place-items:center}
+.frame.r169{aspect-ratio:16/9;width:100%}
+.frame.r916{aspect-ratio:9/16;width:230px}
+.frame .bg{position:absolute;inset:0;animation:ken 12s ease-in-out infinite alternate}
+@keyframes ken{from{transform:scale(1)}to{transform:scale(1.08)}}
+.frame.static .bg{animation:none}
+.cap{position:absolute;left:8%;right:8%;text-align:center;font-weight:750;text-shadow:0 2px 6px #000;padding:4px 8px;border-radius:6px}
+.track{display:flex;align-items:center;gap:10px;font-size:11.5px;margin-bottom:6px}
+.track>span{width:70px;color:var(--muted);flex:none}
+.track>div{flex:1;height:22px;border-radius:5px;border:1px solid var(--line);display:flex;align-items:center;padding:0 9px;background:var(--panel3);overflow:hidden;white-space:nowrap}
+.modal-bg{position:fixed;inset:0;background:rgba(5,5,8,.72);display:grid;place-items:center;z-index:60;padding:20px}
+.modal{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:22px;width:min(560px,100%);max-height:88vh;overflow:auto}
+.toast{position:fixed;right:22px;top:70px;background:var(--panel);border:1px solid var(--accent);color:var(--text);padding:10px 16px;border-radius:10px;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:13px;max-width:360px}
+.tog{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.tog input{position:absolute;opacity:0}
+.tog i{width:34px;height:20px;border-radius:12px;background:var(--panel3);border:1px solid var(--line);position:relative;transition:.15s;flex:none}
+.tog i:after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:.15s}
+.tog input:checked+i{background:var(--accentbg);border-color:var(--accent)}
+.tog input:checked+i:after{left:16px;background:var(--accent2)}
+.tog input:focus-visible+i{outline:2px solid var(--accent2);outline-offset:2px}
+.choice{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:left;display:block;width:100%}
+.choice[aria-pressed=true]{border:2px solid var(--accent);background:var(--accentbg);padding:13px}
+.chart{display:flex;align-items:flex-end;gap:8px;height:130px;padding-top:10px}
+.chart div{flex:1;background:linear-gradient(180deg,var(--accent),#4a3a8a);border-radius:5px 5px 0 0;min-height:4px;position:relative}
+.chart div span{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--muted)}
+.guide{position:fixed;left:12px;bottom:112px;width:208px;z-index:50}
+.guide .gbtn{width:100%;background:var(--accent);color:#14101f;border:0;border-radius:24px;padding:9px 12px;font-weight:760;cursor:pointer;box-shadow:0 8px 26px rgba(143,110,247,.4)}
+.guide .gbox{position:absolute;left:0;bottom:48px;width:330px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:14px;box-shadow:0 16px 40px rgba(0,0,0,.55)}
+.guide ol{margin:6px 0 12px;padding-left:20px;color:var(--muted);font-size:12.5px}
+.guide li{margin-bottom:3px}.guide li button{all:unset;cursor:pointer;color:var(--accent2)}.guide li button:hover{text-decoration:underline}
+details.diag{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+details.diag summary{cursor:pointer;font-weight:650;color:var(--muted)}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+.sample{font-size:11.5px;color:var(--muted)}
+.hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.sr{position:absolute;left:-9999px}
+@media(max-width:1000px){.top{flex-wrap:wrap}.top .l,.top .r{flex-wrap:wrap}#chstyle{display:none}.guide{left:auto;right:12px;bottom:12px;width:auto}.guide .gbox{left:auto;right:0}.dock{bottom:64px}.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center}.side nav{flex-direction:row;flex-wrap:wrap}.side .budget,.side .sp{display:none}.scene,.two,.grid2,.grid3,.grid4{grid-template-columns:1fr}.dock{left:12px;right:12px}.content{padding:18px 14px 150px}.top{padding:12px 14px}}
+html{color-scheme:dark}
+dialog.modal{color:var(--text)}
+dialog:modal{overscroll-behavior:contain}
+dialog::backdrop{background:rgba(5,5,8,.72);overflow:hidden;overscroll-behavior:contain}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Menu principal">
+    <div class="logo"><i>✦</i> Faceless Studio</div>
+    <nav id="nav"></nav>
+    <div class="sp"></div>
+    <div class="budget" id="budget"></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <div class="l"><label class="sr" for="chsel">Canal ativo</label><select id="chsel" style="width:auto;min-width:210px"></select><span class="pill" id="chstyle"></span></div>
+      <div class="r"><span class="pill warn" title="Todos os dados deste mockup são ilustrativos">Mockup · dados ilustrativos</span><button class="btn primary" data-a="go" data-to="#/new">✦ Criar vídeo</button></div>
+    </header>
+    <main class="content" id="view"></main>
+  </div>
+</div>
+<div id="overlay"></div>
+<div class="guide" id="guide"></div>
+
+<script>
+'use strict';
+/* ============ helpers ============ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const words=t=>(t.trim().match(/\S+/g)||[]).length;
+const secs=t=>Math.max(2,Math.round(words(t)/2.6));
+const uid=p=>p+Math.random().toString(36).slice(2,7);
+const usd=n=>n==null?'não medido':'US$ '+n.toFixed(2).replace('.',',');
+
+/* ============ dados ilustrativos ============ */
+const STYLES=[
+ {id:'st1',name:'Cinemática Sombria',desc:'Luz dramática, sombras profundas, paleta sépia.',emoji:'🎞️',grad:'linear-gradient(135deg,#2a1d12,#0d0b10)',prompt:'cinematic dark, dramatic rim light, sepia palette, film grain'},
+ {id:'st2',name:'Documentário Realista',desc:'Fotografia histórica, texturas naturais.',emoji:'🏛️',grad:'linear-gradient(135deg,#3a3a2e,#16181c)',prompt:'documentary photograph, natural light, archival texture'},
+ {id:'st3',name:'Ilustração Moderna',desc:'Cores vibrantes, traço estilizado, educativo.',emoji:'✨',grad:'linear-gradient(135deg,#3b2a78,#0f4a63)',prompt:'flat modern illustration, vibrant colors, clean shapes'},
+ {id:'st4',name:'Neon Tecnológico',desc:'Cidades noturnas, néon e reflexos.',emoji:'🌃',grad:'linear-gradient(135deg,#5b1a74,#0b2a4a)',prompt:'neon noir, cyber city, reflections, magenta and cyan'},
+ {id:'st5',name:'Aquarela Suave',desc:'Texturas de papel e tons pastéis.',emoji:'🎨',grad:'linear-gradient(135deg,#6a5a6e,#2e3a4a)',prompt:'watercolor, soft pastel, paper texture'},
+ {id:'st6',name:'Quadrinhos Retrô',desc:'Meio-tom, contorno grosso, cores chapadas.',emoji:'💥',grad:'linear-gradient(135deg,#7a3a1a,#2a1a3a)',prompt:'retro comic, halftone dots, bold outline'}
+];
+const VOICES=[
+ {id:'vo1',name:'Rodrigo Faber',tone:'Grave · documental',dur:5},
+ {id:'vo2',name:'Marina Alves',tone:'Calorosa · narrativa',dur:4},
+ {id:'vo3',name:'Caio Mendes',tone:'Jovem · enérgica',dur:4},
+ {id:'vo4',name:'Helena Prado',tone:'Suave · reflexiva',dur:5},
+ {id:'vo5',name:'Theo Rocha',tone:'Neutra · didática',dur:4}
+];
+const MUSIC=[
+ {id:'mu1',name:'Documental · Tensão leve',mood:'Mistério',vol:18},
+ {id:'mu2',name:'Épica · Descoberta',mood:'Grandioso',vol:16},
+ {id:'mu3',name:'Lo-fi · Estudo',mood:'Relaxante',vol:22},
+ {id:'mu4',name:'Pulso · Ritmo curto',mood:'Energia',vol:20}
+];
+const TEMPLATES=[
+ {id:'tp1',name:'Mistério em 5 atos',desc:'Gancho → Contexto → Virada → Revelação → Fecho.',beats:['Gancho','Contexto','Virada','Revelação','Fecho']},
+ {id:'tp2',name:'Top 5 curiosidades',desc:'Introdução, cinco itens e chamada final.',beats:['Introdução','Item 1','Item 2','Item 3','Chamada final']},
+ {id:'tp3',name:'Explicativo rápido',desc:'Pergunta, explicação, exemplo e resumo.',beats:['Pergunta','Explicação','Exemplo','Resumo']}
+];
+const TRENDS=[
+ {id:'t1',tag:'Explodindo no Brasil',tone:'warn',title:'O mistério do navio Mary Celeste',why:'Encontrado vazio e navegando perfeitamente em 1872.',niche:'História'},
+ {id:'t2',tag:'Documentário',tone:'ok',title:'A cidade subterrânea de Derinkuyu',why:'Abrigava 20 mil pessoas abaixo do solo.',niche:'História'},
+ {id:'t3',tag:'Global',tone:'accent',title:'A biblioteca secreta do Vaticano',why:'85 quilômetros de arquivos fechados ao público.',niche:'História'},
+ {id:'t4',tag:'Em alta',tone:'warn',title:'Por que o Nilo mudou de curso?',why:'Estudos recentes ligam o rio ao colapso de cidades.',niche:'Ciência'},
+ {id:'t5',tag:'Nicho crescendo',tone:'ok',title:'O que acontece se a Terra parar 5 segundos?',why:'Pergunta clássica com alto potencial de retenção.',niche:'Ciência'},
+ {id:'t6',tag:'Global',tone:'accent',title:'Sinais de rádio que nunca foram explicados',why:'Wow! signal e outros mistérios do espaço.',niche:'Ciência'}
+];
+const SCRIPT_PARTS={
+ 'Gancho':'E se tudo o que você aprendeu sobre {t} estivesse incompleto? Nos próximos minutos você vai ver por que essa história ainda intriga especialistas.',
+ 'Contexto':'Para entender {t}, é preciso voltar ao começo: o cenário, as pessoas envolvidas e o que se sabia na época.',
+ 'Virada':'Foi então que algo inesperado mudou a leitura dos fatos e abriu espaço para uma explicação bem diferente da oficial.',
+ 'Revelação':'Pesquisas recentes apontam uma resposta: os sinais estavam ali o tempo todo, mas ninguém os conectou até agora.',
+ 'Fecho':'No fim, {t} nos lembra que boas perguntas valem mais que respostas rápidas. Se gostou, se inscreva para a próxima história.',
+ 'Introdução':'Separei cinco fatos sobre {t} que quase ninguém conhece. O último muda tudo.',
+ 'Item 1':'Primeiro: o detalhe mais ignorado sobre {t} está nos registros originais.',
+ 'Item 2':'Segundo: o contexto da época explica por que ninguém questionou.',
+ 'Item 3':'Terceiro: evidências físicas contradizem a versão popular.',
+ 'Chamada final':'Qual desses fatos te surpreendeu mais? Conta nos comentários e acompanhe o canal.',
+ 'Pergunta':'Você já se perguntou como funciona {t}?',
+ 'Explicação':'A explicação mais simples começa por um princípio básico que costuma passar despercebido.',
+ 'Exemplo':'Pense num exemplo do dia a dia: é exatamente o que acontece em {t}, só que em escala maior.',
+ 'Resumo':'Resumindo: {t} parece complexo, mas se resume a poucos pontos que você já domina.'
+};
+const EMOJIS=['🏛️','🏜️','🌊','🗝️','📜','🌌','⚓','🕯️','🗺️','🔭','🧭','🏺'];
+
+let S={
+ route:'home',tab:'cenas',vid:null,libTab:'estilos',setTab:'canais',vidFilter:'todos',trendNiche:'Todos',
+ ch:'c1',guide:false,modal:null,toast:null,playing:null,
+ channels:[
+  {id:'c1',name:'Curiosidades Históricas',style:'st1',voice:'vo1',format:'short',mode:'piloto',audience:'Curiosos por história e mistérios',tone:'Misterioso e informativo',lang:'Português (BR)',subFont:'Inter',subMode:'Destaque por palavra',profile:'economico',cap:20,capVideo:1.5,res:'1080p',fps:30,handle:'@CuriosidadesHistoricas'},
+  {id:'c2',name:'Ciência em 60s',style:'st3',voice:'vo3',format:'short',mode:'diretor',audience:'Estudantes e curiosos por ciência',tone:'Didático e leve',lang:'Português (BR)',subFont:'Roboto',subMode:'Caixa discreta',profile:'equilibrado',cap:35,capVideo:2.5,res:'1080p',fps:30,handle:'@CienciaEm60s'}
+ ],
+ team:[{n:'Rodrigo',r:'Dono · acesso total'},{n:'Ana Souza',r:'Editora · cria e aprova'},{n:'Léo Lima',r:'Leitor · só visualiza'}],
+ spent:{c1:3.2,c2:1.1},
+ videos:[]
+};
+const mkScene=(title,text,prompt,media,audio,broll)=>({id:uid('s'),title,text,prompt,media,audio,broll:!!broll,brollNote:broll||''});
+const med=(kind,emoji)=>({kind,emoji});
+const defComp=ch=>({subFont:ch.subFont,subMode:ch.subMode,subPos:'baixo',subSize:42,musicId:'mu1',musicVol:18,ducking:true,res:ch.res,fps:ch.fps,transition:'Fade suave',motion:'Zoom lento'});
+function seed(){
+ const c1=S.channels[0],c2=S.channels[1];
+ S.videos=[
+  {id:'v1',ch:'c1',title:'O mistério do navio Mary Celeste',mode:'piloto',state:'review',format:'short',style:'st1',voice:'vo1',rev:1,dirty:false,target:45,comp:defComp(c1),
+   scenes:[
+    mkScene('Gancho','Em 1872, um navio foi encontrado navegando sozinho no Atlântico. Mesa posta, cargas intactas e nenhuma alma a bordo.','navio fantasma em mar agitado ao amanhecer, névoa',med('ia','⚓'),'ok'),
+    mkScene('Contexto','O Mary Celeste havia partido de Nova York rumo à Itália, com sete tripulantes, a esposa e a filha do capitão.','porto de Nova York em 1872, gravura',med('stock','🗺️'),'ok','Mapa da rota Nova York → Gênova'),
+    mkScene('Revelação','As teorias vão de piratas a monstros marinhos, mas a mais aceita aponta para o álcool industrial que vazou do porão.','barris no porão, luz de lamparina',med('ia','🕯️'),'ok')
+   ],
+   sources:[{id:uid('f'),kind:'url',label:'Registro histórico do Mary Celeste',url:'https://exemplo.org/mary-celeste',chars:1420,hash:'4a8b…1f'}],
+   meta:{title:'O Mistério do Navio Mary Celeste #Shorts',desc:'O navio que foi achado vazio em 1872. Se inscreva para mais mistérios! #historia #misterio',tags:'historia, misterio, navio',vis:'nao_listado',schedule:''},
+   cost:0.38,pub:null,steps:doneSteps()},
+  {id:'v2',ch:'c1',title:'A cidade subterrânea de Derinkuyu',mode:'diretor',state:'draft',format:'long',style:'st2',voice:'vo1',rev:0,dirty:true,target:180,comp:defComp(c1),
+   scenes:[
+    mkScene('Gancho','Sob os campos da Capadócia existe uma cidade inteira escondida a mais de 60 metros de profundidade.','vista aérea da Capadócia, pôr do sol',med('stock','🏜️'),'none'),
+    mkScene('Contexto','Derinkuyu tinha ventilação, cozinhas, igrejas e até estábulos, capaz de abrigar cerca de 20 mil pessoas.','corredor de pedra esculpida, tochas',null,'none'),
+    mkScene('Revelação','Portas de pedra circulares podiam ser fechadas por dentro, transformando a cidade em uma fortaleza.','porta de pedra circular rolando, câmera baixa',null,'none')
+   ],
+   sources:[],meta:{title:'',desc:'',tags:'',vis:'privado',schedule:''},cost:null,pub:null,steps:blankSteps()},
+  {id:'v3',ch:'c1',title:'A biblioteca secreta do Vaticano',mode:'piloto',state:'published',format:'short',style:'st1',voice:'vo1',rev:2,dirty:false,target:50,comp:defComp(c1),
+   scenes:[
+    mkScene('Gancho','São 85 quilômetros de estantes que quase ninguém pode ver.','corredor infinito de arquivos antigos',med('ia','📜'),'ok'),
+    mkScene('Fecho','Segredos de séculos guardados a poucos metros de milhões de turistas.','porta de bronze entreaberta',med('ia','🗝️'),'ok')
+   ],
+   sources:[{id:uid('f'),kind:'texto',label:'Notas de pesquisa (texto colado)',url:'',chars:890,hash:'9e2c…4d'}],
+   meta:{title:'A Biblioteca Secreta do Vaticano #Shorts',desc:'85 km de arquivos fechados ao público.',tags:'vaticano, historia',vis:'publico',schedule:''},
+   cost:0.41,pub:{url:'https://youtube.com/shorts/exemplo123',at:'há 3 dias'},steps:doneSteps()},
+  {id:'v4',ch:'c2',title:'O que acontece se a Terra parar 5 segundos?',mode:'piloto',state:'failed',format:'short',style:'st3',voice:'vo3',rev:0,dirty:false,target:45,comp:defComp(c2),
+   scenes:[
+    mkScene('Pergunta','Imagine a Terra parando por apenas cinco segundos.','planeta Terra parando, ilustração',med('ia','🌌'),'none'),
+    mkScene('Explicação','Tudo que não estivesse preso seria arremessado a mais de mil quilômetros por hora.','objetos voando, ilustração vibrante',null,'none')
+   ],
+   sources:[],meta:{title:'',desc:'',tags:'',vis:'privado',schedule:''},cost:null,pub:null,
+   steps:[{k:'roteiro',n:'Roteiro',s:'ok',c:0.02},{k:'voz',n:'Narração (voz)',s:'fail',c:null,err:'O provedor de voz recusou a chamada: limite de uso atingido (simulado).'},{k:'midia',n:'Mídia das cenas',s:'wait',c:null},{k:'composicao',n:'Composição',s:'wait',c:null},{k:'qa',n:'Verificação de qualidade',s:'wait',c:null}]}
+ ];
+}
+function blankSteps(){return [{k:'roteiro',n:'Roteiro',s:'ok',c:0.02},{k:'voz',n:'Narração (voz)',s:'wait',c:null},{k:'midia',n:'Mídia das cenas',s:'wait',c:null},{k:'composicao',n:'Composição',s:'wait',c:null},{k:'qa',n:'Verificação de qualidade',s:'wait',c:null}]}
+function doneSteps(){return [{k:'roteiro',n:'Roteiro',s:'ok',c:0.02},{k:'voz',n:'Narração (voz)',s:'ok',c:0.09},{k:'midia',n:'Mídia das cenas',s:'ok',c:0.21},{k:'composicao',n:'Composição',s:'ok',c:0.04},{k:'qa',n:'Verificação de qualidade',s:'ok',c:0.0}]}
+seed();
+/* ============ canais: campos de criação + providers externos ============ */
+const RT0=()=>({text:'auto',voice:'auto',image:'auto',search:'auto',renderer:'auto'});
+Object.assign(S.channels[0],{niche:'História e mistérios',strategy:'Explicar mistérios históricos com contexto e fontes verificáveis.',pillars:['História','Mistérios','Arqueologia'],cta:'Qual mistério você quer ver no próximo vídeo?',dur:45,brand:'#8f6ef7',mediaPolicy:'Banco de mídia primeiro',fallback:'Pedir confirmação',retries:2,broll:true,routing:RT0(),ytOn:true});
+Object.assign(S.channels[1],{niche:'Ciência para curiosos',strategy:'Responder perguntas de ciência em 60 segundos, sem jargão.',pillars:['Física','Espaço','Corpo humano'],cta:'Que pergunta de ciência devo responder amanhã?',dur:45,brand:'#4fb3d9',mediaPolicy:'IA primeiro',fallback:'Usar alternativa dentro dos limites',retries:2,broll:false,routing:RT0(),ytOn:false});
+const KINDS=[['text','Roteiro (texto)'],['voice','Narração (voz)'],['image','Imagens por IA'],['search','Banco de mídia (stock)'],['renderer','Montagem de vídeo']];
+const KIND_L=Object.fromEntries(KINDS);
+const PROFILE_L={economico:'Econômico',equilibrado:'Equilibrado',premium:'Premium'};
+const FLOOR={economico:40,equilibrado:60,premium:80};
+S.providers=[
+ {id:'tx1',kind:'text',name:'OpenCode · texto',model:'modelo de linguagem configurado',cost:0.02,unit:'por roteiro',rate:60,q:75,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'tx0',kind:'text',name:'Texto demo',model:'respostas fixas',cost:0,unit:'',rate:null,q:20,avail:true,prod:false,cred:'local',reason:'',test:''},
+ {id:'vc1',kind:'voice',name:'Piper local',model:'voz local pt-BR',cost:0,unit:'',rate:null,q:62,avail:true,prod:true,cred:'local',reason:'',test:''},
+ {id:'vc2',kind:'voice',name:'Voz externa (TTS)',model:'voz neural de alta fidelidade',cost:0.09,unit:'por vídeo',rate:30,q:88,avail:false,prod:true,cred:'missing',reason:'credencial não configurada',test:''},
+ {id:'im1',kind:'image',name:'OpenCode · imagem',model:'gerador de imagens',cost:0.05,unit:'por imagem',rate:20,q:80,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'im0',kind:'image',name:'Placeholder de imagem',model:'quadro cinza',cost:0,unit:'',rate:null,q:10,avail:true,prod:false,cred:'local',reason:'',test:''},
+ {id:'se1',kind:'search',name:'Pexels (stock)',model:'busca de fotos e vídeos',cost:0,unit:'',rate:200,q:65,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'rd1',kind:'renderer',name:'FFmpeg',model:'motor integrado',cost:0.04,unit:'por vídeo',rate:null,q:90,avail:true,prod:true,cred:'local',reason:'',test:''}
+];
+const fmtCost=p=>p.cost==null?'Custo desconhecido — nenhum preço confirmado; não é tratado como zero':p.cost===0?'US$ 0 (sem custo por chamada)':`~US$ ${p.cost.toFixed(2).replace('.',',')} ${p.unit||'por uso'} (estimativa, não é preço cobrado)`;
+function whyNot(p,floor){
+ if(!p.avail)return `${p.name} indisponível${p.reason?' ('+p.reason+')':''}`;
+ if(!p.prod)return `${p.name}: provider de demonstração não executa em produção`;
+ if(p.cost==null)return `${p.name}: custo desconhecido`;
+ if(p.q<floor)return `${p.name}: qualidade ${p.q} abaixo do piso ${floor}`;
+ return '';
+}
+function pickProvider(kind,c){
+ const fl=FLOOR[c.profile]||40,all=S.providers.filter(p=>p.kind===kind);
+ const ok=all.filter(p=>!whyNot(p,fl));
+ ok.sort((a,b)=>c.profile==='economico'?((a.cost-b.cost)||(b.q-a.q)):((b.q-a.q)||(a.cost-b.cost)));
+ const pin=(c.routing||{})[kind];
+ if(pin&&pin!=='auto'){const p=all.find(x=>x.id===pin);
+  if(p&&p.avail&&p.prod)return {chosen:p,fallbacks:ok.filter(x=>x!==p),pinned:true};
+  return {chosen:null,fallbacks:ok,err:`O provider fixado${p?' ('+p.name+')':''} está indisponível${p&&p.reason?': '+p.reason:''}. Volte para "Automático" ou configure-o.`}}
+ if(!ok.length)return {chosen:null,fallbacks:[],err:`Nenhum provider de ${KIND_L[kind]} atende ao perfil ${PROFILE_L[c.profile]}: ${all.map(p=>whyNot(p,fl)).filter(Boolean).join('; ')||'nenhum cadastrado'}.`};
+ return {chosen:ok[0],fallbacks:ok.slice(1)};
+}
+function readiness(c,kinds){
+ const ks=kinds||['text','voice','image','renderer'].concat(c.mediaPolicy==='Banco de mídia primeiro'?['search']:[]);
+ const rows=ks.map(k=>({k,...pickProvider(k,c)}));
+ return {rows,missing:rows.filter(r=>!r.chosen),ok:rows.every(r=>r.chosen)};
+}
+const ytOn=()=>!!ch().ytOn;
+const slug=n=>'@'+String(n).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]/g,'');
+function routeRows(c,pinnable){
+ return KINDS.map(([k,l])=>{const r=pickProvider(k,c),prov=S.providers.filter(p=>p.kind===k);
+  return `<div class="card flat" style="padding:12px 14px"><div class="between"><b>${l}</b>${r.chosen?`<span class="pill ok">✓ ${esc(r.chosen.name)}${r.pinned?' · fixado':''}</span>`:'<span class="pill bad">✕ sem provider</span>'}</div>
+  ${r.err?`<p class="sample" style="color:var(--bad);margin-top:6px">${esc(r.err)}</p>`:`<p class="sample" style="margin-top:4px">Escolha no perfil ${PROFILE_L[c.profile]}${r.fallbacks.length?' · fallback: '+r.fallbacks.map(f=>esc(f.name)).join(' → '):' · sem fallback'}</p>`}
+  ${pinnable?`<div class="row" style="margin-top:8px"><label class="sr" for="rt-${k}">Provider de ${l}</label><select id="rt-${k}" data-a="route" data-k="${k}" style="max-width:300px"><option value="auto" ${(c.routing[k]||'auto')==='auto'?'selected':''}>Automático (pelo perfil)</option>${prov.map(p=>`<option value="${p.id}" ${c.routing[k]===p.id?'selected':''}>Fixar: ${esc(p.name)}${p.avail?'':' (indisponível)'}</option>`).join('')}</select></div>`:''}</div>`}).join('');
+}
+function provCard(p){
+ const cred={ok:'Credencial no secret store · valor nunca exibido',missing:'Sem credencial',local:'Não exige credencial (execução local)'}[p.cred];
+ return `<div class="card flat" style="padding:14px"><div class="between"><div><b>${esc(p.name)}</b> <code class="mono">${esc(p.model)}</code></div>${p.avail?'<span class="pill ok">✓ Disponível</span>':'<span class="pill warn">! Indisponível</span>'}</div>
+ <p class="sample" style="margin-top:6px">Capability: <b style="color:var(--text)">${KIND_L[p.kind]}</b> · rate limit: ${p.rate?p.rate+' chamada(s)/min':'não declarado'} · qualidade ${p.q}${p.prod?'':' · <span style="color:var(--warn)">demonstração, não executa em produção</span>'}</p>
+ <p class="sample"><b>Custo:</b> ${esc(fmtCost(p))}</p><p class="sample">${cred}</p>
+ ${!p.avail&&p.reason?`<p class="sample" style="color:var(--warn)"><b>Motivo:</b> ${esc(p.reason)}</p>`:''}
+ ${p.test?`<p class="sample" role="status" style="color:var(--ok)">${esc(p.test)}</p>`:''}
+ <div class="row" style="margin-top:8px">${b('Testar conexão','testprov','small',`data-id="${p.id}" ${p.avail?'':'disabled'}`)}${b(p.avail?'Configurar':'Configurar e conectar','editprov','small',`data-id="${p.id}"`)}${p.custom?b('Remover','delprov','ghost small',`data-id="${p.id}"`):''}</div></div>`;
+}
+function ytCard(tgt,inWizard){
+ const on=!!tgt.ytOn;
+ return `<div class="card"><div class="between"><h3>Canal do YouTube</h3><span class="pill ${on?'ok':'warn'}">${on?'✓ Conectado':'○ Desconectado'}</span></div>
+ <p class="sub" style="margin:6px 0 12px">${on?`${esc(tgt.handle)} · escopos: <code class="mono">youtube.upload</code>, <code class="mono">youtube.readonly</code> · token guardado no servidor (simulado).`:'Sem vínculo. Você pode criar e aprovar vídeos normalmente, mas só publica depois de conectar.'}</p>
+ <div class="row">${on?b('Reconectar','yt','small')+b('Revogar acesso','ytrevoke','ghost small'):b('Conectar YouTube','yt','primary small')}</div>
+ <p class="sample" style="margin-top:8px">Ao conectar, o Google abre a tela de consentimento; o servidor troca o código e guarda os tokens. Nenhuma credencial volta ao navegador.</p></div>`;
+}
+
+
+/* ============ derivados ============ */
+const ch=()=>S.channels.find(c=>c.id===S.ch);
+const sty=id=>STYLES.find(s=>s.id===id)||STYLES[0];
+const voice=id=>VOICES.find(v=>v.id===id)||VOICES[0];
+const vid=()=>S.videos.find(v=>v.id===S.vid);
+const vdur=v=>v.scenes.reduce((a,s)=>a+secs(s.text),0);
+const fmtT=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const STATE={draft:['Rascunho (Diretor)','accent'],generating:['Gerando…','accent'],review:['Aguardando aprovação','warn'],approved:['Aprovado','ok'],published:['Publicado','ok'],failed:['Falhou na produção','bad']};
+const statePill=v=>{const [t,c]=STATE[v.state];return `<span class="pill ${c}">${t}${v.dirty&&v.state!=='draft'&&v.state!=='generating'?' · edições pendentes':''}</span>`};
+const estCost=v=>{const base=v.scenes.length*0.07+0.05;return Math.round(base*100)/100};
+function gates(v){
+ const g=[];
+ const noMedia=v.scenes.filter(s=>!s.media).map((s,i)=>s.title);
+ g.push({n:'Mídia em todas as cenas',st:noMedia.length?'block':'ok',d:noMedia.length?`Faltam imagens/vídeos em: ${noMedia.join(', ')}.`:`${v.scenes.length} de ${v.scenes.length} cenas com mídia.`});
+ const bad=v.scenes.filter(s=>s.audio!=='ok').map(s=>s.title);
+ g.push({n:'Narração presente e atualizada',st:bad.length?'block':'ok',d:bad.length?`Áudio ausente ou desatualizado em: ${bad.join(', ')}.`:'Todos os trechos têm áudio alinhado ao texto.'});
+ const d=vdur(v),lo=v.target*0.7,hi=v.target*1.3;
+ g.push({n:'Duração próxima da meta',st:(d<lo||d>hi)?'warn':'ok',d:`Estimada ${fmtT(d)} · meta ${fmtT(v.target)} (estimativa por contagem de palavras; duração real só é medida após renderizar).`});
+ g.push({n:'Legendas na área segura',st:(v.format==='short'&&v.comp.subSize>56)?'warn':'ok',d:v.format==='short'&&v.comp.subSize>56?'Legenda grande pode ser coberta pela interface do Shorts.':'Posição e tamanho respeitam a área segura.'});
+ g.push({n:'Fontes registradas',st:v.sources.length?'ok':'warn',d:v.sources.length?`${v.sources.length} fonte(s) registrada(s). Registrar não significa verificar.`:'Nenhuma fonte registrada. O vídeo pode ser aprovado, mas sem rastreabilidade.'});
+ const e=estCost(v),cap=ch().capVideo;
+ g.push({n:'Dentro do orçamento do vídeo',st:e>cap?'warn':'ok',d:`Estimativa ${usd(e)} · teto ${usd(cap)}.`});
+ return g;
+}
+const blockers=v=>gates(v).filter(x=>x.st==='block');
+
+/* ============ UI parts ============ */
+const NAV=[['home','⌂','Início','#/home'],['new','✦','Criar vídeo','#/new'],['videos','▤','Vídeos','#/videos'],['ideas','◎','Tendências e ideias','#/ideas'],['analytics','▥','Desempenho','#/analytics'],['library','❖','Biblioteca','#/library'],['settings','⚙','Configurações','#/settings']];
+const TABS=[['cenas','Cenas & Storyboard'],['composicao','Composição & Legendas'],['qualidade','Qualidade & Aprovação'],['publicacao','Publicação YouTube'],['fontes','Fontes & Evidências'],['producao','Produção']];
+const b=(label,a,cls='',attrs='')=>`<button class="btn ${cls}" data-a="${a}" ${attrs}>${label}</button>`;
+const seg=(opts,cur,a,key)=>`<div class="seg" role="group">${opts.map(([v,l])=>`<button type="button" aria-pressed="${cur===v}" data-a="${a}" data-k="${key||''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+const tog=(id,checked,label,a)=>`<label class="tog"><input type="checkbox" id="${id}" ${checked?'checked':''} data-a="${a}"><i></i><span>${label}</span></label>`;
+const thumb=(s,v,w,h)=>{const st=sty(v.style);if(!s.media)return `<div class="thumb" style="height:${h}px;background:var(--panel3);border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px">Sem mídia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>`;
+ return `<div class="thumb" style="height:${h}px;background:${st.grad}"><span style="font-size:${Math.round(h/3)}px">${s.media.emoji}</span><span class="tag">${s.media.kind==='ia'?'Arte IA':'Vídeo stock'}${s.broll?' · +B-roll':''}</span><span class="time">0:${String(secs(s.text)).padStart(2,'0')}</span></div>`};
+
+function renderNav(){
+ const active=S.route==='video'?'videos':S.route==='wizard'?'settings':S.route;
+ $('#nav').innerHTML=NAV.map(([id,ic,t,h])=>`<button data-a="go" data-to="${h}" ${active===id?'aria-current="page"':''}><span aria-hidden="true">${ic}</span>${t}</button>`).join('');
+ const c=ch(),spent=S.spent[c.id],pct=Math.min(100,Math.round(spent/c.cap*100));
+ $('#budget').innerHTML=`<b style="color:var(--text)">Orçamento do mês</b><br>US$ ${spent.toFixed(2).replace('.',',')} de ${c.cap.toFixed(2).replace('.',',')}<div class="bar"><b style="width:${pct}%"></b></div><span class="sample">Valores ilustrativos</span>`;
+ $('#chsel').innerHTML=S.channels.map(c=>`<option value="${c.id}" ${c.id===S.ch?'selected':''}>${esc(c.name)}</option>`).join('')+'<option value="__new">＋ Novo canal…</option>';
+ $('#chstyle').innerHTML=`🎨 ${esc(sty(c.style).name)} · 🎙 ${esc(voice(c.voice).name)}`;
+}
+
+/* ---------- Início ---------- */
+function pgHome(){
+ const c=ch(),vs=S.videos.filter(v=>v.ch===c.id);
+ const pend=vs.filter(v=>v.state==='review'),fail=vs.filter(v=>v.state==='failed'),dr=vs.filter(v=>v.state==='draft');
+ return `<div class="hero"><div class="between" style="align-items:flex-start"><div><p class="eyebrow">Estúdio do canal · ${esc(c.name)}</p><h1>O que você vai criar hoje?</h1><p class="sub" style="margin-top:4px">Digite um tema ou cole seu roteiro. Voz e estilo do canal já vêm prontos.</p></div><span class="pill accent">🎨 ${esc(sty(c.style).name)}</span></div>
+ <div class="card flat" style="margin-top:18px;border-color:#4a435e">
+  <label class="sr" for="homeTopic">Tema ou roteiro</label>
+  <textarea id="homeTopic" rows="3" placeholder="Ex.: O que aconteceria se a Terra parasse de girar por 5 segundos? Ou cole seu roteiro aqui…" style="background:transparent;border:0;padding:0;font-size:15px"></textarea>
+  <div class="hr"></div>
+  <div class="between"><div class="row">${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],c.format,'chformat')}<span class="pill">🎙 ${esc(voice(c.voice).name)}</span><span class="pill">🎨 ${esc(sty(c.style).name)}</span></div>
+  <div class="row">${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],c.mode,'chmode')}${b('Criar vídeo →','quick','primary')}</div></div>
+ </div></div>
+ ${(pend.length||fail.length||dr.length)?`<h2 style="margin-bottom:12px">Precisa de você</h2><div class="grid3" style="margin-bottom:26px">
+ ${pend.map(v=>`<div class="card"><span class="pill warn">Aguardando aprovação</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">Pronto pelo piloto automático. Revise e aprove.</p><div style="margin-top:12px">${b('Revisar e aprovar','open','primary small',`data-id="${v.id}" data-tab="qualidade"`)}</div></div>`).join('')}
+ ${dr.map(v=>`<div class="card"><span class="pill accent">Rascunho (Diretor)</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">${v.scenes.length} cenas · edite texto, mídia e voz.</p><div style="margin-top:12px">${b('Continuar editando','open','small',`data-id="${v.id}" data-tab="cenas"`)}</div></div>`).join('')}
+ ${fail.map(v=>`<div class="card"><span class="pill bad">Falhou na produção</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">Uma etapa falhou. Dá para retomar de onde parou.</p><div style="margin-top:12px">${b('Ver e retomar','open','small',`data-id="${v.id}" data-tab="producao"`)}</div></div>`).join('')}</div>`:''}
+ ${vs.length===0?(()=>{const rd=readiness(c);return `<div class="card" style="margin-bottom:26px;border-color:var(--line2)"><h2>Primeiros passos do canal ${esc(c.name)}</h2><p class="sub" style="margin-bottom:12px">Canal criado. Falta pouco para o primeiro vídeo.</p><div class="stack" style="gap:8px"><div class="gate"><span>Canal criado e configurado</span><span class="pill ok">✓ Feito</span></div><div class="gate"><span>Providers para produzir<small>${rd.ok?'Roteiro, voz, imagem e montagem prontos.':esc(rd.missing[0].err)}</small></span>${rd.ok?'<span class="pill ok">✓ Pronto</span>':b('Resolver','go','small','data-to="#/settings" data-set="conexoes"')}</div><div class="gate"><span>Conectar o YouTube<small>Opcional agora; necessário só para publicar.</small></span>${c.ytOn?'<span class="pill ok">✓ Conectado</span>':b('Conectar','go','small','data-to="#/settings" data-set="conexoes"')}</div><div class="gate"><span>Criar o primeiro vídeo</span>${b('✦ Criar vídeo','go','primary small','data-to="#/new"')}</div></div></div>`})():''}
+ <h2 style="margin-bottom:12px">Comece por uma tendência no seu nicho</h2>
+ <div class="grid3">${TRENDS.slice(0,3).map(t=>`<div class="card"><span class="pill ${t.tone}">${t.tag}</span><h3 style="margin:8px 0 2px">${esc(t.title)}</h3><p class="sub">${esc(t.why)}</p><div style="margin-top:12px">${b('Criar com esta ideia','idea','small',`data-id="${t.id}"`)}</div></div>`).join('')}</div>
+ <p class="sample" style="margin-top:8px">Tendências ilustrativas — sem consulta real a fontes externas neste mockup.</p>`;
+}
+
+/* ---------- Criar vídeo ---------- */
+function newDefaults(){const c=ch();return {topic:'',mode:c.mode,format:c.format,voice:c.voice,style:c.style,template:'tp1',dur:'45',music:'mu1',script:false}}
+function pgNew(){
+ const d=S.newDraft||(S.newDraft=newDefaults()),c=ch();
+ const piloto=d.mode==='piloto';
+ return `<div class="head"><div><p class="eyebrow">Criar / Novo vídeo</p><h1>Novo vídeo do canal</h1><p class="sub">Tudo em uma tela. Voz e estilo vêm do canal e você pode trocar só para este vídeo.</p></div></div>
+ <div class="two"><div class="stack">
+  <div class="card"><h3 style="margin-bottom:10px">1 · Como você quer produzir?</h3><div class="grid2">
+   <button class="modecard" data-a="nmode" data-v="piloto" aria-pressed="${piloto}"><span class="pill ok">⚡ Rápido · 1 clique</span><h3>Piloto automático</h3><p class="sub">Gera roteiro, voz, imagens e composição de ponta a ponta com os padrões do canal. Você só aprova no final.</p></button>
+   <button class="modecard" data-a="nmode" data-v="diretor" aria-pressed="${!piloto}"><span class="pill accent">🎬 Controle total</span><h3>Modo Diretor</h3><p class="sub">Cria o roteiro em cenas e para. Você edita texto, mídia, voz e legendas antes de renderizar.</p></button></div></div>
+  <div class="card"><h3 style="margin-bottom:10px">2 · Tema ou roteiro</h3>
+   <div class="field"><label for="ntopic">Tema do vídeo</label><input type="text" id="ntopic" value="${esc(d.topic)}" placeholder="Ex.: A cidade subterrânea de Derinkuyu"></div>
+   <div class="field"><label class="tog"><input type="checkbox" id="nscriptchk" ${d.script?'checked':''} data-a="nscript"><i></i><span>Já tenho um roteiro pronto para colar</span></label></div>
+   ${d.script?`<div class="field"><label for="nscript">Roteiro (cada parágrafo vira uma cena)</label><textarea id="nscript" rows="6" placeholder="Cole aqui. Será registrado como fonte do vídeo.">${esc(d.scriptText||'')}</textarea></div>`:`<div class="field"><label for="ntemplate">Estrutura do roteiro</label><select id="ntemplate" data-a="ntemplate">${TEMPLATES.map(t=>`<option value="${t.id}" ${d.template===t.id?'selected':''}>${esc(t.name)} — ${esc(t.desc)}</option>`).join('')}</select></div>`}
+  </div>
+  <div class="card"><h3 style="margin-bottom:10px">3 · Formato, voz e estilo</h3>
+   <div class="row" style="margin-bottom:14px"><span class="lbl">Formato</span>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],d.format,'nformat')}<span class="lbl" style="margin-left:10px">Duração alvo</span><select id="ndur" data-a="ndur" style="width:auto">${(d.format==='short'?[['30','30 s'],['45','45 s'],['60','60 s']]:[['120','2 min'],['180','3 min'],['300','5 min']]).map(([v,l])=>`<option value="${v}" ${String(d.dur)===v?'selected':''}>${l}</option>`).join('')}</select></div>
+   <p class="lbl" style="margin-bottom:6px">Voz do narrador ${d.voice===c.voice?'<span class="pill" style="margin-left:6px">padrão do canal</span>':''}</p>
+   <div class="row" style="margin-bottom:14px">${VOICES.map(v=>`<span class="pill btnlike ${d.voice===v.id?'accent':''}" data-a="nvoice" data-v="${v.id}" role="button" tabindex="0">${esc(v.name)}</span><button class="btn ghost small" data-a="sample" data-v="${v.id}" aria-label="Ouvir amostra de ${esc(v.name)}">▶ amostra</button>`).join('')}</div>
+   <p class="lbl" style="margin-bottom:6px">Estilo visual ${d.style===c.style?'<span class="pill" style="margin-left:6px">vinculado ao canal</span>':''}</p>
+   <div class="grid3">${STYLES.slice(0,6).map(s=>`<button class="choice" aria-pressed="${d.style===s.id}" data-a="nstyle" data-v="${s.id}"><div class="thumb" style="height:54px;background:${s.grad};margin-bottom:8px"><span style="font-size:22px">${s.emoji}</span></div><b style="font-size:12.5px">${esc(s.name)}</b></button>`).join('')}</div>
+  </div></div>
+  <aside class="stack" style="position:sticky;top:80px">
+   <div class="card"><h3>Resumo</h3><p class="sub" style="margin:4px 0 12px">${esc(c.name)}</p>
+    <div class="between sub"><span>Modo</span><b style="color:var(--text)">${piloto?'Piloto automático':'Modo Diretor'}</b></div>
+    <div class="between sub"><span>Formato</span><b style="color:var(--text)">${d.format==='short'?'Short 9:16':'Vídeo 16:9'}</b></div>
+    <div class="between sub"><span>Voz</span><b style="color:var(--text)">${esc(voice(d.voice).name)}</b></div>
+    <div class="between sub"><span>Estilo</span><b style="color:var(--text)">${esc(sty(d.style).name)}</b></div>
+    <div class="between sub"><span>Estimativa de custo</span><b style="color:var(--text)">~US$ ${(0.25+Number(d.dur)/300).toFixed(2).replace('.',',')} (estimativa)</b></div>
+    <div class="hr"></div>
+    ${(()=>{const rd=readiness(c,piloto?undefined:['text']);return `<p class="lbl" style="margin-bottom:6px">Providers do canal</p>${rd.rows.map(r=>`<div class="between sub" style="padding:2px 0"><span>${KIND_L[r.k]}</span>${r.chosen?`<span style="color:var(--ok)">✓ ${esc(r.chosen.name)}</span>`:'<span style="color:var(--bad)">✕ sem provider</span>'}</div>`).join('')}${rd.ok?'':`<div class="note" style="margin:8px 0">${esc(rd.missing[0].err)} ${b('Resolver em Configurações','go','small','data-to="#/settings" data-set="conexoes"')}</div>`}<div class="hr"></div>`})()}
+    <p class="sample" style="margin-bottom:10px">${piloto?'O vídeo será gerado inteiro e abre direto na aprovação. Nada é publicado sem sua aprovação.':'Você cai no storyboard com as cenas prontas para editar. Nada é gerado em mídia e voz até você pedir.'}</p>
+    ${b(piloto?'⚡ Gerar vídeo completo →':'🎬 Criar e abrir storyboard →','create','primary long',readiness(c,piloto?undefined:['text']).ok?'':'disabled')}</div>
+   <div class="note info">O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo; para mudar o padrão, use Biblioteca ou Configurações.</div>
+  </aside></div>`;
+}
+
+/* ---------- Vídeos ---------- */
+function pgVideos(){
+ const all=S.videos.filter(v=>v.ch===S.ch);
+ const f=S.vidFilter;const list=all.filter(v=>f==='todos'||(f==='aprovar'&&v.state==='review')||(f==='rascunho'&&v.state==='draft')||(f==='publicado'&&v.state==='published')||(f==='falha'&&v.state==='failed'));
+ const cnt=k=>all.filter(v=>k==='todos'||(k==='aprovar'&&v.state==='review')||(k==='rascunho'&&v.state==='draft')||(k==='publicado'&&v.state==='published')||(k==='falha'&&v.state==='failed')).length;
+ return `<div class="head"><div><p class="eyebrow">Biblioteca de vídeos</p><h1>Vídeos</h1><p class="sub">${esc(ch().name)}</p></div>${b('✦ Criar vídeo','go','primary','data-to="#/new"')}</div>
+ <div class="row" style="margin-bottom:16px">${[['todos','Todos'],['aprovar','Para aprovar'],['rascunho','Rascunhos'],['falha','Com falha'],['publicado','Publicados']].map(([k,l])=>`<span class="pill btnlike ${f===k?'accent':''}" role="button" tabindex="0" data-a="vfilter" data-v="${k}">${l} · ${cnt(k)}</span>`).join('')}</div>
+ ${list.length?`<div class="card" style="padding:0;overflow:auto"><table class="vtable"><thead><tr><th>Vídeo</th><th>Modo</th><th>Formato</th><th>Estado</th><th>Cenas</th><th>Custo</th></tr></thead><tbody>
+ ${list.map(v=>`<tr class="click" data-a="open" data-id="${v.id}" data-tab="${v.state==='review'?'qualidade':v.state==='failed'?'producao':'cenas'}" tabindex="0"><td><b>${esc(v.title)}</b><div class="sample">v${v.rev} · ${esc(sty(v.style).name)}</div></td><td>${v.mode==='piloto'?'⚡ Piloto':'🎬 Diretor'}</td><td>${v.format==='short'?'9:16':'16:9'}</td><td>${statePill(v)}</td><td>${v.scenes.length}</td><td>${usd(v.cost)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="card"><p class="sub">Nenhum vídeo neste filtro.</p></div>`}`;
+}
+
+/* ---------- Workspace ---------- */
+function pgVideo(){
+ const v=vid();if(!v)return pgVideos();
+ const gen=v.state==='generating';
+ const bl=blockers(v).length;
+ const tabs=TABS.map(([id,t])=>`<button class="tab" data-a="tab" data-v="${id}" ${S.tab===id?'aria-current="page"':''}>${t}${id==='qualidade'&&v.state==='review'&&!v.dirty?'<span class="dot" title="Aguardando você"></span>':''}${id==='producao'&&v.state==='failed'?'<span class="dot" style="background:var(--bad)"></span>':''}</button>`).join('');
+ const panels={cenas:tabScenes,composicao:tabComp,qualidade:tabQA,publicacao:tabPub,fontes:tabSources,producao:tabProd};
+ return `<p class="sub" style="margin-bottom:8px">${b('← Vídeos','go','ghost small','data-to="#/videos"')} &nbsp; ${esc(ch().name)} / ${esc(v.title)}</p>
+ <div class="head"><div><p class="eyebrow">${v.mode==='piloto'?'⚡ Criado no piloto automático':'🎬 Modo Diretor'} · v${v.rev}</p><h1>${esc(v.title)}</h1><div class="row" style="margin-top:6px">${statePill(v)}<span class="pill">${v.format==='short'?'Short 9:16':'Vídeo 16:9'}</span><span class="pill">🎙 ${esc(voice(v.voice).name)}</span><span class="pill">🎨 ${esc(sty(v.style).name)}</span></div></div>
+  <div class="row">${v.mode==='piloto'&&v.state!=='draft'?b('Editar no Modo Diretor','tab','small','data-v="cenas"'):''}${b('Histórico de versões','history','small')}</div></div>
+ <nav class="tabs" aria-label="Áreas do vídeo">${tabs}</nav>
+ ${gen?progressCard(v):''}
+ ${(panels[S.tab]||tabScenes)(v)}${gen?'':dock(v,bl)}`;
+}
+function progressCard(v){
+ const done=v.steps.filter(s=>s.s==='ok').length;
+ return `<div class="card" style="border-color:var(--accent);margin-bottom:18px"><div class="between"><div><h3>⚡ Piloto automático trabalhando</h3><p class="sub">Roteiro → voz → mídia → composição → qualidade. Ao terminar, abre na aprovação.</p></div><span class="pill accent">${done}/${v.steps.length} etapas</span></div><div class="prog" style="height:8px;margin-top:12px"><b style="width:${Math.round(done/v.steps.length*100)}%;transition:width .5s"></b></div>
+ <div class="row" style="margin-top:8px">${v.steps.map(s=>`<span class="pill ${s.s==='ok'?'ok':s.s==='run'?'accent':s.s==='fail'?'bad':''}">${s.s==='ok'?'✓':s.s==='run'?'…':s.s==='fail'?'✕':'○'} ${esc(s.n)}</span>`).join('')}</div></div>`;
+}
+function dock(v,bl){
+ if(S.tab==='publicacao'||S.tab==='fontes'||S.tab==='producao'||S.tab==='qualidade')return '';
+ if(v.state==='published'&&!v.dirty)return `<div class="dock"><span class="sub">Publicado ${esc(v.pub.at)} · <a href="#" data-a="noop">${esc(v.pub.url)}</a></span>${b('Editar e gerar nova versão','tab','small','data-v="cenas"')}</div>`;
+ const missing=v.scenes.filter(s=>!s.media||s.audio!=='ok').length;
+ const needs=v.dirty||v.state==='draft';
+ return `<div class="dock"><div class="row"><b>${v.scenes.length} cenas</b><span class="sub">~${fmtT(vdur(v))} · estimativa ${usd(estCost(v))}</span>${needs&&missing?`<span class="pill warn">${missing} cena(s) sem mídia ou áudio atual</span>`:''}${v.dirty&&v.state!=='draft'?'<span class="pill warn">Edições ainda não renderizadas</span>':''}</div>
+ <div class="row">${needs?b(v.state==='draft'?'🎬 Gerar o que falta e renderizar':`Renderizar v${v.rev+1}`,'render','primary'):b('Ir para aprovação →','tab','ok','data-v="qualidade"')}</div></div>`;
+}
+
+/* --- Cenas & Storyboard --- */
+function tabScenes(v){
+ return `<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2><p class="sub">Texto, mídia, B-roll e narração de cada cena na mesma bancada. Edite sem trocar de tela.</p></div>
+ <div class="row">${b('+ Nova cena','addscene','small')}${b('Gerar tudo o que falta','genmissing','small')}</div></div>
+ <div class="stack">${v.scenes.map((s,i)=>sceneCard(v,s,i)).join('')}</div>
+ ${v.scenes.length===0?'<div class="card"><p class="sub">Sem cenas. Adicione a primeira cena.</p></div>':''}`;
+}
+function sceneCard(v,s,i){
+ const play=S.playing===s.id;
+ const aud={ok:['ok','✓ Áudio atual'],stale:['warn','Áudio desatualizado'],none:['bad','Sem áudio ainda']}[s.audio];
+ return `<div class="scene" data-sid="${s.id}">
+ <div>${thumb(s,v,230,132)}
+  <div class="row" style="margin-top:8px"><button class="btn small" style="flex:1" data-a="media" data-sid="${s.id}">${s.media?'Trocar mídia':'Escolher mídia'}</button><button class="btn small ${s.broll?'':'ghost'}" style="${s.broll?'border-color:var(--accent);color:var(--accent2)':''}" aria-pressed="${s.broll}" data-a="broll" data-sid="${s.id}">${s.broll?'B-roll ativo':'+ B-roll'}</button></div>
+  ${s.broll?`<input type="text" class="sample" style="margin-top:6px;font-size:12px" aria-label="Descrição do B-roll" data-a="brollnote" data-sid="${s.id}" value="${esc(s.brollNote)}" placeholder="O que mostrar no B-roll?">`:''}</div>
+ <div><div class="between" style="margin-bottom:6px"><span class="num">CENA ${i+1} · ${esc(s.title.toUpperCase())}</span><span class="sample" data-count="${s.id}">${words(s.text)} palavras · ~${secs(s.text)}s</span></div>
+  <label class="sr" for="tx-${s.id}">Texto da cena ${i+1}</label><textarea id="tx-${s.id}" rows="4" data-a="text" data-sid="${s.id}">${esc(s.text)}</textarea>
+  <div class="field" style="margin:8px 0 0"><label for="pr-${s.id}">Prompt da imagem</label><input type="text" id="pr-${s.id}" data-a="prompt" data-sid="${s.id}" value="${esc(s.prompt)}"></div></div>
+ <div class="player"><div class="between"><span class="lbl">NARRAÇÃO</span><span class="pill ${aud[0]}" data-audpill="${s.id}">${aud[1]}</span></div>
+  <p class="sample">${esc(voice(v.voice).name)}</p>
+  <div class="prog ${play?'run':''}" style="--d:${secs(s.text)}s"><b></b></div>
+  <div class="row"><button class="btn small primary" style="flex:1" data-a="play" data-sid="${s.id}" ${s.audio==='none'?'disabled':''}>${play?'■ Parar':'▶ Ouvir trecho'}</button></div>
+  <button class="btn small ghost long" style="margin-top:6px" data-a="regen" data-sid="${s.id}">${s.audio==='none'?'Gerar áudio da cena':'Regenerar áudio da cena'}</button>
+  <p class="sample" style="margin-top:6px">Simulação visual, sem áudio real.</p>
+  <div class="row" style="margin-top:8px;justify-content:space-between"><span><button class="btn ghost small" aria-label="Mover cena para cima" data-a="mv" data-d="-1" data-sid="${s.id}" ${i===0?'disabled':''}>↑</button><button class="btn ghost small" aria-label="Mover cena para baixo" data-a="mv" data-d="1" data-sid="${s.id}" ${i===v.scenes.length-1?'disabled':''}>↓</button></span><button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="${s.id}">Excluir</button></div>
+ </div></div>`;
+}
+
+/* --- Composição --- */
+function tabComp(v){
+ const c=v.comp,s0=v.scenes[0],st=sty(v.style),mu=MUSIC.find(m=>m.id===c.musicId)||MUSIC[0];
+ const posStyle=c.subPos==='cima'?'top:12%':c.subPos==='meio'?'top:46%':'bottom:12%';
+ const capStyle=`${posStyle};font-size:${Math.round(c.subSize*(v.format==='short'?0.5:0.42))}px;${c.subMode==='Caixa discreta'?'background:rgba(0,0,0,.65)':''};font-family:${esc(c.subFont)},sans-serif`;
+ const sample=(s0&&s0.text.split(' ').slice(0,6).join(' '))||'Legenda de exemplo';
+ const words6=sample.split(' ');
+ return `<div class="two"><div class="stack">
+ <div class="card"><h3 style="margin-bottom:12px">Prévia da composição</h3>
+  <div class="frame ${v.format==='short'?'r916':'r169'} ${c.motion==='Estático'?'static':''}" id="frame"><div class="bg" style="background:${st.grad}"></div><span style="font-size:60px;position:relative">${s0&&s0.media?s0.media.emoji:'🎞️'}</span><div class="cap" id="cap" style="${capStyle}">${c.subMode==='Destaque por palavra'?words6.map((w,i)=>i===2?`<span style="color:var(--accent2)">${esc(w)}</span>`:esc(w)).join(' '):esc(sample)}</div></div>
+  <p class="sample" style="margin-top:8px;text-align:center">Prévia ilustrativa — a renderização real usa a mesma configuração.</p></div>
+ <div class="card"><h3 style="margin-bottom:12px">Linha do tempo</h3>
+  <div class="track"><span>Mídia base</span><div style="background:var(--accentbg);border-color:var(--line2);color:var(--accent2)">${v.scenes.map((s,i)=>`Cena ${i+1} (${s.media?(s.media.kind==='ia'?'Arte IA':'Stock'):'sem mídia'})`).join(' → ')}</div></div>
+  <div class="track"><span>B-roll</span><div style="color:var(--warn)">${v.scenes.filter(s=>s.broll).map(s=>`${esc(s.title)}: ${esc(s.brollNote||'inserto')}`).join(' · ')||'<span style="color:var(--muted)">Nenhum B-roll ativo</span>'}</div></div>
+  <div class="track"><span>Narração</span><div style="color:var(--ok)">Narração contínua · ${esc(voice(v.voice).name)} · ~${fmtT(vdur(v))}</div></div>
+  <div class="track"><span>Música</span><div>${esc(mu.name)} · ${c.musicVol}%${c.ducking?' · reduz sob a voz':''}</div></div>
+  <div class="track"><span>Legendas</span><div>${esc(c.subFont)} · ${esc(c.subMode)} · ${c.subPos}</div></div></div></div>
+ <aside class="card" style="position:sticky;top:80px"><h3 style="margin-bottom:6px">Parâmetros</h3><p class="sample" style="margin-bottom:14px">Herdados do estilo e do canal. Mudar aqui vale só para este vídeo.</p>
+  <div class="field"><label for="cf1">Fonte da legenda</label><select id="cf1" data-a="comp" data-k="subFont">${['Inter','Roboto','Georgia'].map(o=>`<option ${c.subFont===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><label for="cf2">Estilo da legenda</label><select id="cf2" data-a="comp" data-k="subMode">${['Destaque por palavra','Caixa discreta','Texto simples'].map(o=>`<option ${c.subMode===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><span class="lbl">Posição</span>${seg([['cima','Topo'],['meio','Meio'],['baixo','Base']],c.subPos,'comp','subPos')}</div>
+  <div class="field"><label for="cf3">Tamanho da legenda: <b id="cf3v">${c.subSize}</b></label><input type="range" id="cf3" min="24" max="72" value="${c.subSize}" data-a="comp" data-k="subSize" data-num="1"></div>
+  <div class="field"><label for="cf4">Música de fundo</label><select id="cf4" data-a="comp" data-k="musicId">${MUSIC.map(m=>`<option value="${m.id}" ${c.musicId===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></div>
+  <div class="field"><label for="cf5">Volume da música: <b id="cf5v">${c.musicVol}%</b></label><input type="range" id="cf5" min="0" max="60" value="${c.musicVol}" data-a="comp" data-k="musicVol" data-num="1"></div>
+  <div class="field">${tog('cf6',c.ducking,'Abaixar a música quando houver voz','compchk')}</div>
+  <div class="grid2"><div class="field"><label for="cf7">Resolução</label><select id="cf7" data-a="comp" data-k="res">${['1080p','720p'].map(o=>`<option ${c.res===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="cf8">Quadros/s</label><select id="cf8" data-a="comp" data-k="fps" data-num="1">${[24,30,60].map(o=>`<option ${c.fps===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="grid2"><div class="field"><label for="cf9">Transição</label><select id="cf9" data-a="comp" data-k="transition">${['Fade suave','Corte seco','Deslizar'].map(o=>`<option ${c.transition===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="cf10">Movimento</label><select id="cf10" data-a="comp" data-k="motion">${['Zoom lento','Estático'].map(o=>`<option ${c.motion===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><label for="cf11">Estilo visual do vídeo</label><select id="cf11" data-a="vstyle">${STYLES.map(s=>`<option value="${s.id}" ${v.style===s.id?'selected':''}>${esc(s.name)}${s.id===ch().style?' (canal)':''}</option>`).join('')}</select></div>
+ </aside></div>`;
+}
+
+/* --- QA --- */
+function tabQA(v){
+ const g=gates(v),bl=g.filter(x=>x.st==='block').length,wr=g.filter(x=>x.st==='warn').length;
+ const dirty=v.dirty;
+ const canApprove=!bl&&!dirty&&v.state==='review';
+ const icon={ok:['ok','✓ Passou'],warn:['warn','! Atenção'],block:['bad','✕ Bloqueia']};
+ return `<div class="two"><div class="stack"><div class="card"><h3>Verificações de qualidade</h3><p class="sub" style="margin:2px 0 14px">Checagens determinísticas sobre o que está nas cenas e na composição.</p><div class="stack" style="gap:8px">${g.map(x=>`<div class="gate"><div><b style="font-size:13px">${esc(x.n)}</b><small>${esc(x.d)}</small></div><span class="pill ${icon[x.st][0]}">${icon[x.st][1]}</span></div>`).join('')}</div></div>
+ <div class="card"><h3 style="margin-bottom:10px">Prévia da versão v${v.rev||'—'}</h3>${v.rev===0?'<p class="sub">Ainda não há versão renderizada. Renderize no storyboard.</p>':`<div class="frame ${v.format==='short'?'r916':'r169'}" style="max-width:${v.format==='short'?'230px':'560px'}"><div class="bg" style="background:${sty(v.style).grad}"></div><span style="font-size:60px;position:relative">${v.scenes[0]&&v.scenes[0].media?v.scenes[0].media.emoji:'🎞️'}</span><div class="cap" style="bottom:12%;font-size:14px">${esc(v.scenes[0]?v.scenes[0].text.split(' ').slice(0,6).join(' '):'')}</div></div><p class="sample" style="text-align:center;margin-top:8px">Prévia ilustrativa · duração real não medida neste mockup</p>`}</div></div>
+ <aside class="card" style="position:sticky;top:80px"><h3>Aprovação da v${v.rev}</h3>
+  <p class="sub" style="margin:4px 0 12px">Aprovar marca esta versão como a oficial. Publicar é um passo separado.</p>
+  <div class="note ${bl?'':'okn'}" style="margin-bottom:14px"><b>${bl} bloqueio(s) · ${wr} aviso(s)</b><br>${bl?'Resolva os bloqueios no storyboard antes de aprovar.':dirty?'Há edições não renderizadas.':'Elegível para aprovação.'}</div>
+  ${v.state==='approved'?'<div class="note okn" style="margin-bottom:12px">✓ Versão aprovada.</div>':''}
+  ${v.state==='published'?'<div class="note okn">✓ Publicado.</div>':`<div class="stack" style="gap:8px">${v.state==='approved'?b('Ir para publicação →','tab','primary long','data-v="publicacao"'):b('✓ Aprovar esta versão','approve','ok long',canApprove?'':'disabled')}${v.state==='approved'?b('Desfazer aprovação','unapprove','ghost long small'):b('Pedir ajustes (volta ao storyboard)','tab','ghost long small','data-v="cenas"')}</div>`}
+  ${dirty&&v.state!=='draft'?`<div style="margin-top:10px">${b('Renderizar nova versão','render','long small')}</div>`:''}
+ </aside></div>`;
+}
+
+/* --- Publicação --- */
+function tabPub(v){
+ const ok=v.state==='approved'||v.state==='published';
+ const m=v.meta;if(!m.title)m.title=v.title+(v.format==='short'?' #Shorts':'');
+ return `<div class="two"><div class="card"><h3 style="margin-bottom:12px">Dados de publicação no YouTube</h3>
+ ${!ok?`<div class="note" style="margin-bottom:14px">Aprove uma versão na aba Qualidade para liberar a publicação. ${b('Ir para Qualidade','tab','small','data-v="qualidade"')}</div>`:''}
+ <div class="field"><label for="pm1">Título</label><input type="text" id="pm1" data-a="meta" data-k="title" value="${esc(m.title)}" maxlength="100"><span class="sample" id="pm1c">${m.title.length}/100</span></div>
+ <div class="field"><label for="pm2">Descrição</label><textarea id="pm2" rows="4" data-a="meta" data-k="desc">${esc(m.desc)}</textarea></div>
+ <div class="field"><label for="pm3">Tags (separadas por vírgula)</label><input type="text" id="pm3" data-a="meta" data-k="tags" value="${esc(m.tags)}"></div>
+ <div class="grid2"><div class="field"><label for="pm4">Visibilidade</label><select id="pm4" data-a="meta" data-k="vis">${[['publico','Público'],['nao_listado','Não listado'],['privado','Privado']].map(([k,l])=>`<option value="${k}" ${m.vis===k?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label for="pm5">Agendar (opcional)</label><input type="datetime-local" id="pm5" data-a="meta" data-k="schedule" value="${esc(m.schedule)}"></div></div></div>
+ <aside class="card" style="position:sticky;top:80px"><div class="between"><h3>Canal de destino</h3><span class="pill ${ytOn()?'ok':'bad'}">${ytOn()?'Conectado':'Desconectado'}</span></div>
+  <div class="card flat" style="margin:12px 0"><b>${ytOn()?esc(ch().handle):'Nenhum canal do YouTube associado'}</b><p class="sample">${ytOn()?'Autorização de upload ativa (simulada).':'Reconecte em Configurações → Conexões.'}</p></div>
+  ${v.state==='published'?`<div class="note okn">✓ Publicado ${esc(v.pub.at)}.<br><a href="#" data-a="noop">${esc(v.pub.url)}</a></div>`:`${b(m.schedule?'📅 Agendar publicação':'🚀 Publicar no YouTube','publish','ok long',ok&&ytOn()?'':'disabled')}${!ytOn()?`<div style="margin-top:8px">${b('Abrir Conexões','go','small long','data-to="#/settings" data-set="conexoes"')}</div>`:''}<p class="sample" style="margin-top:10px">Nada é enviado sem este clique. Mockup: não envia nada de verdade.</p>`}
+ </aside></div>`;
+}
+
+/* --- Fontes --- */
+function tabSources(v){
+ return `<div class="between" style="margin-bottom:14px"><div><h2>Fontes e evidências</h2><p class="sub">Referências que sustentam o roteiro deste vídeo.</p></div>${b('+ Adicionar fonte','addsrc','small')}</div>
+ <div class="note" style="margin-bottom:16px"><b>Atenção:</b> uma URL registrada é apenas uma referência. O Studio não verifica nem extrai o conteúdo automaticamente. Só o texto colado entra no roteiro.</div>
+ ${v.sources.length?`<div class="stack" style="gap:10px">${v.sources.map(s=>`<div class="card flat between"><div><b>${esc(s.label)}</b><p class="sample">${s.kind==='url'?esc(s.url)+' · ':'Texto colado · '}${s.chars} caracteres · SHA256 ${esc(s.hash)}</p></div><div class="row"><span class="pill ${s.kind==='url'?'warn':'ok'}">${s.kind==='url'?'Registrada, não verificada':'Texto no roteiro'}</span>${b('Remover','delsrc','ghost small',`data-id="${s.id}"`)}</div></div>`).join('')}</div>`:`<div class="card"><p class="sub">Nenhuma fonte ainda. Adicione uma URL de referência ou cole um texto de apoio.</p></div>`}`;
+}
+
+/* --- Produção --- */
+function tabProd(v){
+ const total=v.steps.reduce((a,s)=>a+(s.c||0),0),anyMissing=v.steps.some(s=>s.c==null);
+ return `<div class="two"><div class="card"><div class="between"><h3>Etapas da produção</h3>${v.state==='failed'?b('↻ Retomar de onde parou','retry','primary small'):''}</div>
+ <div style="margin-top:8px">${v.steps.map(s=>`<div class="step"><span class="ic ${s.s}">${s.s==='ok'?'✓':s.s==='run'?'…':s.s==='fail'?'✕':'○'}</span><div style="flex:1"><b>${esc(s.n)}</b>${s.err?`<p style="color:var(--bad);font-size:12.5px">${esc(s.err)}</p>`:''}<p class="sample">${s.s==='ok'?'Concluída':s.s==='run'?'Em andamento':s.s==='fail'?'Falhou':'Aguardando'}</p></div><span class="sample">${usd(s.c)}</span></div>`).join('')}</div></div>
+ <aside class="stack"><div class="card"><h3>Custo do vídeo</h3><p style="font-size:22px;font-weight:760;margin:6px 0">${anyMissing?'parcial: '+usd(total):usd(total)}</p><p class="sample">${anyMissing?'Etapas sem custo medido não são somadas como zero.':'Todas as etapas medidas.'}</p></div>
+ <details class="diag"><summary>Diagnóstico técnico</summary><p class="mono" style="margin-top:8px">video_id=${esc(v.id)}<br>modo=${v.mode}<br>revisão=${v.rev}<br>estado=${v.state}</p></details></aside></div>`;
+}
+
+/* ---------- Tendências ---------- */
+function pgIdeas(){
+ const niches=['Todos','História','Ciência'];const list=TRENDS.filter(t=>S.trendNiche==='Todos'||t.niche===S.trendNiche);
+ return `<div class="head"><div><p class="eyebrow">Radar</p><h1>Tendências e ideias</h1><p class="sub">Ideias para o nicho do canal. Escolha como produzir.</p></div><div class="row">${niches.map(n=>`<span class="pill btnlike ${S.trendNiche===n?'accent':''}" role="button" tabindex="0" data-a="niche" data-v="${n}">${n}</span>`).join('')}</div></div>
+ <div class="grid2">${list.map(t=>`<div class="card"><div class="between"><span class="pill ${t.tone}">${t.tag}</span><span class="sample">${t.niche}</span></div><h3 style="margin:8px 0 2px">${esc(t.title)}</h3><p class="sub">${esc(t.why)}</p><div class="row" style="margin-top:12px">${b('⚡ Criar com piloto','idea','primary small',`data-id="${t.id}" data-mode="piloto"`)}${b('🎬 Criar no Modo Diretor','idea','small',`data-id="${t.id}" data-mode="diretor"`)}</div></div>`).join('')}</div><p class="sample" style="margin-top:10px">Ideias ilustrativas.</p>`;
+}
+
+/* ---------- Desempenho ---------- */
+function pgAnalytics(){
+ const pub=S.videos.filter(v=>v.state==='published'&&v.ch===S.ch).length;
+ const data=[['Seg',40],['Ter',62],['Qua',35],['Qui',88],['Sex',70],['Sáb',120],['Dom',96]];const mx=120;
+ return `<div class="head"><div><p class="eyebrow">Resultados</p><h1>Desempenho</h1><p class="sub">${esc(ch().name)}</p></div></div>
+ <div class="note" style="margin-bottom:16px">Números ilustrativos. A versão real exibirá dados da API do YouTube apenas depois da conexão do canal.</div>
+ <div class="grid4" style="margin-bottom:20px">${[['Visualizações (7 dias)','12,4 mil'],['Retenção média','62%'],['Vídeos publicados',String(pub)],['Custo médio por vídeo',usd(0.4)]].map(([l,v])=>`<div class="card"><p class="sub">${l}</p><p style="font-size:24px;font-weight:780">${v}</p></div>`).join('')}</div>
+ <div class="two"><div class="card"><h3>Visualizações por dia</h3><div class="chart" style="margin-bottom:26px">${data.map(([d,n])=>`<div style="height:${Math.round(n/mx*100)}%"><span>${d}</span></div>`).join('')}</div></div>
+ <div class="card"><h3 style="margin-bottom:10px">O que funcionou</h3><ul class="sub" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Shorts de mistério com gancho nos 3 primeiros segundos retêm mais.</li><li>Estilo Cinemática Sombria tem mais cliques que Documentário (ilustrativo).</li><li>Voz grave performa melhor em histórias de época.</li></ul></div></div>`;
+}
+
+/* ---------- Biblioteca ---------- */
+function pgLibrary(){
+ const t=S.libTab,c=ch();
+ const tabs=[['estilos','Estilos visuais'],['vozes','Vozes'],['musicas','Músicas'],['modelos','Modelos de roteiro']];
+ let body='';
+ if(t==='estilos')body=`<div class="between" style="margin-bottom:14px"><p class="sub">O estilo vinculado ao canal é herdado por todos os novos vídeos.</p>${b('+ Criar novo estilo','newstyle','small')}</div><div class="grid3">${STYLES.map(s=>{const act=c.style===s.id;return `<div class="card" style="${act?'border:2px solid var(--accent);background:var(--accentbg);padding:17px':''}"><div class="thumb" style="height:100px;background:${s.grad};margin-bottom:10px"><span style="font-size:34px">${s.emoji}</span></div><div class="between"><b>${esc(s.name)}</b>${act?'<span class="pill accent">✓ Ativo no canal</span>':''}</div><p class="sub" style="margin:4px 0 10px">${esc(s.desc)}</p>${act?'<span class="sample" style="color:var(--ok)">Padrão herdado para novos vídeos</span>':b('Vincular ao canal','linkstyle','small',`data-v="${s.id}"`)}</div>`}).join('')}</div>`;
+ if(t==='vozes')body=`<p class="sub" style="margin-bottom:14px">Ouça a amostra e defina a voz padrão do canal.</p><div class="grid3">${VOICES.map(v=>{const act=c.voice===v.id;return `<div class="card" style="${act?'border:2px solid var(--accent);background:var(--accentbg);padding:17px':''}"><div class="between"><b>${esc(v.name)}</b>${act?'<span class="pill accent">✓ Padrão do canal</span>':''}</div><p class="sub">${esc(v.tone)}</p><div class="prog ${S.playing==='v-'+v.id?'run':''}" style="--d:${v.dur}s"><b></b></div><div class="row">${b(S.playing==='v-'+v.id?'■ Parar':'▶ Ouvir amostra','sample','small',`data-v="${v.id}"`)}${act?'':b('Definir como padrão','linkvoice','small',`data-v="${v.id}"`)}</div></div>`}).join('')}</div><p class="sample" style="margin-top:8px">Amostras simuladas (sem áudio real).</p>`;
+ if(t==='musicas')body=`<div class="grid2">${MUSIC.map(m=>`<div class="card between"><div><b>${esc(m.name)}</b><p class="sub">${esc(m.mood)} · volume padrão ${m.vol}%</p></div>${b('▶ Prévia','toast','small','data-m="Prévia simulada: sem áudio real."')}</div>`).join('')}</div>`;
+ if(t==='modelos')body=`<div class="grid3">${TEMPLATES.map(tp=>`<div class="card"><b>${esc(tp.name)}</b><p class="sub" style="margin:4px 0 8px">${esc(tp.desc)}</p><div class="row" style="margin-bottom:12px">${tp.beats.map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div>${b('Usar ao criar vídeo','usetemplate','small',`data-v="${tp.id}"`)}</div>`).join('')}</div>`;
+ return `<div class="head"><div><p class="eyebrow">Recursos reutilizáveis</p><h1>Biblioteca</h1><p class="sub">Canal ativo: ${esc(c.name)}</p></div></div><nav class="tabs">${tabs.map(([id,l])=>`<button class="tab" data-a="libtab" data-v="${id}" ${t===id?'aria-current="page"':''}>${l}</button>`).join('')}</nav>${body}`;
+}
+
+/* ---------- Configurações ---------- */
+function pgSettings(){
+ const c=ch(),t=S.setTab;
+ const tabs=[['canais','Canais'],['marca','Marca & Editorial'],['producao','Produção & Orçamento'],['conexoes','Conexões & Equipe']];
+ let body='';
+ const fld=(id,l,k,ex='')=>`<div class="field"><label for="${id}">${l}</label><input type="text" id="${id}" data-a="chf" data-k="${k}" value="${esc(c[k])}" ${ex}></div>`;
+ if(t==='canais')body=`<div class="between" style="margin-bottom:14px"><p class="sub">Cada canal tem identidade, visual, orçamento, providers e conexão com o YouTube próprios.</p>${b('+ Novo canal','newch','primary small')}</div><div class="grid2">${S.channels.map(x=>{const n=S.videos.filter(v=>v.ch===x.id).length,r=readiness(x);return `<div class="card" style="${x.id===c.id?'border:2px solid var(--accent);background:var(--accentbg);padding:17px':''}"><div class="between"><h3>${esc(x.name)}</h3>${x.id===c.id?'<span class="pill accent">Canal ativo</span>':''}</div><p class="sub">${esc(x.niche||'sem nicho')} · ${esc(x.lang)}</p><div class="row" style="margin:10px 0"><span class="pill">🎨 ${esc(sty(x.style).name)}</span><span class="pill">🎙 ${esc(voice(x.voice).name)}</span><span class="pill">${PROFILE_L[x.profile]}</span><span class="pill ${x.ytOn?'ok':'warn'}">YouTube ${x.ytOn?'conectado':'desconectado'}</span><span class="pill ${r.ok?'ok':'bad'}">Providers ${r.ok?'prontos':r.missing.length+' pendente(s)'}</span></div><p class="sample">${n} vídeo(s) · piloto ${x.mode==='piloto'?'é o padrão':'não é o padrão'}</p><div class="row" style="margin-top:10px">${b('Abrir estúdio','chopen','small',`data-id="${x.id}"`)}${b('Editar','chedit','ghost small',`data-id="${x.id}"`)}</div></div>`}).join('')}<button class="card" style="border-style:dashed;cursor:pointer;text-align:center;color:var(--muted)" data-a="newch"><div style="font-size:30px">＋</div><b>Criar novo canal</b><p class="sample">Assistente em 6 passos</p></button></div>`;
+ if(t==='marca')body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Identidade e linha editorial</h3>
+  ${fld('s1','Nome do canal','name')}${fld('s1b','Nicho','niche')}${fld('s2','Público','audience')}
+  <div class="field"><label for="s2b">Estratégia</label><textarea id="s2b" rows="3" data-a="chf" data-k="strategy">${esc(c.strategy)}</textarea></div>
+  <div class="field"><label for="s2c">Pilares (separados por vírgula)</label><input type="text" id="s2c" data-a="chf" data-k="pillars" data-list="1" value="${esc((c.pillars||[]).join(', '))}"></div>
+  ${fld('s3','Estilo narrativo','tone')}${fld('s3b','Chamada para ação padrão','cta')}
+  <div class="grid2"><div class="field"><label for="s4">Idioma</label><select id="s4" data-a="chf" data-k="lang">${['Português (BR)','English','Español'].map(o=>`<option ${c.lang===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="s4b">Cor da marca</label><input type="color" id="s4b" data-a="chf" data-k="brand" value="${esc(c.brand||'#8f6ef7')}" style="width:60px;height:34px;padding:2px"></div></div></div>
+  <div class="card"><h3 style="margin-bottom:12px">Padrões para novos vídeos</h3>
+  <div class="field"><span class="lbl">Modo padrão</span>${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],c.mode,'chmode')}</div>
+  <div class="field"><span class="lbl">Formato padrão</span>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],c.format,'chformat')}</div>
+  <div class="field"><label for="s5">Duração padrão: <b id="s5v">${c.dur} s</b></label><input type="range" id="s5" min="15" max="600" step="5" value="${c.dur}" data-a="chf" data-k="dur" data-num="1" data-out="s5v" data-suf=" s"></div>
+  <div class="field"><label for="s7">Voz padrão</label><select id="s7" data-a="chf" data-k="voice">${VOICES.map(v=>`<option value="${v.id}" ${c.voice===v.id?'selected':''}>${esc(v.name)} — ${esc(v.tone)}</option>`).join('')}</select></div>
+  <div class="field"><label for="s8">Estilo visual vinculado (Biblioteca)</label><select id="s8" data-a="chf" data-k="style">${STYLES.map(s=>`<option value="${s.id}" ${c.style===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+  <div class="grid2"><div class="field"><label for="s9">Fonte da legenda</label><select id="s9" data-a="chf" data-k="subFont">${['Inter','Roboto','Georgia'].map(o=>`<option ${c.subFont===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="s10">Estilo da legenda</label><select id="s10" data-a="chf" data-k="subMode">${['Destaque por palavra','Caixa discreta','Texto simples'].map(o=>`<option ${c.subMode===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="note info">O piloto automático sempre para na aprovação. Publicar exige um clique seu.</div></div></div>`;
+ if(t==='producao'){const r=readiness(c);body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3><div class="stack" style="gap:10px">${[['economico','⚡ Econômico','Prioriza custo conhecido. Rápido e simples.'],['equilibrado','⚖ Equilibrado','Equilibra custo e qualidade elegível.'],['premium','💎 Premium','Prioriza qualidade. Exige providers de alta qualidade.']].map(([k,t2,d2])=>`<button class="choice" aria-pressed="${c.profile===k}" data-a="profile" data-v="${k}"><b>${t2}</b><p class="sub">${d2}</p></button>`).join('')}</div><p class="sample" style="margin-top:8px">O perfil muda o roteamento de providers abaixo.</p></div>
+  <div class="card"><h3 style="margin-bottom:12px">Orçamento e saída</h3>
+  <div class="field"><label for="p1">Teto mensal: <b id="p1v">US$ ${c.cap}</b></label><input type="range" id="p1" min="5" max="100" value="${c.cap}" data-a="chf" data-k="cap" data-num="1" data-out="p1v" data-pre="US$ "></div>
+  <div class="field"><label for="p2">Teto por vídeo: <b id="p2v">US$ ${c.capVideo.toFixed(2).replace('.',',')}</b></label><input type="range" id="p2" min="0.2" max="5" step="0.1" value="${c.capVideo}" data-a="chf" data-k="capVideo" data-num="1" data-out="p2v" data-pre="US$ "></div>
+  <div class="grid2"><div class="field"><label for="p3">Resolução</label><select id="p3" data-a="chf" data-k="res">${['1080p','720p'].map(o=>`<option ${c.res===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="p4">Quadros/s</label><select id="p4" data-a="chf" data-k="fps" data-num="1">${[24,30,60].map(o=>`<option ${c.fps===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><label for="p5">Preferência de mídia</label><select id="p5" data-a="chf" data-k="mediaPolicy">${['Banco de mídia primeiro','IA primeiro','Somente meus arquivos'].map(o=>`<option ${c.mediaPolicy===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><label for="p6">Se um provider falhar</label><select id="p6" data-a="chf" data-k="fallback">${['Pedir confirmação','Usar alternativa dentro dos limites'].map(o=>`<option ${c.fallback===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field">${tog('p7',c.broll,'B-roll ligado por padrão','chkbroll')}</div>
+  <div class="hr"></div><p class="lbl">Uso no mês</p><div class="bar"><b style="width:${Math.min(100,Math.round(S.spent[c.id]/c.cap*100))}%"></b></div><p class="sample" style="margin-top:4px">US$ ${S.spent[c.id].toFixed(2).replace('.',',')} usados (ilustrativo)</p></div></div>
+  <div class="card" style="margin-top:16px"><div class="between"><div><h3>Roteamento de providers deste canal</h3><p class="sub">Escolha automática pelo perfil ${PROFILE_L[c.profile]}, recalculada a cada leitura. Fixe um provider só se precisar.</p></div><span class="pill ${r.ok?'ok':'bad'}">${r.ok?'✓ Pronto para produzir':'✕ '+r.missing.length+' sem provider'}</span></div><div class="grid2" style="margin-top:12px">${routeRows(c,true)}</div><p class="sample" style="margin-top:10px">Custo estimado não é preço cobrado e custo desconhecido não é tratado como zero. Sem provider elegível, a tarefa aparece indisponível com o motivo.</p></div>`}
+ if(t==='conexoes')body=`<div class="grid2" style="margin-bottom:16px">${ytCard(c,false)}<div class="card"><div class="between"><h3>Equipe</h3>${b('+ Convidar','invite','small')}</div><div style="margin-top:8px">${S.team.map(m=>`<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${esc(m.n)}</b><span class="sub">${esc(m.r)}</span></div>`).join('')}</div></div></div>
+  <div class="card"><div class="between" style="margin-bottom:6px"><div><h3>Providers externos</h3><p class="sub">Catálogo da conta, por tarefa. Cada canal escolhe qual usar em Produção & Orçamento.</p></div>${b('+ Adicionar provider','addprov','primary small')}</div>
+  <div class="note info" style="margin:10px 0 16px">Chaves e tokens ficam no servidor (secret store). Aqui aparece só a <b>referência</b> e o estado — nenhum valor volta ao navegador.</div>
+  ${KINDS.map(([k,l])=>`<h4 style="margin:14px 0 8px;color:var(--accent2)">${l}</h4><div class="grid2">${S.providers.filter(p=>p.kind===k).map(provCard).join('')||'<p class="sample">Nenhum provider cadastrado.</p>'}</div>`).join('')}</div>
+  <details class="diag" style="margin-top:16px"><summary>Avançado e diagnóstico</summary><p class="mono" style="margin-top:8px">ambiente=mockup · versão=v4<br>chaves: não exibidas<br>fila: 0 · workers: 1<br>configuração pública do canal: ${esc(c.id)}</p></details>`;
+ return `<div class="head"><div><p class="eyebrow">Ajustes</p><h1>Configurações</h1><p class="sub">Canal: ${esc(c.name)} · alterações salvam na hora (mockup).</p></div></div><nav class="tabs">${tabs.map(([id,l])=>`<button class="tab" data-a="settab" data-v="${id}" ${t===id?'aria-current="page"':''}>${l}</button>`).join('')}</nav>${body}`;
+}
+
+/* ---------- Criar canal (assistente) ---------- */
+const WSTEPS=[['Identidade'],['Estratégia'],['Visual e voz'],['Produção'],['Providers e YouTube'],['Revisar']];
+function wizDefaults(){return {name:'',niche:'',lang:'Português (BR)',audience:'',strategy:'',pillars:[],tone:'Didático e envolvente',cta:'',dur:45,brand:'#8f6ef7',style:'st1',voice:'vo1',format:'short',mode:'piloto',subFont:'Inter',subMode:'Destaque por palavra',profile:'economico',cap:20,capVideo:1.5,res:'1080p',fps:30,mediaPolicy:'Banco de mídia primeiro',fallback:'Pedir confirmação',retries:2,broll:true,routing:RT0(),ytOn:false,handle:''}}
+function pgWizard(){
+ if(!S.wiz)S.wiz={step:1,max:1,d:wizDefaults()};
+ const w=S.wiz,d=w.d,st=w.step;
+ const head=`<div class="head"><div><p class="eyebrow">Canais / Novo canal</p><h1>Criar canal</h1><p class="sub">Defina uma vez a identidade, o visual, a produção e os providers. Todo vídeo novo herda isso.</p></div>${b('Cancelar','wcancel','ghost small')}</div>
+ <ol style="list-style:none;display:flex;gap:6px;padding:0;margin:0 0 22px;flex-wrap:wrap">${WSTEPS.map(([n],i)=>{const k=i+1,cur=k===st,done=k<st;return `<li><button class="pill ${cur?'accent':done?'ok':''} btnlike" ${k>w.max?'disabled':''} data-a="wgo" data-v="${k}" ${cur?'aria-current="step"':''}>${done?'✓':k} · ${n}</button></li>`}).join('')}</ol>`;
+ const inp=(id,label,k,ph,extra='')=>`<div class="field"><label for="${id}">${label}</label><input type="text" id="${id}" data-a="winp" data-k="${k}" value="${esc(d[k])}" placeholder="${esc(ph||'')}" ${extra}></div>`;
+ let body='';
+ if(st===1)body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Quem é este canal?</h3>${inp('w1','Nome do canal *','name','Ex.: Curiosidades Históricas','maxlength="120" required')}${inp('w2','Nicho editorial','niche','Ex.: História e mistérios')}<div class="field"><label for="w3">Idioma</label><select id="w3" data-a="winp" data-k="lang">${['Português (BR)','English','Español'].map(o=>`<option ${d.lang===o?'selected':''}>${o}</option>`).join('')}</select></div>${inp('w4','Público','audience','Ex.: curiosos por história e mistérios')}</div>
+ <div class="card"><h3>Como isso é usado</h3><p class="sub" style="margin-top:6px">O nome identifica o canal no menu. Nicho, idioma e público orientam o roteiro, as sugestões de tendência e o tom do texto.</p><div class="note info" style="margin-top:14px">Só o nome é obrigatório. O resto pode ser ajustado depois em Configurações.</div></div></div>`;
+ if(st===2)body=`<div class="grid2"><div class="card"><div class="between" style="margin-bottom:12px"><h3>Linha editorial</h3>${b('✦ Sugerir com base no nicho','wsuggest','small')}</div>
+  <div class="field"><label for="w5">Estratégia</label><textarea id="w5" rows="3" data-a="winp" data-k="strategy" placeholder="O que o canal entrega e como se diferencia">${esc(d.strategy)}</textarea></div>
+  ${inp('w6','Pilares editoriais (separados por vírgula)','pillars','Ex.: História, Mistérios, Arqueologia','data-list="1"').replace(`value="${esc(d.pillars)}"`,`value="${esc(d.pillars.join(', '))}"`)}
+  ${inp('w7','Estilo narrativo','tone','Ex.: Didático e envolvente')}${inp('w8','Chamada para ação padrão','cta','Ex.: Qual tema você quer ver no próximo vídeo?')}
+  <div class="field"><label for="w9">Duração padrão: <b id="w9v">${d.dur} s</b></label><input type="range" id="w9" min="15" max="600" step="5" value="${d.dur}" data-a="winp" data-k="dur" data-num="1" data-out="w9v" data-suf=" s"></div></div>
+  <div class="card"><h3>Pilares viram ideias</h3><p class="sub" style="margin-top:6px">Os pilares alimentam Tendências e ideias e a estrutura de roteiro sugerida ao criar um vídeo.</p><div class="row" style="margin-top:12px">${d.pillars.length?d.pillars.map(p=>`<span class="pill accent">${esc(p)}</span>`).join(''):'<span class="sample">Nenhum pilar ainda.</span>'}</div></div></div>`;
+ if(st===3)body=`<div class="stack"><div class="card"><h3 style="margin-bottom:6px">Estilo visual (da Biblioteca)</h3><p class="sub" style="margin-bottom:12px">Todo vídeo novo herda este estilo. Dá para trocar por vídeo.</p><div class="grid3">${STYLES.map(s=>`<button class="choice" aria-pressed="${d.style===s.id}" data-a="wset" data-k="style" data-v="${s.id}"><div class="thumb" style="height:60px;background:${s.grad};margin-bottom:8px"><span style="font-size:24px">${s.emoji}</span></div><b style="font-size:12.5px">${esc(s.name)}</b></button>`).join('')}</div></div>
+  <div class="grid2"><div class="card"><h3 style="margin-bottom:10px">Voz do narrador</h3><div class="stack" style="gap:8px">${VOICES.map(v=>`<div class="between"><button class="pill btnlike ${d.voice===v.id?'accent':''}" data-a="wset" data-k="voice" data-v="${v.id}">${esc(v.name)} · ${esc(v.tone)}</button>${b('▶ amostra','sample','ghost small',`data-v="${v.id}"`)}</div>`).join('')}</div><p class="sample" style="margin-top:8px">Amostras simuladas, sem áudio real.</p></div>
+  <div class="card"><h3 style="margin-bottom:10px">Legendas, formato e modo</h3><div class="grid2"><div class="field"><label for="w10">Fonte</label><select id="w10" data-a="winp" data-k="subFont">${['Inter','Roboto','Georgia'].map(o=>`<option ${d.subFont===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="w11">Estilo</label><select id="w11" data-a="winp" data-k="subMode">${['Destaque por palavra','Caixa discreta','Texto simples'].map(o=>`<option ${d.subMode===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><span class="lbl">Formato padrão</span>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],d.format,'wset','format')}</div>
+  <div class="field"><span class="lbl">Modo padrão de criação</span>${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],d.mode,'wset','mode')}</div>
+  <div class="field"><label for="w12">Cor da marca</label><input type="color" id="w12" data-a="winp" data-k="brand" value="${esc(d.brand)}" style="width:60px;height:34px;padding:2px"></div></div></div></div>`;
+ if(st===4)body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3><div class="stack" style="gap:10px">${[['economico','⚡ Econômico','Prioriza custo conhecido. Rápido e simples.'],['equilibrado','⚖ Equilibrado','Equilibra custo e qualidade elegível.'],['premium','💎 Premium','Prioriza qualidade. Exige providers de alta qualidade.']].map(([k,t,x])=>`<button class="choice" aria-pressed="${d.profile===k}" data-a="wset" data-k="profile" data-v="${k}"><b>${t}</b><p class="sub">${x}</p></button>`).join('')}</div></div>
+  <div class="card"><h3 style="margin-bottom:12px">Limites e saída</h3>
+  <div class="field"><label for="w13">Teto mensal: <b id="w13v">US$ ${d.cap}</b></label><input type="range" id="w13" min="5" max="100" value="${d.cap}" data-a="winp" data-k="cap" data-num="1" data-out="w13v" data-pre="US$ "></div>
+  <div class="field"><label for="w14">Teto por vídeo: <b id="w14v">US$ ${d.capVideo.toFixed(2).replace('.',',')}</b></label><input type="range" id="w14" min="0.2" max="5" step="0.1" value="${d.capVideo}" data-a="winp" data-k="capVideo" data-num="1" data-out="w14v" data-pre="US$ "></div>
+  <div class="grid2"><div class="field"><label for="w15">Resolução</label><select id="w15" data-a="winp" data-k="res">${['1080p','720p'].map(o=>`<option ${d.res===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="w16">Quadros/s</label><select id="w16" data-a="winp" data-k="fps" data-num="1">${[24,30,60].map(o=>`<option ${d.fps===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><label for="w17">Preferência de mídia</label><select id="w17" data-a="winp" data-k="mediaPolicy">${['Banco de mídia primeiro','IA primeiro','Somente meus arquivos'].map(o=>`<option ${d.mediaPolicy===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><label for="w18">Se um provider falhar</label><select id="w18" data-a="winp" data-k="fallback">${['Pedir confirmação','Usar alternativa dentro dos limites'].map(o=>`<option ${d.fallback===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <p class="sample">Nunca troca a voz de identidade nem excede o teto sem avisar.</p></div></div>`;
+ if(st===5){const r=readiness(d);body=`<div class="two"><div class="stack"><div class="card"><div class="between"><div><h3>Providers que este canal usaria</h3><p class="sub">Escolha automática pelo perfil ${PROFILE_L[d.profile]}. Você pode fixar outro depois em Configurações.</p></div><span class="pill ${r.ok?'ok':'bad'}">${r.ok?'✓ Pronto para produzir':`✕ ${r.missing.length} tarefa(s) sem provider`}</span></div><div class="stack" style="gap:8px;margin-top:12px">${routeRows(d,false)}</div>
+  ${r.ok?'':`<div class="note" style="margin-top:12px">Você pode criar o canal mesmo assim, mas o piloto automático só roda quando todas as tarefas tiverem provider. ${b('Abrir catálogo de providers','wproviders','small')}</div>`}</div></div>
+  <div class="stack">${ytCard(d,true)}<div class="note info">Conectar o YouTube agora é opcional. Dá para criar e aprovar vídeos e conectar só na hora de publicar.</div></div></div>`}
+ if(st===6){const r=readiness(d);body=`<div class="two"><div class="card"><h3 style="margin-bottom:10px">Resumo do canal</h3>
+  ${[['Nome',d.name||'—'],['Nicho',d.niche||'—'],['Idioma',d.lang],['Público',d.audience||'—'],['Pilares',d.pillars.join(', ')||'—'],['Duração padrão',d.dur+' s'],['Estilo',sty(d.style).name],['Voz',voice(d.voice).name],['Formato / modo',(d.format==='short'?'Short 9:16':'Vídeo 16:9')+' · '+(d.mode==='piloto'?'Piloto automático':'Modo Diretor')],['Perfil',PROFILE_L[d.profile]],['Teto mensal / vídeo',`US$ ${d.cap} / US$ ${d.capVideo.toFixed(2).replace('.',',')}`],['Providers',r.ok?'Todos prontos':r.missing.length+' sem provider'],['YouTube',d.ytOn?'Conectado '+d.handle:'Conectar depois']].map(([a,v])=>`<div class="between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="sub">${a}</span><b>${esc(v)}</b></div>`).join('')}</div>
+  <aside class="card"><h3>Pronto para criar</h3><p class="sub" style="margin:6px 0 14px">Criar o canal não gera vídeo nem cobra nada. Você vai direto para o estúdio do novo canal.</p>${b('✦ Criar canal','wcreate','primary long')}</aside></div>`}
+ const foot=`<div class="between" style="margin-top:22px"><div>${st>1?b('← Voltar','wback'):''}</div><div class="row">${st<6?b(st===5?'Revisar →':'Continuar →','wnext','primary'):''}</div></div>`;
+ return head+body+foot;
+}
+
+/* ============ render ============ */
+function render(){
+ renderNav();
+ const map={home:pgHome,new:pgNew,videos:pgVideos,video:pgVideo,ideas:pgIdeas,analytics:pgAnalytics,library:pgLibrary,settings:pgSettings,wizard:pgWizard};
+ $('#view').innerHTML=(map[S.route]||pgHome)();
+ renderGuide();renderModal();
+}
+function toast(m){S.toast=m;let t=$('#toast');if(t)t.remove();t=document.createElement('div');t.id='toast';t.className='toast';t.setAttribute('role','status');t.textContent=m;document.body.appendChild(t);clearTimeout(toast._t);toast._t=setTimeout(()=>t.remove(),2600)}
+function go(h){if(location.hash===h)route();else location.hash=h}
+function route(){
+ const h=(location.hash||'#/home').split('/');const r=h[1]||'home';
+ if(r==='video'){S.route='video';S.vid=h[2];S.tab=h[3]||'cenas';const owner=vid();if(owner)S.ch=owner.ch}else if(r==='channel'){S.route='wizard'}else{S.route=r;}
+ if(!['home','new','videos','video','ideas','analytics','library','settings','wizard'].includes(S.route))S.route='home';
+ window.scrollTo(0,0);render();
+}
+window.addEventListener('hashchange',route);
+
+/* ============ guia da demo ============ */
+const GUIDE={
+ c:[['Menu do canal → ＋ Novo canal…','#/channel/new'],['Passos 1–4: identidade, estratégia, visual, produção','#/channel/new'],['Passo 5: providers e YouTube','#/channel/new'],['Catálogo de providers (testar, configurar)','#/settings'],['Roteamento do canal pelo perfil','#/settings']],
+ q:[['Início: digite um tema e use ⚡ Piloto automático','#/new'],['Criar vídeo → "Gerar vídeo completo"','#/new'],['Acompanhe as etapas até abrir na aprovação','#/video/v1/qualidade'],['Aprove e vá para Publicação','#/video/v1/publicacao'],['Publique (simulado)','#/video/v1/publicacao']],
+ d:[['Criar vídeo → escolha 🎬 Modo Diretor','#/new'],['Edite as cenas no storyboard (texto, mídia, B-roll)','#/video/v2/cenas'],['Ouça trechos e regenere o áudio','#/video/v2/cenas'],['Ajuste legendas e música','#/video/v2/composicao'],['Renderize, aprove e publique','#/video/v2/qualidade']]
+};
+function renderGuide(){
+ const g=$('#guide');
+ g.innerHTML=`${S.guide?`<div class="gbox" role="dialog" aria-label="Roteiro da demo"><b>🏗 Criar canal e providers</b><ol>${GUIDE.c.map(([t,h])=>`<li><button data-a="go" data-to="${h}" ${t.startsWith('Catálogo')?'data-set="conexoes"':t.startsWith('Roteamento')?'data-set="producao"':''}>${t}</button></li>`).join('')}</ol><b>⚡ Jornada Rápida</b><ol>${GUIDE.q.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><b>🎬 Jornada Diretor</b><ol>${GUIDE.d.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><p class="sample">Clique num passo para ir até a tela. Os dados são ilustrativos e vivem só nesta página.</p></div>`:''}<button class="gbtn" data-a="guide" aria-expanded="${S.guide}">${S.guide?'Fechar roteiro':'🧭 Roteiro da demo'}</button>`;
+}
+
+/* ============ modais ============ */
+function renderModal(){
+ const m=S.modal,o=$('#overlay');if(!m){o.innerHTML='';return}
+ let body='';
+ if(m.t==='media'){const v=vid(),s=v.scenes.find(x=>x.id===m.sid);body=`<h3>Mídia da cena</h3><p class="sub" style="margin:4px 0 14px">${esc(s.title)} · escolha uma opção ou gere com o prompt.</p><div class="grid3" style="margin-bottom:14px">${EMOJIS.slice(0,6).map((e,i)=>`<button class="choice" data-a="pickmedia" data-e="${e}" data-k="${i%2?'stock':'ia'}"><div class="thumb" style="height:64px;background:${sty(v.style).grad}"><span style="font-size:26px">${e}</span></div><span class="sample">${i%2?'Vídeo stock (Pexels)':'Arte IA'}</span></button>`).join('')}</div><div class="between">${b('Gerar nova imagem com o prompt','pickmedia','primary small','data-e="'+EMOJIS[Math.floor(Math.random()*EMOJIS.length)]+'" data-k="ia"')}${b('Fechar','closemodal','ghost small')}</div>`}
+ if(m.t==='src')body=`<h3>Adicionar fonte</h3><div class="field" style="margin-top:12px"><label for="mf1">Tipo</label><select id="mf1"><option value="url">URL de referência</option><option value="texto">Texto colado</option></select></div><div class="field"><label for="mf2">Título</label><input type="text" id="mf2" placeholder="Ex.: Artigo sobre o tema"></div><div class="field"><label for="mf3">URL ou texto</label><textarea id="mf3" rows="4"></textarea></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Registrar fonte','savesrc','primary small')}</div>`;
+ if(m.t==='style')body=`<h3>Criar novo estilo</h3><div class="field" style="margin-top:12px"><label for="mf1">Nome</label><input type="text" id="mf1" placeholder="Ex.: Noir Poético"></div><div class="field"><label for="mf2">Descrição curta</label><input type="text" id="mf2"></div><div class="field"><label for="mf3">Instrução de arte (prompt base)</label><textarea id="mf3" rows="3" placeholder="Ex.: noir, preto e branco, alto contraste"></textarea></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Salvar na biblioteca','savestyle','primary small')}</div>`;
+ if(m.t==='invite')body=`<h3>Convidar para a equipe</h3><div class="field" style="margin-top:12px"><label for="mf1">E-mail</label><input type="text" id="mf1" placeholder="pessoa@empresa.com"></div><div class="field"><label for="mf2">Papel</label><select id="mf2"><option>Editora · cria e aprova</option><option>Leitor · só visualiza</option></select></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Enviar convite','saveinvite','primary small')}</div>`;
+ if(m.t==='yt')body=`<h3>Conectar YouTube</h3><p class="sub" style="margin:6px 0 12px">Neste passo o Google abriria a tela de consentimento.</p><div class="card flat" style="margin-bottom:12px"><b>Escopos solicitados</b><p class="mono" style="margin-top:6px">youtube.upload<br>youtube.readonly</p></div><p class="sample" style="margin-bottom:14px">O servidor troca o código de autorização e guarda os tokens no secret store. Nenhum valor de credencial volta ao navegador. Simulação: nada é enviado ao Google.</p><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Autorizar (simulado)','ytauth','primary small')}</div>`;
+ if(m.t==='prov'){const p=m.id?S.providers.find(x=>x.id===m.id):{kind:'text',name:'',model:'',cost:null,rate:'',cred:'missing'};body=`<h3>${m.id?'Configurar provider':'Adicionar provider'}</h3><div class="field" style="margin-top:12px"><label for="mf1">Tarefa (capability)</label><select id="mf1" ${m.id?'disabled':''}>${KINDS.map(([k,l])=>`<option value="${k}" ${p.kind===k?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label for="mf2">Nome</label><input type="text" id="mf2" value="${esc(p.name)}" placeholder="Ex.: Meu provedor de voz"></div><div class="field"><label for="mf3">Modelo ou configuração</label><input type="text" id="mf3" value="${esc(p.model)}"></div><div class="field"><label for="mf4">Referência da credencial (apelido no secret store)</label><input type="text" id="mf4" value="${p.cred==='ok'?'ref-configurada':''}" placeholder="Ex.: voz-producao"><span class="sample">Não cole a chave aqui. Informe só o apelido; o valor é cadastrado no servidor.</span></div><div class="grid2"><div class="field"><label for="mf5">Custo estimado por uso (US$)</label><input type="text" id="mf5" value="${p.cost==null?'':p.cost}" placeholder="vazio = desconhecido"></div><div class="field"><label for="mf6">Limite de chamadas/min</label><input type="text" id="mf6" value="${p.rate||''}" placeholder="opcional"></div></div><p class="sample" style="margin-bottom:14px">Custo vazio fica como "desconhecido" e nunca é tratado como zero. Sem credencial, o provider fica indisponível.</p><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Salvar provider','saveprov','primary small')}</div>`}
+ if(m.t==='history'){const v=vid();body=`<h3>Histórico de versões</h3><div style="margin:10px 0">${v.rev===0?'<p class="sub">Nenhuma versão renderizada.</p>':Array.from({length:v.rev},(_,i)=>v.rev-i).map(n=>`<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)"><b>v${n}</b><span class="sub">${n===v.rev?'versão atual':'anterior'} · ${n===1?'criada '+(v.mode==='piloto'?'pelo piloto automático':'no Modo Diretor'):'editada no storyboard'}</span></div>`).join('')}</div>${b('Fechar','closemodal','small')}`}
+ o.innerHTML=`<div class="modal-bg" data-a="bg"><div class="modal" role="dialog" aria-modal="true">${body}</div></div>`;
+ const f=o.querySelector('input,textarea,button');if(f)f.focus();
+}
+
+/* ============ ações de domínio ============ */
+const dirty=(v)=>{v.dirty=true;if(v.state==='approved'||v.state==='review'||v.state==='published'){if(v.state!=='published')v.state='review'}};
+function buildScenes(topic,beats,style){return beats.map((b2,i)=>mkScene(b2,(SCRIPT_PARTS[b2]||'Conteúdo da cena sobre {t}.').replace(/\{t\}/g,topic||'o tema'),`${b2.toLowerCase()} · ${topic||'tema'} · ${sty(style).prompt}`,null,'none'))}
+function createVideo(mode,topic,over){
+ const d=S.newDraft||newDefaults();const c=ch();
+ const t=(topic||d.topic||'').trim()||'Novo vídeo sem título';
+ let scenes;
+ const tp=TEMPLATES.find(x=>x.id===d.template)||TEMPLATES[0];
+ if(d.script&&d.scriptText&&d.scriptText.trim()){scenes=d.scriptText.split(/\n\s*\n|\n/).filter(x=>x.trim()).map((p,i)=>mkScene('Cena '+(i+1),p.trim(),`${t} · ${sty(d.style).prompt}`,null,'none'))}
+ else scenes=buildScenes(t,tp.beats,d.style);
+ const v={id:uid('v'),ch:c.id,title:t.charAt(0).toUpperCase()+t.slice(1),mode,state:'draft',format:d.format,style:d.style,voice:d.voice,rev:0,dirty:true,target:Number(d.dur)||45,comp:defComp(c),scenes,sources:d.script&&d.scriptText?[{id:uid('f'),kind:'texto',label:'Roteiro colado',url:'',chars:d.scriptText.length,hash:'a1b2…c3'}]:[],meta:{title:'',desc:'',tags:'',vis:'privado',schedule:''},cost:null,pub:null,steps:blankSteps()};
+ S.videos.unshift(v);S.newDraft=null;return v;
+}
+const STEP_MS=900;
+function runPipeline(v,from){
+ v.state='generating';v.steps.forEach((s,i)=>{if(i>=from)s.s='wait'});
+ let i=from;
+ const tick=()=>{
+  if(v.state!=='generating')return;
+  if(i>0&&v.steps[i-1].s==='run')v.steps[i-1].s='ok';
+  if(i>=v.steps.length){finishPipeline(v);return}
+  const st=v.steps[i];st.s='run';
+  if(st.k==='voz')v.scenes.forEach(s=>s.audio='ok');
+  if(st.k==='midia')v.scenes.forEach((s,k)=>{if(!s.media)s.media=med(k%3===1?'stock':'ia',EMOJIS[(k*3+v.scenes.length)%EMOJIS.length])});
+  st.c=({roteiro:0.02,voz:0.03*v.scenes.length,midia:0.05*v.scenes.length,composicao:0.04,qa:0})[st.k];
+  refreshIf(v);i++;setTimeout(()=>{if(v.state==='generating'){st.s='ok';refreshIf(v);tick()}},STEP_MS);
+ };
+ tick();
+}
+function finishPipeline(v){
+ v.steps.forEach(s=>s.s='ok');v.rev=v.rev+1;v.dirty=false;v.state='review';v.cost=Math.round(v.steps.reduce((a,s)=>a+(s.c||0),0)*100)/100;
+ S.spent[v.ch]=Math.round((S.spent[v.ch]+v.cost)*100)/100;
+ if(S.route==='video'&&S.vid===v.id){S.tab='qualidade';history.replaceState(null,'','#/video/'+v.id+'/qualidade')}
+ toast('Vídeo pronto! Revise e aprove.');refreshIf(v,true);
+}
+function refreshIf(v){if(S.route==='video'&&S.vid===v.id)render()}
+
+/* ============ eventos ============ */
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-a]');if(!el)return;
+ const a=el.dataset.a;
+ if(a==='bg'){if(e.target===el){S.modal=null;render()}return}
+ if(el.disabled)return;
+ const v=vid();
+ const scene=el.dataset.sid&&v?v.scenes.find(s=>s.id===el.dataset.sid):null;
+ const c=ch();
+ switch(a){
+  case 'noop':e.preventDefault();toast('Link ilustrativo no mockup.');break;
+  case 'go':if(el.dataset.set)S.setTab=el.dataset.set;S.guide=false;go(el.dataset.to);break;
+  case 'guide':S.guide=!S.guide;renderGuide();break;
+  case 'quick':{const t=($('#homeTopic')||{}).value||'';S.newDraft=Object.assign(newDefaults(),{topic:t.length<120?t:'',script:t.length>=120,scriptText:t.length>=120?t:''});go('#/new');break}
+  case 'idea':{const t=TRENDS.find(x=>x.id===el.dataset.id);S.newDraft=Object.assign(newDefaults(),{topic:t.title});if(el.dataset.mode)S.newDraft.mode=el.dataset.mode;go('#/new');break}
+  case 'nmode':S.newDraft.mode=el.dataset.v;render();break;
+  case 'nformat':S.newDraft.format=el.dataset.v;S.newDraft.dur=el.dataset.v==='short'?'45':'180';render();break;
+  case 'nvoice':S.newDraft.voice=el.dataset.v;render();break;
+  case 'nstyle':S.newDraft.style=el.dataset.v;render();break;
+  case 'create':{
+   const d=S.newDraft;d.topic=($('#ntopic')||{}).value||d.topic;if(d.script&&$('#nscript'))d.scriptText=$('#nscript').value;
+   if(!d.topic.trim()&&!(d.script&&d.scriptText)){toast('Digite um tema ou cole um roteiro.');($('#ntopic')||{focus(){}}).focus();break}
+   const rdc=readiness(c,d.mode==='piloto'?undefined:['text']);if(!rdc.ok){toast('Faltam providers para este modo: '+KIND_L[rdc.missing[0].k]+'.');break}
+   const mode=d.mode,nv=createVideo(mode,d.topic);S.vid=nv.id;
+   if(mode==='piloto'){S.route='video';S.tab='cenas';history.replaceState(null,'','#/video/'+nv.id+'/cenas');runPipeline(nv,1);render()}
+   else{go('#/video/'+nv.id+'/cenas');toast('Storyboard criado. Edite as cenas à vontade.')}
+   break}
+  case 'chmode':c.mode=el.dataset.v;render();toast('Modo padrão do canal salvo.');break;
+  case 'chformat':c.format=el.dataset.v;render();toast('Formato padrão do canal salvo.');break;
+  case 'vfilter':S.vidFilter=el.dataset.v;render();break;
+  case 'open':go('#/video/'+el.dataset.id+'/'+(el.dataset.tab||'cenas'));break;
+  case 'tab':S.guide=false;go('#/video/'+S.vid+'/'+el.dataset.v);break;
+  case 'history':S.modal={t:'history'};render();break;
+  case 'closemodal':S.modal=null;render();break;
+  case 'addscene':v.scenes.push(mkScene('Nova cena','Escreva aqui o texto da narração desta cena.','descreva a imagem desejada',null,'none'));dirty(v);render();toast('Cena adicionada.');break;
+  case 'delscene':if(v.scenes.length<=1){toast('O vídeo precisa de ao menos uma cena.');break}v.scenes=v.scenes.filter(s=>s!==scene);dirty(v);render();toast('Cena excluída.');break;
+  case 'mv':{const i=v.scenes.indexOf(scene),j=i+Number(el.dataset.d);if(j>=0&&j<v.scenes.length){[v.scenes[i],v.scenes[j]]=[v.scenes[j],v.scenes[i]];dirty(v);render()}break}
+  case 'broll':scene.broll=!scene.broll;dirty(v);render();break;
+  case 'media':S.modal={t:'media',sid:scene.id};render();break;
+  case 'pickmedia':{const vv=vid(),s=vv.scenes.find(x=>x.id===S.modal.sid);s.media=med(el.dataset.k,el.dataset.e);S.modal=null;dirty(vv);render();toast('Mídia da cena atualizada.');break}
+  case 'regen':scene.audio='ok';S.playing=null;dirty(v);render();toast('Áudio da cena gerado (simulado).');break;
+  case 'play':if(S.playing===scene.id){S.playing=null;render()}else{S.playing=scene.id;render();clearTimeout(S._pt);S._pt=setTimeout(()=>{if(S.playing===scene.id){S.playing=null;render()}},secs(scene.text)*1000)}break;
+  case 'genmissing':{let n=0;v.scenes.forEach((s,k)=>{if(!s.media){s.media=med(k%2?'stock':'ia',EMOJIS[(k*5+2)%EMOJIS.length]);n++}if(s.audio!=='ok'){s.audio='ok';n++}});dirty(v);render();toast(n?'Itens faltantes gerados (simulado).':'Nada faltando.');break}
+  case 'render':{
+   const rdr=readiness(c,['voice','image','renderer']);if(!rdr.ok){toast('Não dá para renderizar: '+rdr.missing[0].err);break}
+   if(v.scenes.some(s=>!s.media||s.audio!=='ok')){v.scenes.forEach((s,k)=>{if(!s.media)s.media=med(k%2?'stock':'ia',EMOJIS[(k*7+1)%EMOJIS.length]);s.audio='ok'})}
+   v.state='generating';v.steps=blankSteps();v.steps[0].s='ok';S.tab='cenas';runPipeline(v,1);render();break}
+   case 'approve':v.state='approved';go('#/video/'+v.id+'/publicacao');toast('Versão aprovada. Revise os dados antes de publicar.');break;
+  case 'unapprove':v.state='review';render();break;
+  case 'publish':v.state='published';v.pub={url:'https://youtube.com/shorts/'+uid('mk'),at:'agora'};render();toast('Publicado (simulado). Nada foi enviado de verdade.');break;
+  case 'addsrc':S.modal={t:'src'};render();break;
+  case 'savesrc':{const k=$('#mf1').value,l=$('#mf2').value.trim(),x=$('#mf3').value.trim();if(!x){toast('Informe a URL ou o texto.');break}v.sources.push({id:uid('f'),kind:k,label:l||(k==='url'?'Referência':'Texto de apoio'),url:k==='url'?x:'',chars:x.length,hash:Math.random().toString(16).slice(2,6)+'…'+Math.random().toString(16).slice(2,4)});S.modal=null;render();toast('Fonte registrada.');break}
+  case 'delsrc':v.sources=v.sources.filter(s=>s.id!==el.dataset.id);render();break;
+  case 'retry':{const i=v.steps.findIndex(s=>s.s==='fail');v.steps[i].err=null;S.tab='producao';runPipeline(v,i);render();break}
+  case 'niche':S.trendNiche=el.dataset.v;render();break;
+  case 'libtab':S.libTab=el.dataset.v;render();break;
+  case 'settab':S.setTab=el.dataset.v;render();break;
+  case 'linkstyle':c.style=el.dataset.v;render();toast('Estilo vinculado ao canal. Novos vídeos vão herdá-lo.');break;
+  case 'linkvoice':c.voice=el.dataset.v;render();toast('Voz padrão do canal atualizada.');break;
+  case 'sample':{const k='v-'+el.dataset.v;if(S.playing===k)S.playing=null;else{S.playing=k;clearTimeout(S._pt);S._pt=setTimeout(()=>{if(S.playing===k){S.playing=null;render()}},voice(el.dataset.v).dur*1000)}render();break}
+  case 'newstyle':S.modal={t:'style'};render();break;
+  case 'savestyle':{const n=$('#mf1').value.trim();if(!n){toast('Dê um nome ao estilo.');break}STYLES.push({id:uid('st'),name:n,desc:$('#mf2').value.trim()||'Estilo personalizado.',emoji:'🖌️',grad:'linear-gradient(135deg,#2b2f55,#3a1f45)',prompt:$('#mf3').value});S.modal=null;render();toast('Estilo criado na biblioteca.');break}
+  case 'usetemplate':S.newDraft=Object.assign(newDefaults(),{template:el.dataset.v});go('#/new');break;
+  case 'profile':c.profile=el.dataset.v;render();toast('Perfil de produção salvo.');break;
+  case 'yt':S.modal={t:'yt'};render();break;
+  case 'ytauth':{const tg=S.route==='wizard'?S.wiz.d:ch();tg.ytOn=true;tg.handle=slug(tg.name||'canal');S.modal=null;render();toast('YouTube conectado (simulado). Nenhuma credencial foi criada.');break}
+  case 'ytrevoke':{const tg=S.route==='wizard'?S.wiz.d:ch();tg.ytOn=false;render();toast('Acesso revogado (simulado).');break}
+  case 'testprov':{const p=S.providers.find(x=>x.id===el.dataset.id);p.test='Teste simulado: ok · latência ~320 ms · nenhuma chamada de rede foi feita.';render();break}
+  case 'addprov':S.modal={t:'prov',id:null};render();break;
+  case 'editprov':S.modal={t:'prov',id:el.dataset.id};render();break;
+  case 'delprov':S.providers=S.providers.filter(x=>x.id!==el.dataset.id);S.channels.forEach(cc=>{Object.keys(cc.routing).forEach(k=>{if(cc.routing[k]===el.dataset.id)cc.routing[k]='auto'})});render();toast('Provider removido do catálogo.');break;
+  case 'saveprov':{const id=S.modal.id,n=$('#mf2').value.trim();if(!n){toast('Informe o nome do provider.');break}
+   const cost=$('#mf5').value.trim(),ref=$('#mf4').value.trim();
+   const o={kind:$('#mf1').value,name:n,model:$('#mf3').value.trim()||'a configurar',cost:cost===''?null:Number(cost.replace(',','.')),unit:'por uso',rate:Number($('#mf6').value)||null,q:60,prod:true,custom:true,test:''};
+   o.cred=ref?'ok':'missing';o.avail=!!ref;o.reason=ref?'':'credencial não configurada';
+   if(id){const p=S.providers.find(x=>x.id===id);const loc=p.cred==='local';Object.assign(p,{name:o.name,model:o.model,cost:o.cost,rate:o.rate,test:'',cred:loc?'local':o.cred,avail:loc?true:o.avail,reason:loc?'':o.reason})}else S.providers.push({id:uid('pv'),...o});
+   S.modal=null;render();toast(id?'Provider atualizado.':'Provider adicionado ao catálogo (a credencial fica no servidor).');break}
+  case 'chopen':S.ch=el.dataset.id;S.newDraft=null;go('#/home');break;
+  case 'chedit':S.ch=el.dataset.id;S.setTab='marca';render();break;
+   case 'newch':go('#/channel/new');break;
+  case 'wcancel':S.wiz=null;go('#/settings');toast('Criação de canal cancelada.');break;
+  case 'wgo':S.wiz.step=Number(el.dataset.v);render();break;
+  case 'wback':S.wiz.step=Math.max(1,S.wiz.step-1);render();window.scrollTo(0,0);break;
+  case 'wnext':{if(S.wiz.step===1&&!S.wiz.d.name.trim()){toast('Dê um nome ao canal para continuar.');const n=$('#w1');if(n)n.focus();break}S.wiz.step++;S.wiz.max=Math.max(S.wiz.max,S.wiz.step);render();window.scrollTo(0,0);break}
+  case 'wset':{S.wiz.d[el.dataset.k]=el.dataset.v;render();break}
+  case 'wsuggest':{const d=S.wiz.d,n=d.niche||d.name||'o nicho';d.strategy=d.strategy||`Explicar ${n.toLowerCase()} com clareza, contexto e fontes verificáveis.`;if(!d.pillars.length)d.pillars=['Fundamentos','Curiosidades','Casos reais'];d.cta=d.cta||'Qual tema você quer ver no próximo vídeo?';render();toast('Sugestão preenchida (simulada). Edite à vontade.');break}
+  case 'wproviders':{S.setTab='conexoes';go('#/settings');toast('O assistente continua salvo: Configurações → Canais → Novo canal.');break}
+  case 'wcreate':{const d=S.wiz.d;if(d.name.trim().length<2){S.wiz.step=1;render();toast('Dê um nome ao canal.');break}
+   const nc={...d,id:uid('c'),name:d.name.trim(),routing:{...d.routing},pillars:[...d.pillars],handle:d.ytOn?(d.handle||slug(d.name)):''};
+   S.channels.push(nc);S.spent[nc.id]=0;S.ch=nc.id;S.wiz=null;S.newDraft=null;go('#/home');toast('Canal criado. Falta só o primeiro vídeo.');break}
+  case 'invite':S.modal={t:'invite'};render();break;
+  case 'saveinvite':{const e2=$('#mf1').value.trim();if(!e2){toast('Informe o e-mail.');break}S.team.push({n:e2,r:$('#mf2').value});S.modal=null;render();toast('Convite registrado (simulado).');break}
+  case 'toast':toast(el.dataset.m);break;
+ }
+});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&S.modal){S.modal=null;render()}
+ if((e.key==='Enter'||e.key===' ')&&e.target.matches('[role=button][data-a],tr[data-a]')){e.preventDefault();e.target.click()}
+});
+document.addEventListener('input',e=>{
+ const el=e.target;
+ if(el.id==='ntopic'&&S.newDraft){S.newDraft.topic=el.value;return}
+ if(el.id==='nscript'&&S.newDraft){S.newDraft.scriptText=el.value;return}
+ const a=el.dataset&&el.dataset.a;if(!a)return;const v=vid();
+ if(a==='winp'&&S.wiz){const k=el.dataset.k;S.wiz.d[k]=el.dataset.list?el.value.split(',').map(x=>x.trim()).filter(Boolean):el.dataset.num?Number(el.value):el.value;
+  const o=el.dataset.out&&$('#'+el.dataset.out);if(o)o.textContent=(el.dataset.pre||'')+(k==='capVideo'?Number(el.value).toFixed(2).replace('.',','):el.value)+(el.dataset.suf||'');return}
+ if(a==='text'){const s=v.scenes.find(x=>x.id===el.dataset.sid);s.text=el.value;if(s.audio==='ok')s.audio='stale';dirty(v);
+  const cnt=document.querySelector(`[data-count="${s.id}"]`);if(cnt)cnt.textContent=`${words(s.text)} palavras · ~${secs(s.text)}s`;
+  const p=document.querySelector(`[data-audpill="${s.id}"]`);if(p){p.className='pill '+(s.audio==='stale'?'warn':s.audio==='ok'?'ok':'bad');p.textContent=s.audio==='stale'?'Áudio desatualizado':s.audio==='ok'?'✓ Áudio atual':'Sem áudio ainda'}
+  updDock(v)}
+ else if(a==='prompt'){const s=v.scenes.find(x=>x.id===el.dataset.sid);s.prompt=el.value;dirty(v);updDock(v)}
+ else if(a==='brollnote'){const s=v.scenes.find(x=>x.id===el.dataset.sid);s.brollNote=el.value;dirty(v)}
+ else if(a==='comp'&&el.type==='range'){v.comp[el.dataset.k]=Number(el.value);dirty(v);const o=$('#'+el.id+'v');if(o)o.textContent=el.value+(el.dataset.k==='musicVol'?'%':'');liveCap(v)}
+ else if(a==='meta'){v.meta[el.dataset.k]=el.value;if(el.dataset.k==='title'){const c2=$('#pm1c');if(c2)c2.textContent=el.value.length+'/100'}}
+ else if(a==='chf'&&el.type==='range'){const k=el.dataset.k;ch()[k]=Number(el.value);const o=$('#'+el.dataset.out);if(o)o.textContent=(el.dataset.pre||'')+(k==='capVideo'?Number(el.value).toFixed(2).replace('.',','):el.value)+(el.dataset.suf||'');renderNav()}
+ else if(a==='chf'&&(el.type==='text'||el.type==='textarea')){ch()[el.dataset.k]=el.dataset.list?el.value.split(',').map(x=>x.trim()).filter(Boolean):el.value;renderNav()}
+});
+function liveCap(v){const cap=$('#cap');if(!cap)return;const c=v.comp;cap.style.fontSize=Math.round(c.subSize*(v.format==='short'?0.5:0.42))+'px'}
+function updDock(v){/* o dock só muda o resumo; re-render parcial barato */const d=document.querySelector('.dock');if(!d)return;const tmp=document.createElement('div');tmp.innerHTML=dock(v,0);if(tmp.firstElementChild)d.replaceWith(tmp.firstElementChild)}
+document.addEventListener('change',e=>{
+ const el=e.target,a=el.dataset&&el.dataset.a;if(!a)return;const v=vid();
+ if(a==='comp'){v.comp[el.dataset.k]=el.dataset.num?Number(el.value):el.value;dirty(v);render()}
+ else if(a==='compchk'){v.comp.ducking=el.checked;dirty(v);render()}
+ else if(a==='vstyle'){v.style=el.value;dirty(v);render();toast('Estilo deste vídeo alterado (o padrão do canal não mudou).')}
+ else if(a==='meta'){v.meta[el.dataset.k]=el.value}
+  else if(a==='winp'&&S.wiz){const k=el.dataset.k;S.wiz.d[k]=el.dataset.list?el.value.split(',').map(x=>x.trim()).filter(Boolean):el.dataset.num?Number(el.value):el.value}
+ else if(a==='route'){ch().routing[el.dataset.k]=el.value;render();toast('Roteamento do canal salvo.')}
+ else if(a==='chkbroll'){ch().broll=el.checked;toast('Configuração salva.')}
+ else if(a==='chf'&&el.type!=='range'&&el.type!=='text'&&el.type!=='textarea'){ch()[el.dataset.k]=el.dataset.num?Number(el.value):el.value;render();toast('Configuração salva.')}
+ else if(a==='nscript'){S.newDraft.script=el.checked;S.newDraft.topic=($('#ntopic')||{}).value||S.newDraft.topic;render()}
+ else if(a==='ntemplate'){S.newDraft.template=el.value}
+ else if(a==='ndur'){S.newDraft.dur=el.value;render()}
+});
+$('#chsel').addEventListener('change',e=>{if(e.target.value==='__new'){renderNav();go('#/channel/new');return}S.ch=e.target.value;S.newDraft=null;if(S.route==='video')go('#/videos');else render()});
+
+/* V2: progressive disclosure on top of the preserved full prototype. */
+S.homeTopic='';
+const originalHome=pgHome, originalNew=pgNew, originalWizard=pgWizard;
+const originalVideo=pgVideo, originalModal=renderModal, originalRender=render;
+pgHome=function(){
+ return originalHome().replace('</textarea>',esc(S.homeTopic)+'</textarea>')
+ .replace('data-a="quick"','data-a="quickv2"')
+ .replace('Criar vídeo →','Gerar com os padrões →')
+ .replace('</textarea>','</textarea><div style="margin-top:8px">'+b('Personalizar este vídeo','quick','ghost small')+'</div>');
+};
+pgNew=function(){
+ const root=document.createElement('div');root.innerHTML=originalNew();
+ const cards=root.querySelectorAll('.two > .stack > .card');
+ const custom=cards[2];
+ if(custom){
+  const details=document.createElement('details');details.className='diag';details.dataset.keep='video-custom';
+  details.innerHTML='<summary>Personalizar este vídeo · formato, voz e estilo</summary>';
+  custom.replaceWith(details);details.append(custom);
+ }
+ const label=Array.from(root.querySelectorAll('.lbl')).find(x=>x.textContent==='Providers do canal');
+ if(label){
+  const details=document.createElement('details');details.className='diag';details.dataset.keep='providers-summary';
+  details.innerHTML='<summary>'+ (readiness(ch()).ok?'✓ Pronto para produzir':'Configuração precisa de atenção')+'</summary>';
+  label.before(details);
+  let node=label;
+  while(node){const next=node.nextSibling;details.append(node);if(node.nodeType===1&&node.classList.contains('hr'))break;node=next;}
+ }
+ root.querySelectorAll('[data-set="conexoes"]').forEach(el=>{el.dataset.a='contextproviders';el.textContent='Resolver aqui';});
+ return root.innerHTML;
+};
+pgWizard=function(){
+ if(!S.wiz)S.wiz={step:1,max:6,d:wizDefaults()};
+ const w=S.wiz;const step=w.step;
+ w.step=1;let html=originalWizard();w.step=step;
+ const root=document.createElement('div');root.innerHTML=html;
+ root.querySelector('ol')?.remove();
+ root.querySelector('[data-a=wnext]')?.parentElement.parentElement.remove();
+ root.querySelector('.head .sub').textContent='Comece com o essencial. Todos os ajustes continuam disponíveis quando precisar.';
+ const extra=document.createElement('div');
+ extra.innerHTML=`<div class="card" style="margin-top:16px"><h3>Predefinição do canal</h3>
+ <div class="row" style="margin-top:12px">${STYLES.map(s=>b(esc(s.name),'wset',w.d.style===s.id?'primary small':'small',`data-k="style" data-v="${s.id}"`)).join('')}</div>
+ <p class="sub" style="margin-top:12px">${esc(voice(w.d.voice).name)} · ${PROFILE_L[w.d.profile]} · ${w.d.mode==='piloto'?'Piloto automático':'Modo Diretor'}</p></div>`;
+ root.append(extra);
+ for(let n=2;n<=5;n++){
+  w.step=n;const part=document.createElement('div');part.innerHTML=originalWizard();
+  part.querySelector('.head')?.remove();part.querySelector('ol')?.remove();
+  part.querySelector('[data-a=wnext]')?.parentElement.parentElement.remove();
+  const det=document.createElement('details');det.className='diag';det.dataset.keep='channel-'+n;det.style.marginTop='12px';
+  det.innerHTML='<summary>Personalizar · '+WSTEPS[n-1][0]+'</summary>'+part.innerHTML;
+  root.append(det);
+ }
+ w.step=step;
+ root.insertAdjacentHTML('beforeend',`<div class="between" style="margin-top:20px"><p class="sub">Criar o canal não gera vídeos nem cobra nada. YouTube é opcional agora.</p>${b('✦ Criar canal','wcreate','primary')}</div>`);
+ root.querySelectorAll('[data-a=wproviders]').forEach(el=>{el.dataset.a='contextproviders';el.textContent='Configurar sem sair';});
+ return root.innerHTML;
+};
+pgVideo=function(){
+ const root=document.createElement('div');root.innerHTML=originalVideo();
+ root.querySelector('.tabs [data-v=producao]')?.remove();
+ const head=root.querySelector('.head');
+ head?.insertAdjacentHTML('beforeend',b('Ver progresso / Diagnóstico','tab','ghost small','data-v="producao"'));
+ const approve=root.querySelector('[data-a=approve]');
+ if(approve)approve.textContent='✓ Aprovar e preparar publicação →';
+ root.querySelector('.tabs')?.insertAdjacentHTML('afterend','<p class="sample" style="margin-bottom:16px">Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.</p>');
+ return root.innerHTML;
+};
+renderModal=function(){
+ if(S.modal?.t==='contextproviders'){
+  const o=$('#overlay');
+  o.innerHTML=`<dialog aria-labelledby="providers-title" class="modal"><h2 id="providers-title">Preparar produção</h2><p class="sub">O rascunho permanece aberto. Ajuste os serviços e volte ao mesmo ponto.</p><div class="stack" style="margin:16px 0">${S.providers.map(provCard).join('')}</div>${b('Concluir e voltar','closecontext','primary')}</dialog>`;
+  o.querySelector('dialog').showModal();return;
+ }
+ originalModal();
+};
+render=function(){
+ const opened=Array.from(document.querySelectorAll('details[data-keep][open]')).map(x=>x.dataset.keep);
+ originalRender();
+ opened.forEach(k=>document.querySelectorAll('details[data-keep]').forEach(x=>{if(x.dataset.keep===k)x.open=true;}));
+};
+document.addEventListener('input',e=>{if(e.target.id==='homeTopic')S.homeTopic=e.target.value;});
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-a]');if(!el||el.disabled)return;
+ const a=el.dataset.a;
+ if(a==='quickv2'){
+  const topic=S.homeTopic.trim();if(!topic){toast('Digite um tema para começar.');$('#homeTopic').focus();return;}
+  S.newDraft={...newDefaults(),topic};
+  if(!readiness(ch(),ch().mode==='piloto'?undefined:['text']).ok){go('#/new');return;}
+  const v=createVideo(ch().mode,topic);S.homeTopic='';S.vid=v.id;S.route='video';S.tab='cenas';
+  history.pushState(null,'','#/video/'+v.id+'/cenas');
+  if(v.mode==='piloto')runPipeline(v,1);render();
+ }
+ if(a==='comp'&&el.tagName==='BUTTON'){vid().comp[el.dataset.k]=el.dataset.v;dirty(vid());render();}
+ if(a==='contextproviders'){S.contextReturn=true;S.modal={t:'contextproviders'};render();}
+ if(a==='closecontext'){S.contextReturn=false;S.modal=null;render();}
+ if((a==='saveprov'||a==='closemodal')&&S.contextReturn){S.modal={t:'contextproviders'};render();}
+});
+document.title='Faceless Studio · Mockup v2 · Menos fricção';
+route();
+</script>
+</body>
+</html>
