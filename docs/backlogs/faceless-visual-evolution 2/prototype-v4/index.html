@@ -228,8 +228,8 @@ const SCRIPT_PARTS={
 const EMOJIS=['🏛️','🏜️','🌊','🗝️','📜','🌌','⚓','🕯️','🗺️','🔭','🧭','🏺'];
 
 let S={
- route:'home',tab:'cenas',vid:null,libTab:'estilos',setTab:'marca',vidFilter:'todos',trendNiche:'Todos',
- ch:'c1',guide:false,modal:null,toast:null,playing:null,ytConnected:true,
+ route:'home',tab:'cenas',vid:null,libTab:'estilos',setTab:'canais',vidFilter:'todos',trendNiche:'Todos',
+ ch:'c1',guide:false,modal:null,toast:null,playing:null,
  channels:[
   {id:'c1',name:'Curiosidades Históricas',style:'st1',voice:'vo1',format:'short',mode:'piloto',audience:'Curiosos por história e mistérios',tone:'Misterioso e informativo',lang:'Português (BR)',subFont:'Inter',subMode:'Destaque por palavra',profile:'economico',cap:20,capVideo:1.5,res:'1080p',fps:30,handle:'@CuriosidadesHistoricas'},
   {id:'c2',name:'Ciência em 60s',style:'st3',voice:'vo3',format:'short',mode:'diretor',audience:'Estudantes e curiosos por ciência',tone:'Didático e leve',lang:'Português (BR)',subFont:'Roboto',subMode:'Caixa discreta',profile:'equilibrado',cap:35,capVideo:2.5,res:'1080p',fps:30,handle:'@CienciaEm60s'}
@@ -280,6 +280,73 @@ function seed(){
 function blankSteps(){return [{k:'roteiro',n:'Roteiro',s:'ok',c:0.02},{k:'voz',n:'Narração (voz)',s:'wait',c:null},{k:'midia',n:'Mídia das cenas',s:'wait',c:null},{k:'composicao',n:'Composição',s:'wait',c:null},{k:'qa',n:'Verificação de qualidade',s:'wait',c:null}]}
 function doneSteps(){return [{k:'roteiro',n:'Roteiro',s:'ok',c:0.02},{k:'voz',n:'Narração (voz)',s:'ok',c:0.09},{k:'midia',n:'Mídia das cenas',s:'ok',c:0.21},{k:'composicao',n:'Composição',s:'ok',c:0.04},{k:'qa',n:'Verificação de qualidade',s:'ok',c:0.0}]}
 seed();
+/* ============ canais: campos de criação + providers externos ============ */
+const RT0=()=>({text:'auto',voice:'auto',image:'auto',search:'auto',renderer:'auto'});
+Object.assign(S.channels[0],{niche:'História e mistérios',strategy:'Explicar mistérios históricos com contexto e fontes verificáveis.',pillars:['História','Mistérios','Arqueologia'],cta:'Qual mistério você quer ver no próximo vídeo?',dur:45,brand:'#8f6ef7',mediaPolicy:'Banco de mídia primeiro',fallback:'Pedir confirmação',retries:2,broll:true,routing:RT0(),ytOn:true});
+Object.assign(S.channels[1],{niche:'Ciência para curiosos',strategy:'Responder perguntas de ciência em 60 segundos, sem jargão.',pillars:['Física','Espaço','Corpo humano'],cta:'Que pergunta de ciência devo responder amanhã?',dur:45,brand:'#4fb3d9',mediaPolicy:'IA primeiro',fallback:'Usar alternativa dentro dos limites',retries:2,broll:false,routing:RT0(),ytOn:false});
+const KINDS=[['text','Roteiro (texto)'],['voice','Narração (voz)'],['image','Imagens por IA'],['search','Banco de mídia (stock)'],['renderer','Montagem de vídeo']];
+const KIND_L=Object.fromEntries(KINDS);
+const PROFILE_L={economico:'Econômico',equilibrado:'Equilibrado',premium:'Premium'};
+const FLOOR={economico:40,equilibrado:60,premium:80};
+S.providers=[
+ {id:'tx1',kind:'text',name:'OpenCode · texto',model:'modelo de linguagem configurado',cost:0.02,unit:'por roteiro',rate:60,q:75,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'tx0',kind:'text',name:'Texto demo',model:'respostas fixas',cost:0,unit:'',rate:null,q:20,avail:true,prod:false,cred:'local',reason:'',test:''},
+ {id:'vc1',kind:'voice',name:'Piper local',model:'voz local pt-BR',cost:0,unit:'',rate:null,q:62,avail:true,prod:true,cred:'local',reason:'',test:''},
+ {id:'vc2',kind:'voice',name:'Voz externa (TTS)',model:'voz neural de alta fidelidade',cost:0.09,unit:'por vídeo',rate:30,q:88,avail:false,prod:true,cred:'missing',reason:'credencial não configurada',test:''},
+ {id:'im1',kind:'image',name:'OpenCode · imagem',model:'gerador de imagens',cost:0.05,unit:'por imagem',rate:20,q:80,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'im0',kind:'image',name:'Placeholder de imagem',model:'quadro cinza',cost:0,unit:'',rate:null,q:10,avail:true,prod:false,cred:'local',reason:'',test:''},
+ {id:'se1',kind:'search',name:'Pexels (stock)',model:'busca de fotos e vídeos',cost:0,unit:'',rate:200,q:65,avail:true,prod:true,cred:'ok',reason:'',test:''},
+ {id:'rd1',kind:'renderer',name:'FFmpeg',model:'motor integrado',cost:0.04,unit:'por vídeo',rate:null,q:90,avail:true,prod:true,cred:'local',reason:'',test:''}
+];
+const fmtCost=p=>p.cost==null?'Custo desconhecido — nenhum preço confirmado; não é tratado como zero':p.cost===0?'US$ 0 (sem custo por chamada)':`~US$ ${p.cost.toFixed(2).replace('.',',')} ${p.unit||'por uso'} (estimativa, não é preço cobrado)`;
+function whyNot(p,floor){
+ if(!p.avail)return `${p.name} indisponível${p.reason?' ('+p.reason+')':''}`;
+ if(!p.prod)return `${p.name}: provider de demonstração não executa em produção`;
+ if(p.cost==null)return `${p.name}: custo desconhecido`;
+ if(p.q<floor)return `${p.name}: qualidade ${p.q} abaixo do piso ${floor}`;
+ return '';
+}
+function pickProvider(kind,c){
+ const fl=FLOOR[c.profile]||40,all=S.providers.filter(p=>p.kind===kind);
+ const ok=all.filter(p=>!whyNot(p,fl));
+ ok.sort((a,b)=>c.profile==='economico'?((a.cost-b.cost)||(b.q-a.q)):((b.q-a.q)||(a.cost-b.cost)));
+ const pin=(c.routing||{})[kind];
+ if(pin&&pin!=='auto'){const p=all.find(x=>x.id===pin);
+  if(p&&p.avail&&p.prod)return {chosen:p,fallbacks:ok.filter(x=>x!==p),pinned:true};
+  return {chosen:null,fallbacks:ok,err:`O provider fixado${p?' ('+p.name+')':''} está indisponível${p&&p.reason?': '+p.reason:''}. Volte para "Automático" ou configure-o.`}}
+ if(!ok.length)return {chosen:null,fallbacks:[],err:`Nenhum provider de ${KIND_L[kind]} atende ao perfil ${PROFILE_L[c.profile]}: ${all.map(p=>whyNot(p,fl)).filter(Boolean).join('; ')||'nenhum cadastrado'}.`};
+ return {chosen:ok[0],fallbacks:ok.slice(1)};
+}
+function readiness(c,kinds){
+ const ks=kinds||['text','voice','image','renderer'].concat(c.mediaPolicy==='Banco de mídia primeiro'?['search']:[]);
+ const rows=ks.map(k=>({k,...pickProvider(k,c)}));
+ return {rows,missing:rows.filter(r=>!r.chosen),ok:rows.every(r=>r.chosen)};
+}
+const ytOn=()=>!!ch().ytOn;
+const slug=n=>'@'+String(n).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]/g,'');
+function routeRows(c,pinnable){
+ return KINDS.map(([k,l])=>{const r=pickProvider(k,c),prov=S.providers.filter(p=>p.kind===k);
+  return `<div class="card flat" style="padding:12px 14px"><div class="between"><b>${l}</b>${r.chosen?`<span class="pill ok">✓ ${esc(r.chosen.name)}${r.pinned?' · fixado':''}</span>`:'<span class="pill bad">✕ sem provider</span>'}</div>
+  ${r.err?`<p class="sample" style="color:var(--bad);margin-top:6px">${esc(r.err)}</p>`:`<p class="sample" style="margin-top:4px">Escolha no perfil ${PROFILE_L[c.profile]}${r.fallbacks.length?' · fallback: '+r.fallbacks.map(f=>esc(f.name)).join(' → '):' · sem fallback'}</p>`}
+  ${pinnable?`<div class="row" style="margin-top:8px"><label class="sr" for="rt-${k}">Provider de ${l}</label><select id="rt-${k}" data-a="route" data-k="${k}" style="max-width:300px"><option value="auto" ${(c.routing[k]||'auto')==='auto'?'selected':''}>Automático (pelo perfil)</option>${prov.map(p=>`<option value="${p.id}" ${c.routing[k]===p.id?'selected':''}>Fixar: ${esc(p.name)}${p.avail?'':' (indisponível)'}</option>`).join('')}</select></div>`:''}</div>`}).join('');
+}
+function provCard(p){
+ const cred={ok:'Credencial no secret store · valor nunca exibido',missing:'Sem credencial',local:'Não exige credencial (execução local)'}[p.cred];
+ return `<div class="card flat" style="padding:14px"><div class="between"><div><b>${esc(p.name)}</b> <code class="mono">${esc(p.model)}</code></div>${p.avail?'<span class="pill ok">✓ Disponível</span>':'<span class="pill warn">! Indisponível</span>'}</div>
+ <p class="sample" style="margin-top:6px">Capability: <b style="color:var(--text)">${KIND_L[p.kind]}</b> · rate limit: ${p.rate?p.rate+' chamada(s)/min':'não declarado'} · qualidade ${p.q}${p.prod?'':' · <span style="color:var(--warn)">demonstração, não executa em produção</span>'}</p>
+ <p class="sample"><b>Custo:</b> ${esc(fmtCost(p))}</p><p class="sample">${cred}</p>
+ ${!p.avail&&p.reason?`<p class="sample" style="color:var(--warn)"><b>Motivo:</b> ${esc(p.reason)}</p>`:''}
+ ${p.test?`<p class="sample" role="status" style="color:var(--ok)">${esc(p.test)}</p>`:''}
+ <div class="row" style="margin-top:8px">${b('Testar conexão','testprov','small',`data-id="${p.id}" ${p.avail?'':'disabled'}`)}${b(p.avail?'Configurar':'Configurar e conectar','editprov','small',`data-id="${p.id}"`)}${p.custom?b('Remover','delprov','ghost small',`data-id="${p.id}"`):''}</div></div>`;
+}
+function ytCard(tgt,inWizard){
+ const on=!!tgt.ytOn;
+ return `<div class="card"><div class="between"><h3>Canal do YouTube</h3><span class="pill ${on?'ok':'warn'}">${on?'✓ Conectado':'○ Desconectado'}</span></div>
+ <p class="sub" style="margin:6px 0 12px">${on?`${esc(tgt.handle)} · escopos: <code class="mono">youtube.upload</code>, <code class="mono">youtube.readonly</code> · token guardado no servidor (simulado).`:'Sem vínculo. Você pode criar e aprovar vídeos normalmente, mas só publica depois de conectar.'}</p>
+ <div class="row">${on?b('Reconectar','yt','small')+b('Revogar acesso','ytrevoke','ghost small'):b('Conectar YouTube','yt','primary small')}</div>
+ <p class="sample" style="margin-top:8px">Ao conectar, o Google abre a tela de consentimento; o servidor troca o código e guarda os tokens. Nenhuma credencial volta ao navegador.</p></div>`;
+}
+
 
 /* ============ derivados ============ */
 const ch=()=>S.channels.find(c=>c.id===S.ch);
@@ -317,11 +384,11 @@ const thumb=(s,v,w,h)=>{const st=sty(v.style);if(!s.media)return `<div class="th
  return `<div class="thumb" style="height:${h}px;background:${st.grad}"><span style="font-size:${Math.round(h/3)}px">${s.media.emoji}</span><span class="tag">${s.media.kind==='ia'?'Arte IA':'Vídeo stock'}${s.broll?' · +B-roll':''}</span><span class="time">0:${String(secs(s.text)).padStart(2,'0')}</span></div>`};
 
 function renderNav(){
- const active=S.route==='video'?'videos':S.route;
+ const active=S.route==='video'?'videos':S.route==='wizard'?'settings':S.route;
  $('#nav').innerHTML=NAV.map(([id,ic,t,h])=>`<button data-a="go" data-to="${h}" ${active===id?'aria-current="page"':''}><span aria-hidden="true">${ic}</span>${t}</button>`).join('');
  const c=ch(),spent=S.spent[c.id],pct=Math.min(100,Math.round(spent/c.cap*100));
  $('#budget').innerHTML=`<b style="color:var(--text)">Orçamento do mês</b><br>US$ ${spent.toFixed(2).replace('.',',')} de ${c.cap.toFixed(2).replace('.',',')}<div class="bar"><b style="width:${pct}%"></b></div><span class="sample">Valores ilustrativos</span>`;
- $('#chsel').innerHTML=S.channels.map(c=>`<option value="${c.id}" ${c.id===S.ch?'selected':''}>${esc(c.name)}</option>`).join('');
+ $('#chsel').innerHTML=S.channels.map(c=>`<option value="${c.id}" ${c.id===S.ch?'selected':''}>${esc(c.name)}</option>`).join('')+'<option value="__new">＋ Novo canal…</option>';
  $('#chstyle').innerHTML=`🎨 ${esc(sty(c.style).name)} · 🎙 ${esc(voice(c.voice).name)}`;
 }
 
@@ -341,6 +408,7 @@ function pgHome(){
  ${pend.map(v=>`<div class="card"><span class="pill warn">Aguardando aprovação</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">Pronto pelo piloto automático. Revise e aprove.</p><div style="margin-top:12px">${b('Revisar e aprovar','open','primary small',`data-id="${v.id}" data-tab="qualidade"`)}</div></div>`).join('')}
  ${dr.map(v=>`<div class="card"><span class="pill accent">Rascunho (Diretor)</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">${v.scenes.length} cenas · edite texto, mídia e voz.</p><div style="margin-top:12px">${b('Continuar editando','open','small',`data-id="${v.id}" data-tab="cenas"`)}</div></div>`).join('')}
  ${fail.map(v=>`<div class="card"><span class="pill bad">Falhou na produção</span><h3 style="margin:8px 0 2px">${esc(v.title)}</h3><p class="sub">Uma etapa falhou. Dá para retomar de onde parou.</p><div style="margin-top:12px">${b('Ver e retomar','open','small',`data-id="${v.id}" data-tab="producao"`)}</div></div>`).join('')}</div>`:''}
+ ${vs.length===0?(()=>{const rd=readiness(c);return `<div class="card" style="margin-bottom:26px;border-color:var(--line2)"><h2>Primeiros passos do canal ${esc(c.name)}</h2><p class="sub" style="margin-bottom:12px">Canal criado. Falta pouco para o primeiro vídeo.</p><div class="stack" style="gap:8px"><div class="gate"><span>Canal criado e configurado</span><span class="pill ok">✓ Feito</span></div><div class="gate"><span>Providers para produzir<small>${rd.ok?'Roteiro, voz, imagem e montagem prontos.':esc(rd.missing[0].err)}</small></span>${rd.ok?'<span class="pill ok">✓ Pronto</span>':b('Resolver','go','small','data-to="#/settings" data-set="conexoes"')}</div><div class="gate"><span>Conectar o YouTube<small>Opcional agora; necessário só para publicar.</small></span>${c.ytOn?'<span class="pill ok">✓ Conectado</span>':b('Conectar','go','small','data-to="#/settings" data-set="conexoes"')}</div><div class="gate"><span>Criar o primeiro vídeo</span>${b('✦ Criar vídeo','go','primary small','data-to="#/new"')}</div></div></div>`})():''}
  <h2 style="margin-bottom:12px">Comece por uma tendência no seu nicho</h2>
  <div class="grid3">${TRENDS.slice(0,3).map(t=>`<div class="card"><span class="pill ${t.tone}">${t.tag}</span><h3 style="margin:8px 0 2px">${esc(t.title)}</h3><p class="sub">${esc(t.why)}</p><div style="margin-top:12px">${b('Criar com esta ideia','idea','small',`data-id="${t.id}"`)}</div></div>`).join('')}</div>
  <p class="sample" style="margin-top:8px">Tendências ilustrativas — sem consulta real a fontes externas neste mockup.</p>`;
@@ -376,8 +444,9 @@ function pgNew(){
     <div class="between sub"><span>Estilo</span><b style="color:var(--text)">${esc(sty(d.style).name)}</b></div>
     <div class="between sub"><span>Estimativa de custo</span><b style="color:var(--text)">~US$ ${(0.25+Number(d.dur)/300).toFixed(2).replace('.',',')} (estimativa)</b></div>
     <div class="hr"></div>
+    ${(()=>{const rd=readiness(c,piloto?undefined:['text']);return `<p class="lbl" style="margin-bottom:6px">Providers do canal</p>${rd.rows.map(r=>`<div class="between sub" style="padding:2px 0"><span>${KIND_L[r.k]}</span>${r.chosen?`<span style="color:var(--ok)">✓ ${esc(r.chosen.name)}</span>`:'<span style="color:var(--bad)">✕ sem provider</span>'}</div>`).join('')}${rd.ok?'':`<div class="note" style="margin:8px 0">${esc(rd.missing[0].err)} ${b('Resolver em Configurações','go','small','data-to="#/settings" data-set="conexoes"')}</div>`}<div class="hr"></div>`})()}
     <p class="sample" style="margin-bottom:10px">${piloto?'O vídeo será gerado inteiro e abre direto na aprovação. Nada é publicado sem sua aprovação.':'Você cai no storyboard com as cenas prontas para editar. Nada é gerado em mídia e voz até você pedir.'}</p>
-    ${b(piloto?'⚡ Gerar vídeo completo →':'🎬 Criar e abrir storyboard →','create','primary long')}</div>
+    ${b(piloto?'⚡ Gerar vídeo completo →':'🎬 Criar e abrir storyboard →','create','primary long',readiness(c,piloto?undefined:['text']).ok?'':'disabled')}</div>
    <div class="note info">O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo; para mudar o padrão, use Biblioteca ou Configurações.</div>
   </aside></div>`;
 }
@@ -506,9 +575,9 @@ function tabPub(v){
  <div class="field"><label for="pm2">Descrição</label><textarea id="pm2" rows="4" data-a="meta" data-k="desc">${esc(m.desc)}</textarea></div>
  <div class="field"><label for="pm3">Tags (separadas por vírgula)</label><input type="text" id="pm3" data-a="meta" data-k="tags" value="${esc(m.tags)}"></div>
  <div class="grid2"><div class="field"><label for="pm4">Visibilidade</label><select id="pm4" data-a="meta" data-k="vis">${[['publico','Público'],['nao_listado','Não listado'],['privado','Privado']].map(([k,l])=>`<option value="${k}" ${m.vis===k?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label for="pm5">Agendar (opcional)</label><input type="datetime-local" id="pm5" data-a="meta" data-k="schedule" value="${esc(m.schedule)}"></div></div></div>
- <aside class="card" style="position:sticky;top:80px"><div class="between"><h3>Canal de destino</h3><span class="pill ${S.ytConnected?'ok':'bad'}">${S.ytConnected?'Conectado':'Desconectado'}</span></div>
-  <div class="card flat" style="margin:12px 0"><b>${esc(ch().handle)}</b><p class="sample">${S.ytConnected?'Autorização de upload ativa (simulada).':'Reconecte em Configurações → Conexões.'}</p></div>
-  ${v.state==='published'?`<div class="note okn">✓ Publicado ${esc(v.pub.at)}.<br><a href="#" data-a="noop">${esc(v.pub.url)}</a></div>`:`${b(m.schedule?'📅 Agendar publicação':'🚀 Publicar no YouTube','publish','ok long',ok&&S.ytConnected?'':'disabled')}${!S.ytConnected?`<div style="margin-top:8px">${b('Abrir Conexões','go','small long','data-to="#/settings" data-set="conexoes"')}</div>`:''}<p class="sample" style="margin-top:10px">Nada é enviado sem este clique. Mockup: não envia nada de verdade.</p>`}
+ <aside class="card" style="position:sticky;top:80px"><div class="between"><h3>Canal de destino</h3><span class="pill ${ytOn()?'ok':'bad'}">${ytOn()?'Conectado':'Desconectado'}</span></div>
+  <div class="card flat" style="margin:12px 0"><b>${ytOn()?esc(ch().handle):'Nenhum canal do YouTube associado'}</b><p class="sample">${ytOn()?'Autorização de upload ativa (simulada).':'Reconecte em Configurações → Conexões.'}</p></div>
+  ${v.state==='published'?`<div class="note okn">✓ Publicado ${esc(v.pub.at)}.<br><a href="#" data-a="noop">${esc(v.pub.url)}</a></div>`:`${b(m.schedule?'📅 Agendar publicação':'🚀 Publicar no YouTube','publish','ok long',ok&&ytOn()?'':'disabled')}${!ytOn()?`<div style="margin-top:8px">${b('Abrir Conexões','go','small long','data-to="#/settings" data-set="conexoes"')}</div>`:''}<p class="sample" style="margin-top:10px">Nada é enviado sem este clique. Mockup: não envia nada de verdade.</p>`}
  </aside></div>`;
 }
 
@@ -561,37 +630,88 @@ function pgLibrary(){
 /* ---------- Configurações ---------- */
 function pgSettings(){
  const c=ch(),t=S.setTab;
- const tabs=[['marca','Marca & Editorial'],['producao','Produção & Orçamento'],['conexoes','Conexões & Equipe']];
+ const tabs=[['canais','Canais'],['marca','Marca & Editorial'],['producao','Produção & Orçamento'],['conexoes','Conexões & Equipe']];
  let body='';
- if(t==='marca')body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Identidade do canal</h3>
-  <div class="field"><label for="s1">Nome do canal</label><input type="text" id="s1" data-a="chf" data-k="name" value="${esc(c.name)}"></div>
-  <div class="field"><label for="s2">Público</label><input type="text" id="s2" data-a="chf" data-k="audience" value="${esc(c.audience)}"></div>
-  <div class="field"><label for="s3">Tom de voz do texto</label><input type="text" id="s3" data-a="chf" data-k="tone" value="${esc(c.tone)}"></div>
-  <div class="field"><label for="s4">Idioma</label><select id="s4" data-a="chf" data-k="lang">${['Português (BR)','English','Español'].map(o=>`<option ${c.lang===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+ const fld=(id,l,k,ex='')=>`<div class="field"><label for="${id}">${l}</label><input type="text" id="${id}" data-a="chf" data-k="${k}" value="${esc(c[k])}" ${ex}></div>`;
+ if(t==='canais')body=`<div class="between" style="margin-bottom:14px"><p class="sub">Cada canal tem identidade, visual, orçamento, providers e conexão com o YouTube próprios.</p>${b('+ Novo canal','newch','primary small')}</div><div class="grid2">${S.channels.map(x=>{const n=S.videos.filter(v=>v.ch===x.id).length,r=readiness(x);return `<div class="card" style="${x.id===c.id?'border:2px solid var(--accent);background:var(--accentbg);padding:17px':''}"><div class="between"><h3>${esc(x.name)}</h3>${x.id===c.id?'<span class="pill accent">Canal ativo</span>':''}</div><p class="sub">${esc(x.niche||'sem nicho')} · ${esc(x.lang)}</p><div class="row" style="margin:10px 0"><span class="pill">🎨 ${esc(sty(x.style).name)}</span><span class="pill">🎙 ${esc(voice(x.voice).name)}</span><span class="pill">${PROFILE_L[x.profile]}</span><span class="pill ${x.ytOn?'ok':'warn'}">YouTube ${x.ytOn?'conectado':'desconectado'}</span><span class="pill ${r.ok?'ok':'bad'}">Providers ${r.ok?'prontos':r.missing.length+' pendente(s)'}</span></div><p class="sample">${n} vídeo(s) · piloto ${x.mode==='piloto'?'é o padrão':'não é o padrão'}</p><div class="row" style="margin-top:10px">${b('Abrir estúdio','chopen','small',`data-id="${x.id}"`)}${b('Editar','chedit','ghost small',`data-id="${x.id}"`)}</div></div>`}).join('')}<button class="card" style="border-style:dashed;cursor:pointer;text-align:center;color:var(--muted)" data-a="newch"><div style="font-size:30px">＋</div><b>Criar novo canal</b><p class="sample">Assistente em 6 passos</p></button></div>`;
+ if(t==='marca')body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Identidade e linha editorial</h3>
+  ${fld('s1','Nome do canal','name')}${fld('s1b','Nicho','niche')}${fld('s2','Público','audience')}
+  <div class="field"><label for="s2b">Estratégia</label><textarea id="s2b" rows="3" data-a="chf" data-k="strategy">${esc(c.strategy)}</textarea></div>
+  <div class="field"><label for="s2c">Pilares (separados por vírgula)</label><input type="text" id="s2c" data-a="chf" data-k="pillars" data-list="1" value="${esc((c.pillars||[]).join(', '))}"></div>
+  ${fld('s3','Estilo narrativo','tone')}${fld('s3b','Chamada para ação padrão','cta')}
+  <div class="grid2"><div class="field"><label for="s4">Idioma</label><select id="s4" data-a="chf" data-k="lang">${['Português (BR)','English','Español'].map(o=>`<option ${c.lang===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="s4b">Cor da marca</label><input type="color" id="s4b" data-a="chf" data-k="brand" value="${esc(c.brand||'#8f6ef7')}" style="width:60px;height:34px;padding:2px"></div></div></div>
   <div class="card"><h3 style="margin-bottom:12px">Padrões para novos vídeos</h3>
-  <div class="field"><label for="s5">Modo padrão</label>${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],c.mode,'chmode')}</div>
-  <div class="field"><label for="s6">Formato padrão</label>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],c.format,'chformat')}</div>
+  <div class="field"><span class="lbl">Modo padrão</span>${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],c.mode,'chmode')}</div>
+  <div class="field"><span class="lbl">Formato padrão</span>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],c.format,'chformat')}</div>
+  <div class="field"><label for="s5">Duração padrão: <b id="s5v">${c.dur} s</b></label><input type="range" id="s5" min="15" max="600" step="5" value="${c.dur}" data-a="chf" data-k="dur" data-num="1" data-out="s5v" data-suf=" s"></div>
   <div class="field"><label for="s7">Voz padrão</label><select id="s7" data-a="chf" data-k="voice">${VOICES.map(v=>`<option value="${v.id}" ${c.voice===v.id?'selected':''}>${esc(v.name)} — ${esc(v.tone)}</option>`).join('')}</select></div>
-  <div class="field"><label for="s8">Estilo visual vinculado (da Biblioteca)</label><select id="s8" data-a="chf" data-k="style">${STYLES.map(s=>`<option value="${s.id}" ${c.style===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+  <div class="field"><label for="s8">Estilo visual vinculado (Biblioteca)</label><select id="s8" data-a="chf" data-k="style">${STYLES.map(s=>`<option value="${s.id}" ${c.style===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
   <div class="grid2"><div class="field"><label for="s9">Fonte da legenda</label><select id="s9" data-a="chf" data-k="subFont">${['Inter','Roboto','Georgia'].map(o=>`<option ${c.subFont===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="s10">Estilo da legenda</label><select id="s10" data-a="chf" data-k="subMode">${['Destaque por palavra','Caixa discreta','Texto simples'].map(o=>`<option ${c.subMode===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
   <div class="note info">O piloto automático sempre para na aprovação. Publicar exige um clique seu.</div></div></div>`;
- if(t==='producao')body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3><div class="stack" style="gap:10px">${[['economico','⚡ Econômico','~US$ 0,10–0,40 por vídeo. Rápido e simples.'],['equilibrado','⚖ Equilibrado','~US$ 0,40–1,00. Mais qualidade de imagem e voz.'],['premium','💎 Premium','~US$ 1,00+. Máxima qualidade, mais lento.']].map(([k,t,d])=>`<button class="choice" aria-pressed="${c.profile===k}" data-a="profile" data-v="${k}"><b>${t}</b><p class="sub">${d}</p></button>`).join('')}</div><p class="sample" style="margin-top:8px">Faixas de custo são estimativas ilustrativas.</p></div>
+ if(t==='producao'){const r=readiness(c);body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3><div class="stack" style="gap:10px">${[['economico','⚡ Econômico','Prioriza custo conhecido. Rápido e simples.'],['equilibrado','⚖ Equilibrado','Equilibra custo e qualidade elegível.'],['premium','💎 Premium','Prioriza qualidade. Exige providers de alta qualidade.']].map(([k,t2,d2])=>`<button class="choice" aria-pressed="${c.profile===k}" data-a="profile" data-v="${k}"><b>${t2}</b><p class="sub">${d2}</p></button>`).join('')}</div><p class="sample" style="margin-top:8px">O perfil muda o roteamento de providers abaixo.</p></div>
   <div class="card"><h3 style="margin-bottom:12px">Orçamento e saída</h3>
-  <div class="field"><label for="p1">Teto mensal do canal: <b id="p1v">US$ ${c.cap}</b></label><input type="range" id="p1" min="5" max="100" value="${c.cap}" data-a="chf" data-k="cap" data-num="1" data-out="p1v" data-pre="US$ "></div>
+  <div class="field"><label for="p1">Teto mensal: <b id="p1v">US$ ${c.cap}</b></label><input type="range" id="p1" min="5" max="100" value="${c.cap}" data-a="chf" data-k="cap" data-num="1" data-out="p1v" data-pre="US$ "></div>
   <div class="field"><label for="p2">Teto por vídeo: <b id="p2v">US$ ${c.capVideo.toFixed(2).replace('.',',')}</b></label><input type="range" id="p2" min="0.2" max="5" step="0.1" value="${c.capVideo}" data-a="chf" data-k="capVideo" data-num="1" data-out="p2v" data-pre="US$ "></div>
   <div class="grid2"><div class="field"><label for="p3">Resolução</label><select id="p3" data-a="chf" data-k="res">${['1080p','720p'].map(o=>`<option ${c.res===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="p4">Quadros/s</label><select id="p4" data-a="chf" data-k="fps" data-num="1">${[24,30,60].map(o=>`<option ${c.fps===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
-  <div class="hr"></div><p class="lbl">Uso no mês</p><div class="bar"><b style="width:${Math.min(100,Math.round(S.spent[c.id]/c.cap*100))}%"></b></div><p class="sample" style="margin-top:4px">US$ ${S.spent[c.id].toFixed(2).replace('.',',')} usados (ilustrativo)</p></div></div>`;
- if(t==='conexoes')body=`<div class="grid2"><div class="stack"><div class="card"><div class="between"><h3>YouTube</h3><span class="pill ${S.ytConnected?'ok':'bad'}">${S.ytConnected?'Conectado':'Desconectado'}</span></div><p class="sub" style="margin:6px 0 12px">${S.ytConnected?esc(c.handle)+' · permissão de upload ativa (simulada).':'Conecte para publicar vídeos aprovados.'}</p>${b(S.ytConnected?'Desconectar':'Conectar YouTube','yt','small')}</div>
-  <div class="card"><h3 style="margin-bottom:10px">Serviços de produção</h3>${[['Roteiro (texto)','ok','Operacional'],['Voz','ok','Operacional'],['Imagens por IA','ok','Operacional'],['Vídeos stock (Pexels)','ok','Operacional'],['Montagem de vídeo','ok','Operacional']].map(([n,c2,t])=>`<div class="between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${n}</span><span class="pill ${c2}">✓ ${t}</span></div>`).join('')}<p class="sample" style="margin-top:8px">Status ilustrativo.</p></div></div>
-  <div class="stack"><div class="card"><div class="between"><h3>Equipe</h3>${b('+ Convidar','invite','small')}</div><div style="margin-top:8px">${S.team.map(m=>`<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${esc(m.n)}</b><span class="sub">${esc(m.r)}</span></div>`).join('')}</div></div>
-  <details class="diag"><summary>Avançado e diagnóstico</summary><p class="mono" style="margin-top:8px">ambiente=mockup<br>versão=v4<br>chaves: não exibidas<br>fila: 0 · workers: 1</p></details></div></div>`;
+  <div class="field"><label for="p5">Preferência de mídia</label><select id="p5" data-a="chf" data-k="mediaPolicy">${['Banco de mídia primeiro','IA primeiro','Somente meus arquivos'].map(o=>`<option ${c.mediaPolicy===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><label for="p6">Se um provider falhar</label><select id="p6" data-a="chf" data-k="fallback">${['Pedir confirmação','Usar alternativa dentro dos limites'].map(o=>`<option ${c.fallback===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field">${tog('p7',c.broll,'B-roll ligado por padrão','chkbroll')}</div>
+  <div class="hr"></div><p class="lbl">Uso no mês</p><div class="bar"><b style="width:${Math.min(100,Math.round(S.spent[c.id]/c.cap*100))}%"></b></div><p class="sample" style="margin-top:4px">US$ ${S.spent[c.id].toFixed(2).replace('.',',')} usados (ilustrativo)</p></div></div>
+  <div class="card" style="margin-top:16px"><div class="between"><div><h3>Roteamento de providers deste canal</h3><p class="sub">Escolha automática pelo perfil ${PROFILE_L[c.profile]}, recalculada a cada leitura. Fixe um provider só se precisar.</p></div><span class="pill ${r.ok?'ok':'bad'}">${r.ok?'✓ Pronto para produzir':'✕ '+r.missing.length+' sem provider'}</span></div><div class="grid2" style="margin-top:12px">${routeRows(c,true)}</div><p class="sample" style="margin-top:10px">Custo estimado não é preço cobrado e custo desconhecido não é tratado como zero. Sem provider elegível, a tarefa aparece indisponível com o motivo.</p></div>`}
+ if(t==='conexoes')body=`<div class="grid2" style="margin-bottom:16px">${ytCard(c,false)}<div class="card"><div class="between"><h3>Equipe</h3>${b('+ Convidar','invite','small')}</div><div style="margin-top:8px">${S.team.map(m=>`<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${esc(m.n)}</b><span class="sub">${esc(m.r)}</span></div>`).join('')}</div></div></div>
+  <div class="card"><div class="between" style="margin-bottom:6px"><div><h3>Providers externos</h3><p class="sub">Catálogo da conta, por tarefa. Cada canal escolhe qual usar em Produção & Orçamento.</p></div>${b('+ Adicionar provider','addprov','primary small')}</div>
+  <div class="note info" style="margin:10px 0 16px">Chaves e tokens ficam no servidor (secret store). Aqui aparece só a <b>referência</b> e o estado — nenhum valor volta ao navegador.</div>
+  ${KINDS.map(([k,l])=>`<h4 style="margin:14px 0 8px;color:var(--accent2)">${l}</h4><div class="grid2">${S.providers.filter(p=>p.kind===k).map(provCard).join('')||'<p class="sample">Nenhum provider cadastrado.</p>'}</div>`).join('')}</div>
+  <details class="diag" style="margin-top:16px"><summary>Avançado e diagnóstico</summary><p class="mono" style="margin-top:8px">ambiente=mockup · versão=v4<br>chaves: não exibidas<br>fila: 0 · workers: 1<br>configuração pública do canal: ${esc(c.id)}</p></details>`;
  return `<div class="head"><div><p class="eyebrow">Ajustes</p><h1>Configurações</h1><p class="sub">Canal: ${esc(c.name)} · alterações salvam na hora (mockup).</p></div></div><nav class="tabs">${tabs.map(([id,l])=>`<button class="tab" data-a="settab" data-v="${id}" ${t===id?'aria-current="page"':''}>${l}</button>`).join('')}</nav>${body}`;
+}
+
+/* ---------- Criar canal (assistente) ---------- */
+const WSTEPS=[['Identidade'],['Estratégia'],['Visual e voz'],['Produção'],['Providers e YouTube'],['Revisar']];
+function wizDefaults(){return {name:'',niche:'',lang:'Português (BR)',audience:'',strategy:'',pillars:[],tone:'Didático e envolvente',cta:'',dur:45,brand:'#8f6ef7',style:'st1',voice:'vo1',format:'short',mode:'piloto',subFont:'Inter',subMode:'Destaque por palavra',profile:'economico',cap:20,capVideo:1.5,res:'1080p',fps:30,mediaPolicy:'Banco de mídia primeiro',fallback:'Pedir confirmação',retries:2,broll:true,routing:RT0(),ytOn:false,handle:''}}
+function pgWizard(){
+ if(!S.wiz)S.wiz={step:1,max:1,d:wizDefaults()};
+ const w=S.wiz,d=w.d,st=w.step;
+ const head=`<div class="head"><div><p class="eyebrow">Canais / Novo canal</p><h1>Criar canal</h1><p class="sub">Defina uma vez a identidade, o visual, a produção e os providers. Todo vídeo novo herda isso.</p></div>${b('Cancelar','wcancel','ghost small')}</div>
+ <ol style="list-style:none;display:flex;gap:6px;padding:0;margin:0 0 22px;flex-wrap:wrap">${WSTEPS.map(([n],i)=>{const k=i+1,cur=k===st,done=k<st;return `<li><button class="pill ${cur?'accent':done?'ok':''} btnlike" ${k>w.max?'disabled':''} data-a="wgo" data-v="${k}" ${cur?'aria-current="step"':''}>${done?'✓':k} · ${n}</button></li>`}).join('')}</ol>`;
+ const inp=(id,label,k,ph,extra='')=>`<div class="field"><label for="${id}">${label}</label><input type="text" id="${id}" data-a="winp" data-k="${k}" value="${esc(d[k])}" placeholder="${esc(ph||'')}" ${extra}></div>`;
+ let body='';
+ if(st===1)body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Quem é este canal?</h3>${inp('w1','Nome do canal *','name','Ex.: Curiosidades Históricas','maxlength="120" required')}${inp('w2','Nicho editorial','niche','Ex.: História e mistérios')}<div class="field"><label for="w3">Idioma</label><select id="w3" data-a="winp" data-k="lang">${['Português (BR)','English','Español'].map(o=>`<option ${d.lang===o?'selected':''}>${o}</option>`).join('')}</select></div>${inp('w4','Público','audience','Ex.: curiosos por história e mistérios')}</div>
+ <div class="card"><h3>Como isso é usado</h3><p class="sub" style="margin-top:6px">O nome identifica o canal no menu. Nicho, idioma e público orientam o roteiro, as sugestões de tendência e o tom do texto.</p><div class="note info" style="margin-top:14px">Só o nome é obrigatório. O resto pode ser ajustado depois em Configurações.</div></div></div>`;
+ if(st===2)body=`<div class="grid2"><div class="card"><div class="between" style="margin-bottom:12px"><h3>Linha editorial</h3>${b('✦ Sugerir com base no nicho','wsuggest','small')}</div>
+  <div class="field"><label for="w5">Estratégia</label><textarea id="w5" rows="3" data-a="winp" data-k="strategy" placeholder="O que o canal entrega e como se diferencia">${esc(d.strategy)}</textarea></div>
+  ${inp('w6','Pilares editoriais (separados por vírgula)','pillars','Ex.: História, Mistérios, Arqueologia','data-list="1"').replace(`value="${esc(d.pillars)}"`,`value="${esc(d.pillars.join(', '))}"`)}
+  ${inp('w7','Estilo narrativo','tone','Ex.: Didático e envolvente')}${inp('w8','Chamada para ação padrão','cta','Ex.: Qual tema você quer ver no próximo vídeo?')}
+  <div class="field"><label for="w9">Duração padrão: <b id="w9v">${d.dur} s</b></label><input type="range" id="w9" min="15" max="600" step="5" value="${d.dur}" data-a="winp" data-k="dur" data-num="1" data-out="w9v" data-suf=" s"></div></div>
+  <div class="card"><h3>Pilares viram ideias</h3><p class="sub" style="margin-top:6px">Os pilares alimentam Tendências e ideias e a estrutura de roteiro sugerida ao criar um vídeo.</p><div class="row" style="margin-top:12px">${d.pillars.length?d.pillars.map(p=>`<span class="pill accent">${esc(p)}</span>`).join(''):'<span class="sample">Nenhum pilar ainda.</span>'}</div></div></div>`;
+ if(st===3)body=`<div class="stack"><div class="card"><h3 style="margin-bottom:6px">Estilo visual (da Biblioteca)</h3><p class="sub" style="margin-bottom:12px">Todo vídeo novo herda este estilo. Dá para trocar por vídeo.</p><div class="grid3">${STYLES.map(s=>`<button class="choice" aria-pressed="${d.style===s.id}" data-a="wset" data-k="style" data-v="${s.id}"><div class="thumb" style="height:60px;background:${s.grad};margin-bottom:8px"><span style="font-size:24px">${s.emoji}</span></div><b style="font-size:12.5px">${esc(s.name)}</b></button>`).join('')}</div></div>
+  <div class="grid2"><div class="card"><h3 style="margin-bottom:10px">Voz do narrador</h3><div class="stack" style="gap:8px">${VOICES.map(v=>`<div class="between"><button class="pill btnlike ${d.voice===v.id?'accent':''}" data-a="wset" data-k="voice" data-v="${v.id}">${esc(v.name)} · ${esc(v.tone)}</button>${b('▶ amostra','sample','ghost small',`data-v="${v.id}"`)}</div>`).join('')}</div><p class="sample" style="margin-top:8px">Amostras simuladas, sem áudio real.</p></div>
+  <div class="card"><h3 style="margin-bottom:10px">Legendas, formato e modo</h3><div class="grid2"><div class="field"><label for="w10">Fonte</label><select id="w10" data-a="winp" data-k="subFont">${['Inter','Roboto','Georgia'].map(o=>`<option ${d.subFont===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="w11">Estilo</label><select id="w11" data-a="winp" data-k="subMode">${['Destaque por palavra','Caixa discreta','Texto simples'].map(o=>`<option ${d.subMode===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><span class="lbl">Formato padrão</span>${seg([['short','Short · 9:16'],['long','Vídeo · 16:9']],d.format,'wset','format')}</div>
+  <div class="field"><span class="lbl">Modo padrão de criação</span>${seg([['piloto','⚡ Piloto automático'],['diretor','🎬 Modo Diretor']],d.mode,'wset','mode')}</div>
+  <div class="field"><label for="w12">Cor da marca</label><input type="color" id="w12" data-a="winp" data-k="brand" value="${esc(d.brand)}" style="width:60px;height:34px;padding:2px"></div></div></div></div>`;
+ if(st===4)body=`<div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3><div class="stack" style="gap:10px">${[['economico','⚡ Econômico','Prioriza custo conhecido. Rápido e simples.'],['equilibrado','⚖ Equilibrado','Equilibra custo e qualidade elegível.'],['premium','💎 Premium','Prioriza qualidade. Exige providers de alta qualidade.']].map(([k,t,x])=>`<button class="choice" aria-pressed="${d.profile===k}" data-a="wset" data-k="profile" data-v="${k}"><b>${t}</b><p class="sub">${x}</p></button>`).join('')}</div></div>
+  <div class="card"><h3 style="margin-bottom:12px">Limites e saída</h3>
+  <div class="field"><label for="w13">Teto mensal: <b id="w13v">US$ ${d.cap}</b></label><input type="range" id="w13" min="5" max="100" value="${d.cap}" data-a="winp" data-k="cap" data-num="1" data-out="w13v" data-pre="US$ "></div>
+  <div class="field"><label for="w14">Teto por vídeo: <b id="w14v">US$ ${d.capVideo.toFixed(2).replace('.',',')}</b></label><input type="range" id="w14" min="0.2" max="5" step="0.1" value="${d.capVideo}" data-a="winp" data-k="capVideo" data-num="1" data-out="w14v" data-pre="US$ "></div>
+  <div class="grid2"><div class="field"><label for="w15">Resolução</label><select id="w15" data-a="winp" data-k="res">${['1080p','720p'].map(o=>`<option ${d.res===o?'selected':''}>${o}</option>`).join('')}</select></div><div class="field"><label for="w16">Quadros/s</label><select id="w16" data-a="winp" data-k="fps" data-num="1">${[24,30,60].map(o=>`<option ${d.fps===o?'selected':''}>${o}</option>`).join('')}</select></div></div>
+  <div class="field"><label for="w17">Preferência de mídia</label><select id="w17" data-a="winp" data-k="mediaPolicy">${['Banco de mídia primeiro','IA primeiro','Somente meus arquivos'].map(o=>`<option ${d.mediaPolicy===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <div class="field"><label for="w18">Se um provider falhar</label><select id="w18" data-a="winp" data-k="fallback">${['Pedir confirmação','Usar alternativa dentro dos limites'].map(o=>`<option ${d.fallback===o?'selected':''}>${o}</option>`).join('')}</select></div>
+  <p class="sample">Nunca troca a voz de identidade nem excede o teto sem avisar.</p></div></div>`;
+ if(st===5){const r=readiness(d);body=`<div class="two"><div class="stack"><div class="card"><div class="between"><div><h3>Providers que este canal usaria</h3><p class="sub">Escolha automática pelo perfil ${PROFILE_L[d.profile]}. Você pode fixar outro depois em Configurações.</p></div><span class="pill ${r.ok?'ok':'bad'}">${r.ok?'✓ Pronto para produzir':`✕ ${r.missing.length} tarefa(s) sem provider`}</span></div><div class="stack" style="gap:8px;margin-top:12px">${routeRows(d,false)}</div>
+  ${r.ok?'':`<div class="note" style="margin-top:12px">Você pode criar o canal mesmo assim, mas o piloto automático só roda quando todas as tarefas tiverem provider. ${b('Abrir catálogo de providers','wproviders','small')}</div>`}</div></div>
+  <div class="stack">${ytCard(d,true)}<div class="note info">Conectar o YouTube agora é opcional. Dá para criar e aprovar vídeos e conectar só na hora de publicar.</div></div></div>`}
+ if(st===6){const r=readiness(d);body=`<div class="two"><div class="card"><h3 style="margin-bottom:10px">Resumo do canal</h3>
+  ${[['Nome',d.name||'—'],['Nicho',d.niche||'—'],['Idioma',d.lang],['Público',d.audience||'—'],['Pilares',d.pillars.join(', ')||'—'],['Duração padrão',d.dur+' s'],['Estilo',sty(d.style).name],['Voz',voice(d.voice).name],['Formato / modo',(d.format==='short'?'Short 9:16':'Vídeo 16:9')+' · '+(d.mode==='piloto'?'Piloto automático':'Modo Diretor')],['Perfil',PROFILE_L[d.profile]],['Teto mensal / vídeo',`US$ ${d.cap} / US$ ${d.capVideo.toFixed(2).replace('.',',')}`],['Providers',r.ok?'Todos prontos':r.missing.length+' sem provider'],['YouTube',d.ytOn?'Conectado '+d.handle:'Conectar depois']].map(([a,v])=>`<div class="between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="sub">${a}</span><b>${esc(v)}</b></div>`).join('')}</div>
+  <aside class="card"><h3>Pronto para criar</h3><p class="sub" style="margin:6px 0 14px">Criar o canal não gera vídeo nem cobra nada. Você vai direto para o estúdio do novo canal.</p>${b('✦ Criar canal','wcreate','primary long')}</aside></div>`}
+ const foot=`<div class="between" style="margin-top:22px"><div>${st>1?b('← Voltar','wback'):''}</div><div class="row">${st<6?b(st===5?'Revisar →':'Continuar →','wnext','primary'):''}</div></div>`;
+ return head+body+foot;
 }
 
 /* ============ render ============ */
 function render(){
  renderNav();
- const map={home:pgHome,new:pgNew,videos:pgVideos,video:pgVideo,ideas:pgIdeas,analytics:pgAnalytics,library:pgLibrary,settings:pgSettings};
+ const map={home:pgHome,new:pgNew,videos:pgVideos,video:pgVideo,ideas:pgIdeas,analytics:pgAnalytics,library:pgLibrary,settings:pgSettings,wizard:pgWizard};
  $('#view').innerHTML=(map[S.route]||pgHome)();
  renderGuide();renderModal();
 }
@@ -599,20 +719,21 @@ function toast(m){S.toast=m;let t=$('#toast');if(t)t.remove();t=document.createE
 function go(h){if(location.hash===h)route();else location.hash=h}
 function route(){
  const h=(location.hash||'#/home').split('/');const r=h[1]||'home';
- if(r==='video'){S.route='video';S.vid=h[2];S.tab=h[3]||'cenas'}else{S.route=r;}
- if(!['home','new','videos','video','ideas','analytics','library','settings'].includes(S.route))S.route='home';
+ if(r==='video'){S.route='video';S.vid=h[2];S.tab=h[3]||'cenas'}else if(r==='channel'){S.route='wizard'}else{S.route=r;}
+ if(!['home','new','videos','video','ideas','analytics','library','settings','wizard'].includes(S.route))S.route='home';
  window.scrollTo(0,0);render();
 }
 window.addEventListener('hashchange',route);
 
 /* ============ guia da demo ============ */
 const GUIDE={
+ c:[['Menu do canal → ＋ Novo canal…','#/channel/new'],['Passos 1–4: identidade, estratégia, visual, produção','#/channel/new'],['Passo 5: providers e YouTube','#/channel/new'],['Catálogo de providers (testar, configurar)','#/settings'],['Roteamento do canal pelo perfil','#/settings']],
  q:[['Início: digite um tema e use ⚡ Piloto automático','#/new'],['Criar vídeo → "Gerar vídeo completo"','#/new'],['Acompanhe as etapas até abrir na aprovação','#/video/v1/qualidade'],['Aprove e vá para Publicação','#/video/v1/publicacao'],['Publique (simulado)','#/video/v1/publicacao']],
  d:[['Criar vídeo → escolha 🎬 Modo Diretor','#/new'],['Edite as cenas no storyboard (texto, mídia, B-roll)','#/video/v2/cenas'],['Ouça trechos e regenere o áudio','#/video/v2/cenas'],['Ajuste legendas e música','#/video/v2/composicao'],['Renderize, aprove e publique','#/video/v2/qualidade']]
 };
 function renderGuide(){
  const g=$('#guide');
- g.innerHTML=`${S.guide?`<div class="gbox" role="dialog" aria-label="Roteiro da demo"><b>⚡ Jornada Rápida</b><ol>${GUIDE.q.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><b>🎬 Jornada Diretor</b><ol>${GUIDE.d.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><p class="sample">Clique num passo para ir até a tela. Os dados são ilustrativos e vivem só nesta página.</p></div>`:''}<button class="gbtn" data-a="guide" aria-expanded="${S.guide}">${S.guide?'Fechar roteiro':'🧭 Roteiro da demo'}</button>`;
+ g.innerHTML=`${S.guide?`<div class="gbox" role="dialog" aria-label="Roteiro da demo"><b>🏗 Criar canal e providers</b><ol>${GUIDE.c.map(([t,h])=>`<li><button data-a="go" data-to="${h}" ${t.startsWith('Catálogo')?'data-set="conexoes"':t.startsWith('Roteamento')?'data-set="producao"':''}>${t}</button></li>`).join('')}</ol><b>⚡ Jornada Rápida</b><ol>${GUIDE.q.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><b>🎬 Jornada Diretor</b><ol>${GUIDE.d.map(([t,h])=>`<li><button data-a="go" data-to="${h}">${t}</button></li>`).join('')}</ol><p class="sample">Clique num passo para ir até a tela. Os dados são ilustrativos e vivem só nesta página.</p></div>`:''}<button class="gbtn" data-a="guide" aria-expanded="${S.guide}">${S.guide?'Fechar roteiro':'🧭 Roteiro da demo'}</button>`;
 }
 
 /* ============ modais ============ */
@@ -623,6 +744,8 @@ function renderModal(){
  if(m.t==='src')body=`<h3>Adicionar fonte</h3><div class="field" style="margin-top:12px"><label for="mf1">Tipo</label><select id="mf1"><option value="url">URL de referência</option><option value="texto">Texto colado</option></select></div><div class="field"><label for="mf2">Título</label><input type="text" id="mf2" placeholder="Ex.: Artigo sobre o tema"></div><div class="field"><label for="mf3">URL ou texto</label><textarea id="mf3" rows="4"></textarea></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Registrar fonte','savesrc','primary small')}</div>`;
  if(m.t==='style')body=`<h3>Criar novo estilo</h3><div class="field" style="margin-top:12px"><label for="mf1">Nome</label><input type="text" id="mf1" placeholder="Ex.: Noir Poético"></div><div class="field"><label for="mf2">Descrição curta</label><input type="text" id="mf2"></div><div class="field"><label for="mf3">Instrução de arte (prompt base)</label><textarea id="mf3" rows="3" placeholder="Ex.: noir, preto e branco, alto contraste"></textarea></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Salvar na biblioteca','savestyle','primary small')}</div>`;
  if(m.t==='invite')body=`<h3>Convidar para a equipe</h3><div class="field" style="margin-top:12px"><label for="mf1">E-mail</label><input type="text" id="mf1" placeholder="pessoa@empresa.com"></div><div class="field"><label for="mf2">Papel</label><select id="mf2"><option>Editora · cria e aprova</option><option>Leitor · só visualiza</option></select></div><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Enviar convite','saveinvite','primary small')}</div>`;
+ if(m.t==='yt')body=`<h3>Conectar YouTube</h3><p class="sub" style="margin:6px 0 12px">Neste passo o Google abriria a tela de consentimento.</p><div class="card flat" style="margin-bottom:12px"><b>Escopos solicitados</b><p class="mono" style="margin-top:6px">youtube.upload<br>youtube.readonly</p></div><p class="sample" style="margin-bottom:14px">O servidor troca o código de autorização e guarda os tokens no secret store. Nenhum valor de credencial volta ao navegador. Simulação: nada é enviado ao Google.</p><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Autorizar (simulado)','ytauth','primary small')}</div>`;
+ if(m.t==='prov'){const p=m.id?S.providers.find(x=>x.id===m.id):{kind:'text',name:'',model:'',cost:null,rate:'',cred:'missing'};body=`<h3>${m.id?'Configurar provider':'Adicionar provider'}</h3><div class="field" style="margin-top:12px"><label for="mf1">Tarefa (capability)</label><select id="mf1" ${m.id?'disabled':''}>${KINDS.map(([k,l])=>`<option value="${k}" ${p.kind===k?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label for="mf2">Nome</label><input type="text" id="mf2" value="${esc(p.name)}" placeholder="Ex.: Meu provedor de voz"></div><div class="field"><label for="mf3">Modelo ou configuração</label><input type="text" id="mf3" value="${esc(p.model)}"></div><div class="field"><label for="mf4">Referência da credencial (apelido no secret store)</label><input type="text" id="mf4" value="${p.cred==='ok'?'ref-configurada':''}" placeholder="Ex.: voz-producao"><span class="sample">Não cole a chave aqui. Informe só o apelido; o valor é cadastrado no servidor.</span></div><div class="grid2"><div class="field"><label for="mf5">Custo estimado por uso (US$)</label><input type="text" id="mf5" value="${p.cost==null?'':p.cost}" placeholder="vazio = desconhecido"></div><div class="field"><label for="mf6">Limite de chamadas/min</label><input type="text" id="mf6" value="${p.rate||''}" placeholder="opcional"></div></div><p class="sample" style="margin-bottom:14px">Custo vazio fica como "desconhecido" e nunca é tratado como zero. Sem credencial, o provider fica indisponível.</p><div class="row" style="justify-content:flex-end">${b('Cancelar','closemodal','ghost small')}${b('Salvar provider','saveprov','primary small')}</div>`}
  if(m.t==='history'){const v=vid();body=`<h3>Histórico de versões</h3><div style="margin:10px 0">${v.rev===0?'<p class="sub">Nenhuma versão renderizada.</p>':Array.from({length:v.rev},(_,i)=>v.rev-i).map(n=>`<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)"><b>v${n}</b><span class="sub">${n===v.rev?'versão atual':'anterior'} · ${n===1?'criada '+(v.mode==='piloto'?'pelo piloto automático':'no Modo Diretor'):'editada no storyboard'}</span></div>`).join('')}</div>${b('Fechar','closemodal','small')}`}
  o.innerHTML=`<div class="modal-bg" data-a="bg"><div class="modal" role="dialog" aria-modal="true">${body}</div></div>`;
  const f=o.querySelector('input,textarea,button');if(f)f.focus();
@@ -687,6 +810,7 @@ document.addEventListener('click',e=>{
   case 'create':{
    const d=S.newDraft;d.topic=($('#ntopic')||{}).value||d.topic;if(d.script&&$('#nscript'))d.scriptText=$('#nscript').value;
    if(!d.topic.trim()&&!(d.script&&d.scriptText)){toast('Digite um tema ou cole um roteiro.');($('#ntopic')||{focus(){}}).focus();break}
+   const rdc=readiness(c,d.mode==='piloto'?undefined:['text']);if(!rdc.ok){toast('Faltam providers para este modo: '+KIND_L[rdc.missing[0].k]+'.');break}
    const mode=d.mode,nv=createVideo(mode,d.topic);S.vid=nv.id;
    if(mode==='piloto'){S.route='video';S.tab='cenas';history.replaceState(null,'','#/video/'+nv.id+'/cenas');runPipeline(nv,1);render()}
    else{go('#/video/'+nv.id+'/cenas');toast('Storyboard criado. Edite as cenas à vontade.')}
@@ -708,6 +832,7 @@ document.addEventListener('click',e=>{
   case 'play':if(S.playing===scene.id){S.playing=null;render()}else{S.playing=scene.id;render();clearTimeout(S._pt);S._pt=setTimeout(()=>{if(S.playing===scene.id){S.playing=null;render()}},secs(scene.text)*1000)}break;
   case 'genmissing':{let n=0;v.scenes.forEach((s,k)=>{if(!s.media){s.media=med(k%2?'stock':'ia',EMOJIS[(k*5+2)%EMOJIS.length]);n++}if(s.audio!=='ok'){s.audio='ok';n++}});dirty(v);render();toast(n?'Itens faltantes gerados (simulado).':'Nada faltando.');break}
   case 'render':{
+   const rdr=readiness(c,['voice','image','renderer']);if(!rdr.ok){toast('Não dá para renderizar: '+rdr.missing[0].err);break}
    if(v.scenes.some(s=>!s.media||s.audio!=='ok')){v.scenes.forEach((s,k)=>{if(!s.media)s.media=med(k%2?'stock':'ia',EMOJIS[(k*7+1)%EMOJIS.length]);s.audio='ok'})}
    v.state='generating';v.steps=blankSteps();v.steps[0].s='ok';S.tab='cenas';runPipeline(v,1);render();break}
   case 'approve':v.state='approved';render();toast('Versão aprovada. Falta publicar.');break;
@@ -727,7 +852,32 @@ document.addEventListener('click',e=>{
   case 'savestyle':{const n=$('#mf1').value.trim();if(!n){toast('Dê um nome ao estilo.');break}STYLES.push({id:uid('st'),name:n,desc:$('#mf2').value.trim()||'Estilo personalizado.',emoji:'🖌️',grad:'linear-gradient(135deg,#2b2f55,#3a1f45)',prompt:$('#mf3').value});S.modal=null;render();toast('Estilo criado na biblioteca.');break}
   case 'usetemplate':S.newDraft=Object.assign(newDefaults(),{template:el.dataset.v});go('#/new');break;
   case 'profile':c.profile=el.dataset.v;render();toast('Perfil de produção salvo.');break;
-  case 'yt':S.ytConnected=!S.ytConnected;render();toast(S.ytConnected?'YouTube conectado (simulado).':'YouTube desconectado.');break;
+  case 'yt':S.modal={t:'yt'};render();break;
+  case 'ytauth':{const tg=S.route==='wizard'?S.wiz.d:ch();tg.ytOn=true;tg.handle=slug(tg.name||'canal');S.modal=null;render();toast('YouTube conectado (simulado). Nenhuma credencial foi criada.');break}
+  case 'ytrevoke':{const tg=S.route==='wizard'?S.wiz.d:ch();tg.ytOn=false;render();toast('Acesso revogado (simulado).');break}
+  case 'testprov':{const p=S.providers.find(x=>x.id===el.dataset.id);p.test='Teste simulado: ok · latência ~320 ms · nenhuma chamada de rede foi feita.';render();break}
+  case 'addprov':S.modal={t:'prov',id:null};render();break;
+  case 'editprov':S.modal={t:'prov',id:el.dataset.id};render();break;
+  case 'delprov':S.providers=S.providers.filter(x=>x.id!==el.dataset.id);S.channels.forEach(cc=>{Object.keys(cc.routing).forEach(k=>{if(cc.routing[k]===el.dataset.id)cc.routing[k]='auto'})});render();toast('Provider removido do catálogo.');break;
+  case 'saveprov':{const id=S.modal.id,n=$('#mf2').value.trim();if(!n){toast('Informe o nome do provider.');break}
+   const cost=$('#mf5').value.trim(),ref=$('#mf4').value.trim();
+   const o={kind:$('#mf1').value,name:n,model:$('#mf3').value.trim()||'a configurar',cost:cost===''?null:Number(cost.replace(',','.')),unit:'por uso',rate:Number($('#mf6').value)||null,q:60,prod:true,custom:true,test:''};
+   o.cred=ref?'ok':'missing';o.avail=!!ref;o.reason=ref?'':'credencial não configurada';
+   if(id){const p=S.providers.find(x=>x.id===id);const loc=p.cred==='local';Object.assign(p,{name:o.name,model:o.model,cost:o.cost,rate:o.rate,test:'',cred:loc?'local':o.cred,avail:loc?true:o.avail,reason:loc?'':o.reason})}else S.providers.push({id:uid('pv'),...o});
+   S.modal=null;render();toast(id?'Provider atualizado.':'Provider adicionado ao catálogo (a credencial fica no servidor).');break}
+  case 'chopen':S.ch=el.dataset.id;S.newDraft=null;go('#/home');break;
+  case 'chedit':S.ch=el.dataset.id;S.setTab='marca';render();break;
+  case 'newch':S.wiz=null;go('#/channel/new');break;
+  case 'wcancel':S.wiz=null;go('#/settings');toast('Criação de canal cancelada.');break;
+  case 'wgo':S.wiz.step=Number(el.dataset.v);render();break;
+  case 'wback':S.wiz.step=Math.max(1,S.wiz.step-1);render();window.scrollTo(0,0);break;
+  case 'wnext':{if(S.wiz.step===1&&!S.wiz.d.name.trim()){toast('Dê um nome ao canal para continuar.');const n=$('#w1');if(n)n.focus();break}S.wiz.step++;S.wiz.max=Math.max(S.wiz.max,S.wiz.step);render();window.scrollTo(0,0);break}
+  case 'wset':{S.wiz.d[el.dataset.k]=el.dataset.v;render();break}
+  case 'wsuggest':{const d=S.wiz.d,n=d.niche||d.name||'o nicho';d.strategy=d.strategy||`Explicar ${n.toLowerCase()} com clareza, contexto e fontes verificáveis.`;if(!d.pillars.length)d.pillars=['Fundamentos','Curiosidades','Casos reais'];d.cta=d.cta||'Qual tema você quer ver no próximo vídeo?';render();toast('Sugestão preenchida (simulada). Edite à vontade.');break}
+  case 'wproviders':{S.setTab='conexoes';go('#/settings');toast('O assistente continua salvo: Configurações → Canais → Novo canal.');break}
+  case 'wcreate':{const d=S.wiz.d;if(d.name.trim().length<2){S.wiz.step=1;render();toast('Dê um nome ao canal.');break}
+   const nc={...d,id:uid('c'),name:d.name.trim(),routing:{...d.routing},pillars:[...d.pillars],handle:d.ytOn?(d.handle||slug(d.name)):''};
+   S.channels.push(nc);S.spent[nc.id]=0;S.ch=nc.id;S.wiz=null;S.newDraft=null;go('#/home');toast('Canal criado. Falta só o primeiro vídeo.');break}
   case 'invite':S.modal={t:'invite'};render();break;
   case 'saveinvite':{const e2=$('#mf1').value.trim();if(!e2){toast('Informe o e-mail.');break}S.team.push({n:e2,r:$('#mf2').value});S.modal=null;render();toast('Convite registrado (simulado).');break}
   case 'toast':toast(el.dataset.m);break;
@@ -742,6 +892,8 @@ document.addEventListener('input',e=>{
  if(el.id==='ntopic'&&S.newDraft){S.newDraft.topic=el.value;return}
  if(el.id==='nscript'&&S.newDraft){S.newDraft.scriptText=el.value;return}
  const a=el.dataset&&el.dataset.a;if(!a)return;const v=vid();
+ if(a==='winp'&&S.wiz){const k=el.dataset.k;S.wiz.d[k]=el.dataset.list?el.value.split(',').map(x=>x.trim()).filter(Boolean):el.dataset.num?Number(el.value):el.value;
+  const o=el.dataset.out&&$('#'+el.dataset.out);if(o)o.textContent=(el.dataset.pre||'')+(k==='capVideo'?Number(el.value).toFixed(2).replace('.',','):el.value)+(el.dataset.suf||'');return}
  if(a==='text'){const s=v.scenes.find(x=>x.id===el.dataset.sid);s.text=el.value;if(s.audio==='ok')s.audio='stale';dirty(v);
   const cnt=document.querySelector(`[data-count="${s.id}"]`);if(cnt)cnt.textContent=`${words(s.text)} palavras · ~${secs(s.text)}s`;
   const p=document.querySelector(`[data-audpill="${s.id}"]`);if(p){p.className='pill '+(s.audio==='stale'?'warn':s.audio==='ok'?'ok':'bad');p.textContent=s.audio==='stale'?'Áudio desatualizado':s.audio==='ok'?'✓ Áudio atual':'Sem áudio ainda'}
@@ -750,8 +902,8 @@ document.addEventListener('input',e=>{
  else if(a==='brollnote'){const s=v.scenes.find(x=>x.id===el.dataset.sid);s.brollNote=el.value;dirty(v)}
  else if(a==='comp'&&el.type==='range'){v.comp[el.dataset.k]=Number(el.value);dirty(v);const o=$('#'+el.id+'v');if(o)o.textContent=el.value+(el.dataset.k==='musicVol'?'%':'');liveCap(v)}
  else if(a==='meta'){v.meta[el.dataset.k]=el.value;if(el.dataset.k==='title'){const c2=$('#pm1c');if(c2)c2.textContent=el.value.length+'/100'}}
- else if(a==='chf'&&el.type==='range'){const k=el.dataset.k;ch()[k]=Number(el.value);const o=$('#'+el.dataset.out);if(o)o.textContent=el.dataset.pre+(k==='capVideo'?Number(el.value).toFixed(2).replace('.',','):el.value);renderNav()}
- else if(a==='chf'&&el.type==='text'){ch()[el.dataset.k]=el.value;renderNav()}
+ else if(a==='chf'&&el.type==='range'){const k=el.dataset.k;ch()[k]=Number(el.value);const o=$('#'+el.dataset.out);if(o)o.textContent=(el.dataset.pre||'')+(k==='capVideo'?Number(el.value).toFixed(2).replace('.',','):el.value)+(el.dataset.suf||'');renderNav()}
+ else if(a==='chf'&&(el.type==='text'||el.type==='textarea')){ch()[el.dataset.k]=el.dataset.list?el.value.split(',').map(x=>x.trim()).filter(Boolean):el.value;renderNav()}
 });
 function liveCap(v){const cap=$('#cap');if(!cap)return;const c=v.comp;cap.style.fontSize=Math.round(c.subSize*(v.format==='short'?0.5:0.42))+'px'}
 function updDock(v){/* o dock só muda o resumo; re-render parcial barato */const d=document.querySelector('.dock');if(!d)return;const tmp=document.createElement('div');tmp.innerHTML=dock(v,0);if(tmp.firstElementChild)d.replaceWith(tmp.firstElementChild)}
@@ -761,12 +913,15 @@ document.addEventListener('change',e=>{
  else if(a==='compchk'){v.comp.ducking=el.checked;dirty(v);render()}
  else if(a==='vstyle'){v.style=el.value;dirty(v);render();toast('Estilo deste vídeo alterado (o padrão do canal não mudou).')}
  else if(a==='meta'){v.meta[el.dataset.k]=el.value}
- else if(a==='chf'){ch()[el.dataset.k]=el.dataset.num?Number(el.value):el.value;render();toast('Configuração salva.')}
+ else if(a==='winp'&&S.wiz){const k=el.dataset.k;S.wiz.d[k]=el.dataset.num?Number(el.value):el.value}
+ else if(a==='route'){ch().routing[el.dataset.k]=el.value;render();toast('Roteamento do canal salvo.')}
+ else if(a==='chkbroll'){ch().broll=el.checked;toast('Configuração salva.')}
+ else if(a==='chf'&&el.type!=='range'&&el.type!=='text'&&el.type!=='textarea'){ch()[el.dataset.k]=el.dataset.num?Number(el.value):el.value;render();toast('Configuração salva.')}
  else if(a==='nscript'){S.newDraft.script=el.checked;S.newDraft.topic=($('#ntopic')||{}).value||S.newDraft.topic;render()}
  else if(a==='ntemplate'){S.newDraft.template=el.value}
  else if(a==='ndur'){S.newDraft.dur=el.value;render()}
 });
-$('#chsel').addEventListener('change',e=>{S.ch=e.target.value;S.newDraft=null;if(S.route==='video')go('#/videos');else render()});
+$('#chsel').addEventListener('change',e=>{if(e.target.value==='__new'){renderNav();go('#/channel/new');return}S.ch=e.target.value;S.newDraft=null;if(S.route==='video')go('#/videos');else render()});
 
 route();
 </script>
