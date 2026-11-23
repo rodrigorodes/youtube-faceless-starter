@@ -508,6 +508,14 @@ RUN_JS = r"""
     var el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = t;
     document.body.appendChild(el); setTimeout(function () { el.remove(); }, 2600);
   }
+  function sayWaiting(runId) {
+    // Pausa humana: leva direto à execução, onde est\u00e1 o "Continuar" (em vez de s\u00f3 mandar procurar).
+    if (!fb) return;
+    fb.textContent = 'A produ\u00e7\u00e3o aguarda voc\u00ea. ';
+    var a = document.createElement('a'); a.className = 'btn small primary';
+    a.href = '/studio/panel/videos/' + encodeURIComponent(video) + '/production-runs/' + encodeURIComponent(runId);
+    a.textContent = 'Continuar na execu\u00e7\u00e3o'; fb.appendChild(a);
+  }
   var TONE = { SUCCEEDED: ['ok', '\u2713'], RUNNING: ['accent', '\u2026'], WAITING_HUMAN: ['accent', '\u2026'], FAILED: ['bad', '\u2715'] };
   function ensureCard(runId) {
     var card = document.getElementById('progress-card');
@@ -547,7 +555,7 @@ RUN_JS = r"""
             clearInterval(timer);
             try { sessionStorage.setItem('run-toast-' + video, run.state); } catch (e) {}
             location.reload();
-          } else if (run.state === 'WAITING_HUMAN') { clearInterval(timer); say('A produ\u00e7\u00e3o aguarda voc\u00ea. Abra o progresso para continuar.'); }
+          } else if (run.state === 'WAITING_HUMAN') { clearInterval(timer); sayWaiting(runId); }
         }).catch(function () {});
     };
     tick(); timer = setInterval(tick, 2500);

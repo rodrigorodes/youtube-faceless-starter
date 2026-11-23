@@ -84,7 +84,7 @@ def _next_step(view, video_id: str) -> tuple[str, str, str, str]:
         return ("Retome a produção",
                 "A execução parou. Abra a produção para ver a etapa e o motivo antes de retomar.",
                 area_href(video_id, "producao"), "Abrir produção")
-    if run is not None and run.state in _LIVE_RUN_STATES:
+    if _live_run(view):
         return ("Acompanhe a execução",
                 "Há uma execução em andamento; o caminho é continuar por ela.",
                 area_href(video_id, "producao"), "Abrir produção")
@@ -1310,7 +1310,9 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
         preview_html = (f'<p style="margin-top:12px"><a class="btn small" href="/studio/videos/{e(video_id)}/preview">'
                         "Abrir prévia completa</a></p>")
     else:
-        preview_html = '<p class="sample" style="margin-top:12px">A prévia fica disponível após a renderização.</p>'
+        preview_html = (f'<p style="margin-top:12px"><a class="btn small" href="/studio/videos/{e(video_id)}/preview">'
+                        "Abrir prévia completa</a></p>") if approved else (
+            '<p class="sample" style="margin-top:12px">A prévia fica disponível após a renderização.</p>')
 
     failed_pub = (_publication_failed(view) and not is_published)
     failure_note = ""
@@ -1420,10 +1422,17 @@ _AREA_RENDERERS = {
 }
 
 
+def _live_run(view) -> bool:
+    """Há execução viva que ainda importa. Aprovado/publicado: o run segue aberto só até a publicação
+    (pausa humana final), e isso não é mais produção em andamento."""
+    run = getattr(view, "latest_run", None)
+    return (run is not None and run.state in _LIVE_RUN_STATES
+            and view.stage not in (Stage.APPROVED, Stage.COMPLETED))
+
+
 def _run_is_live(view) -> bool:
     """Produção em andamento: o estágio observável OU uma execução viva (entre etapas o estágio pode piscar)."""
-    run = getattr(view, "latest_run", None)
-    return view.stage == Stage.IN_PRODUCTION or (run is not None and run.state in _LIVE_RUN_STATES)
+    return view.stage == Stage.IN_PRODUCTION or _live_run(view)
 
 
 def _impact_dialog(missing: int) -> str:

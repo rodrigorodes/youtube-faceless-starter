@@ -17,6 +17,8 @@ from app.studio.api.panel_video_workspace import (
     _area_narracao,
     _area_visao_geral,
     _composition_plan_card,
+    _next_step,
+    _progress_card,
     area_href,
     render_video_workspace,
 )
@@ -550,3 +552,21 @@ def test_qualidade_approve_button_is_disabled_without_a_known_render_revision():
     view = _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL)
     button = re.search(r'<button[^>]*id="btn-approve-video"[^>]*>', _content(_render("qualidade", view=view))).group(0)
     assert "disabled" in button and "prévia" in button.lower()
+
+
+def test_approved_video_with_a_run_waiting_for_publication_shows_no_production_in_progress():
+    """Achado no E2E: o run só fecha na publicação (WAITING_HUMAN), mas aprovado não é "produção em andamento"."""
+    view = _view(status=VideoStatus.APPROVED, stage=Stage.APPROVED, latest_run=LatestRun("r1", "WAITING_HUMAN"))
+    assert _progress_card(view) == ""
+    assert 'id="btn-render" disabled aria-busy' not in _render("cenas", view=view)
+    live = _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL, latest_run=LatestRun("r1", "WAITING_HUMAN"))
+    assert _progress_card(live) != ""  # aguardando aprovação continua sendo a execução viva
+    title = _next_step(view, VIDEO)[0]
+    assert title != "Acompanhe a execução"
+
+
+def test_publicacao_of_an_approved_video_does_not_say_the_preview_is_pending_render():
+    view = _view(status=VideoStatus.APPROVED, stage=Stage.APPROVED)
+    content = _content(_render("publicacao", view=view, preview=_preview(status=VideoStatus.APPROVED)))
+    assert "A prévia fica disponível após a renderização" not in content
+    assert f'href="/studio/videos/{VIDEO}/preview"' in content
