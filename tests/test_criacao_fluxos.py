@@ -101,16 +101,16 @@ def _short_script_render(*, chapters):
     return html
 
 
-def test_planless_script_locks_text_and_order_with_a_visible_reason_but_keeps_media_and_voice():
+def test_planless_short_script_keeps_text_order_add_and_delete_editable():
+    """Bug: todo Short abria o storyboard com texto e ordem bloqueados ("sem plano de capítulos")."""
     html = _short_script_render(chapters=[])
     content = _content(html)
-    assert 'id="storyboard-estrutura"' in content
-    assert "plano de capítulos" in _texto(content)
-    assert "disabled" in re.search(r'<button[^>]*id="btn-nova-cena"[^>]*>', content).group(0)
-    assert re.search(r'<textarea[^>]*data-a="text"[^>]*readonly', content)
-    assert re.search(r'<button[^>]*data-a="delscene"[^>]*disabled', content)
-    assert not re.search(r'<button[^>]*data-a="media"[^>]*disabled', content)  # mídia segue editável
-    assert '"structure": false' in html
+    assert 'id="storyboard-estrutura"' not in content and "plano de capítulos" not in _texto(content)
+    assert "disabled" not in re.search(r'<button[^>]*id="btn-nova-cena"[^>]*>', content).group(0)
+    assert not re.search(r'<textarea[^>]*data-a="text"[^>]*readonly', content)
+    assert not re.search(r'<button[^>]*data-a="delscene"[^>]*disabled', content)
+    assert not re.search(r'<button[^>]*data-a="(up|down|moveup|movedown)"[^>]*disabled', content)
+    assert '"structure": true' in html
 
 
 def test_planned_script_keeps_everything_editable():
@@ -263,3 +263,18 @@ def test_reopen_script_posts_and_returns_to_the_storyboard_with_a_notice():
     from app.studio.api.panel_video_workspace import PAGE_JS
     assert "[data-reopen]" in PAGE_JS and "/reopen'" in PAGE_JS
     assert "flash-" in PAGE_JS and "/cenas" in PAGE_JS
+
+
+def test_pedir_ajustes_confirms_in_a_themed_dialog_not_the_browser_confirm():
+    """Bug: a confirmação era `window.confirm` (modal nativo do navegador), fora do tema."""
+    from app.studio.api.panel_video_workspace import PAGE_JS
+    from app.studio.domain.contracts import VideoStatus
+    assert "window.confirm" not in PAGE_JS and "confirm(" not in PAGE_JS
+    for status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED):
+        html = _render("qualidade", view=_em(status))
+        dialog = re.search(r'<dialog[^>]*id="dlg-reopen"[^>]*>.*?</dialog>', html, re.S)
+        assert dialog and 'class="modal"' in dialog.group(0) and 'id="btn-confirmar-reopen"' in dialog.group(0)
+        assert "data-fechar-dialogo" in dialog.group(0)
+    approved = re.search(r'<dialog[^>]*id="dlg-reopen".*?</dialog>', _render("qualidade", view=_em(VideoStatus.APPROVED)), re.S)
+    assert "aprovação" in approved.group(0)
+    assert 'id="dlg-reopen"' not in _render("qualidade", view=_em(VideoStatus.PUBLISHED))

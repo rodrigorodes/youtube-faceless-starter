@@ -465,19 +465,16 @@ def _reopen_button(view, video_id: str, *, cls: str = "btn ghost long small",
 
 
 _LOCKED_TITLE = "O roteiro só pode ser editado enquanto o vídeo está em Ideia ou Roteirizado."
-_NO_PLAN_TITLE = "Este roteiro não tem plano de capítulos: texto e ordem das cenas não podem ser gravados."
 
 
 def _structure_editable(script_view) -> bool:
-    """Texto, ordem, inclusão e exclusão de cena só são gravados em roteiro com plano de capítulos.
+    """Texto, ordem, inclusão e exclusão de cena são gravados em qualquer roteiro versionado.
 
-    O backend edita cenas sobre o plano (`script_plans`); o roteiro curto gerado pelas fontes não tem
-    plano e toda edição volta 409. Sem leitura do roteiro (`script_view` ausente) não há como afirmar o
-    contrário, então a tela não bloqueia por palpite.
+    O roteiro longo edita sobre o plano de capítulos; o roteiro curto (gerado pelas fontes) não tem plano e
+    é editado sem revisão de capítulos, só com a checagem de lastro do texto novo nas fontes. A trava que
+    existia aqui bloqueava todo Short e foi removida.
     """
-    if script_view is None or not getattr(script_view, "has_script", False):
-        return True
-    return bool(getattr(script_view, "chapters", None))
+    return True
 
 
 def _nova_cena_btn(video_id: str, script, editable: bool = True, structure: bool = True) -> str:
@@ -491,8 +488,6 @@ def _nova_cena_btn(video_id: str, script, editable: bool = True, structure: bool
         off = ' disabled title="Este vídeo ainda não tem roteiro para receber cenas."'
     elif not editable:
         off = f' disabled title="{_LOCKED_TITLE}"'
-    elif not structure:
-        off = f' disabled title="{_NO_PLAN_TITLE}"'
     return (f'<button type="button" class="btn small" id="btn-nova-cena" data-a="addscene" '
             f'data-video-id="{e(video_id)}" data-script-version="{version}"{off}>+ Nova cena</button>')
 
@@ -540,7 +535,7 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
     lock = "" if editable else f' disabled title="{_LOCKED_TITLE}"'
     ro = "" if editable else f' readonly title="{_LOCKED_TITLE}"'
     # Texto/prompt/ordem/exclusão dependem do plano; mídia, B-roll e voz não.
-    fixed = "" if (editable and structure) else (f' title="{_LOCKED_TITLE}"' if not editable else f' title="{_NO_PLAN_TITLE}"')
+    fixed = "" if editable else f' title="{_LOCKED_TITLE}"'
     ro_text = f" readonly{fixed}" if fixed else ""
     lock_text = f" disabled{fixed}" if fixed else ""
     off_move = lambda cond: " disabled" if (cond or fixed) else ""  # noqa: E731
@@ -657,12 +652,6 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
     script_content = "".join(
         f'<p style="margin-top:12px"><b>{i + 1}. {e(sc["label"])}</b><br>{e(sc["narration"])}</p>'
         for i, sc in enumerate(items))
-    no_plan_note = ""
-    if items and editable and not structure:
-        no_plan_note = ('<p class="note" id="storyboard-estrutura" style="margin-bottom:14px"><b>Texto e ordem das cenas estão '
-                        'bloqueados.</b> Este roteiro não tem plano de capítulos, e o Studio só grava edição de texto, '
-                        'inclusão, exclusão e ordem em roteiros com plano. Mídia, B-roll e voz de cada cena continuam '
-                        'editáveis aqui.</p>')
     locked_note = ""
     if items and not editable and version and getattr(view.video, "status", None) in _REOPENABLE:
         approved = view.video.status is VideoStatus.APPROVED
@@ -682,7 +671,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<button type="button" class="btn small" id="btn-undo-cenas" data-a="undo-v3" disabled>↶ Desfazer</button>'
         '<button type="button" class="btn small" id="btn-redo-cenas" data-a="redo-v3" disabled>↷ Refazer</button>'
         f'{_nova_cena_btn(video_id, script, editable, structure)}</div></div>'
-        f'{locked_note}{no_plan_note}'
+        f'{locked_note}'
         f'<div class="stack" id="storyboard-cards">{cards}</div>'
         f'{empty}'
         '<div class="row" style="margin-top:12px">'
@@ -2077,16 +2066,29 @@ PAGE_JS = """
     });
   }
 
-  // "Pedir ajustes": reabre a edição (aprovação, render e QA atuais ficam obsoletos) e volta ao storyboard.
+  // "Pedir ajustes": confirma no diálogo do tema, reabre a edição (aprovação, render e QA ficam obsoletos) e volta ao storyboard.
+  var dlgReopen = document.getElementById('dlg-reopen');
+  var reopenFrom = null;
+  function reopenAberto(btn) {
+    reopenFrom = btn;
+    var erro = document.getElementById('reopen-erro'); if (erro) erro.textContent = '';
+    if (dlgReopen && typeof dlgReopen.showModal === 'function') dlgReopen.showModal();
+    else if (dlgReopen) dlgReopen.setAttribute('open', '');
+  }
   document.querySelectorAll('[data-reopen]').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      var videoId = btn.getAttribute('data-video-id') || '';
-      var approved = btn.getAttribute('data-status') === 'APPROVED';
-      var out = document.getElementById('reopen-feedback');
-      if (!window.confirm('Pedir ajustes reabre este vídeo para edição. ' + (approved ? 'A aprovação, o ' : 'O ')
-        + 'render e o QA atuais ficam obsoletos e será preciso produzir e aprovar de novo. Continuar?')) return;
-      btn.disabled = true; btn.classList.add('carregando');
-      if (out) out.textContent = 'Reabrindo para edição...';
+    btn.addEventListener('click', function () { reopenAberto(btn); });
+  });
+  if (dlgReopen) {
+    dlgReopen.addEventListener('click', function (ev) {
+      if (ev.target === dlgReopen || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlgReopen.close();
+    });
+    var ok = document.getElementById('btn-confirmar-reopen');
+    if (ok) ok.addEventListener('click', async function () {
+      var videoId = reopenFrom ? (reopenFrom.getAttribute('data-video-id') || '') : '';
+      var erro = document.getElementById('reopen-erro');
+      if (!videoId) return;
+      ok.disabled = true; ok.classList.add('carregando');
+      if (erro) erro.textContent = 'Reabrindo para edição...';
       try {
         var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/reopen', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -2096,13 +2098,13 @@ PAGE_JS = """
           location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
           return;
         }
-        if (out) out.textContent = 'Não foi possível reabrir: ' + window.StudioErro.texto(data, 'tente novamente.', response.status);
+        if (erro) erro.textContent = 'Não foi possível reabrir: ' + window.StudioErro.texto(data, 'tente novamente.', response.status);
       } catch (err) {
-        if (out) out.textContent = 'Falha de rede ao reabrir. Tente novamente.';
+        if (erro) erro.textContent = 'Falha de rede ao reabrir. Tente novamente.';
       }
-      btn.disabled = false; btn.classList.remove('carregando');
+      ok.disabled = false; ok.classList.remove('carregando');
     });
-  });
+  }
 })();
 """
 
@@ -2143,6 +2145,28 @@ def _version_dialog(view) -> str:
     )
 
 
+def _reopen_dialog(view) -> str:
+    """Confirmação de "Pedir ajustes" no tema (a antiga `window.confirm` era um modal nativo do navegador)."""
+    status = getattr(getattr(view, "video", None), "status", None)
+    if status not in _REOPENABLE:
+        return ""
+    lost = "A aprovação, o render e o QA atuais" if status is VideoStatus.APPROVED else "O render e o QA atuais"
+    return (
+        '<dialog id="dlg-reopen" class="modal" aria-labelledby="t-reopen">'
+        '<div class="modal-header"><h2 id="t-reopen">Pedir ajustes</h2>'
+        '<button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>'
+        '<div class="dialogo-corpo">'
+        '<p style="margin:0 0 10px">O vídeo volta para edição: texto, ordem, mídia e voz das cenas ficam liberados.</p>'
+        f'<p class="sub">{lost} ficam obsoletos e será preciso produzir e aprovar de novo. '
+        'Nada é apagado: as versões anteriores continuam no histórico.</p>'
+        '<p id="reopen-erro" class="feedback" role="alert" aria-live="assertive"></p>'
+        '<div class="row" style="margin-top:16px">'
+        '<button type="button" class="btn primary" id="btn-confirmar-reopen" autofocus>Reabrir para edição</button>'
+        '<button type="button" class="btn ghost small" data-fechar-dialogo>Voltar</button></div>'
+        '</div></dialog>'
+    )
+
+
 def _workspace_header(view, video_id: str, title: str, *, channel_name: str = "", style_view=None,
                       channel_voice: str | None = None) -> str:
     """Cabeçalho de `pgVideo`: voltar + caminho, eyebrow de modo, h1, pills e ações."""
@@ -2169,7 +2193,7 @@ def _workspace_header(view, video_id: str, title: str, *, channel_name: str = ""
           <div class="row" style="margin-top:6px">{"".join(pills)}</div></div>
           <div class="row">{editar}<button class="btn small" type="button" id="btn-versoes">Histórico de versões</button></div>
           <a class="btn ghost small" href="{area_href(video_id, "producao")}">Ver progresso / Diagnóstico</a></div>
-        {_version_dialog(view)}"""
+        {_version_dialog(view)}{_reopen_dialog(view)}"""
 
 
 _RUN_PILL = {"SUCCEEDED": ("ok", "✓"), "RUNNING": ("accent", "…"), "WAITING_HUMAN": ("accent", "…"),

@@ -77,8 +77,8 @@ class PostgresScriptRepository(_Base):
                                     outcome=_outcome_from_json(row["result_json"]))
 
     def save_edit(self, video_id: str, idempotency_key: str, payload_sha256: str, expected_version: int,
-                  text: str, drafts: list[SceneDraft], claim_ids: list[str], plan: ScriptPlan,
-                  content_hash: str, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
+                  text: str, drafts: list[SceneDraft], claim_ids: list[str], plan: ScriptPlan | None,
+                  content_hash: str | None, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
         """CAS + escrita da versão + registro idempotente na mesma transação.
 
         O bloqueio da linha do vídeo serializa duas abas: a segunda com a mesma versão recebe None
@@ -104,10 +104,11 @@ class PostgresScriptRepository(_Base):
             if newest != expected_version:
                 return None
             script = self._write_script(conn, video_id, text, drafts, claim_ids)
-            conn.execute("INSERT INTO studio.script_plans(video_id, version, structure, content_hash, words_per_minute, target_seconds) "
-                         "VALUES (%s, %s, %s, %s, %s, %s)",
-                         (video_id, script.version, Jsonb(plan.model_dump(mode="json")), content_hash,
-                          plan.words_per_minute, plan.target_seconds))
+            if plan is not None:  # roteiro curto (gerado pelas fontes) não tem plano de capítulos nem hash de plano
+                conn.execute("INSERT INTO studio.script_plans(video_id, version, structure, content_hash, words_per_minute, target_seconds) "
+                             "VALUES (%s, %s, %s, %s, %s, %s)",
+                             (video_id, script.version, Jsonb(plan.model_dump(mode="json")), content_hash,
+                              plan.words_per_minute, plan.target_seconds))
             if expected != new:
                 assert_transition(expected, new)
             conn.execute("UPDATE studio.videos SET status = %s, updated_at = now() WHERE id = %s",

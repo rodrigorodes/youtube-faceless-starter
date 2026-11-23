@@ -385,12 +385,13 @@ class LongFormScriptRepository(Protocol):
         """Requisição de edição já gravada para a chave, ou None."""
 
     def save_edit(self, video_id: str, idempotency_key: str, payload_sha256: str, expected_version: int,
-                  text: str, drafts: list[SceneDraft], claim_ids: list[str], plan: ScriptPlan,
-                  content_hash: str, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
+                  text: str, drafts: list[SceneDraft], claim_ids: list[str], plan: ScriptPlan | None,
+                  content_hash: str | None, expected: VideoStatus, new: VideoStatus) -> ScriptEditOutcome | None:
         """Grava a edição (versão +1) com plano/hash e o registro idempotente na mesma transação.
 
         Replay com o mesmo hash devolve o resultado gravado; chave com outro hash levanta
-        ``ScriptEditIdempotencyConflict``. None se o estado ou a versão mudaram (CAS).
+        ``ScriptEditIdempotencyConflict``. None se o estado ou a versão mudaram (CAS). `plan`/`content_hash`
+        None: roteiro curto sem plano de capítulos (nenhuma linha de plano é gravada).
         """
 
     def revision_scenes(self, video_id: str, version: int) -> list[SceneRevision]:

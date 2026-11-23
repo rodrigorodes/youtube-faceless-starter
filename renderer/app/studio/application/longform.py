@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 
 from ..domain.contracts import Scene, Script, Video, VideoStatus
 from ..domain.effective_config import EffectiveConfig
+from ..domain.facts import check_narration
 from ..domain.longform import (
     MAX_LONG_SCENES,
     MIN_LONG_SCENES,
@@ -124,9 +125,9 @@ class LongScriptResult:
     """Resultado do motor long-form: roteiro gravado, plano, cenas, revisão e custo somado."""
 
     script: Script
-    plan: ScriptPlan
+    plan: ScriptPlan | None  # None: roteiro curto editado sem plano de capítulos
     scenes: tuple[Scene, ...]
-    review: ScriptReview
+    review: ScriptReview | None
     cost_usd: float
     estimated_duration_seconds: float
     word_count: int
@@ -426,15 +427,27 @@ class _ScriptSceneMutation:
         video = _require_video(self.videos, video_id)
         _require_script_editable(video)
         records = self.longform.list_script_records(video_id)
-        if not records or records[-1].script.version != expected_version or records[-1].plan is None:
+        if not records or records[-1].script.version != expected_version:
             latest = records[-1].script.version if records else None
             raise ScriptVersionStale(
                 f"the requested version {expected_version} is not the latest script version ({latest})")
+        # `plan` é None no roteiro curto gerado pelas fontes: ele é editável sem plano (sem revisão de capítulos).
         plan = records[-1].plan
         snapshots = self.snaps.list(video_id)
         claims = _claims(snapshots)
         drafts = _scenes_to_drafts(self.scripts.scenes(video_id))
         return video, plan, drafts, snapshots, claims
+
+    def _review_planless(self, drafts: Sequence[SceneDraft], snapshots, changed: Sequence[int]) -> None:
+        """Roteiro curto: só o texto novo ou editado precisa ter lastro nas fontes (o resto já foi checado antes)."""
+        sources = [snap.text for snap in snapshots]
+        problems = []
+        for position in changed:
+            for issue in check_narration(drafts[position].narration, sources, self.allow_names):
+                problems.append(f"scene {position + 1}: {issue.kind} {issue.value!r}")
+        if problems:
+            raise ScriptRejected("edited script did not pass review: content not found in the sources ("
+                                 + "; ".join(problems[:5]) + "). Add a source that supports it or rewrite the text")
 
     def _review_and_hash(self, video_id: str, plan: ScriptPlan, drafts: Sequence[SceneDraft],
                          snapshots, claims):
@@ -457,18 +470,19 @@ class _ScriptSceneMutation:
                                 estimated_duration_seconds=durations.total_seconds,
                                 word_count=sum(len(d.narration.split()) for d in drafts))
 
-    def _result_from_outcome(self, outcome: ScriptEditOutcome, plan: ScriptPlan,
-                             review: ScriptReview) -> LongScriptResult:
-        durations = estimate_text_durations([s.narration for s in outcome.scenes], plan.words_per_minute)
+    def _result_from_outcome(self, outcome: ScriptEditOutcome, plan: ScriptPlan | None,
+                             review: ScriptReview | None) -> LongScriptResult:
+        durations = estimate_text_durations([s.narration for s in outcome.scenes],
+                                            plan.words_per_minute if plan is not None else DEFAULT_WORDS_PER_MINUTE)
         return LongScriptResult(script=outcome.script, plan=plan, scenes=outcome.scenes, review=review,
                                 cost_usd=0.0, estimated_duration_seconds=durations.total_seconds,
                                 word_count=sum(len(s.narration.split()) for s in outcome.scenes))
 
-    def _plan_for_version(self, video_id: str, version: int) -> ScriptPlan:
+    def _plan_for_version(self, video_id: str, version: int) -> ScriptPlan | None:
         for record in self.longform.list_script_records(video_id):
-            if record.script.version == version and record.plan is not None:
-                return record.plan
-        raise ScriptVersionStale(f"the stored edit result for version {version} has no plan")
+            if record.script.version == version:
+                return record.plan  # None no roteiro curto, que não tem plano de capítulos
+        raise ScriptVersionStale(f"the stored edit result for version {version} does not exist")
 
     def _replay(self, video_id: str, idempotency_key: str, digest: str) -> LongScriptResult | None:
         existing = self.longform.find_edit(video_id, idempotency_key)
@@ -478,6 +492,8 @@ class _ScriptSceneMutation:
             raise ScriptEditIdempotencyConflict(
                 "idempotency key already used with a different payload")
         plan = self._plan_for_version(video_id, existing.outcome.script.version)
+        if plan is None:
+            return self._result_from_outcome(existing.outcome, None, None)
         snapshots = self.snaps.list(video_id)
         claims = _claims(snapshots)
         review = review_script(plan, list(existing.outcome.scenes), sources=[s.text for s in snapshots],
@@ -485,8 +501,19 @@ class _ScriptSceneMutation:
                                allow_names=self.allow_names, tolerance=self.tolerance)
         return self._result_from_outcome(existing.outcome, plan, review)
 
-    def _save(self, video: Video, plan: ScriptPlan, drafts: Sequence[SceneDraft], snapshots, claims,
-              expected_version: int, idempotency_key: str, digest: str) -> LongScriptResult:
+    def _save(self, video: Video, plan: ScriptPlan | None, drafts: Sequence[SceneDraft], snapshots, claims,
+              expected_version: int, idempotency_key: str, digest: str,
+              changed: Sequence[int] = ()) -> LongScriptResult:
+        if plan is None:
+            self._review_planless(drafts, snapshots, changed)
+            text = "\n".join(d.narration for d in drafts)
+            cited = sorted({c for d in drafts for c in d.claim_ids})
+            outcome = self.longform.save_edit(video.id, idempotency_key, digest, expected_version, text, drafts,
+                                              cited, None, None, video.status, VideoStatus.SCRIPTED)
+            if outcome is None:
+                raise ScriptVersionStale(
+                    f"the requested version {expected_version} is not the latest script version")
+            return self._result_from_outcome(outcome, None, None)
         review, content_hash, text, cited = self._review_and_hash(video.id, plan, drafts, snapshots, claims)
         outcome = self.longform.save_edit(video.id, idempotency_key, digest, expected_version, text, drafts,
                                           cited, plan, content_hash, video.status, VideoStatus.SCRIPTED)
@@ -503,6 +530,8 @@ class EditScriptScene(_ScriptSceneMutation):
                 caption: str | None = None, image_prompt: str | None = None,
                 claim_ids: Sequence[str] | None = None) -> LongScriptResult:
         video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
+        if plan is None:
+            raise StateConflict("this script has no chapter plan: edit it with an idempotency key")
         if not 0 <= scene_idx < len(drafts):
             raise InvalidInput(f"scene index {scene_idx} is out of range")
         current = drafts[scene_idx]
@@ -541,7 +570,9 @@ class EditScriptScene(_ScriptSceneMutation):
             label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
             claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
         )
-        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+        changed = [scene_idx] if drafts[scene_idx].narration != current.narration else []
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest,
+                          changed)
 
 
 class AddScriptScene(_ScriptSceneMutation):
@@ -564,10 +595,12 @@ class AddScriptScene(_ScriptSceneMutation):
             position = len(drafts)
         if not 0 <= position <= len(drafts):
             raise InvalidInput(f"scene position {position} is out of range")
-        plan = with_chapter_scene_delta(plan, chapter_for_position(plan, position), 1)
+        if plan is not None:
+            plan = with_chapter_scene_delta(plan, chapter_for_position(plan, position), 1)
         drafts.insert(position, SceneDraft(narration.strip(), caption.strip(), label.strip(),
                                            image_prompt.strip(), list(claim_ids)))
-        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
+        return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest,
+                          [position])
 
 
 class RemoveScriptScene(_ScriptSceneMutation):
@@ -584,10 +617,14 @@ class RemoveScriptScene(_ScriptSceneMutation):
         video, plan, drafts, snapshots, claims = self._load(video_id, expected_version)
         if not 0 <= scene_idx < len(drafts):
             raise InvalidInput(f"scene index {scene_idx} is out of range")
-        try:
-            plan = with_chapter_scene_delta(plan, chapter_for_position(plan, scene_idx), -1)
-        except ValueError as exc:
-            raise InvalidInput(str(exc)) from exc
+        if plan is None:
+            if len(drafts) <= 1:
+                raise InvalidInput("a script needs at least one scene")
+        else:
+            try:
+                plan = with_chapter_scene_delta(plan, chapter_for_position(plan, scene_idx), -1)
+            except ValueError as exc:
+                raise InvalidInput(str(exc)) from exc
         del drafts[scene_idx]
         return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest)
 

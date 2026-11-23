@@ -443,3 +443,67 @@ def test_restore_route_requires_key_and_reports_a_missing_snapshot(env):
     assert legacy.status_code == 409
     assert "snapshot" in legacy.json()["detail"]
     assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+
+
+# ---- roteiro curto (sem plano de capítulos): texto, inclusão, exclusão e ordem também são editáveis ----------
+
+SHORT_TEXTS = ["O canal cresceu 42 por cento no ano passado.", "Esse crescimento mudou o mercado inteiro.",
+               "O mercado inteiro mudou depois disso."]
+
+
+def seed_short(env):
+    """Short com roteiro gerado pelas fontes (`save_and_advance`): versão 1, SCRIPTED e nenhum plano."""
+    video = env["videos"].create_video(env["project"].id, "Tema curto", VideoFormat.short)
+    env["snaps"].add(video.id, "https://example.com/x", SOURCE)
+    env["scripts"].save_and_advance(
+        video.id, "\n".join(SHORT_TEXTS),
+        [SceneDraft(t, "Legenda", "CEN", "wide empty stage with colored lights", [CID]) for t in SHORT_TEXTS],
+        [CID], VideoStatus.IDEA, VideoStatus.SCRIPTED)
+    return video
+
+
+def test_short_script_scene_text_can_be_edited_without_a_plan(env):
+    video = seed_short(env)
+    ids = [s.id for s in env["scripts"].scenes(video.id)]
+    r = post_edit(env, video, 0, "short-edit-1", narration="O canal cresceu 42 por cento e virou referência.")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["script"]["version"] == 2 and body["scenes"][0]["narration"].endswith("virou referência.")
+    assert [s["id"] for s in body["scenes"]] == ids  # a cena editada mantém a identidade
+    assert count(env, "SELECT count(*) FROM studio.script_plans WHERE video_id=%s", (video.id,)) == 0
+    replay = post_edit(env, video, 0, "short-edit-1", narration="O canal cresceu 42 por cento e virou referência.")
+    assert replay.status_code == 200 and replay.json()["script"]["version"] == 2
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 2
+
+
+def test_short_script_accepts_add_remove_and_reorder(env):
+    video = seed_short(env)
+    original = [s.id for s in env["scripts"].scenes(video.id)]
+    added = env["client"].post(
+        f"/studio/videos/{video.id}/script/scenes",
+        json={"expected_version": 1, "idempotency_key": "short-add", "position": 1,
+              "narration": "O mercado inteiro mudou depois do canal.", "caption": "", "label": "NOVA",
+              "image_prompt": "wide empty stage with colored lights", "claim_ids": [CID]}, headers=POST_HEADER)
+    assert added.status_code == 200, added.text
+    scenes = added.json()["scenes"]
+    assert len(scenes) == 4 and scenes[1]["label"] == "NOVA" and scenes[1]["id"] not in original
+
+    reordered = env["client"].post(
+        f"/studio/videos/{video.id}/script/scenes/reorder",
+        json={"expected_version": 2, "idempotency_key": "short-reorder", "order": [3, 0, 1, 2]}, headers=POST_HEADER)
+    assert reordered.status_code == 200, reordered.text
+    assert reordered.json()["scenes"][0]["id"] == scenes[3]["id"]
+
+    removed = env["client"].request(
+        "DELETE", f"/studio/videos/{video.id}/script/scenes/1",
+        json={"expected_version": 3, "idempotency_key": "short-remove"}, headers=POST_HEADER)
+    assert removed.status_code == 200 and len(removed.json()["scenes"]) == 3
+    assert count(env, "SELECT count(*) FROM studio.script_plans WHERE video_id=%s", (video.id,)) == 0
+
+
+def test_short_script_edit_with_text_unsupported_by_the_sources_writes_nothing(env):
+    video = seed_short(env)
+    r = post_edit(env, video, 0, "short-bad", narration="O canal cresceu 987654 por cento no ano passado.")
+    assert r.status_code == 502 and "sources" in r.json()["detail"].lower()
+    assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 1
+    assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 0
