@@ -98,17 +98,19 @@ PRODUCT_CSS = """
 .config-corpo { display: flex; flex-direction: column; gap: 18px; }
 
 /* Galeria de estilos (novo vídeo / biblioteca) */
-.galeria { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.galeria { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .cartao-estilo {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--panel2);
-  padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel2);
+  padding: 14px; cursor: pointer; display: block; text-align: left;
 }
-.cartao-estilo:has(input:checked) { border-color: var(--accent); background: var(--accentbg); }
+.cartao-estilo:has(input:checked) { border: 2px solid var(--accent); background: var(--accentbg); padding: 13px; }
+.cartao-estilo:focus-within { outline: 2px solid var(--accent2); outline-offset: 2px; }
 .cartao-estilo .amostra {
-  height: 50px; background: var(--panel3); border-radius: 6px; display: grid; place-items: center;
-  font-weight: 700; font-size: 11px; letter-spacing: 0.5px; color: var(--accent2);
+  height: 54px; margin-bottom: 8px; border-radius: 9px; border: 1px solid var(--line);
+  background: linear-gradient(135deg, var(--panel3), var(--panel2)); display: grid; place-items: center;
+  font-weight: 700; font-size: 11px; letter-spacing: 0.5px; color: var(--accent2); text-align: center; padding: 0 8px;
 }
-.cartao-estilo .cartao-rodape { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.cartao-estilo .cartao-rodape { font-size: 12.5px; font-weight: 700; display: block; color: var(--text); }
 
 /* Linha de busca e filtros da biblioteca de vídeos */
 .linha-busca { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }

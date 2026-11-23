@@ -147,6 +147,13 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
 .sub { color: var(--muted); font-size: 13px; }
 .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 
+/* Aliases das classes legadas: telas que ainda usam o vocabulário antigo herdam a tipografia do protótipo */
+.h1 { font-size: 26px; font-weight: 780; letter-spacing: -0.3px; color: var(--text); }
+.lead, .vazio { color: var(--muted); font-size: 13px; }
+.micro, .dica { font-size: 11.5px; color: var(--muted); }
+.secao-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.pilha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
 /* Cards, Grids e Layout */
 .hero {
   background: var(--hero);

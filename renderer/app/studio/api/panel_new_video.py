@@ -44,6 +44,22 @@ NEW_VIDEO_JS = """
     $('#campo-roteiro').hidden = !useScript.checked;
     $('#estrutura-roteiro').hidden = useScript.checked;
   }
+  var duracao = $('#duracao-alvo');
+  function fillDuration() {
+    if (!duracao) return;
+    var format = $('input[name="formato-novo"]:checked');
+    var long = format && format.value === 'long';
+    var options = long ? [['120', '2 min'], ['180', '3 min'], ['300', '5 min']] : [['30', '30 s'], ['45', '45 s'], ['60', '60 s']];
+    var wanted = long ? '180' : '60';
+    duracao.innerHTML = '';
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o[0]; opt.textContent = o[1]; opt.selected = o[0] === wanted;
+      duracao.appendChild(opt);
+    });
+  }
+  fillDuration();
+  document.querySelectorAll('input[name="formato-novo"]').forEach(function (el) { el.addEventListener('change', fillDuration); });
   if (form) form.addEventListener('change', updateSummary);
 
   document.querySelectorAll('.modecard').forEach(function (mc) {
@@ -70,6 +86,22 @@ NEW_VIDEO_JS = """
         mc.setAttribute('aria-pressed', String(mc.querySelector('input').checked));
       });
       sessionStorage.removeItem('studio-video-draft');
+    }
+  } catch (e) {}
+  // Vindo de Tendências: /novo-video?topic=...&modo=piloto|diretor só preenche o formulário.
+  try {
+    var qs = new URLSearchParams(location.search);
+    var qTopic = (qs.get('topic') || '').trim();
+    var qModo = qs.get('modo');
+    if (qTopic && temaCampo && !temaCampo.value) temaCampo.value = qTopic.slice(0, 200);
+    if (qModo === 'piloto' || qModo === 'diretor') {
+      var qInput = Array.from(document.getElementsByName('modo-producao')).find(function (el) { return el.value === qModo; });
+      if (qInput) {
+        qInput.checked = true;
+        document.querySelectorAll('.modecard').forEach(function (mc) {
+          mc.setAttribute('aria-pressed', String(mc.querySelector('input').checked));
+        });
+      }
     }
   } catch (e) {}
   updateSummary();
@@ -173,13 +205,13 @@ def _style_options(view: NewVideoView, disabled: str) -> str:
                 f' {inherit}</label>')
     cards = [
         f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{inherit_sample}</span>'
-        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
-        f' {inherit}</span></label>'
+        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" value="" checked{disabled} class="sr-only">'
+        f'{inherit}</span></label>'
     ]
     cards.extend(
         f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{e(name.upper())}</span>'
         f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" '
-        f'value="{e(style_id, quote=True)}"{disabled}> {e(name)}</span></label>'
+        f'value="{e(style_id, quote=True)}"{disabled} class="sr-only">{e(name)}</span></label>'
         for style_id, name in view.styles
     )
     return f'<div class="galeria" style="width:100%">{"".join(cards)}</div>'
@@ -222,6 +254,10 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   if view.has_profile else "Canal sem perfil: valem os padrões do estúdio para voz e estilo.")
     voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
     estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
+    voz_vinculo = (' <span class="pill" style="margin-left:6px">padrão do canal</span>'
+                   if (view.has_profile and view.channel_voice) else "")
+    estilo_vinculo = (' <span class="pill" style="margin-left:6px">vinculado ao canal</span>'
+                      if view.inherited_style_name else "")
 
     default_mode = "piloto"
     default_format = "short"
@@ -305,29 +341,28 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
               <details class="diag" id="video-custom">
                 <summary>Personalizar este vídeo · formato, voz e estilo</summary>
               <div class="card">
-                <h3 style="margin-bottom:10px">3 · Formato, duração e estilo</h3>
+                <h3 style="margin-bottom:10px">3 · Formato, voz e estilo</h3>
                 <div class="row" style="margin-bottom:14px">
                   <span class="lbl">Formato</span>
-                  <fieldset class="pills" style="margin:0;border:0;padding:0">
+                  <fieldset class="pills seg" id="seg-formato-novo" style="margin:0;padding:2px;gap:0;flex-wrap:nowrap">
                     <legend class="sr-only">Formato</legend>
-                    <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long"{format_long_checked}{disabled}>
-                      <svg class="icone-formato" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
-                        <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20M2 15h20"/></svg>
-                      Vídeo · 16:9</label>
-                    <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{format_short_checked}{disabled}>
-                      <svg class="icone-formato" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
-                        <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M7 6h10M7 18h10"/></svg>
-                      Short · 9:16</label>
+                    <label class="seg-btn"><input type="radio" name="formato-novo" value="short"{format_short_checked}{disabled} class="sr-only"><span>Short · 9:16</span></label>
+                    <label class="seg-btn"><input type="radio" name="formato-novo" value="long"{format_long_checked}{disabled} class="sr-only"><span>Vídeo · 16:9</span></label>
                   </fieldset>
-                  <span class="lbl" style="margin-left:10px">Duração alvo</span>
-                  <input class="input" id="duracao-alvo" name="duration" type="number" min="10" max="36000" value="60" required{disabled} style="width:90px">
+                  <label class="lbl" for="duracao-alvo" style="margin-left:10px">Duração alvo</label>
+                  <select id="duracao-alvo" name="duration"{disabled} style="width:auto"></select>
                 </div>
-                <p class="lbl" style="margin-bottom:8px">Estilo visual</p>
+                <p class="lbl" style="margin-bottom:6px">Voz do narrador{voz_vinculo}</p>
+                <div class="row" style="margin-bottom:14px">
+                  <span class="pill accent">{voz}</span>
+                  <span class="sample">A voz vem do canal; a troca por vídeo ainda não está disponível.</span>
+                </div>
+                <p class="lbl" style="margin-bottom:6px">Estilo visual{estilo_vinculo}</p>
                 <fieldset class="pills" style="margin:0;border:0;padding:0;display:block;width:100%">
                   <legend class="sr-only">Estilo visual</legend>
                   {style_options}
                 </fieldset>
-                <p class="sub" style="font-size:11px;margin-top:8px">
+                <p class="sample" style="margin-top:10px">
                   <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a>
                 </p>
               </div>

@@ -54,8 +54,8 @@ def test_trends_uses_v3_shell_and_nav():
     html, _ = _trends_page()
     assert html.count("<h1") == 1
     assert 'class="crumb"' not in html
-    assert "O QUE ESTÁ SUBINDO" in html
-    assert "Tendências</h1>" in html
+    assert "Radar" in html
+    assert "Tendências e ideias</h1>" in html
     assert "Cada tendência vem com a evidência" in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
@@ -164,7 +164,7 @@ def _lote_html(trends, **kw):
 
 def test_first_render_shows_one_batch_and_a_load_more_control():
     html = _page_html(_many(30))
-    assert html.count('class="cartao-tendencia"') == PAGE_SIZE
+    assert html.count('class="card cartao-tendencia"') == PAGE_SIZE
     assert 'id="btn-carregar-mais"' in html
     assert "Mostrando 24 de 30." in html
     assert "offset=24" in html                      # próximo lote aponta para o resto
@@ -180,14 +180,14 @@ def test_load_more_is_absent_when_everything_already_fits():
 def test_next_batch_returns_the_following_cards_and_says_when_it_ends():
     trends = _many(30)
     lote = _lote_html(trends, offset=PAGE_SIZE, limite=PAGE_SIZE)
-    assert lote.count('class="cartao-tendencia"') == 6
+    assert lote.count('class="card cartao-tendencia"') == 6
     assert "Tema BR 24" in lote and "Tema BR 29" in lote
     assert 'data-tem-mais="false"' in lote
 
 
 def test_middle_batch_points_to_the_next_offset():
     lote = _lote_html(_many(60), offset=PAGE_SIZE, limite=PAGE_SIZE)
-    assert lote.count('class="cartao-tendencia"') == PAGE_SIZE
+    assert lote.count('class="card cartao-tendencia"') == PAGE_SIZE
     assert 'data-tem-mais="true"' in lote
     assert "offset=48" in lote
 
@@ -195,12 +195,12 @@ def test_middle_batch_points_to_the_next_offset():
 def test_filter_runs_on_the_server_and_the_next_batch_follows_the_filtered_list():
     trends = _many(30, "BR") + _many(5, "US")
     only_us = _page_html(trends, filtro="regiao:US")
-    assert only_us.count('class="cartao-tendencia"') == 5
+    assert only_us.count('class="card cartao-tendencia"') == 5
     assert "Tema US 0" in only_us and "Tema BR 0" not in only_us
     assert 'id="btn-carregar-mais"' not in only_us          # 5 cabe no primeiro lote
 
     br_lote = _lote_html(trends, filtro="regiao:BR", offset=PAGE_SIZE, limite=PAGE_SIZE)
-    assert br_lote.count('class="cartao-tendencia"') == 6
+    assert br_lote.count('class="card cartao-tendencia"') == 6
     assert "Tema BR 29" in br_lote and "Tema US" not in br_lote
 
 
@@ -224,13 +224,13 @@ def test_active_filter_is_marked_without_stealing_the_page_current_marker():
 
 def test_bad_or_out_of_range_offset_returns_an_empty_honest_batch():
     empty = _lote_html(_many(10), offset=999, limite=PAGE_SIZE)
-    assert empty.count('class="cartao-tendencia"') == 0
+    assert empty.count('class="card cartao-tendencia"') == 0
     assert 'data-tem-mais="false"' in empty
     negative = _lote_html(_many(10), offset=-5, limite=PAGE_SIZE)
-    assert negative.count('class="cartao-tendencia"') == 10   # offset inválido = começo
+    assert negative.count('class="card cartao-tendencia"') == 10   # offset inválido = começo
 
 
 def test_unknown_filter_shows_an_explicit_empty_state_not_every_trend():
     html = _page_html(_many(3), filtro="pilar:inexistente")
-    assert html.count('class="cartao-tendencia"') == 0
+    assert html.count('class="card cartao-tendencia"') == 0
     assert "Nenhuma tendência encontrada para este filtro." in html

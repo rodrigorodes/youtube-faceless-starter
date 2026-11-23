@@ -129,18 +129,17 @@ def test_new_video_style_options_are_the_real_library():
         assert ficticio not in bloco
 
 
-def test_format_options_carry_an_icon_each():
-    """Protótipo: cada formato tem ícone próprio (16:9 horizontal × 9:16 vertical)."""
+def test_format_is_a_segmented_control_short_first_like_the_prototype():
+    """Protótipo (pgNew): Formato é um `.seg` com Short · 9:16 e Vídeo · 16:9, sem ícones, e a
+    duração alvo é um select cujas opções acompanham o formato (preenchidas no navegador)."""
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view())
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="formato-novo"' in m][0]
-    icones = re.findall(r'<svg class="icone-formato"[^>]*aria-hidden="true"[^>]*>(.*?)</svg>', bloco, re.S)
-    assert len(icones) == 2, "um ícone por formato"
-    assert "width=\"20\" height=\"14\"" in icones[0]      # 16:9 deitado
-    assert "width=\"10\" height=\"20\"" in icones[1]      # 9:16 em pé
-    assert "focusable=\"false\"" in bloco
+    bloco = re.search(r'<fieldset class="pills seg"[^>]*>.*?</fieldset>', html, re.S).group(0)
+    assert bloco.index("Short · 9:16") < bloco.index("Vídeo · 16:9")
+    assert "<svg" not in bloco
+    assert '<select id="duracao-alvo"' in html
+    assert "Voz do narrador" in html and "3 · Formato, voz e estilo" in html
 
 
 def test_style_options_are_cards_with_the_real_name_when_the_library_has_styles():
