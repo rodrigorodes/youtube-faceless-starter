@@ -12,6 +12,7 @@ import html
 import secrets
 
 from . import panel as shell
+from .erro_js import ERRO_JS
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -115,6 +116,7 @@ def render_oauth_callback(project_id: str | None, *, provider_error: str | None 
         (access token, refresh token ou client secret) é exibido nesta página.</p>
       </div>
       <script nonce="{nonce}">
+        {ERRO_JS}
         const card = document.getElementById('oauth-complete');
         const feedback = document.getElementById('oauth-feedback');
         const params = new URLSearchParams(window.location.search);
@@ -140,8 +142,7 @@ def render_oauth_callback(project_id: str | None, *, provider_error: str | None 
                 + '. Redirecionando para Canais...';
               setTimeout(() => {{ window.location.href = card.getAttribute('data-back-href'); }}, 1200);
             }} else {{
-              const detail = (data && typeof data.detail === 'string')
-                ? data.detail : 'o servidor recusou a troca do código.';
+              const detail = window.StudioErro.texto(data, 'o servidor recusou a troca do código.');
               if (feedback) feedback.textContent = 'Não foi possível concluir: ' + detail
                 + ' Nenhum canal foi associado.';
             }}

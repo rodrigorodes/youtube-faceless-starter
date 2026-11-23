@@ -79,7 +79,7 @@ TRENDS_JS = """
             } else {
               if (fbPilar) {
                 fbPilar.setAttribute('data-tipo', 'erro');
-                fbPilar.textContent = 'Erro ao salvar: ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
+                fbPilar.textContent = 'Erro ao salvar: ' + (window.StudioErro.texto(d, 'tente novamente.'));
               }
               btnSalvar.disabled = false;
             }

@@ -184,7 +184,7 @@ document.querySelectorAll('form[data-style-form]').forEach((form) => {
         if (button) button.disabled = false;
       } else {
         if (feedback) feedback.textContent = 'Não foi possível salvar: '
-          + (typeof data.detail === 'string' ? data.detail : 'verifique os campos e tente novamente.');
+          + (window.StudioErro.texto(data, 'verifique os campos e tente novamente.'));
         if (button) button.disabled = false;
       }
     } catch (error) {
@@ -213,7 +213,7 @@ document.querySelectorAll('[data-archive-style]').forEach((button) => {
         setTimeout(() => window.location.reload(), 500);
       } else {
         if (feedback) feedback.textContent = 'Não foi possível arquivar: '
-          + (typeof data.detail === 'string' ? data.detail : 'tente novamente.');
+          + (window.StudioErro.texto(data, 'tente novamente.'));
         button.disabled = false;
       }
     } catch (error) {

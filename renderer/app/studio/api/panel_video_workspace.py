@@ -1401,7 +1401,7 @@ PAGE_JS = """
             '/production-runs/' + encodeURIComponent(data.run_id);
         } else {
           if (runFeedback) runFeedback.textContent = 'Não foi possível iniciar: '
-            + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
+            + (window.StudioErro.texto(data, 'resposta inválida do servidor.'));
           button.disabled = false;
           button.classList.remove('carregando');
           if (window.StudioLoading) window.StudioLoading.done();
@@ -1435,7 +1435,7 @@ PAGE_JS = """
             '/production-runs/' + encodeURIComponent(runId);
         } else {
           if (runFeedback) runFeedback.textContent = 'Não foi possível retomar: '
-            + (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite nova tentativa.');
+            + (window.StudioErro.texto(data, 'o estado atual não permite nova tentativa.'));
           retryBtn.disabled = false;
           retryBtn.classList.remove('carregando');
           if (window.StudioLoading) window.StudioLoading.done();
@@ -1478,7 +1478,7 @@ PAGE_JS = """
           setTimeout(function () { location.reload(); }, 600);
         } else {
           if (feedback) feedback.textContent = 'Não foi possível registrar a fonte: '
-            + (typeof data.detail === 'string' ? data.detail : 'verifique a URL e tente novamente.');
+            + (window.StudioErro.texto(data, 'verifique a URL e tente novamente.'));
           if (button) { button.disabled = false; button.classList.remove('carregando'); }
           if (window.StudioLoading) window.StudioLoading.done();
         }
@@ -1512,8 +1512,7 @@ PAGE_JS = """
           if (feedback) feedback.textContent = 'Revisão restaurada como nova versão. Atualizando...';
           setTimeout(function () { location.reload(); }, 500);
         } else {
-          if (feedback) feedback.textContent = typeof data.detail === 'string'
-            ? data.detail : 'Falha ao restaurar a revisão.';
+          if (feedback) feedback.textContent = window.StudioErro.texto(data, 'Falha ao restaurar a revisão.');
           button.disabled = false;
           button.classList.remove('carregando');
         }
@@ -1573,7 +1572,7 @@ PAGE_JS = """
           if (fb) fb.textContent = 'Aprovado com sucesso! Redirecionando para publicação...';
           location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/publicacao';
         } else {
-          if (fb) fb.textContent = 'Não foi possível aprovar: ' + (typeof data.detail === 'string' ? data.detail : 'erro no servidor.');
+          if (fb) fb.textContent = 'Não foi possível aprovar: ' + (window.StudioErro.texto(data, 'erro no servidor.'));
           approveBtn.disabled = false;
           approveBtn.classList.remove('carregando');
           if (window.StudioLoading) window.StudioLoading.done();
@@ -1804,7 +1803,7 @@ PAGE_JS = """
           setTimeout(function () { location.reload(); }, 500);
         } else {
           if (feedback) feedback.textContent = 'Não foi possível salvar: '
-            + (typeof data.detail === 'string' ? data.detail : 'verifique os parâmetros e tente novamente.');
+            + (window.StudioErro.texto(data, 'verifique os parâmetros e tente novamente.'));
           if (button) { button.disabled = false; button.classList.remove('carregando'); }
           if (window.StudioLoading) window.StudioLoading.done();
         }

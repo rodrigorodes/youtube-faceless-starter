@@ -162,7 +162,7 @@ def render_script(view: ScriptPageView, *, video_channel: str = "") -> tuple[str
             setTimeout(() => location.reload(), 800);
           }} else {{
             approveBtn.disabled = false;
-            feedback.textContent = typeof data.detail === 'string' ? data.detail : 'Não foi possível aprovar a versão.';
+            feedback.textContent = window.StudioErro.texto(data, 'Não foi possível aprovar a versão.');
           }}
         }} catch (err) {{
           approveBtn.disabled = false;

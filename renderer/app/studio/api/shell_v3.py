@@ -16,6 +16,7 @@ from .active_channel import propagate, with_channel
 
 from html import escape as e
 
+from .erro_js import ERRO_JS
 from .shell_v3_css import V3_CSS
 
 # Extensões funcionais do produto sobre o CSS aprovado (o protótipo é estático e não cobre estes casos).
@@ -347,7 +348,7 @@ THEME_BOOT_JS = (
     "localStorage.setItem('studio-theme','dark');}catch(e){}"
 )
 
-SHELL_JS = """
+SHELL_JS = ERRO_JS + """
 (function () {
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var raiz = document.documentElement;
@@ -456,7 +457,7 @@ SHELL_JS = """
             location.href = '/studio/panel?project_id=' + encodeURIComponent(d.id);
           } else {
             fb.setAttribute('data-tipo', 'erro');
-            fb.textContent = 'Erro ao cadastrar: ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
+            fb.textContent = 'Erro ao cadastrar: ' + (window.StudioErro.texto(d, 'tente novamente.'));
             btn.disabled = false;
             btn.classList.remove('carregando');
             window.StudioLoading.done();

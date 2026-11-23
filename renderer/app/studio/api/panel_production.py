@@ -30,6 +30,7 @@ from ..domain.production_run import (
 )
 from ..domain.panel import Stage
 from . import panel as shell
+from .erro_js import ERRO_JS
 from .panel_video_nav import area_href, default_area, video_area_nav
 from .panel_videos import _ESTADO
 
@@ -429,6 +430,7 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
     </aside>
   </div>
   <script nonce="{nonce}">
+    {ERRO_JS}
     const wizard = document.getElementById('new-video-wizard');
     if (wizard) {{
       wizard.addEventListener('submit', async (ev) => {{
@@ -450,7 +452,7 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
           }});
           const video = await created.json().catch(() => ({{}}));
           if (!created.ok || !video.id) {{
-            feedback.textContent = 'Erro ao criar: ' + (typeof video.detail === 'string' ? video.detail : 'resposta inválida');
+            feedback.textContent = 'Erro ao criar: ' + (window.StudioErro.texto(video, 'resposta inválida'));
             if (btn) btn.disabled = false;
             return;
           }}
@@ -463,7 +465,7 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
           }});
           const run = await started.json().catch(() => ({{}}));
           if (!started.ok || !run.run_id) {{
-            feedback.textContent = 'Erro ao iniciar: ' + (typeof run.detail === 'string' ? run.detail : 'resposta inválida');
+            feedback.textContent = 'Erro ao iniciar: ' + (window.StudioErro.texto(run, 'resposta inválida'));
             if (btn) btn.disabled = false;
             return;
           }}
@@ -872,7 +874,7 @@ _ACTION_JS = """
             btn.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();
             if (feedback) feedback.textContent = 'Não foi possível: ' +
-              (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite esta ação');
+              (window.StudioErro.texto(data, 'o estado atual não permite esta ação'));
           }
         } catch (err) {
           btn.disabled = false;

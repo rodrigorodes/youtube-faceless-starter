@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import html
 
+from .erro_js import ERRO_JS
+
 from ..application.publishing import Preview
 from ..domain.contracts import VideoStatus
 
 e = lambda value: html.escape(str(value), quote=True)  # noqa: E731
 
 # Executado dentro do `<script nonce>` do documento. O formulário não navega: o envio é por fetch.
-APPROVAL_JS = """
+APPROVAL_JS = ERRO_JS + """
 (function () {
   var form = document.getElementById('review');
   var out = document.getElementById('result');
@@ -44,7 +46,7 @@ APPROVAL_JS = """
         if (out) out.textContent = action === 'approve' ? 'Aprovado. A publicação é feita pelo servidor do Studio.' : 'Rejeitado.';
         setTimeout(function () { location.reload(); }, 900);
       } else {
-        if (out) out.textContent = 'Erro ' + r.status + ': ' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+        if (out) out.textContent = 'Não foi possível concluir: ' + window.StudioErro.texto(data, 'tente novamente.', r.status);
         if (btn) { btn.disabled = false; btn.classList.remove('carregando'); }
         if (window.StudioLoading) window.StudioLoading.done();
       }

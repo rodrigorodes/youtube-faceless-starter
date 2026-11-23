@@ -1454,7 +1454,7 @@ def _channels_page_js(project_id: str) -> str:
             window.location.href = '/studio/panel?project_id=' + encodeURIComponent(createdProjectId);
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível criar o canal: '
-              + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
+              + (window.StudioErro.texto(data, 'resposta inválida do servidor.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -1520,7 +1520,7 @@ def _channels_page_js(project_id: str) -> str:
             if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar o perfil: '
-              + (typeof data.detail === 'string' ? data.detail : 'verifique os campos e tente novamente.');
+              + (window.StudioErro.texto(data, 'verifique os campos e tente novamente.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -1561,7 +1561,7 @@ def _channels_page_js(project_id: str) -> str:
             if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar a aparência: '
-              + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
+              + (window.StudioErro.texto(data, 'verifique o estilo e tente novamente.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -1601,7 +1601,7 @@ def _channels_page_js(project_id: str) -> str:
             setTimeout(() => window.location.reload(), 500);
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar os limites: '
-              + (typeof data.detail === 'string' ? data.detail : 'o soft não pode passar do hard.');
+              + (window.StudioErro.texto(data, 'o soft não pode passar do hard.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -1632,7 +1632,7 @@ def _channels_page_js(project_id: str) -> str:
             window.location.href = data.authorization_url;
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível iniciar o consentimento: '
-              + (typeof data.detail === 'string' ? data.detail : 'o servidor não devolveu a URL de autorização.');
+              + (window.StudioErro.texto(data, 'o servidor não devolveu a URL de autorização.'));
             reauth.disabled = false;
             reauth.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();
@@ -1667,7 +1667,7 @@ def _channels_page_js(project_id: str) -> str:
             setTimeout(() => window.location.reload(), 500);
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível revogar: '
-              + (typeof data.detail === 'string' ? data.detail : 'tente novamente.');
+              + (window.StudioErro.texto(data, 'tente novamente.'));
             revoke.disabled = false;
             revoke.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();

@@ -12,6 +12,7 @@ from ..domain.contracts import VideoFormat
 from ..domain.panel import Stage
 from .panel_video_nav import area_href
 
+from .erro_js import ERRO_JS
 from .panel_shell import (
     ACTION_STAGES,
     CSS,
@@ -905,6 +906,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
   </div>
   {overlays_html}
   <script nonce="{nonce}">
+    {ERRO_JS}
     const form = document.getElementById('create-video-form');
     if (form) {{
       form.addEventListener('submit', async (ev) => {{
@@ -926,7 +928,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
           }});
           const data = await res.json().catch(() => ({{}}));
           if (!res.ok || !data.id) {{
-            const why = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            const why = window.StudioErro.texto(data, 'tente novamente.');
             feedback.textContent = '';
             const msg = document.createElement('span');
             msg.textContent = 'Erro ao criar: ' + why + ' ';
@@ -1209,7 +1211,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             const days = urlParams.get('days') || '{days}';
             window.location.href = '{panel_path}?project_id=' + encodeURIComponent(data.id) + '&days=' + encodeURIComponent(days);
           }} else {{
-            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            const errMsg = window.StudioErro.texto(data, 'tente novamente.');
             if (projectFeedback) projectFeedback.textContent = 'Erro ao cadastrar: ' + errMsg;
             if (btnSaveProject) btnSaveProject.disabled = false;
           }}
@@ -1300,7 +1302,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             if (catFeedback) catFeedback.textContent = 'Já existe um pilar com este nome no canal.';
             if (btnSaveCat) btnSaveCat.disabled = false;
           }} else {{
-            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            const errMsg = window.StudioErro.texto(data, 'tente novamente.');
             if (catFeedback) catFeedback.textContent = 'Erro: ' + errMsg;
             if (btnSaveCat) btnSaveCat.disabled = false;
           }}
@@ -1331,7 +1333,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             if (catFeedback) catFeedback.textContent = 'Pilar excluído com sucesso! Atualizando...';
             setTimeout(() => location.reload(), 600);
           }} else {{
-            const errMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            const errMsg = window.StudioErro.texto(data, 'tente novamente.');
             if (catFeedback) catFeedback.textContent = 'Erro ao excluir: ' + errMsg;
             btn.disabled = false;
           }}
@@ -1367,7 +1369,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
             if (refreshFeedback) refreshFeedback.textContent = 'Coleta concluída (' + count + ' temas encontrados)! Atualizando...';
             setTimeout(() => location.reload(), 500);
           }} else {{
-            const msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+            const msg = window.StudioErro.texto(data, 'tente novamente.');
             if (refreshFeedback) refreshFeedback.textContent = 'Erro na coleta: ' + msg;
             btnRefresh.disabled = false;
             btnRefresh.innerHTML = origHtml;

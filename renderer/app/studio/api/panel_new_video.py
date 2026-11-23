@@ -164,7 +164,7 @@ NEW_VIDEO_JS = """
           }
           return d.id;
         } else {
-          throw new Error(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
+          throw new Error(window.StudioErro.texto(d, 'tente novamente.'));
         }
       }).then(function (videoId) {
         if (fb) fb.textContent = 'Vídeo criado. Abrindo…';

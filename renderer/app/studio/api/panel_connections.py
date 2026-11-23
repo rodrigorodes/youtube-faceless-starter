@@ -130,7 +130,7 @@ async function postJson(url, method, body) {
 }
 
 function detailOf(data, fallback) {
-  return (data && typeof data.detail === 'string') ? data.detail : fallback;
+  return window.StudioErro.texto(data, fallback);
 }
 
 const dialog = document.getElementById('confirm-dialog');

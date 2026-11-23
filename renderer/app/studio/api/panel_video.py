@@ -536,7 +536,7 @@ def render_video(view: VideoDetailView, *, style_view=None,
           }} else {{
             button.disabled = false;
             button.textContent = original;
-            const message = typeof data.detail === 'string' ? data.detail : 'Não foi possível repetir a operação.';
+            const message = window.StudioErro.texto(data, 'Não foi possível repetir a operação.');
             window.alert(message);
           }}
         }} catch (error) {{
@@ -577,7 +577,7 @@ def render_video(view: VideoDetailView, *, style_view=None,
             if (window.StudioLoading) window.StudioLoading.done();
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível salvar o estilo: '
-              + (typeof data.detail === 'string' ? data.detail : 'verifique o estilo e tente novamente.');
+              + (window.StudioErro.texto(data, 'verifique o estilo e tente novamente.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -618,7 +618,7 @@ def render_video(view: VideoDetailView, *, style_view=None,
             setTimeout(() => location.reload(), 600);
           }} else {{
             feedback.textContent = 'Não foi possível registrar a fonte: '
-              + (typeof data.detail === 'string' ? data.detail : 'verifique a URL e tente novamente.');
+              + (window.StudioErro.texto(data, 'verifique a URL e tente novamente.'));
             if (button) {{ button.disabled = false; button.classList.remove('carregando'); }}
             if (window.StudioLoading) window.StudioLoading.done();
           }}
@@ -652,7 +652,7 @@ def render_video(view: VideoDetailView, *, style_view=None,
               '/production-runs/' + encodeURIComponent(data.run_id);
           }} else {{
             if (runFeedback) runFeedback.textContent = 'Não foi possível iniciar: '
-              + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
+              + (window.StudioErro.texto(data, 'resposta inválida do servidor.'));
             startBtn.disabled = false;
             startBtn.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();
@@ -684,7 +684,7 @@ def render_video(view: VideoDetailView, *, style_view=None,
               '/production-runs/' + encodeURIComponent(runId);
           }} else {{
             if (runFeedback) runFeedback.textContent = 'Não foi possível retomar: '
-              + (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite nova tentativa.');
+              + (window.StudioErro.texto(data, 'o estado atual não permite nova tentativa.'));
             retryProductionBtn.disabled = false;
             retryProductionBtn.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();

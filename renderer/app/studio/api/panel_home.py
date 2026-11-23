@@ -205,7 +205,7 @@ HOME_JS = """
       if (!r.ok || !d.id) {
         if (fb) {
           fb.setAttribute('data-tipo', 'erro');
-          fb.textContent = 'Erro ao criar: ' + (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d));
+          fb.textContent = 'Erro ao criar: ' + (window.StudioErro.texto(d, 'tente novamente.'));
         }
         if (btn) {
           btn.disabled = false;

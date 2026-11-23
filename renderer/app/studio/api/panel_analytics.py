@@ -520,7 +520,7 @@ def render_analytics(view: AnalyticsDashboardView,
             location.reload();
           } else {
             btn.disabled = false;
-            if (feedback) feedback.textContent = 'Não foi possível: ' + (typeof data.detail === 'string' ? data.detail : 'tente novamente');
+            if (feedback) feedback.textContent = 'Não foi possível: ' + (window.StudioErro.texto(data, 'tente novamente'));
           }
         }).catch(function (err) {
           btn.disabled = false;

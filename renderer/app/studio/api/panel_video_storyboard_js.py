@@ -197,7 +197,7 @@ STORYBOARD_JS = r"""
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {
         if (!r.ok) {
-          var msg = typeof d.detail === 'string' ? d.detail : (Array.isArray(d.detail) && d.detail[0] && d.detail[0].msg) || ('erro ' + r.status);
+          var msg = window.StudioErro.texto(d, 'tente novamente.', r.status);
           throw new Error(msg);
         }
         return d;
@@ -562,7 +562,7 @@ RUN_JS = r"""
         ensureCard(d.run_id); say(d.created === false ? 'J\u00e1 havia uma produ\u00e7\u00e3o em andamento; acompanhando.' : 'Produ\u00e7\u00e3o iniciada.');
         poll(d.run_id);
       } else {
-        say('N\u00e3o foi poss\u00edvel iniciar: ' + (typeof d.detail === 'string' ? d.detail : 'resposta inv\u00e1lida do servidor.'));
+        say('N\u00e3o foi poss\u00edvel iniciar: ' + (window.StudioErro.texto(d, 'resposta inv\u00e1lida do servidor.')));
         starting = false; busyButtons(false);
       }
     } catch (err) { say('Falha de rede ao iniciar a produ\u00e7\u00e3o. Tente novamente.'); starting = false; busyButtons(false); }

@@ -103,7 +103,7 @@ TEAM_JS = """
         if (response.status === 403) {
           if (box) box.textContent = 'Seu papel na organização não autoriza esta ação.';
         } else {
-          const detail = (data && typeof data.detail === 'string') ? data.detail : 'confira os campos.';
+          const detail = window.StudioErro.texto(data, 'confira os campos.');
           if (box) box.textContent = 'Não foi possível concluir: ' + detail;
         }
       } catch (error) {

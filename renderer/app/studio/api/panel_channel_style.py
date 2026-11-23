@@ -171,8 +171,7 @@ CHANNEL_STYLE_JS = r"""
           if (feedback) feedback.textContent = 'Este canal não existe mais. Recarregue a página.';
           return;
         }
-        var detail = typeof result.data.detail === 'string'
-          ? result.data.detail : 'verifique os campos e tente novamente.';
+        var detail = window.StudioErro.texto(result.data, 'verifique os campos e tente novamente.');
         if (feedback) feedback.textContent = 'Não foi possível salvar: ' + detail;
       }).catch(function () {
         if (submit) submit.disabled = false;
