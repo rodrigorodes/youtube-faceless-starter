@@ -28,9 +28,9 @@ from . import shell_v3
 
 # Ordem e rótulos do protótipo (`VIDEO_TABS`). A fonte única é `panel_video_nav` (a página legada
 # do vídeo também usa a nav, sem import circular). Os nomes seguem reexportados daqui.
-from .panel_video_nav import (AREA_IDS, AREA_LABELS, DEFAULT_AREA, VIDEO_AREAS, area_href,
-                              normalize_area as _normalize_area,
-                              video_area_nav as _video_area_nav)
+from .panel_video_nav import (ALL_AREA_IDS, ALL_VALID_AREAS, AREA_IDS, AREA_LABELS, DEFAULT_AREA, VIDEO_AREAS, area_href,
+                              normalize_area, normalize_area as _normalize_area,
+                              video_area_nav, video_area_nav as _video_area_nav)
 
 # A prévia (e a aprovação) só existe depois que há artefato renderizado — mesma leitura do
 # detalhe antigo. Antes disso, esta tela explica em vez de oferecer um link que não levaria a nada.
@@ -720,6 +720,25 @@ PAGE_JS = """
 """
 
 
+def _workspace_header(view, video_id: str, title: str, stage_label: str) -> str:
+    """Cabeçalho do workspace com título, badge de estado, custo e link de diagnóstico."""
+    diag_href = area_href(video_id, "producao")
+    return f"""        <div class="cab-video">
+          <div>
+            <p class="eyebrow">ESPAÇO DO VÍDEO</p>
+            <h1 class="h1" id="t-video">{e(title)}</h1>
+            <p class="lead" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              {legacy._state_badge(view.stage)}
+              <span class="pill pill-{e(view.stage.value)}">{e(stage_label)}</span>
+              <span class="micro">Custo do vídeo: {legacy._cost_html(view.cost_text)}</span>
+            </p>
+          </div>
+          <div class="cab-acoes" style="display:flex;gap:8px;align-items:center">
+            <a class="btn btn-ghost btn-sm" href="{diag_href}">Ver progresso / Diagnóstico</a>
+          </div>
+        </div>"""
+
+
 def render_video_workspace(view, area, *, style_view=None, script_view=None,
                            composition_view=None, preview=None, projects=(), project_id: str = "",
                            channel_name: str = "") -> tuple[str, dict[str, str]]:
@@ -727,7 +746,7 @@ def render_video_workspace(view, area, *, style_view=None, script_view=None,
 
     O que a rota precisa passar:
     - `view`: o `VideoDetailView` já montado (`BuildPanel.detail(video_id)`);
-    - `area`: o segmento da URL (`visao-geral`…`producao`); desconhecido cai em `visao-geral`;
+    - `area`: o segmento da URL (`cenas`…`fontes`, ou `producao`); desconhecido cai em `cenas`;
     - `style_view`: o `VideoStyleView` do vídeo (opcional) — dá o estilo/voz efetivos;
     - `script_view`: o `ScriptPageView` do vídeo (opcional) — dá cenas/trechos e aprovação do roteiro;
     - `composition_view`: a `CompositionView` (W2.3, opcional) — o plano persistido em leitura;
@@ -743,17 +762,7 @@ def render_video_workspace(view, area, *, style_view=None, script_view=None,
     channel_crumb = f" / {e(channel_name)}" if channel_name else ""
     body_html = f"""      <section class="pagina" id="pagina-video-workspace" aria-labelledby="t-video">
         <p class="crumb"><a href="/studio/panel/videos">← Vídeos</a>{channel_crumb}</p>
-        <div class="cab-video">
-          <div>
-            <p class="eyebrow">ESPAÇO DO VÍDEO</p>
-            <h1 class="h1" id="t-video">{e(title)}</h1>
-            <p class="lead" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              {legacy._state_badge(view.stage)}
-              <span class="pill pill-{e(view.stage.value)}">{e(stage_label)}</span>
-              <span class="micro">Custo do vídeo: {legacy._cost_html(view.cost_text)}</span>
-            </p>
-          </div>
-        </div>
+{_workspace_header(view, video_id, title, stage_label)}
         {_video_area_nav(video_id, active_area)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,

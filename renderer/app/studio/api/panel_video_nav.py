@@ -11,18 +11,17 @@ from __future__ import annotations
 from html import escape as e
 
 VIDEO_AREAS: tuple[tuple[str, str], ...] = (
-    ("visao-geral", "Visão geral"),
-    ("fontes", "Fontes e roteiro"),
-    ("narracao", "Narração"),
-    ("cenas", "Cenas e mídias"),
-    ("composicao", "Composição"),
-    ("qualidade", "Qualidade"),
-    ("publicacao", "Publicação"),
-    ("producao", "Produção"),
+    ("cenas", "Cenas & Storyboard"),
+    ("composicao", "Composição & Legendas"),
+    ("qualidade", "Qualidade & Aprovação"),
+    ("publicacao", "Publicação YouTube"),
+    ("fontes", "Fontes & Evidências"),
 )
 AREA_LABELS = dict(VIDEO_AREAS)
 AREA_IDS = frozenset(AREA_LABELS)
-DEFAULT_AREA = "visao-geral"
+ALL_VALID_AREAS = AREA_IDS | {"producao"}
+ALL_AREA_IDS = ALL_VALID_AREAS
+DEFAULT_AREA = "cenas"
 
 
 def area_href(video_id: str, area: str) -> str:
@@ -31,12 +30,14 @@ def area_href(video_id: str, area: str) -> str:
 
 
 def normalize_area(area: str | None) -> str:
-    """Área desconhecida (ou ausente) cai em `visao-geral`.
+    """Área desconhecida (ou legada) cai em `cenas` (DEFAULT_AREA).
 
-    Decisão: a rota sempre devolve uma tela válida. O protótipo faz o mesmo
-    (`panels[S.videoTab] || overviewPanel`); um segmento desconhecido não é erro do operador,
-    é "nenhuma área específica" — e o `aria-current` vai para a Visão geral.
+    Decisão V3: o menu principal possui 5 abas canônicas. A rota 'producao' permanece
+    válida e acessível via diagnóstico, mas áreas legadas ('visao-geral', 'narracao')
+    ou inexistentes caem com segurança em DEFAULT_AREA ('cenas').
     """
+    if area == "producao":
+        return "producao"
     return area if area in AREA_IDS else DEFAULT_AREA
 
 

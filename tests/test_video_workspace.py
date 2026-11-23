@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from html import escape as e
 
 from app.studio.api.panel_video_workspace import (
     DEFAULT_AREA,
     VIDEO_AREAS,
+    _area_narracao,
+    _area_visao_geral,
     area_href,
     render_video_workspace,
 )
@@ -50,13 +53,11 @@ STYLE = VisualStyle(
 
 # Ordem e hrefs exatos da tabela de áreas.
 EXPECTED_HREFS = {
-    "visao-geral": f"/studio/panel/videos/{VIDEO}/visao-geral",
-    "fontes": f"/studio/panel/videos/{VIDEO}/fontes",
-    "narracao": f"/studio/panel/videos/{VIDEO}/narracao",
     "cenas": f"/studio/panel/videos/{VIDEO}/cenas",
     "composicao": f"/studio/panel/videos/{VIDEO}/composicao",
     "qualidade": f"/studio/panel/videos/{VIDEO}/qualidade",
     "publicacao": f"/studio/panel/videos/{VIDEO}/publicacao",
+    "fontes": f"/studio/panel/videos/{VIDEO}/fontes",
     "producao": f"/studio/panel/videos/{VIDEO}/producao",
 }
 
@@ -185,25 +186,25 @@ def _active_label(nav_block: str) -> str:
 
 # --------------------------------------------------------------------------- 1) navegação
 
-def test_eight_areas_are_links_with_expected_labels_and_hrefs():
+def test_five_areas_are_links_with_expected_labels_and_hrefs():
     nav = _area_nav(_render(DEFAULT_AREA))
 
-    assert len(VIDEO_AREAS) == 8
-    assert [area for area, _ in VIDEO_AREAS] == list(EXPECTED_HREFS)
+    assert len(VIDEO_AREAS) == 5
+    assert [area for area, _ in VIDEO_AREAS] == ["cenas", "composicao", "qualidade", "publicacao", "fontes"]
     for area, label in VIDEO_AREAS:
         href = EXPECTED_HREFS[area]
         assert f'href="{href}"' in nav, (area, href)
-        assert re.search(rf'<a[^>]*href="{re.escape(href)}"[^>]*>{re.escape(label)}</a>', nav), area
+        assert re.search(rf'<a[^>]*href="{re.escape(href)}"[^>]*>{re.escape(e(label))}</a>', nav), area
     # links de servidor, não abas: sem role/JS de aba.
     assert 'role="tab"' not in nav
     assert "data-tab" not in nav
 
 
 def test_only_the_active_area_has_aria_current_page():
-    for area in ("visao-geral", "cenas", "producao"):
+    for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
         nav = _area_nav(_render(area))
         assert nav.count('aria-current="page"') == 1, area
-        assert _active_label(nav) == dict(VIDEO_AREAS)[area]
+        assert _active_label(nav) == e(dict(VIDEO_AREAS)[area])
         active_anchor = re.search(r'<a[^>]*aria-current="page"[^>]*>', nav).group(0)
         assert f'href="{EXPECTED_HREFS[area]}"' in active_anchor
 
@@ -213,40 +214,39 @@ def test_unknown_area_falls_back_to_overview_without_breaking():
     assert html.count("<h1") == 1
     nav = _area_nav(html)
     assert nav.count('aria-current="page"') == 1
-    assert _active_label(nav) == "Visão geral"
-    assert "Próximo passo" in html
+    assert _active_label(nav) == e(dict(VIDEO_AREAS)["cenas"])
+    assert "Cenas e mídias" in html
 
 
 # --------------------------------------------------------------------------- 2) conteúdo por área
 
 def test_visao_geral_shows_scenes_target_and_unmeasured_duration():
-    html = _render("visao-geral", script_view=_script_view())
+    html = _area_visao_geral(_view(), script_view=_script_view(), video_id=VIDEO)
     assert "Cenas no roteiro" in html
     assert ">3<" in html  # número de cenas veio do roteiro real
     assert "Duração-alvo" in html and "1 min 0 s" in html
     assert "Duração real" in html and "não medida" in html
     assert "Próximo passo" in html
     # atalhos para as outras áreas
-    for area in EXPECTED_HREFS:
-        if area != "visao-geral":
-            assert f'href="{EXPECTED_HREFS[area]}"' in html
+    for area in ("composicao", "qualidade", "publicacao", "fontes"):
+        assert f'href="{EXPECTED_HREFS[area]}"' in html
 
 
 def test_visao_geral_next_step_uses_the_real_state():
     # sem fontes: o próximo passo é adicionar fontes (link para a área fontes).
-    html = _render("visao-geral")
+    html = _area_visao_geral(_view(), video_id=VIDEO)
     assert "Adicione fontes" in html
     assert f'href="{EXPECTED_HREFS["fontes"]}"' in html
 
     # com run vivo: o caminho é a execução.
-    html = _render("visao-geral", view=_view(latest_run=LatestRun("r1", "RUNNING")))
+    html = _area_visao_geral(_view(latest_run=LatestRun("r1", "RUNNING")), video_id=VIDEO)
     assert "Acompanhe a execução" in html
     assert f'href="{EXPECTED_HREFS["producao"]}"' in html
 
     # aprovado: preparar a publicação.
-    html = _render("visao-geral", view=_view(
+    html = _area_visao_geral(_view(
         status=VideoStatus.AWAITING_APPROVAL, stage=Stage.APPROVED,
-        sources=[SourceInfo("s1", "https://exemplo.test/a", 120)]))
+        sources=[SourceInfo("s1", "https://exemplo.test/a", 120)]), video_id=VIDEO)
     assert "Prepare a publicação" in html
     assert f'href="{EXPECTED_HREFS["publicacao"]}"' in html
 
@@ -265,8 +265,7 @@ def test_fontes_reuses_sources_card_and_states_registered_is_not_extracted():
 
 
 def test_narracao_is_read_only_and_names_effective_voice():
-    html = _render("narracao", style_view=_style_view(), script_view=_script_view())
-    content = _content(html)
+    content = _area_narracao(_view(), style_view=_style_view(), script_view=_script_view(), video_id=VIDEO)
     assert "piper:pt_BR-jeff-medium" in content
     assert "Cinemático" in content
     assert "Duração-alvo" in content and "1 min 0 s" in content
