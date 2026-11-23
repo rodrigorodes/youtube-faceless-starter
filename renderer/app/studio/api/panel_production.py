@@ -31,6 +31,7 @@ from ..domain.production_run import (
 from ..domain.panel import Stage
 from . import panel as shell
 from .erro_js import ERRO_JS
+from .falha_producao import falha_html
 from .panel_video_nav import area_href, default_area, video_area_nav
 from .panel_videos import _ESTADO
 
@@ -681,7 +682,7 @@ def _action_card_html(view: ExecutionView) -> str:
         raw = (stage.error if stage and stage.error else None) or view.run.reason
         what = ("O que fazer: revise a etapa que falhou e use «Tentar novamente». "
                 "Nada foi publicado.")
-        detail = f'<p class="sub" style="margin-top:10px">{e(raw)}</p>' if raw else ""
+        detail = falha_html(raw, view.run.video_id, estilo="margin-top:10px") if raw else ""
         buttons = []
         if state is RunState.FAILED:
             buttons.append(_action_button(view, "retry", "Tentar novamente", primary=True))

@@ -10,6 +10,7 @@ from ..application.panel import CostKind, VideoDetailView, cost_kind
 from ..domain.contracts import PublicationStatus, VideoStatus
 from ..domain.panel import Stage
 
+from .falha_producao import falha_html
 from .panel_shell import STAGE_LABELS, _cost_html, _headers, _state_badge, e
 from .panel_video_nav import DEFAULT_AREA, video_area_nav
 
@@ -199,10 +200,7 @@ def _video_run_card(view: VideoDetailView) -> str:
     exec_url = f'/studio/panel/videos/{e(v.id)}/production-runs/{e(run.run_id)}'
     if run.state == "FAILED":
         stage_label = _PRODUCTION_STAGE_LABELS.get(run.failed_stage, run.failed_stage or "etapa desconhecida")
-        if run.failure_reason:
-            reason_html = f'<p class="muted" style="margin:0.5rem 0 0">Motivo: <strong>{e(run.failure_reason)}</strong></p>'
-        else:
-            reason_html = '<p class="muted" style="margin:0.5rem 0 0">O motivo não foi registrado; abra a execução para ver o detalhe.</p>'
+        reason_html = falha_html(run.failure_reason, v.id)
         return f"""
           <div class="card painel" id="video-producao">
             <span class="state s-fail" data-state="action"><span class="state-icon" aria-hidden="true">!</span> <span>Ação necessária</span></span>

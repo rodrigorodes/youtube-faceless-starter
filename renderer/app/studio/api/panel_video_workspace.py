@@ -28,6 +28,7 @@ from ..domain.panel import Stage, classify
 from . import approval_form
 from . import panel as legacy
 from . import shell_v3
+from .falha_producao import explicar_falha
 from .panel_videos import _ESTADO
 
 # Ordem e rótulos do protótipo (`VIDEO_TABS`). A fonte única é `panel_video_nav` (a página legada
@@ -1236,8 +1237,10 @@ def _area_producao(view, *, style_view=None, script_view=None, video_id: str, co
     rows = []
     for st in steps:
         icon_cls, icon = _STEP_ICON.get(st.status, ("", "○"))
-        err = (f'<p style="color:var(--bad);font-size:12.5px">{e(st.error_message or st.error_class)}</p>'
-               if st.status == "FAILED" and (st.error_message or st.error_class) else "")
+        bruto = st.error_message or st.error_class
+        explicada = explicar_falha(bruto)
+        err = (f'<p style="color:var(--bad);font-size:12.5px">{e(explicada.texto if explicada else bruto)}</p>'
+               if st.status == "FAILED" and bruto else "")
         label = legacy._PRODUCTION_STAGE_LABELS.get(st.step, st.step)
         rows.append(
             f'<div class="step"><span class="ic {icon_cls}">{icon}</span><div style="flex:1"><b>{e(label)}</b>{err}'
