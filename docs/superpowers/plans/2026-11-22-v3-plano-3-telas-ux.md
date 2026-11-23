@@ -159,38 +159,11 @@ git commit -m "feat(studio): storyboard V3 com cena em foco, desfazer e historic
   - Botão de aprovação direcionando o operador para a publicação (`/publicacao`)
   - Disclaimer explícito: QA técnico automatizado não valida fatos do roteiro
 
-- [ ] **Step 1: Write failing test in `tests/test_video_qa_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_workspace import render_video_workspace
-from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
-
-def test_v3_qa_tab_features_centered_preview_and_collapsible_checks():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.RENDERED)
-    html = render_video_workspace(video, active_area="qualidade", script=None, scenes=[], sources=[])
-    assert "Ver todas as verificações técnicas" in html
-    assert "Aprovar e preparar publicação" in html or "Aprovar" in html
-    assert "QA técnico não verifica fatos" in html or "veracidade factual" in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_qa_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update QA tab in `panel_video_workspace.py`**
-
-Reorganizar o painel de qualidade para colocar o player/prévia em posição de destaque, agrupar checagens técnicas no `<details>`, exibir o status de prontidão e atualizar a ação de aprovação para preparar a publicação.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_qa_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_qa_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update QA tab in `panel_video_workspace.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_qa_v3.py
