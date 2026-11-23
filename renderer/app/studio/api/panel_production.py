@@ -13,7 +13,7 @@ import html
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Any, Sequence
 
 from ..application.panel import CostBreakdown, CostKind, MonthCost, cost_kind, cost_label
 from ..application.ports import UsageInfo
@@ -137,6 +137,9 @@ class NewVideoView:
     channel_language: str | None = None
     channel_voice: str | None = None
     has_profile: bool = False
+    channel_profile: Any = None
+    channel_default_mode: str = "piloto"
+    channel_default_format: str = "short"
 
 
 @dataclass(frozen=True)

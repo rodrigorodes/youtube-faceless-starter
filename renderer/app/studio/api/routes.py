@@ -195,13 +195,6 @@ class VideoOut(Video):
     pass
 
 
-def _video_out(video: Video) -> dict:
-    data = video.model_dump()
-    if isinstance(data.get("production_mode"), ProductionMode):
-        data["production_mode"] = data["production_mode"].value
-    return data
-
-
 class SourceIn(BaseModel):
     url: str = Field(min_length=8, max_length=2000)
     text: str | None = Field(default=None, max_length=1_000_000)  # o caso de uso recusa acima de 200 mil
@@ -2332,6 +2325,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             inherited = None
             channel_language = None
             channel_voice = None
+            channel_profile = None
             has_profile = False
             if uc.list_visual_styles is not None:
                 styles = [(s.id, s.name) for s in uc.list_visual_styles.execute()]
@@ -2339,6 +2333,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 profile = uc.get_channel_profile.execute(p_id)
                 if profile is not None:
                     has_profile = True
+                    channel_profile = profile
                     channel_language, channel_voice = profile.language, profile.voice
                     if profile.style_id:
                         inherited = next((name for sid, name in styles if sid == profile.style_id), None)
@@ -2352,6 +2347,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 channel_language=channel_language,
                 channel_voice=channel_voice,
                 has_profile=has_profile,
+                channel_profile=channel_profile,
             )
             return render_new_video_v3(view)
         page, headers = run(get_page)

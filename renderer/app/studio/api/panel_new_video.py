@@ -41,13 +41,15 @@ NEW_VIDEO_JS = """
 
       var fmt = $('input[name="formato-novo"]:checked');
       var est = $('input[name="estilo-novo"]:checked');
+      var modo = $('input[name="modo-producao"]:checked');
       var scriptField = $('#roteiro-pronto');
       var scriptText = (scriptField ? scriptField.value : '').trim();
 
       var payload = {
         project_id: canalSel.value,
         topic: tema,
-        format: fmt ? fmt.value : 'short'
+        format: fmt ? fmt.value : 'short',
+        production_mode: modo ? modo.value : 'piloto'
       };
       if (est && est.value) payload.style_id = est.value;
 
@@ -158,6 +160,28 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
     voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
     estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
 
+    default_mode = "piloto"
+    default_format = "short"
+    if getattr(view, "channel_profile", None) is not None:
+        prof = view.channel_profile
+        if getattr(prof, "default_mode", None) is not None:
+            default_mode = prof.default_mode.value if hasattr(prof.default_mode, "value") else str(prof.default_mode)
+        if getattr(prof, "default_format", None) is not None:
+            default_format = prof.default_format.value if hasattr(prof.default_format, "value") else str(prof.default_format)
+    else:
+        if getattr(view, "channel_default_mode", None) is not None:
+            dm = view.channel_default_mode
+            default_mode = dm.value if hasattr(dm, "value") else str(dm)
+        if getattr(view, "channel_default_format", None) is not None:
+            df = view.channel_default_format
+            default_format = df.value if hasattr(df, "value") else str(df)
+
+    format_long_checked = " checked" if default_format == "long" else ""
+    format_short_checked = " checked" if default_format != "long" else ""
+
+    mode_diretor_checked = " checked" if default_mode == "diretor" else ""
+    mode_piloto_checked = " checked" if default_mode != "diretor" else ""
+
     body = f"""      <section class="pagina" id="pagina-novo-video" aria-labelledby="t-novo">
         <div class="secao-cab">
           <div>
@@ -184,11 +208,11 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                 <label>Formato</label>
                 <fieldset class="pills" style="margin:0">
                   <legend class="sr-only">Formato</legend>
-                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long" checked{disabled}>
+                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long"{format_long_checked}{disabled}>
                     <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                       <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20M2 15h20"/></svg>
                     Vídeo · horizontal 16:9</label>
-                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{disabled}>
+                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{format_short_checked}{disabled}>
                     <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                       <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M7 6h10M7 18h10"/></svg>
                     Short · vertical 9:16</label>
@@ -200,6 +224,17 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                        style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--txt)">
                 <p class="dica" style="margin:4px 0 0;font-size:11px;color:var(--muted)">Meta de duração estimada.</p>
               </div>
+            </div>
+
+            <div class="campo" style="margin-top:14px">
+              <label>Modo de produção</label>
+              <fieldset class="pills" style="margin:0">
+                <legend class="sr-only">Modo de produção</legend>
+                <label class="pill"><input type="radio" name="modo-producao" value="piloto"{mode_piloto_checked}{disabled}>
+                  Piloto automático (1 clique)</label>
+                <label class="pill"><input type="radio" name="modo-producao" value="diretor"{mode_diretor_checked}{disabled}>
+                  Modo Diretor (revisão por cena)</label>
+              </fieldset>
             </div>
 
             <div class="campo" style="margin-top:16px">

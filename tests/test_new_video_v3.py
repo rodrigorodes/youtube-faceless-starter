@@ -15,7 +15,7 @@ from test_ux_contract import assert_ux_contract
 
 
 def _view(*, projects=None, selected_project_id="p1", styles=(), inherited_style_name=None,
-          has_profile=False, channel_language=None, channel_voice=None):
+          has_profile=False, channel_language=None, channel_voice=None, channel_profile=None):
     if projects is None:
         projects = [("p1", "Canal Gamer"), ("p2", "Tech News")]
     month = MonthCost(cap_usd=15.0, known_usd=0.0, unknown_calls=0, percent=None,
@@ -34,6 +34,25 @@ def _view(*, projects=None, selected_project_id="p1", styles=(), inherited_style
         has_profile=has_profile,
         channel_language=channel_language,
         channel_voice=channel_voice,
+        channel_profile=channel_profile,
+    )
+
+
+def _channel_profile(*, default_mode=None, default_format=None, **kwargs):
+    from app.studio.domain.channel import ChannelProfile
+    from app.studio.domain.contracts import ProductionMode, VideoFormat
+
+    if default_mode is None:
+        default_mode = ProductionMode.piloto
+    if default_format is None:
+        default_format = VideoFormat.short
+    return ChannelProfile(
+        id="a" * 32,
+        project_id="b" * 32,
+        name="Canal Gamer",
+        default_mode=default_mode,
+        default_format=default_format,
+        **kwargs,
     )
 
 
@@ -60,6 +79,7 @@ def test_new_video_single_screen_form_structure():
     assert 'id="tema-novo"' in html
     assert 'maxlength="300"' in html
     assert 'name="formato-novo"' in html
+    assert 'name="modo-producao"' in html
     assert 'name="estilo-novo"' in html
     assert 'id="btn-criar-abrir"' in html
 
@@ -234,3 +254,32 @@ def test_new_video_has_educational_path_to_publish_card():
     assert "Gere narração e monte as cenas" in html
     assert "Ajuste composição e confira a qualidade" in html
     assert "Aprove a versão e prepare a publicação" in html
+
+
+def test_new_video_inherits_channel_mode_and_format_defaults():
+    from app.studio.api.panel_new_video import render_new_video_v3
+    from app.studio.domain.contracts import ProductionMode, VideoFormat
+
+    profile = _channel_profile(default_mode=ProductionMode.diretor, default_format=VideoFormat.long)
+    html, _ = render_new_video_v3(_view(channel_profile=profile))
+
+    # O formato "long" deve vir checked por padrão
+    assert re.search(r'name="formato-novo"[^>]*value="long"[^>]*checked', html)
+    # Deve conter seletor de modo com diretor selecionado
+    assert re.search(r'name="modo-producao"[^>]*value="diretor"[^>]*checked', html)
+
+    # Canal com modo piloto e formato short
+    profile_short = _channel_profile(default_mode=ProductionMode.piloto, default_format=VideoFormat.short)
+    html_short, _ = render_new_video_v3(_view(channel_profile=profile_short))
+
+    assert re.search(r'name="formato-novo"[^>]*value="short"[^>]*checked', html_short)
+    assert re.search(r'name="modo-producao"[^>]*value="piloto"[^>]*checked', html_short)
+
+
+def test_new_video_payload_carries_production_mode():
+    from app.studio.api.panel_new_video import render_new_video_v3
+
+    html, _ = render_new_video_v3(_view())
+    assert "production_mode" in html
+    assert "modo-producao" in html
+
