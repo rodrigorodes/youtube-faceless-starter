@@ -21,6 +21,7 @@ from .analytics_ports import AnalyticsRepository
 from .observability import Resume
 from .categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from .channel_creation import CreateChannelTransactional
 from .styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                      UpdateVisualStyle, VisualStyleUsage)
 from .video_style import SetChannelStylePatch, BuildVideoStyleView, SetVideoStyle
@@ -184,6 +185,7 @@ class UseCases:
     advanced_page: "BuildAdvancedView | None" = None
     # W2.3: leitura do plano de composição persistido (só a porta `RenderPlanRepository`).
     composition_view: "BuildCompositionView | None" = None
+    create_channel_transactional: CreateChannelTransactional | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -249,7 +251,8 @@ class UseCases:
                   video_style_view: BuildVideoStyleView | None = None,
                   style_repo: "VisualStyleRepository | None" = None,
                   advanced_page: "BuildAdvancedView | None" = None,
-                  composition_view: "BuildCompositionView | None" = None) -> "UseCases":
+                  composition_view: "BuildCompositionView | None" = None,
+                  create_channel_transactional: CreateChannelTransactional | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo, style_repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -269,4 +272,4 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
                    archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view,
-                   advanced_page, composition_view)
+                   advanced_page, composition_view, create_channel_transactional)

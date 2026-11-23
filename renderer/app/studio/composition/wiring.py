@@ -79,6 +79,7 @@ from ..application.saas import (BuildTeamView, ChangeMemberRole, InviteMember, R
 from ..application.trends import IngestTrends
 from ..application.categories import DeleteCategory, ListCategories, RefreshTrends, SaveCategory
 from ..application.channels import CreateChannelProfile, GetChannelProfile, ListChannelProfiles, UpdateChannelProfile
+from ..application.channel_creation import CreateChannelTransactional
 from ..application.channel_style_page import BuildChannelStylePage
 from ..application.channels_page import BuildChannelsPage
 from ..application.composition_view import BuildCompositionView
@@ -759,7 +760,8 @@ production=production, script_view=script_view,
                                   video_style_view=video_style_view,
                                   style_repo=style_repo,
                                   advanced_page=BuildAdvancedView(providers_service, panel_repo),
-                                  composition_view=BuildCompositionView(PostgresRenderPlanRepository(connect)))
+                                  composition_view=BuildCompositionView(PostgresRenderPlanRepository(connect)),
+                                  create_channel_transactional=CreateChannelTransactional(connect))
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
