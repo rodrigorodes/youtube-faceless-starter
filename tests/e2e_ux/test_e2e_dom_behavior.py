@@ -20,10 +20,10 @@ def test_trends_chips_and_pillars_dialog_interaction(auth_page: Page, studio_con
     chip_todas = barra.locator('.chip-filtro[data-filtro="todas"]')
     expect(chip_todas).to_be_visible()
 
-    # 2. Testa abertura do diálogo de pilares pelo botão '+ Novo pilar'
-    btn_novo_pilar = auth_page.locator("#btn-novo-pilar")
-    expect(btn_novo_pilar).to_be_visible()
-    btn_novo_pilar.click()
+    # 2. Testa abertura do diálogo de pilares pelo botão 'Gerenciar pilares' (o formulário de novo pilar fica dentro dele)
+    btn_gerenciar = auth_page.locator("#btn-gerenciar-pilares")
+    expect(btn_gerenciar).to_be_visible()
+    btn_gerenciar.click()
 
     dialog = auth_page.locator("#dialog-pilares")
     expect(dialog).to_be_visible()

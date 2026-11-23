@@ -11,15 +11,14 @@ from tests.e2e_ux.pages.channels_page import ChannelsPage
 from tests.e2e_ux.pages.new_video_page import NewVideoPage
 from tests.e2e_ux.pages.workspace_page import WorkspacePage
 
-CANONICAL_8_VIDEO_AREAS = [
-    "Visão geral",
-    "Fontes e roteiro",
-    "Narração",
-    "Cenas e mídias",
-    "Composição",
-    "Qualidade",
-    "Publicação",
-    "Produção",
+# Decisão V3 (`panel_video_nav.VIDEO_AREAS`): o workspace tem 5 áreas; `visao-geral`/`narracao` são legadas
+# e caem em Cenas. Cada item é (rótulo, trecho da URL).
+CANONICAL_VIDEO_AREAS = [
+    ("Cenas & Storyboard", "/cenas"),
+    ("Composição & Legendas", "/composicao"),
+    ("Qualidade & Aprovação", "/qualidade"),
+    ("Publicação YouTube", "/publicacao"),
+    ("Fontes & Evidências", "/fontes"),
 ]
 
 
@@ -42,36 +41,21 @@ def test_journey_workspace_all_areas_navigable_and_clean_dom(auth_page: Page, st
     workspace = WorkspacePage(auth_page, studio_config["base_url"])
     workspace.goto_workspace(video_id)
 
-    # 1. Verifica presença das 8 áreas canônicas
+    # 1. Verifica presença das 5 áreas canônicas; a área padrão do rascunho é Cenas
     all_areas = workspace.get_all_area_labels()
-    for expected in CANONICAL_8_VIDEO_AREAS:
-        assert any(expected in a for a in all_areas), f"Área ausente no workspace: {expected}. Encontradas: {all_areas}"
+    assert [a.splitlines()[0].strip() for a in all_areas] == [label for label, _ in CANONICAL_VIDEO_AREAS], all_areas
 
-    assert "Visão geral" in workspace.get_active_area_label()
-    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Visão Geral")
-    assert_no_horizontal_overflow(auth_page, context_desc="Workspace - Visão Geral")
+    # A rota legada "visao-geral" cai com segurança na área padrão
+    assert "Cenas & Storyboard" in workspace.get_active_area_label()
+    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Cenas (área padrão)")
+    assert_no_horizontal_overflow(auth_page, context_desc="Workspace - Cenas (área padrão)")
 
-    # 2. Testa transição para 'Fontes e roteiro' e aviso de honestidade
-    workspace.switch_area("Fontes e roteiro")
-    expect(auth_page).to_have_url(re.compile(r".*/fontes(\?.*)?$"), timeout=5000)
-    assert "Fontes e roteiro" in workspace.get_active_area_label()
+    # 2. Percorre cada área: URL própria, aba ativa e DOM sem ids duplicados
+    for label, path in CANONICAL_VIDEO_AREAS:
+        workspace.switch_area(label)
+        expect(auth_page).to_have_url(re.compile(rf".*{path}(\?.*)?$"), timeout=5000)
+        assert label in workspace.get_active_area_label()
+        assert_no_duplicate_ids(auth_page, context_desc=f"Workspace - {label}")
+
+    # 3. A honestidade das fontes aparece na área Fontes
     expect(auth_page.locator("#fontes-honestidade")).to_be_visible()
-    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Fontes")
-
-    # 3. Testa transição para 'Cenas e mídias'
-    workspace.switch_area("Cenas e mídias")
-    expect(auth_page).to_have_url(re.compile(r".*/cenas(\?.*)?$"), timeout=5000)
-    assert "Cenas e mídias" in workspace.get_active_area_label()
-    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Cenas")
-
-    # 4. Testa transição para 'Qualidade'
-    workspace.switch_area("Qualidade")
-    expect(auth_page).to_have_url(re.compile(r".*/qualidade(\?.*)?$"), timeout=5000)
-    assert "Qualidade" in workspace.get_active_area_label()
-    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Qualidade")
-
-    # 5. Testa transição para 'Publicação'
-    workspace.switch_area("Publicação")
-    expect(auth_page).to_have_url(re.compile(r".*/publicacao(\?.*)?$"), timeout=5000)
-    assert "Publicação" in workspace.get_active_area_label()
-    assert_no_duplicate_ids(auth_page, context_desc="Workspace - Publicação")

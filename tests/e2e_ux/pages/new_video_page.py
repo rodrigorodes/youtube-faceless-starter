@@ -18,37 +18,28 @@ class NewVideoPage:
         self.page.wait_for_load_state("domcontentloaded")
 
     def fill_concept(self, topic: str, format_choice: str = "short") -> None:
+        """Preenche o tema e escolhe formato e modo na tela única de criação.
+
+        Usa o Modo Diretor: ele só cria o rascunho. O piloto automático inicia uma produção (provedores
+        pagos) assim que o vídeo é criado, o que um teste de interface não deve disparar.
+        """
         tema_input = self.page.locator("#tema-novo")
-        if not tema_input.is_visible():
-            tema_input = self.page.get_by_label("Sobre o que é o vídeo?")
-        if not tema_input.is_visible():
-            tema_input = self.page.locator("#tema")
         expect(tema_input).to_be_visible()
         tema_input.fill(topic)
 
-        # Seleciona formato (short ou long)
-        radio = self.page.locator(f'input[name="formato-novo"][value="{format_choice}"]')
-        if radio.is_visible():
-            radio.check()
-
-        continuar_btn = self.page.locator("#btn-para-revisao")
-        expect(continuar_btn).to_be_enabled()
-        continuar_btn.click()
+        # Formato fica em "Personalizar este vídeo", recolhido por padrão.
+        self.page.locator("#video-custom > summary").click()
+        self.page.locator(f'label.seg-btn:has(input[name="formato-novo"][value="{format_choice}"])').click()
+        self.page.locator("#card-modo-diretor").click()
+        expect(self.page.locator('input[name="modo-producao"][value="diretor"]')).to_be_checked()
 
     def confirm_and_create(self) -> str:
-        """Confirma a revisão na Etapa 2 e cria o vídeo. Retorna o ID ou link do vídeo criado."""
-        etapa_2 = self.page.locator("#etapa-2")
-        expect(etapa_2).to_be_visible()
-
-        btn_criar = self.page.locator("#btn-criar")
+        """Envia o formulário. Criar abre o vídeo no storyboard; devolve o link do vídeo (sem a aba)."""
+        btn_criar = self.page.locator("#btn-criar-abrir")
         expect(btn_criar).to_be_enabled()
         btn_criar.click()
 
-        # Aguarda etapa 3 de sucesso
-        etapa_3 = self.page.locator("#etapa-3")
-        expect(etapa_3).to_be_visible(timeout=10000)
-
-        link_abrir = self.page.locator("#link-abrir-video")
-        expect(link_abrir).to_be_visible()
-        href = link_abrir.get_attribute("href") or ""
-        return href
+        self.page.wait_for_url(re.compile(r".*/studio/panel/videos/[0-9a-f]{32}/cenas.*"), timeout=15000)
+        match = re.search(r"(/studio/panel/videos/[0-9a-f]{32})", self.page.url)
+        assert match, self.page.url
+        return match.group(1)

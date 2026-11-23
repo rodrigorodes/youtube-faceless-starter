@@ -41,11 +41,11 @@ def test_journey_preview_page_structure_and_cost_honesty(auth_page: Page, studio
     page_content = auth_page.content()
     assert "US$ 0,00" not in page_content, "Regra R3 violada: ausência de custo não pode ser renderizada como US$ 0,00"
 
-    # 3. Navegação de volta para o workspace pelo link da crumb
-    back_link = auth_page.get_by_role("link", name=re.compile(r".*Voltar ao vídeo.*"))
+    # 3. Navegação de volta pela crumb: a prévia pertence à Qualidade & Aprovação do vídeo
+    back_link = auth_page.get_by_role("link", name=re.compile(r".*Voltar à Qualidade.*"))
     expect(back_link).to_be_visible()
     back_link.click()
     auth_page.wait_for_load_state("domcontentloaded")
 
-    # Confirma retorno ao workspace do vídeo
-    expect(auth_page).to_have_url(re.compile(rf".*/studio/panel/videos/{video_id}.*"))
+    # Confirma retorno à área de Qualidade do workspace do vídeo
+    expect(auth_page).to_have_url(re.compile(rf".*/studio/panel/videos/{video_id}/qualidade.*"))

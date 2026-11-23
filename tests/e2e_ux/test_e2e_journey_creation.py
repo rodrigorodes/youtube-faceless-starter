@@ -47,8 +47,7 @@ def test_journey_create_video_and_open_workspace(auth_page: Page, studio_config:
     video_href = new_video.confirm_and_create()
     assert "/studio/panel/videos/" in video_href
 
-    # Abre o workspace do vídeo
-    auth_page.locator("#link-abrir-video").click()
+    # Criar já abre o vídeo no workspace (storyboard)
     auth_page.wait_for_load_state("domcontentloaded")
 
     # O workspace deve exibir o tópico do vídeo
