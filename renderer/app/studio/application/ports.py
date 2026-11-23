@@ -17,6 +17,7 @@ from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
 from ..domain.render_plan import AssetReference, ConfigSnapshot, RenderPlan
 from ..domain.quality import OverlayEvidence, SemanticResult
 from ..domain.trends import TrendItem
+from ..domain.trend_priority import SavedTrendSnapshot
 from ..domain.categories import ProjectCategory
 from ..domain.channel import ChannelProfile
 from ..domain.visual_style import ResolvedStyle, StylePatch
@@ -777,6 +778,10 @@ class TrendRepository(Protocol):
         pronta e o casamento é exato no banco — nunca se normaliza em SQL. Sem correspondência,
         devolve ``None``. É a porta que liga o tema de um vídeo ao vídeo base da tendência."""
         ...
+    def save_trend_snapshot(self, project_id: str, snapshot: SavedTrendSnapshot) -> None: ...
+    def unsave_trend(self, project_id: str, video_id: str) -> None: ...
+    def list_saved_trends(self, project_id: str) -> list[SavedTrendSnapshot]: ...
+    def is_trend_saved(self, project_id: str, video_id: str) -> bool: ...
 
 
 class CategoryRepository(Protocol):
