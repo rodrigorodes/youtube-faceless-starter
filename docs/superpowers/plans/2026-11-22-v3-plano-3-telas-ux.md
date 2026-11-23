@@ -131,39 +131,11 @@ git commit -m "feat(studio): reestruturar navegacao do workspace para 5 abas e d
   - Cartão de cena com ações de regenerar voz, trocar mídia e ver histórico de gerações
   - Diálogo/seção para ouvir versões anteriores e restaurar voz
 
-- [ ] **Step 1: Write failing test in `tests/test_video_storyboard_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_workspace import render_video_workspace
-from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
-
-def test_v3_storyboard_renders_scene_selector_and_full_script_details():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
-    # Render da área 'cenas'
-    html = render_video_workspace(video, active_area="cenas", script=None, scenes=[], sources=[])
-    assert 'id="seletor-cenas"' in html or 'class="seletor-cenas"' in html
-    assert "Ver roteiro completo" in html
-    assert "Desfazer" in html or "btn-undo" in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_storyboard_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement V3 storyboard UI in `panel_video_workspace.py`**
-
-Implementar o layout da aba de cenas com foco individual por cena, seletor expansível do roteiro integral, botões de ação e diálogo de histórico de versões de narração.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_storyboard_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_storyboard_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement V3 storyboard UI in `panel_video_workspace.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_workspace.py renderer/app/studio/api/panel_script.py tests/test_video_storyboard_v3.py
