@@ -207,16 +207,37 @@ def _clean_transition(value: object) -> dict:
     return {"kind": kind, "duration_ticks": duration}
 
 
+CAPTION_POSITIONS: tuple[str, ...] = ("top", "middle", "bottom")
+CAPTION_POSITION_ALIASES: Mapping[str, str] = MappingProxyType({
+    "top": "top",
+    "topo": "top",
+    "middle": "middle",
+    "meio": "middle",
+    "bottom": "bottom",
+    "base": "bottom",
+})
+
+
 def _clean_caption(value: object) -> dict:
     caption = _object(value, "caption")
-    _unknown("params.caption", caption, ("font_size", "bottom"))
-    out: dict[str, int] = {}
+    _unknown("params.caption", caption, ("font_size", "bottom", "position"))
+    out: dict[str, Any] = {}
     if "font_size" in caption:
         out["font_size"] = _int(caption["font_size"], "params.caption.font_size", minimum=8, maximum=400)
     if "bottom" in caption:
         out["bottom"] = _int(caption["bottom"], "params.caption.bottom", minimum=0)
+    if "position" in caption:
+        pos = caption["position"]
+        if not isinstance(pos, str):
+            raise VisualStyleParamsInvalid("params.caption.position must be a string")
+        cleaned_pos = pos.strip().lower()
+        if cleaned_pos not in CAPTION_POSITION_ALIASES:
+            raise VisualStyleParamsInvalid(
+                f"params.caption.position must be one of {sorted(CAPTION_POSITION_ALIASES.keys())}"
+            )
+        out["position"] = CAPTION_POSITION_ALIASES[cleaned_pos]
     if not out:
-        raise VisualStyleParamsInvalid("params.caption needs at least one of font_size/bottom")
+        raise VisualStyleParamsInvalid("params.caption needs at least one of font_size/bottom/position")
     return out
 
 
@@ -289,7 +310,7 @@ PATCH_GROUP_FIELDS: Mapping[str, tuple[str, ...] | None] = MappingProxyType({
     "motion": (),
     "music": ("bpm", "seed"),
     "transition": ("kind", "duration_ticks"),
-    "caption": ("font_size", "bottom"),
+    "caption": ("font_size", "bottom", "position"),
     "palette": ("caption_text", "caption_box", "accent"),
     "voice": ("model",),
     "extra": None,
@@ -337,7 +358,17 @@ def _patch_field(group: str, key: str, value: object, where: str) -> Any:
     if group == "caption":
         if key == "font_size":
             return _patch_int(value, path, minimum=8, maximum=400)
-        return _patch_int(value, path, minimum=0)
+        if key == "bottom":
+            return _patch_int(value, path, minimum=0)
+        if key == "position":
+            if not isinstance(value, str):
+                raise StylePatchInvalid(f"{path} must be a string")
+            cleaned_pos = value.strip().lower()
+            if cleaned_pos not in CAPTION_POSITION_ALIASES:
+                raise StylePatchInvalid(
+                    f"{path} must be one of {sorted(CAPTION_POSITION_ALIASES.keys())}"
+                )
+            return CAPTION_POSITION_ALIASES[cleaned_pos]
     if group == "palette":
         if not isinstance(value, str) or not _HEX_COLOR.match(value):
             raise StylePatchInvalid(
@@ -441,6 +472,14 @@ class StylePatch:
         """Forma de transporte (JSON-ável), em cópia profunda: o patch não vaza estrutura."""
         return {group: (None if value is None else _thaw_patch(value))
                 for group, value in self.groups.items()}
+
+
+def normalize_style_patch(raw: object, *, where: str = "style patch") -> dict[str, Any]:
+    """Valida e normaliza um patch pela allowlist do domínio devolvendo dict JSON-ável."""
+    if raw is None:
+        return {}
+    typed = raw if isinstance(raw, StylePatch) else StylePatch.from_mapping(raw, where=where)
+    return typed.to_mapping()
 
 
 def apply_style_patch(base: Mapping[str, Any] | None,
@@ -548,6 +587,30 @@ class ResolvedStyle:
     caption: dict[str, Any] = field(default_factory=dict)
     palette: dict[str, Any] = field(default_factory=dict)
     voice: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        snapshot: StyleSnapshot | None = None,
+        motion: tuple[Motion, ...] = (),
+        music: dict[str, int] | None = None,
+        transition: dict[str, Any] | None = None,
+        caption: dict[str, Any] | None = None,
+        palette: dict[str, Any] | None = None,
+        voice: dict[str, Any] | None = None,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+        version: int | None = None,
+    ) -> None:
+        if snapshot is None:
+            snapshot = StyleSnapshot(style_id=id or "default", version=version or 1)
+        object.__setattr__(self, "snapshot", snapshot)
+        object.__setattr__(self, "motion", motion)
+        object.__setattr__(self, "music", music or {})
+        object.__setattr__(self, "transition", transition or {})
+        object.__setattr__(self, "caption", caption or {})
+        object.__setattr__(self, "palette", palette or {})
+        object.__setattr__(self, "voice", voice or {})
 
 
 def effective_style_id(channel_style_id: str | None, video_style_id: str | None) -> str | None:

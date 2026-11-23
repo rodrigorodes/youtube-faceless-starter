@@ -89,17 +89,30 @@ def _rgba(color: str) -> tuple[int, int, int, int]:
 def caption_layout(fmt: VideoFormat, style: ResolvedStyle | None = None) -> dict:
     """Geometria da legenda: o ``_LAYOUT`` atual como **default**, sobreposto pelo estilo.
 
-    Só ``caption.font_size`` (→ ``caption_font``) e ``caption.bottom`` (→ ``caption_bottom``)
-    são aplicáveis hoje; as demais margens ficam no default. Sem estilo (ou sem ``caption``),
+    ``caption.position`` posiciona a legenda verticalmente (top, middle, bottom).
+    ``caption.bottom`` sobrepõe o cálculo com um pixel exato.
+    ``caption.font_size`` sobrepõe ``caption_font``. Sem estilo (ou sem ``caption``),
     devolve o layout de sempre — a paridade byte-a-byte do overlay depende disto. Puro: só
     aritmética de dicionário, testável sem FFmpeg/Pillow.
     """
     layout = dict(_LAYOUT[fmt])
     caption = style.caption if style is not None else {}
-    if "font_size" in caption:
-        layout["caption_font"] = caption["font_size"]
+    if "position" in caption:
+        pos = str(caption["position"]).strip().lower()
+        w, h = SIZE[fmt]
+        if pos in ("top", "topo"):
+            layout["caption_bottom"] = 480 if fmt == VideoFormat.short else 300
+            layout["position"] = "top"
+        elif pos in ("middle", "meio"):
+            layout["caption_bottom"] = (h // 2) + 120 if fmt == VideoFormat.short else (h // 2) + 80
+            layout["position"] = "middle"
+        else:
+            layout["caption_bottom"] = _LAYOUT[fmt]["caption_bottom"]
+            layout["position"] = "bottom"
     if "bottom" in caption:
         layout["caption_bottom"] = caption["bottom"]
+    if "font_size" in caption:
+        layout["caption_font"] = caption["font_size"]
     return layout
 
 

@@ -203,7 +203,7 @@ def test_the_patch_allowlist_is_the_same_contract_as_the_style_params():
     assert PATCH_GROUP_FIELDS["motion"] == ()  # grupo de lista: sem chaves internas
     assert PATCH_GROUP_FIELDS["music"] == ("bpm", "seed")
     assert PATCH_GROUP_FIELDS["transition"] == ("kind", "duration_ticks")
-    assert PATCH_GROUP_FIELDS["caption"] == ("font_size", "bottom")
+    assert PATCH_GROUP_FIELDS["caption"] == ("font_size", "bottom", "position")
     assert PATCH_GROUP_FIELDS["palette"] == ("caption_text", "caption_box", "accent")
     assert PATCH_GROUP_FIELDS["voice"] == ("model",)
     assert PATCH_GROUP_FIELDS["extra"] is None  # bag aberto: qualquer chave de extensão
