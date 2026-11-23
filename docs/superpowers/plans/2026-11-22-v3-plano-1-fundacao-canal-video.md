@@ -95,75 +95,11 @@ git commit -m "test(studio): alinhar testes de novo video com o layout de tela u
   - `studio.videos.production_mode` (DEFAULT 'piloto', CHECK IN ('piloto', 'diretor'))
   - `studio.channel_creation_requests` (idempotency_key PRIMARY KEY, project_id, request_hash, created_at)
 
-- [ ] **Step 1: Write the failing test in `tests/test_channel_preferences_migration.py`**
-
-```python
-import sys
-from pathlib import Path
-import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-psycopg = pytest.importorskip("psycopg")
-from app.studio.adapters.postgres.db import migrate
-
-def test_migration_0047_applies_and_creates_columns(conn):
-    applied = migrate(conn)
-    assert "0047_channel_preferences_and_production_mode" in applied or not applied  # se já rodou
-    
-    # Conferir colunas em channel_profiles
-    cols_cp = [r[0] for r in conn.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema='studio' AND table_name='channel_profiles'"
-    ).fetchall()]
-    assert "default_mode" in cols_cp
-    assert "default_format" in cols_cp
-
-    # Conferir coluna em videos
-    cols_v = [r[0] for r in conn.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema='studio' AND table_name='videos'"
-    ).fetchall()]
-    assert "production_mode" in cols_v
-
-    # Conferir tabela de idempotência de canais
-    tables = [r[0] for r in conn.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema='studio'"
-    ).fetchall()]
-    assert "channel_creation_requests" in tables
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_migration.py -v`
-Expected: FAIL (coluna ou tabela não encontrada)
-
-- [ ] **Step 3: Implement `0047_channel_preferences_and_production_mode.sql`**
-
-Criar arquivo `renderer/app/studio/adapters/postgres/migrations/0047_channel_preferences_and_production_mode.sql`:
-
-```sql
--- 0047: Preferências padrão do canal (modo de produção e formato) e modo de produção registrado no vídeo.
--- Transacionalidade e idempotência de criação de canal completo.
-
-ALTER TABLE studio.channel_profiles
-    ADD COLUMN default_mode text NOT NULL DEFAULT 'piloto' CHECK (default_mode IN ('piloto', 'diretor')),
-    ADD COLUMN default_format text NOT NULL DEFAULT 'short' CHECK (default_format IN ('short', 'long'));
-
-ALTER TABLE studio.videos
-    ADD COLUMN production_mode text NOT NULL DEFAULT 'piloto' CHECK (production_mode IN ('piloto', 'diretor'));
-
-CREATE TABLE studio.channel_creation_requests (
-    idempotency_key text PRIMARY KEY CHECK (idempotency_key ~ '^[a-z0-9._:-]{1,200}$'),
-    project_id text NOT NULL REFERENCES studio.projects(id) ON DELETE CASCADE,
-    request_hash text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_migration.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write the failing test in `tests/test_channel_preferences_migration.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement `0047_channel_preferences_and_production_mode.sql`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/adapters/postgres/migrations/0047_channel_preferences_and_production_mode.sql tests/test_channel_preferences_migration.py
