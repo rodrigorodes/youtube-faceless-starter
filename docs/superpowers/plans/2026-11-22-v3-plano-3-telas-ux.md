@@ -102,39 +102,11 @@ git commit -m "feat(studio): atualizar criacao de canal para fluxo transacional 
   - Área `producao` acessível via link no cabeçalho ("Ver progresso / Diagnóstico"), sem aparecer no menu de abas principal
   - Normalização segura de URLs legadas (`visao-geral` e `narracao` redirecionando/mapeando para `cenas`)
 
-- [ ] **Step 1: Write failing test in `tests/test_video_workspace_v3_nav.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_nav import VIDEO_AREAS, normalize_area, video_area_nav
-
-def test_v3_video_nav_has_five_primary_areas():
-    area_ids = [aid for aid, _ in VIDEO_AREAS]
-    assert area_ids == ["cenas", "composicao", "qualidade", "publicacao", "fontes"]
-    assert "producao" not in area_ids
-
-def test_v3_video_nav_normalizes_legacy_areas():
-    assert normalize_area("visao-geral") == "cenas"
-    assert normalize_area("narracao") == "cenas"
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_workspace_v3_nav.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update `panel_video_nav.py` and `panel_video_workspace.py`**
-
-Ajustar `VIDEO_AREAS` para as 5 áreas aprovadas. Adicionar link "Ver progresso / Diagnóstico" no cabeçalho do workspace apontando para a área `producao`. Atualizar `normalize_area` para mapear áreas antigas para `cenas`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_workspace_v3_nav.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_workspace_v3_nav.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update `panel_video_nav.py` and `panel_video_workspace.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_nav.py renderer/app/studio/api/panel_video_workspace.py tests/test_video_workspace_v3_nav.py
