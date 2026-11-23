@@ -311,6 +311,14 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         s_dur = getattr(s, "duration_s", None) or getattr(s, "duration", None) or (s.get("duration_s") or s.get("duration") if isinstance(s, dict) else None)
         s_asset = getattr(s, "asset_id", None) or (s.get("asset_id") if isinstance(s, dict) else None)
         s_audio = getattr(s, "audio_state", None) or (s.get("audio_state") if isinstance(s, dict) else ("ok" if s_dur else "none"))
+        s_hist = getattr(s, "audio_history", None) or getattr(s, "voice_history", None) or (s.get("audio_history") if isinstance(s, dict) else None) or (s.get("voice_history") if isinstance(s, dict) else [])
+        normalized_hist = []
+        for h in (s_hist or []):
+            normalized_hist.append({
+                "version": getattr(h, "version", None) or (h.get("version") if isinstance(h, dict) else 1),
+                "text": getattr(h, "text", None) or getattr(h, "narration", None) or (h.get("text") or h.get("narration") if isinstance(h, dict) else ""),
+                "duration_s": getattr(h, "duration_s", None) or (h.get("duration_s") if isinstance(h, dict) else None),
+            })
 
         normalized_scenes.append({
             "id": str(s_id or f"s{idx+1}"),
@@ -322,6 +330,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             "duration_s": float(s_dur) if s_dur is not None else None,
             "asset_id": str(s_asset) if s_asset else None,
             "audio_state": str(s_audio or "none"),
+            "audio_history": normalized_hist,
         })
 
     pills_html = []
@@ -383,7 +392,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             '<div class="col-visual">'
             '<label><strong>Mídia da cena</strong></label>'
             '<div class="cena-midia-preview" id="foco-midia-preview" style="background:var(--superficie-2);border-radius:var(--raio);min-height:160px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;margin-bottom:8px;border:1px solid var(--linha);">'
-            f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" alt="Preview da cena {f_idx + 1}" style="max-width:100%;max-height:220px;object-fit:cover;display:{has_img};" onerror="this.style.display=\'none\';var p=document.getElementById(\'foco-midia-placeholder\');if(p)p.style.display=\'flex\';">'
+            f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" alt="Preview da cena {f_idx + 1}" style="max-width:100%;max-height:220px;object-fit:cover;display:{has_img};">'
             f'<div id="foco-midia-placeholder" style="display:{no_img};align-items:center;justify-content:center;flex-direction:column;gap:6px;padding:16px;text-align:center;">'
             '<span style="font-size:36px;" aria-hidden="true">🎞️</span>'
             '<span class="micro">Arte gerada por IA / Stock Pexels</span>'
@@ -456,7 +465,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         f'</details>'
     )
 
-    scenes_json = json.dumps(normalized_scenes, ensure_ascii=False)
+    scenes_json = json.dumps(normalized_scenes, ensure_ascii=False).replace("</", "<\\/")
     script_data_tag = f'<script type="application/json" id="storyboard-scenes-data">{scenes_json}</script>'
 
     dialogs = (
@@ -467,19 +476,10 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
         '</div>'
         '<p class="micro">Versões anteriores geradas para a narração desta cena. Você pode ouvir e restaurar qualquer versão.</p>'
-        '<ul class="pilha" id="lista-historico-audio" style="margin:12px 0;">'
-        '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">'
-        '<span><strong>v2 (atual)</strong> · voz gerada</span>'
-        '<span class="pill pill-ok">ativa</span>'
-        '</li>'
-        '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">'
-        '<span><strong>v1</strong> · versão inicial</span>'
-        '<div class="row" style="display:flex;gap:6px;">'
-        '<button type="button" class="btn btn-sm btn-ghost">Ouvir</button>'
-        '<button type="button" class="btn btn-sm btn-restaurar-audio">Restaurar voz</button>'
-        '</div>'
-        '</li>'
+        '<ul class="pilha" id="dialog-audio-history-list" style="margin:12px 0;">'
+        '<li class="vazio">Nenhuma versão anterior gravada para esta cena.</li>'
         '</ul>'
+        '<div id="audio-history-feedback" class="form-feedback" role="status" style="margin-top:8px;"></div>'
         '<div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
         '<button type="button" class="btn btn-sm modal-close">Fechar</button>'
         '</div>'
@@ -1048,6 +1048,17 @@ PAGE_JS = """
 
     var mediaPrompt = document.getElementById('trocar-midia-prompt');
     if (mediaPrompt) mediaPrompt.value = s.image_prompt || '';
+
+    renderAudioHistory(idx);
+  }
+
+  var mediaImg = document.getElementById('foco-midia-img');
+  if (mediaImg) {
+    mediaImg.addEventListener('error', function () {
+      mediaImg.style.display = 'none';
+      var placeholder = document.getElementById('foco-midia-placeholder');
+      if (placeholder) placeholder.style.display = 'flex';
+    });
   }
 
   document.querySelectorAll('.btn-cena-pill').forEach(function (pill) {
@@ -1057,23 +1068,128 @@ PAGE_JS = """
     });
   });
 
+  function renderAudioHistory(idx) {
+    var listEl = document.getElementById('dialog-audio-history-list') || document.getElementById('lista-historico-audio');
+    if (!listEl) return;
+    var s = (scenesData && scenesData[idx]) ? scenesData[idx] : null;
+    var history = (s && s.audio_history) ? s.audio_history : [];
+    if (!history || history.length === 0) {
+      listEl.innerHTML = '<li class="vazio">Nenhuma versão anterior gravada para esta cena.</li>';
+      return;
+    }
+    var html = '';
+    history.forEach(function (h) {
+      var v = h.version || 1;
+      var dur = (typeof h.duration_s === 'number') ? (h.duration_s.toFixed(1) + ' s') : 'sem duração';
+      var textSafe = (h.text || '').replace(/"/g, '&quot;');
+      html += '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">' +
+        '<div><strong>v' + v + '</strong> · ' + dur + '<br><small class="micro">' + (h.text || '') + '</small></div>' +
+        '<div class="row" style="display:flex;gap:6px;">' +
+        '<button type="button" class="btn btn-sm btn-ghost btn-ouvir-audio" data-version="' + v + '">Ouvir</button>' +
+        '<button type="button" class="btn btn-sm btn-restaurar-audio" data-version="' + v + '" data-text="' + textSafe + '">Restaurar voz</button>' +
+        '</div></li>';
+    });
+    listEl.innerHTML = html;
+    wireAudioRestoreButtons();
+  }
+
+  function wireAudioRestoreButtons() {
+    document.querySelectorAll('.btn-restaurar-audio').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var versionText = btn.getAttribute('data-text') || '';
+        var narEl = document.getElementById('cena-narration');
+        var currentNarration = narEl ? narEl.value.trim() : '';
+        var s = scenesData[currentActiveIdx];
+        if (!s) return;
+
+        var isIdentical = (versionText.trim() === currentNarration);
+        var badge = document.getElementById('foco-audio-badge');
+        var pill = document.querySelector('.btn-cena-pill[data-scene-idx="' + currentActiveIdx + '"]');
+
+        if (isIdentical) {
+          s.audio_state = 'ok';
+          if (badge) {
+            badge.textContent = 'Áudio: pronto (ok)';
+            badge.className = 'pill pill-ok badge-audio';
+          }
+          if (pill) {
+            var label = s.label || ('Cena ' + (currentActiveIdx + 1));
+            pill.textContent = (currentActiveIdx + 1) + ' · ' + label;
+          }
+        } else {
+          s.audio_state = 'stale';
+          if (badge) {
+            badge.textContent = 'Áudio: desatualizado (stale)';
+            badge.className = 'pill pill-stale badge-audio';
+          }
+          if (pill) {
+            var label = s.label || ('Cena ' + (currentActiveIdx + 1));
+            pill.textContent = (currentActiveIdx + 1) + ' · ' + label + ' · atualizar voz';
+          }
+        }
+
+        var fb = document.getElementById('audio-history-feedback');
+        if (fb) {
+          fb.textContent = isIdentical ? 'Voz restaurada (áudio sincronizado).' : 'Voz restaurada com narração diferente (marcada como stale).';
+        }
+
+        var dialog = document.getElementById('dialog-audio-history');
+        if (dialog) {
+          if (typeof dialog.close === 'function') {
+            dialog.close();
+          } else {
+            dialog.removeAttribute('open');
+            dialog.style.display = 'none';
+          }
+        }
+      });
+    });
+  }
+
+  var isEditingNarration = false;
+  var isEditingPrompt = false;
+
   var narEl = document.getElementById('cena-narration');
   if (narEl) {
+    narEl.addEventListener('focusin', function () {
+      if (!isEditingNarration) {
+        pushSnapshot();
+        isEditingNarration = true;
+      }
+    });
     narEl.addEventListener('input', function () {
-      pushSnapshot();
+      if (!isEditingNarration) {
+        pushSnapshot();
+        isEditingNarration = true;
+      }
       if (scenesData[currentActiveIdx]) {
         scenesData[currentActiveIdx].narration = narEl.value;
       }
+    });
+    narEl.addEventListener('blur', function () {
+      isEditingNarration = false;
     });
   }
 
   var prmEl = document.getElementById('cena-prompt');
   if (prmEl) {
+    prmEl.addEventListener('focusin', function () {
+      if (!isEditingPrompt) {
+        pushSnapshot();
+        isEditingPrompt = true;
+      }
+    });
     prmEl.addEventListener('input', function () {
-      pushSnapshot();
+      if (!isEditingPrompt) {
+        pushSnapshot();
+        isEditingPrompt = true;
+      }
       if (scenesData[currentActiveIdx]) {
         scenesData[currentActiveIdx].image_prompt = prmEl.value;
       }
+    });
+    prmEl.addEventListener('blur', function () {
+      isEditingPrompt = false;
     });
   }
 
@@ -1087,9 +1203,15 @@ PAGE_JS = """
         scenesData = snap.scenes;
         focusScene(snap.activeIdx);
         var nar = document.getElementById('cena-narration');
-        if (nar) nar.value = snap.narration;
+        if (nar) {
+          nar.value = snap.narration;
+          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].narration = snap.narration;
+        }
         var prm = document.getElementById('cena-prompt');
-        if (prm) prm.value = snap.prompt;
+        if (prm) {
+          prm.value = snap.prompt;
+          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].image_prompt = snap.prompt;
+        }
       }
       updateUndoRedoButtons();
     });
@@ -1105,9 +1227,15 @@ PAGE_JS = """
         scenesData = snap.scenes;
         focusScene(snap.activeIdx);
         var nar = document.getElementById('cena-narration');
-        if (nar) nar.value = snap.narration;
+        if (nar) {
+          nar.value = snap.narration;
+          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].narration = snap.narration;
+        }
         var prm = document.getElementById('cena-prompt');
-        if (prm) prm.value = snap.prompt;
+        if (prm) {
+          prm.value = snap.prompt;
+          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].image_prompt = snap.prompt;
+        }
       }
       updateUndoRedoButtons();
     });

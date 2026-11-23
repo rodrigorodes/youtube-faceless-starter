@@ -100,3 +100,84 @@ def test_v3_storyboard_includes_undo_redo_and_modal_client_js():
     assert "redoStack" in html
     assert "dialog-audio-history" in html
     assert "dialog-trocar-midia" in html
+
+
+def test_v3_storyboard_csp_compliance_no_inline_onerror():
+    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema Solar", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    sample_scenes = [
+        Scene(
+            id="s1",
+            video_id=video.id,
+            idx=0,
+            narration="Texto da cena 1.",
+            caption="Legenda 1",
+            label="Intro",
+            image_prompt="Prompt da cena 1.",
+            asset_id="asset-1",
+        )
+    ]
+    html, _ = render_video_workspace(video, "cenas", scenes=sample_scenes)
+
+    # Imagem de preview não deve conter manipulador inline onerror para conformidade com CSP
+    assert '<img id="foco-midia-img"' in html
+    assert 'onerror=' not in html
+    # Ouvinte de erro anexado via addEventListener no JS do cliente
+    assert "mediaImg.addEventListener('error'" in html
+
+
+def test_v3_storyboard_escapes_script_tag_in_json():
+    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema Solar", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    xss_scene = {
+        "id": "s1",
+        "idx": 0,
+        "narration": "Texto com perigo </script><script>alert('xss')</script>!",
+        "caption": "Legenda",
+        "label": "Cena XSS",
+        "image_prompt": "Prompt seguro.",
+    }
+    html, _ = render_video_workspace(video, "cenas", scenes=[xss_scene])
+
+    # O script JSON embutido não pode conter '</' sem escape
+    assert "</script><script>" not in html.split('id="storyboard-scenes-data">')[1].split("</script>")[0]
+    assert "<\\/script>" in html
+
+
+def test_v3_storyboard_audio_history_dynamic_and_restore_stale_logic():
+    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema Solar", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    scene_with_history = {
+        "id": "s1",
+        "idx": 0,
+        "narration": "Texto atual da cena.",
+        "caption": "Legenda",
+        "label": "Cena 1",
+        "image_prompt": "Prompt visual.",
+        "audio_history": [
+            {"version": 1, "text": "Texto antigo diferente.", "duration_s": 5.0},
+            {"version": 2, "text": "Texto atual da cena.", "duration_s": 4.8},
+        ],
+    }
+    html, _ = render_video_workspace(video, "cenas", scenes=[scene_with_history])
+
+    # Não deve ter versões falsas hardcoded no HTML estático
+    assert "v2 (atual) · voz gerada" not in html
+    assert "Nenhuma versão anterior gravada para esta cena." in html
+    assert 'id="dialog-audio-history-list"' in html
+
+    # Lógica de restauração com marcação de stale/ok e indicação na pill no JS
+    assert "renderAudioHistory" in html
+    assert "btn-restaurar-audio" in html
+    assert "Áudio: desatualizado (stale)" in html
+    assert "Áudio: pronto (ok)" in html
+    assert "· atualizar voz" in html
+    assert "audio_history" in html
+
+
+def test_v3_storyboard_undo_redo_saves_snapshot_on_focusin_before_mutation():
+    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema Solar", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    html, _ = render_video_workspace(video, "cenas", scenes=[])
+
+    # Snapshot salvo no focusin antes de iniciar a mutação de texto
+    assert "focusin" in html
+    assert "isEditingNarration" in html
+    assert "btnUndo.addEventListener('click'" in html
+    assert "btnRedo.addEventListener('click'" in html
