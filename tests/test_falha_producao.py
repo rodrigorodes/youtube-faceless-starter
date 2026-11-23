@@ -12,7 +12,7 @@ SEM_FONTE = "SourceRefused: no sources with checkable claims: add sources first"
 
 def test_missing_sources_explains_the_next_step_and_links_to_the_sources_area():
     falha = explicar_falha(SEM_FONTE)
-    assert falha is not None and "fonte" in falha.texto and "Tentar novamente" in falha.texto
+    assert falha is not None and "fonte" in falha.texto and "tente de novo" in falha.texto
     html = falha_html(SEM_FONTE, VID)
     assert f'href="/studio/panel/videos/{VID}/fontes"' in html and "Adicionar fonte" in html
     assert SEM_FONTE in html  # o motivo técnico continua visível
@@ -34,3 +34,21 @@ def test_unknown_or_empty_reason_never_invents_an_explanation():
 
 def test_technical_reason_is_escaped():
     assert "<script>" not in falha_html("<script>alert(1)</script>", VID)
+
+
+def test_polling_script_translates_with_the_same_rules_as_the_server():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("node") is None:
+        pytest.skip("node indisponível")
+    from app.studio.api.falha_producao import FALHA_JS
+
+    script = ("global.window = {};" + FALHA_JS +
+              f"process.stdout.write(JSON.stringify([window.StudioFalha.explicar({json.dumps(SEM_FONTE)}),"
+              "window.StudioFalha.explicar('kaboom'), window.StudioFalha.explicar('')]));")
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert out[0] == explicar_falha(SEM_FONTE).texto and out[1] == "kaboom" and out[2] == ""

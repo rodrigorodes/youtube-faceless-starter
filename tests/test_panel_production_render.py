@@ -345,8 +345,8 @@ def test_execution_steps_are_prototype_step_rows_with_real_state():
     assert 'class="ic ok"' in page and 'class="ic fail"' in page and 'class="ic "' in page
     assert "Concluída" in page and "Falhou" in page and "Aguardando" in page
     # Mensagem real da etapa na cor/tamanho do protótipo; custo sem medição nunca vira zero.
-    assert ('<p data-step-err style="color:var(--bad);font-size:12.5px">'
-            'SourceRefused: no sources with checkable claims</p>') in page
+    assert '<p data-step-err style="color:var(--bad);font-size:12.5px">O roteiro só é escrito a partir de fatos' in page
+    assert "SourceRefused: no sources with checkable claims" in page  # o motivo técnico segue visível no cartão
     assert page.count('<span class="sample">não medido</span>') == 3
     assert "US$ 0,00" not in page
 

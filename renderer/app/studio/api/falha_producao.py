@@ -7,6 +7,7 @@ abaixo — nada é escondido nem inventado. Motivo desconhecido não ganha expli
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from html import escape as e
@@ -27,8 +28,8 @@ _FONTE_ILEGIVEL = ("Não foi possível ler a fonte pela URL. Cole o texto da pá
 _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I), f) for p, f in (
     (r"no sources with checkable claims|add sources first",
      Falha("O roteiro só é escrito a partir de fatos das fontes, e este vídeo ainda não tem nenhuma fonte com "
-           "afirmações que possam ser conferidas. Adicione uma fonte (a URL com o texto colado) e só então use "
-           "«Tentar novamente» — repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
+           "afirmações que possam ser conferidas. Adicione uma fonte (a URL com o texto colado) e só então tente de novo "
+           "— repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
     (r"url host is not in the allowlist",
      Falha("O endereço da fonte não está na lista de domínios permitidos. Cole o texto da página no campo "
            "«Texto da fonte»: o texto colado vale como fonte mesmo sem a URL liberada.", "fontes", "Abrir fontes")),
@@ -81,3 +82,22 @@ def falha_html(motivo: str | None, video_id: str, *, estilo: str = "margin:0.5re
         href = falha.destino if falha.destino.startswith("/") else area_href(video_id, falha.destino)
         acao = f'<p style="margin:10px 0 0"><a class="btn small" href="{href}">{e(falha.rotulo)}</a></p>'
     return f'<p class="sub" style="{estilo}"><strong>{e(falha.texto)}</strong></p>{acao}{tecnico}'
+
+
+def _regras_js() -> str:
+    """As mesmas regras, em JS, para o polling da execução (a fonte continua sendo `_REGRAS`)."""
+    regras = [{"p": padrao.pattern, "t": f.texto} for padrao, f in _REGRAS]
+    return json.dumps(regras, ensure_ascii=False)
+
+
+# `window.StudioFalha.explicar(motivo)` devolve a explicação em português ou o próprio motivo.
+FALHA_JS = (
+    "(function () {\n"
+    "  var REGRAS = " + _regras_js() + ".map(function (r) { return [new RegExp(r.p, 'i'), r.t]; });\n"
+    "  window.StudioFalha = { explicar: function (motivo) {\n"
+    "    if (!motivo) return motivo;\n"
+    "    for (var i = 0; i < REGRAS.length; i++) { if (REGRAS[i][0].test(motivo)) return REGRAS[i][1]; }\n"
+    "    return motivo;\n"
+    "  } };\n"
+    "})();\n"
+)

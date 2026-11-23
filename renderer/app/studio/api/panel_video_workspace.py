@@ -266,14 +266,12 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
         </form>
       </div>
     </dialog>"""
-    roteiro_link = (f'<p style="margin-top:14px"><a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">'
-                    "Abrir roteiro e estrutura</a></p>")
     return (
         '<div id="video-fontes">'
         '<div class="between" style="margin-bottom:14px"><div><h2>Fontes e evidências</h2>'
         '<p class="sub">Referências que sustentam o roteiro deste vídeo.</p></div>'
         '<button type="button" class="btn small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
-        f"{note}{listing}{roteiro_link}{dialog}</div>"
+        f"{note}{listing}{dialog}</div>"
     )
 
 
@@ -1035,6 +1033,14 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
     if script_view is not None and script_view.has_script:
         script_line = (f'<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: '
                        f'{"aprovada" if script_view.approved else "não registrada"}.</p>')
+        if not script_view.approved and script_view.version:
+            # Aprovar a versão do roteiro acontece aqui, sem sair para a página antiga de Roteiro.
+            versao_hash = next((v.content_hash for v in script_view.versions if v.current and v.content_hash), "")
+            script_line += (
+                '<div style="margin:0 0 12px"><button type="button" class="btn small" id="btn-approve-script" '
+                f'data-video-id="{e(video_id)}" data-version="{script_view.version}" data-hash="{e(versao_hash)}">'
+                f'Aprovar versão {script_view.version} do roteiro</button> '
+                '<span id="approve-script-feedback" class="feedback" role="status" aria-live="polite"></span></div>')
     aside = aside.replace("</aside>", f"{script_line}</aside>") if script_line else aside
     return f'<div class="two"><div class="stack">{preview_card}{issues_card}{technical_details}</div>{aside}</div>'
 
@@ -1554,6 +1560,33 @@ PAGE_JS = """
   document.addEventListener('input', function (ev) { if (ev.target.hasAttribute && ev.target.hasAttribute('aria-invalid')) syncAria(ev.target); });
   document.addEventListener('change', function (ev) { syncAria(ev.target); }, true);
   document.addEventListener('invalid', function (ev) { syncAria(ev.target); }, true);
+
+  var approveScriptBtn = document.getElementById('btn-approve-script');
+  if (approveScriptBtn) {
+    approveScriptBtn.addEventListener('click', async function () {
+      var fbs = document.getElementById('approve-script-feedback');
+      approveScriptBtn.disabled = true;
+      if (fbs) fbs.textContent = 'Registrando aprovação do roteiro…';
+      try {
+        var res = await fetch('/studio/videos/' + encodeURIComponent(approveScriptBtn.dataset.videoId) + '/script/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: Number(approveScriptBtn.dataset.version), content_hash: approveScriptBtn.dataset.hash })
+        });
+        var dados = await res.json().catch(function () { return {}; });
+        if (res.ok) {
+          if (fbs) fbs.textContent = 'Versão do roteiro aprovada. Atualizando…';
+          setTimeout(function () { location.reload(); }, 700);
+        } else {
+          approveScriptBtn.disabled = false;
+          if (fbs) fbs.textContent = 'Não foi possível aprovar o roteiro: ' + window.StudioErro.texto(dados, 'tente novamente.', res.status);
+        }
+      } catch (erro) {
+        approveScriptBtn.disabled = false;
+        if (fbs) fbs.textContent = 'Falha de rede ao aprovar o roteiro. Tente novamente.';
+      }
+    });
+  }
 
   var approveBtn = document.querySelector('button[data-a="approve"]');
   if (approveBtn) {

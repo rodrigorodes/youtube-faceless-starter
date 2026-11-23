@@ -31,7 +31,7 @@ from ..domain.production_run import (
 from ..domain.panel import Stage
 from . import panel as shell
 from .erro_js import ERRO_JS
-from .falha_producao import falha_html
+from .falha_producao import FALHA_JS, explicar_falha, falha_html
 from .panel_video_nav import area_href, default_area, video_area_nav
 from .panel_videos import _ESTADO
 
@@ -591,7 +591,8 @@ def _step_rows_html(view: ExecutionView, free_providers: frozenset[str]) -> tupl
         label = STAGE_LABELS.get(execution.stage_id, execution.stage_id.value)
         cost_text, measured = _stage_cost_text(view, execution.stage_id, free_providers)
         partial = partial or not measured
-        err = (f'<p data-step-err style="{_STEP_ERR_STYLE}">{e(execution.error)}</p>'
+        explicada = explicar_falha(execution.error)
+        err = (f'<p data-step-err style="{_STEP_ERR_STYLE}">{e(explicada.texto if explicada else execution.error)}</p>'
                if execution.state is StageState.FAILED and execution.error else "")
         aria = ' aria-current="step"' if execution.stage_id is current else ""
         rows.append(
@@ -615,6 +616,13 @@ def _steps_card_html(view: ExecutionView, free_providers: frozenset[str]) -> tup
     rows, partial = _step_rows_html(view, free_providers)
     retry = (_action_button(view, "retry", "↻ Retomar de onde parou", primary=True, small=True)
              if view.run.state is RunState.FAILED else "")
+    falhou = [s for s in view.stages if s.state is StageState.FAILED and s.error]
+    explicada = explicar_falha(falhou[-1].error) if falhou else None
+    if retry and explicada is not None and explicada.destino and explicada.rotulo:
+        # Retomar sem resolver a causa falha de novo: o caminho certo vem antes do botão de retry.
+        destino = (explicada.destino if explicada.destino.startswith("/")
+                   else area_href(view.run.video_id, explicada.destino))
+        retry = f'<span class="row"><a class="btn small" href="{destino}">{e(explicada.rotulo)}</a>{retry}</span>'
     body = rows or '<p class="sub" style="margin-top:8px">Nenhuma etapa registrada nesta execução.</p>'
     position = (f'<p class="sample" id="exec-position" style="margin-top:12px">{_position_html(view)}</p>'
                 if view.stages else "")
@@ -947,7 +955,7 @@ _POLL_JS = """
                 err.setAttribute('style', CFG.errStyle);
                 row.querySelector('b').insertAdjacentElement('afterend', err);
               }
-              err.textContent = s.error;
+              err.textContent = window.StudioFalha ? window.StudioFalha.explicar(s.error) : s.error;
             } else if (err) err.remove();
             if (i === current) row.setAttribute('aria-current', 'step'); else row.removeAttribute('aria-current');
           }
@@ -1038,7 +1046,7 @@ def render_execution(view: ExecutionView, *, video_channel: str = "",
         </div>
       </section>"""
 
-    page_js = _ACTION_JS + (_poll_js() if view.run.state in ACTIVE_RUN_STATES else "")
+    page_js = _ACTION_JS + (FALHA_JS + _poll_js() if view.run.state in ACTIVE_RUN_STATES else "")
     page = shell_v3.render_document(
         title=f"Faceless Studio — Execução: {view.topic}",
         active="videos",

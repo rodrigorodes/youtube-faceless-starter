@@ -263,7 +263,8 @@ def test_fontes_reuses_sources_card_and_states_registered_is_not_extracted():
     assert "registrada" in visible
     assert "extraída" in visible
     assert "verificada" in visible
-    assert f'href="/studio/videos/{VIDEO}/roteiro"' in content
+    # O protótipo não tem ponte para a página antiga de Roteiro: Cenas é o lugar do roteiro.
+    assert "/roteiro" not in content and "Abrir roteiro e estrutura" not in content
 
 
 def test_narracao_is_read_only_and_names_effective_voice():
@@ -496,3 +497,14 @@ def test_publicacao_declares_the_intent_invalidation_rule():
     html, _ = render_video_workspace(
         _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL), "publicacao")
     assert 'id="publicacao-intencao"' in html and "invalida a intenção anterior" in html
+
+
+def test_qualidade_approves_the_script_version_inline_without_leaving_for_the_old_script_page():
+    html = _render("qualidade", script_view=_script_view(approved=False))
+    content = _content(html)
+    assert 'id="btn-approve-script"' in content and 'data-version="2"' in content
+    assert "Aprovar versão 2 do roteiro" in content
+    assert "/roteiro" not in content
+    assert "/script/approve" in html  # o clique chama a API existente
+    approved = _content(_render("qualidade", script_view=_script_view(approved=True)))
+    assert 'id="btn-approve-script"' not in approved and "aprovada" in approved
