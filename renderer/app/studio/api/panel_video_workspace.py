@@ -23,7 +23,7 @@ from html import escape as e
 
 from ..application.panel import VideoDetailView
 from ..domain.contracts import Video, VideoFormat, VideoStatus
-from ..domain.panel import Stage
+from ..domain.panel import Stage, classify
 from . import approval_form
 from . import panel as legacy
 from . import shell_v3
@@ -657,24 +657,51 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
             + notes)
 
 
-def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
+def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
+    # 1. Prévia em destaque centralizada no topo
+    if view.stage in _PREVIEW_STAGES:
+        output_asset_param = f"?output_asset_id={e(preview.output_asset_id)}" if (preview and getattr(preview, "output_asset_id", None)) else ""
+        preview_card = (
+            '<div class="card card-preview-destaque" style="text-align:center;margin-bottom:1.5rem">'
+            f'<div class="player" style="max-width:720px;margin:0 auto;overflow:hidden;background:#000;border-radius:var(--raio, 8px)">'
+            f'<video controls preload="metadata" poster="/studio/videos/{e(video_id)}/thumbnail" '
+            f'src="/studio/videos/{e(video_id)}/file{output_asset_param}" style="width:100%;max-height:480px;display:block">'
+            f'<track kind="captions" srclang="pt-BR" label="Português" src="/studio/videos/{e(video_id)}/subtitles.vtt" default>'
+            '</video>'
+            '</div>'
+            f'<p style="margin-top:0.75rem"><a class="btn btn-ghost btn-sm" href="/studio/videos/{e(video_id)}/preview">Abrir prévia completa</a></p>'
+            '</div>'
+        )
+    else:
+        preview_card = (
+            '<div class="card card-preview-destaque" style="text-align:center;margin-bottom:1.5rem">'
+            '<p class="aviso">Prévia e aprovação ficam disponíveis após a renderização. '
+            'A decisão de aprovação vive na página de prévia (com CSP própria).</p>'
+            '</div>'
+        )
+
+    # 2. Resumo de revisão e ação de aprovação
     qa = getattr(view.video, "qa_report", None)
+    has_blocking = False
+    actionable_issues = []
     if qa is not None:
         publishable = bool(getattr(qa, "is_publishable", False))
         coverage = getattr(qa, "coverage", None)
         coverage_status = getattr(coverage, "status", "não informada")
         findings = list(getattr(qa, "findings", ()) or ())
-        qa_html = (
-            '<div class="card"><h3>Relatório de QA do render</h3>'
-            + _kv("Publicável", "sim" if publishable else "não")
-            + _kv("Cobertura", e(coverage_status))
-            + _kv("Achados", str(len(findings)))
-            + "</div>"
-        )
+        for f in findings:
+            ev = getattr(f, "evidence", str(f))
+            sev = getattr(f, "severity", "warning")
+            cid = getattr(f, "check_id", "")
+            actionable_issues.append((sev, ev, cid))
+            if sev == "blocking":
+                has_blocking = True
+        if not publishable:
+            has_blocking = True
     else:
-        qa_html = ('<div class="card"><h3>Relatório de QA do render</h3>'
-                   '<p class="aviso">Relatório de QA do render não disponível nesta leitura.</p>'
-                   "</div>")
+        publishable = False
+        coverage_status = "não informada"
+        findings = []
 
     if view.stage == Stage.AWAITING_APPROVAL:
         approval_text = "Aguardando aprovação desta versão."
@@ -682,23 +709,112 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
         approval_text = "Versão aprovada."
     else:
         approval_text = "Ainda não chegou à aprovação."
+
     approval_rows = _kv("Aprovação", e(approval_text))
     if script_view is not None and script_view.has_script:
         approval_rows += _kv("Aprovação do roteiro",
                              "aprovada" if script_view.approved else "não registrada")
-    approval_card = f'<div class="card"><h3>Aprovação desta versão</h3>{approval_rows}</div>'
 
-    if view.stage in _PREVIEW_STAGES:
-        preview_html = (f'<p><a class="btn btn-primario" '
-                        f'href="/studio/videos/{e(video_id)}/preview">Abrir prévia e aprovar</a></p>')
+    if has_blocking and actionable_issues:
+        readiness_badge = '<span class="pill pill-err">Atenção: pendências identificadas</span>'
+        readiness_html = (
+            f'<div class="readiness-box" style="margin:1rem 0;">'
+            f'<p><strong>Situação:</strong> {readiness_badge}</p>'
+            '<p class="aviso"><strong>Pendências técnicas para resolução:</strong></p>'
+            '<ul class="lista-pendencias" style="margin:0.5rem 0 0 1.25rem;color:var(--err);">'
+            + "".join(
+                f'<li><strong>[{e(sev)}]</strong> {e(ev)}' + (f' <span class="hint">({e(cid)})</span>' if cid else '') + '</li>'
+                for sev, ev, cid in actionable_issues
+            )
+            + '</ul></div>'
+        )
     else:
-        preview_html = ('<p class="aviso">Prévia e aprovação ficam disponíveis após a renderização. '
-                        "A decisão de aprovação vive na página de prévia (com CSP própria).</p>")
-    semantic = (
-        '<p class="aviso"><strong>Avaliação semântica não verificada:</strong> a correspondência '
-        "entre roteiro e imagem depende de provider real e não é verificada aqui.</p>"
+        readiness_badge = '<span class="pill pill-good">Pronto para sua revisão</span>'
+        readiness_html = (
+            f'<div class="readiness-box" style="margin:1rem 0;">'
+            f'<p><strong>Situação:</strong> {readiness_badge} — Pronto para sua revisão.</p>'
+            '</div>'
+        )
+
+    if view.stage in _PREVIEW_STAGES and view.stage not in (Stage.APPROVED, Stage.COMPLETED):
+        action_button = (
+            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+            f'<button type="button" class="btn btn-primario" data-a="approve" data-video-id="{e(video_id)}" id="btn-approve-video">'
+            '✓ Aprovar e preparar publicação →'
+            '</button>'
+            '<span id="approve-feedback" class="feedback" role="status" aria-live="polite"></span>'
+            '</div>'
+        )
+    elif view.stage in (Stage.APPROVED, Stage.COMPLETED):
+        action_button = (
+            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+            f'<a class="btn btn-primario" href="/studio/panel/videos/{e(video_id)}/publicacao">'
+            '✓ Avançar para publicação →'
+            '</a>'
+            '</div>'
+        )
+    else:
+        action_button = (
+            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+            f'<button type="button" class="btn btn-primario" data-a="approve" data-video-id="{e(video_id)}" id="btn-approve-video" disabled>'
+            '✓ Aprovar e preparar publicação →'
+            '</button>'
+            '<span class="micro muted">Aprovação disponível após a renderização</span>'
+            '</div>'
+        )
+
+    review_card = (
+        '<div class="card card-revisao">'
+        '<h3>Revisão e Aprovação da Versão</h3>'
+        f'{approval_rows}'
+        f'{readiness_html}'
+        f'{action_button}'
+        '</div>'
     )
-    return qa_html + approval_card + preview_html + semantic
+
+    # 3. Verificações técnicas em detalhes expansíveis
+    if qa is not None:
+        qa_html = (
+            '<div class="card" style="margin-top:0.75rem"><h4>Relatório de QA do render</h4>'
+            + _kv("Publicável", "sim" if publishable else "não")
+            + _kv("Cobertura", e(coverage_status))
+            + _kv("Achados", str(len(findings)))
+        )
+        if findings:
+            findings_items = "".join(
+                f'<li><strong>{e(getattr(f, "check_id", "CHECK"))}</strong> ({e(getattr(f, "severity", "info"))}): '
+                f'{e(getattr(f, "evidence", str(f)))}</li>'
+                for f in findings
+            )
+            qa_html += f'<div style="margin-top:0.75rem"><p class="micro"><strong>Detalhamento dos achados:</strong></p><ul class="cenas">{findings_items}</ul></div>'
+        qa_html += '</div>'
+    else:
+        qa_html = (
+            '<div class="card" style="margin-top:0.75rem"><h4>Relatório de QA do render</h4>'
+            '<p class="aviso">Relatório de QA do render não disponível nesta leitura.</p>'
+            '</div>'
+        )
+
+    technical_details = (
+        '<details class="diag">'
+        '<summary>Ver todas as verificações técnicas</summary>'
+        '<div style="margin-top:1rem">'
+        '<p class="muted micro">Verificações automatizadas do renderizador: integridade do contêiner, taxa de quadros, loudness de áudio e conformidade de legenda.</p>'
+        f'{qa_html}'
+        '</div>'
+        '</details>'
+    )
+
+    # 4. Disclaimer explícito
+    disclaimer = (
+        '<p class="aviso" style="margin-top:1.5rem">'
+        '<strong>Avaliação semântica não verificada:</strong> '
+        'Verificações ilustrativas/técnicas. QA técnico não verifica fatos do roteiro '
+        '(veracidade factual) nem a correspondência entre roteiro e imagem (depende de provider real e não é verificada aqui).'
+        '</p>'
+    )
+
+    return preview_card + review_card + technical_details + disclaimer
 
 
 def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
@@ -764,6 +880,10 @@ def _content(view, area: str, *, style_view, script_view, video_id, composition_
     if area == "publicacao":
         return _area_publicacao(view, style_view=style_view, script_view=script_view,
                                 video_id=video_id, preview=preview)
+    if area == "qualidade":
+        return _area_qualidade(view, style_view=style_view, script_view=script_view,
+                               video_id=video_id, composition_view=composition_view,
+                               preview=preview)
     if area == "cenas":
         return _area_cenas(view, style_view=style_view, script_view=script_view, video_id=video_id,
                            composition_view=composition_view, scenes=scenes, script=script)
@@ -1267,6 +1387,40 @@ PAGE_JS = """
 
   wireModal('btn-historico-voz', 'dialog-audio-history');
   wireModal('btn-trocar-midia', 'dialog-trocar-midia');
+
+  var approveBtn = document.querySelector('button[data-a="approve"]');
+  if (approveBtn) {
+    approveBtn.addEventListener('click', async function () {
+      var videoId = approveBtn.getAttribute('data-video-id') || '';
+      var fb = document.getElementById('approve-feedback');
+      approveBtn.disabled = true;
+      approveBtn.classList.add('carregando');
+      if (window.StudioLoading) window.StudioLoading.start();
+      if (fb) fb.textContent = 'Aprovando vídeo e preparando publicação...';
+      try {
+        var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        var data = await response.json().catch(function () { return {}; });
+        if (response.ok) {
+          if (fb) fb.textContent = 'Aprovado com sucesso! Redirecionando para publicação...';
+          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/publicacao';
+        } else {
+          if (fb) fb.textContent = 'Não foi possível aprovar: ' + (typeof data.detail === 'string' ? data.detail : 'erro no servidor.');
+          approveBtn.disabled = false;
+          approveBtn.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
+        }
+      } catch (err) {
+        if (fb) fb.textContent = 'Falha de rede ao aprovar. Tente novamente.';
+        approveBtn.disabled = false;
+        approveBtn.classList.remove('carregando');
+        if (window.StudioLoading) window.StudioLoading.done();
+      }
+    });
+  }
 })();
 """
 
@@ -1320,7 +1474,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
         )
         view = VideoDetailView(
             video=video_obj,
-            stage=Stage.PENDING,
+            stage=classify(video_obj.status),
             cost_text="sem registro de uso",
             steps=[],
             usage=[],
@@ -1355,7 +1509,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
         {_video_area_nav(video_id, active_area)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,
-                  preview=preview if active_area == "publicacao" else None,
+                  preview=preview if active_area in ("publicacao", "qualidade") else None,
                   scenes=scenes, script=script)}
       </section>"""
 
