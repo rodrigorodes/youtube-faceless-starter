@@ -120,6 +120,37 @@ def test_home_prefills_topic_and_never_renders_zero_cost_or_inline_handlers():
 
 def test_home_still_creates_a_video_through_the_real_endpoint():
     html = _home()
-    assert 'id="create-video-form"' in html and 'id="topic"' in html
+    assert 'id="create-video-form"' in html and ('id="homeTopic"' in html or 'id="topic"' in html)
     assert "fetch('/studio/videos'" in html
     assert "/studio/panel/videos/" in html  # abre o vídeo criado para informar a fonte
+
+
+def test_home_v3_quick_creation_has_idea_and_script_toggle():
+    html = _home()
+    assert 'name="tipo-entrada"' in html or 'data-kind="input-toggle"' in html
+    assert "Tenho uma ideia" in html
+    assert "Já tenho roteiro" in html
+    assert 'id="home-topico"' in html or 'id="homeTopic"' in html
+    assert "Padrões do canal" in html or "padrão do canal" in html
+    assert "Padrões de Canal Principal · 60s · Padrão" in html
+    assert "⚡ Gerar vídeo completo" in html
+    assert "/studio/panel/novo-video" in html
+    assert "Personalizar este vídeo" in html
+    assert "local://roteiro-inicial" in html
+    assert "/sources" in html
+    assert "production_mode" in html
+
+
+def test_home_v3_quick_creation_action_button_director_mode():
+    from app.studio.api.panel import render_panel
+
+    repo = FakePanelRepo()
+    view = BuildPanel(repo, 15.0, lambda: NOW).execute()
+    object.__setattr__(view, "channels", [
+        {"id": "p1", "project_id": "p1", "name": "Canal Geek", "target_duration_s": 45, "visual_identity": "Tech Clean", "default_mode": "diretor"}
+    ])
+    html = render_panel(view)[0]
+    assert "🎬 Abrir storyboard" in html
+    assert "Padrões de Canal Geek · 45s · Tech Clean" in html
+
+
