@@ -182,17 +182,9 @@ git commit -m "feat(studio): ativar controles de posicao, fonte e transicao na c
 **Files:**
 - Test: `tests/test_caption_position_v3.py`, `tests/test_transition_applied_v3.py`, `tests/test_scene_broll_v3.py`, `tests/test_video_composition_v3.py`, `tests/test_render_plan_*.py`
 
-- [ ] **Step 1: Run all composition, layout and render plan test suites**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_caption_position_v3.py tests/test_transition_applied_v3.py tests/test_scene_broll_v3.py tests/test_video_composition_v3.py tests/test_render_plan*.py -v`
-Expected: Todos passando com zero falhas.
-
-- [ ] **Step 2: Run containerized test suite with PostgreSQL**
-
-Run: `bash scripts/test-container.sh tests/test_caption_position_v3.py tests/test_scene_broll_v3.py tests/test_channels_page.py tests/test_panel_page.py`
-Expected: Todas as migrações (incluindo 0048) executadas com sucesso e código de saída 0.
-
-- [ ] **Step 3: Commit final integration milestone**
+- [x] **Step 1: Run all composition, layout and render plan test suites**
+- [x] **Step 2: Run containerized test suite with PostgreSQL**
+- [x] **Step 3: Commit final integration milestone**
 
 ```bash
 git commit --allow-empty -m "chore: marco do plano 2 - motor de composicao visual concluido"
