@@ -187,37 +187,11 @@ git commit -m "feat(studio): aba de qualidade centrada na previa com verificacoe
   - Cartão de status: "Agendado para [data]" vs "Publicado"
   - Detecção de edições posteriores desarmando a prontidão para publicação
 
-- [ ] **Step 1: Write failing test in `tests/test_video_publication_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_workspace import render_video_workspace
-from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
-
-def test_v3_publication_tab_renders_schedule_and_timezone_notice():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.APPROVED)
-    html = render_video_workspace(video, active_area="publicacao", script=None, scenes=[], sources=[])
-    assert "Horário de Brasília" in html or "UTC−03:00" in html
-    assert 'name="tipo-publicacao"' in html or 'id="agendar-publicacao"' in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_publication_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update publication tab in `panel_video_workspace.py`**
-
-Implementar formulário de publicação V3 com campos de visibilidade, título, descrição, tags, rádio de imediato vs agendado, datetime com indicação de fuso Brasília UTC−03:00 e lógica de confirmação.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_publication_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_publication_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update publication tab in `panel_video_workspace.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_publication_v3.py
