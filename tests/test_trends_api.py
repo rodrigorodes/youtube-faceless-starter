@@ -30,7 +30,17 @@ def api_env(conn, dsn, tmp_path):
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
     client = TestClient(app)
-    return {"client": client, "videos": videos, "project_id": project.id, "conn": conn}
+    return {"client": client, "videos": videos, "project_id": project.id, "conn": conn, "studio": studio}
+
+
+@pytest.fixture()
+def client(api_env):
+    return TestClient(api_env["client"].app, headers={"Authorization": "Bearer test-worker-token"})
+
+
+@pytest.fixture()
+def test_project_id(api_env):
+    return api_env["project_id"]
 
 
 def _payload(project_id, source_url="https://www.googleapis.com/youtube/v3/search"):
@@ -103,3 +113,56 @@ def test_trends_ingestion_empty_batch(api_env):
 
     r = client.post("/studio/trends", json={"project_id": p_id, "items": []}, headers=WORKER_HEADER)
     assert r.status_code == 422
+
+
+def test_post_and_delete_saved_trend(client, test_project_id):
+    payload = {
+        "video_id": "test_vid_123",
+        "title": "Mistério na Antártida",
+        "channel_title": "Canal Mistério",
+        "thumbnail_url": "https://i.ytimg.com/vi/test_vid_123/hqdefault.jpg",
+        "video_url": "https://youtube.com/watch?v=test_vid_123",
+        "duration": "14:20",
+        "views": 850000,
+        "category_name": "Mistérios",
+        "score": 82,
+    }
+    r = client.post(f"/studio/projects/{test_project_id}/saved-trends", json=payload)
+    assert r.status_code == 201
+    assert r.json().get("ok") is True
+    assert r.json().get("video_id") == "test_vid_123"
+
+    r_del = client.delete(f"/studio/projects/{test_project_id}/saved-trends/test_vid_123")
+    assert r_del.status_code == 200
+    assert r_del.json().get("ok") is True
+
+
+def test_saved_trend_project_not_found(client):
+    fake_id = "0" * 32
+    payload = {
+        "video_id": "test_vid_123",
+        "title": "Mistério",
+    }
+    r = client.post(f"/studio/projects/{fake_id}/saved-trends", json=payload)
+    assert r.status_code == 404
+
+    r_del = client.delete(f"/studio/projects/{fake_id}/saved-trends/test_vid_123")
+    assert r_del.status_code == 404
+
+
+def test_saved_trend_validation_errors(client, test_project_id):
+    # Missing required title
+    r = client.post(f"/studio/projects/{test_project_id}/saved-trends", json={"video_id": "vid1"})
+    assert r.status_code == 422
+
+    # Missing required video_id
+    r = client.post(f"/studio/projects/{test_project_id}/saved-trends", json={"title": "Some title"})
+    assert r.status_code == 422
+
+    # Invalid score > 100
+    r = client.post(
+        f"/studio/projects/{test_project_id}/saved-trends",
+        json={"video_id": "vid1", "title": "T", "score": 150},
+    )
+    assert r.status_code == 422
+

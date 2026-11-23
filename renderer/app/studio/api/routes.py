@@ -79,7 +79,13 @@ from .active_channel import with_channel as _with_channel
 from .panel_advanced import render_advanced
 from .panel_videos import render_videos
 from .panel_video_workspace import render_video_workspace
-from .panel_trends import render_tendencias_cartoes, render_tendencias_v3
+from .panel_trends import (
+    SavedTrendIn,
+    delete_saved_trend,
+    render_tendencias_cartoes,
+    render_tendencias_v3,
+    save_saved_trend,
+)
 from ..application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUnavailable, VisualStyleNotFound
 from ..application.panel import cost_breakdown
 from ..application.ports import MediaCandidate, ModelUnavailable
@@ -1308,6 +1314,14 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             stored = uc.refresh_trends.execute(check_id(project_id), queries)
             return {"stored": stored}
         return run(go)
+
+    @router.post("/projects/{project_id}/saved-trends", status_code=201)
+    def save_saved_trend_route(project_id: str, body: SavedTrendIn):
+        return run(lambda uc: save_saved_trend(uc, project_id, body))
+
+    @router.delete("/projects/{project_id}/saved-trends/{video_id}")
+    def delete_saved_trend_route(project_id: str, video_id: str):
+        return run(lambda uc: delete_saved_trend(uc, project_id, video_id))
 
     @router.post("/videos", status_code=201, response_model=VideoOut)
     def create_video(body: VideoIn):

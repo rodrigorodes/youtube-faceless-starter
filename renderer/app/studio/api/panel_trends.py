@@ -7,8 +7,15 @@ from __future__ import annotations
 
 import secrets
 from html import escape as e
+from typing import Any
 
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
+
+from ..application.errors import ProjectNotFound
 from ..application.panel import PanelView, TrendItemView
+from ..domain.ids import check_id
+from ..domain.trend_priority import SavedTrendSnapshot
 from . import panel as legacy
 from . import panel_home
 from . import shell_v3
@@ -411,3 +418,48 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
         page_js=TRENDS_JS,
     )
     return html, legacy._headers(nonce)
+
+
+class SavedTrendIn(BaseModel):
+    video_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=500)
+    channel_title: str | None = Field(default=None, max_length=200)
+    thumbnail_url: str | None = Field(default=None, max_length=2000)
+    video_url: str | None = Field(default=None, max_length=2000)
+    duration: str = Field(default="", max_length=32)
+    views: int = Field(default=0, ge=0)
+    category_name: str | None = Field(default=None, max_length=200)
+    score: int = Field(default=0, ge=0, le=100)
+
+
+def save_saved_trend(uc: Any, project_id: str, body: SavedTrendIn) -> dict[str, Any]:
+    if uc.trends_repo is None:
+        raise HTTPException(503, "trends services unavailable")
+    p_id = check_id(project_id)
+    if uc.create_project.repo.get_project(p_id) is None:
+        raise ProjectNotFound(p_id)
+    snapshot = SavedTrendSnapshot(
+        project_id=p_id,
+        video_id=body.video_id,
+        title=body.title,
+        channel_title=body.channel_title,
+        thumbnail_url=body.thumbnail_url,
+        video_url=body.video_url,
+        duration=body.duration,
+        views=body.views,
+        category_name=body.category_name,
+        score=body.score,
+    )
+    uc.trends_repo.save_trend_snapshot(p_id, snapshot)
+    return {"ok": True, "video_id": body.video_id}
+
+
+def delete_saved_trend(uc: Any, project_id: str, video_id: str) -> dict[str, Any]:
+    if uc.trends_repo is None:
+        raise HTTPException(503, "trends services unavailable")
+    p_id = check_id(project_id)
+    if uc.create_project.repo.get_project(p_id) is None:
+        raise ProjectNotFound(p_id)
+    uc.trends_repo.unsave_trend(p_id, video_id)
+    return {"ok": True}
+
