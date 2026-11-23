@@ -207,70 +207,11 @@ git commit -m "feat(application): caso de uso transacional e idempotente CreateC
   - Campos `default_mode` e `default_format` em `ChannelProfileIn`, `ChannelUpdateIn`, `ChannelProfileOut`
   - Campo `production_mode` em `VideoIn` e `VideoOut`
 
-- [ ] **Step 1: Write failing API test in `tests/test_channel_preferences_api.py`**
-
-```python
-import sys
-from pathlib import Path
-import pytest
-from fastapi.testclient import TestClient
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-
-from app.main import app
-
-def test_api_channel_transactional_creation(client):
-    body = {
-        "name": "Canal API Transacional",
-        "niche": "Negócios",
-        "default_mode": "diretor",
-        "default_format": "long",
-        "hard_monthly_usd": 30.0,
-        "soft_monthly_usd": 15.0,
-    }
-    resp = client.post("/studio/channels/transactional", json=body, headers={"Idempotency-Key": "api-key-1"})
-    assert resp.status_code == 201
-    data = resp.json()
-    assert data["project"]["name"] == "Canal API Transacional"
-    assert data["profile"]["default_mode"] == "diretor"
-    assert data["profile"]["default_format"] == "long"
-    assert data["budget"]["hard_monthly_usd"] == 30.0
-
-def test_api_video_creation_with_production_mode(client):
-    # Criar projeto e canal primeiro
-    c_resp = client.post("/studio/channels/transactional", json={"name": "Canal Video Mode"})
-    p_id = c_resp.json()["project"]["id"]
-
-    v_resp = client.post(f"/studio/projects/{p_id}/videos", json={
-        "topic": "Vídeo no modo diretor",
-        "format": "short",
-        "production_mode": "diretor",
-    })
-    assert v_resp.status_code == 201
-    assert v_resp.json()["production_mode"] == "diretor"
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_api.py -v`
-Expected: FAIL (404 Not Found em `/studio/channels/transactional` ou 422 Unprocessable Entity)
-
-- [ ] **Step 3: Implement endpoints and schema updates in `renderer/app/studio/api/routes.py`**
-
-1. Em `ChannelProfileIn`, `ChannelUpdateIn`, `ChannelProfileOut`: adicionar `default_mode: ProductionMode = ProductionMode.piloto`, `default_format: VideoFormat = VideoFormat.short`.
-2. Em `VideoIn`, `VideoOut`: adicionar `production_mode: ProductionMode = ProductionMode.piloto`.
-3. Adicionar rota `POST /channels/transactional`:
-   - Extrai header `Idempotency-Key` (se fornecido).
-   - Executa `uc.create_channel_transactional.execute(...)`.
-   - Se ocorrer `IdempotencyConflict`: levanta `HTTPException(409, detail="Idempotency conflict")`.
-   - Retorna status 201 com JSON `{project: ..., profile: ..., budget: ...}`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_api.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing API test in `tests/test_channel_preferences_api.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement endpoints and schema updates in `renderer/app/studio/api/routes.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/routes.py tests/test_channel_preferences_api.py
