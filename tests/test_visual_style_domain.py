@@ -320,9 +320,9 @@ def test_applied_and_loaded_only_groups_partition_the_known_params():
     # A honestidade é exata: todo grupo é ou aplicado pelo render ou carregado-sem-efeito.
     assert APPLIED_GROUPS | LOADED_ONLY_GROUPS == set(KNOWN_PARAMS)
     assert APPLIED_GROUPS.isdisjoint(LOADED_ONLY_GROUPS)
-    assert APPLIED_GROUPS == {"motion", "music", "caption", "palette", "voice"}
-    # `transition` de estilo e `extra` são carregados mas não aplicados (não prometem efeito).
-    assert LOADED_ONLY_GROUPS == {"transition", "extra"}
+    assert APPLIED_GROUPS == {"motion", "music", "caption", "palette", "voice", "transition"}
+    # `extra` é carregado mas não aplicado (não promete efeito).
+    assert LOADED_ONLY_GROUPS == {"extra"}
 
 
 def test_presets_only_carry_groups_the_render_applies():

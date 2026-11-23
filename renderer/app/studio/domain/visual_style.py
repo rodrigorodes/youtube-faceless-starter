@@ -6,17 +6,17 @@ atualização carrega a `version`, e o repositório incrementa de forma otimista
 snapshot auditável por versão — o mesmo padrão de `channel_profile_revisions`.
 
 `params` é o retrato do estilo. Os grupos que o render **de fato** aplica hoje são
-motion · music · caption · palette · voice; `transition` (de estilo) e `extra` são **carregados
-sem efeito** — versionados e preservados desde o dia 1, mas nenhum deles muda o vídeo até o
+motion · music · caption · palette · voice · transition; `extra` é **carregado
+sem efeito** — versionado e preservado desde o dia 1, mas nenhum deles muda o vídeo até o
 compilador/executor ligar a ponta. É o "conforme o uso vamos melhorando" com contrato, não com
 promessa.
 
 A honestidade é explícita (W3.2): ``APPLIED_GROUPS`` são os grupos que o compilador/executor
-levam ao vídeo hoje e ``LOADED_ONLY_GROUPS`` o que é carregado sem efeito (``transition`` de
-estilo e ``extra``). ``PRESETS``/``preset_params`` oferecem presets por nicho **só** com grupos
+levam ao vídeo hoje e ``LOADED_ONLY_GROUPS`` o que é carregado sem efeito (``extra``).
+``PRESETS``/``preset_params`` oferecem presets por nicho **só** com grupos
 aplicáveis — um preset nunca promete o que o render não faz. Note que ``Shot.transition`` (a
-transição **do plano**, por shot) é consumida pelo compilador; o que não é aplicado é a
-``transition`` **de estilo**, que ainda não vira ``Shot.transition``.
+transição **do plano**, por shot) é consumida pelo compilador e instanciada pelo builder
+a partir de ``style.transition``.
 
 ## Patch tipado (F05.T01)
 
@@ -71,15 +71,11 @@ _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
 KNOWN_PARAMS = ("motion", "music", "transition", "caption", "palette", "voice", "extra")
 # W3.2: quais grupos o render **de fato** leva ao vídeo hoje. Só estes podem ganhar controle: o
 # compilador/executor consomem `motion` (Ken Burns), `music` (bpm/seed da trilha), `caption`
-# (geometria da legenda), `palette` (cores do overlay) e `voice` (modelo de fala). Um grupo fora
-# daqui é carregado e versionado sem efeito — a UI deve rotulá-lo "declarado e não aplicado", não
-# fingir suporte. `LOADED_ONLY_GROUPS` é o complemento **exato** (`APPLIED ∥ LOADED_ONLY` = KNOWN).
-#
-# `transition` fica em carregado-e-não-aplicado por honestidade: o compilador **já consome**
-# ``Shot.transition`` de um plano (o fade do segmento, W3.2), mas nada vira a transição de um
-# **estilo** em ``Shot.transition`` ainda — ligar essa ponta é fatia futura. Enquanto isso, um
-# estilo com `transition` continua sem alterar o render.
-APPLIED_GROUPS: frozenset[str] = frozenset({"motion", "music", "caption", "palette", "voice"})
+# (geometria e layout da legenda), `palette` (cores do overlay), `voice` (modelo de fala) e
+# `transition` (fade entre cenas vizinhas). Um grupo fora daqui é carregado e versionado sem
+# efeito — a UI deve rotulá-lo "declarado e não aplicado", não fingir suporte.
+# `LOADED_ONLY_GROUPS` é o complemento **exato** (`APPLIED ∥ LOADED_ONLY` = KNOWN).
+APPLIED_GROUPS: frozenset[str] = frozenset({"motion", "music", "caption", "palette", "voice", "transition"})
 LOADED_ONLY_GROUPS: frozenset[str] = frozenset(set(KNOWN_PARAMS) - APPLIED_GROUPS)
 CREATABLE_FIELDS = ("organization_id", "params", "archived")
 UPDATABLE_FIELDS = ("name", "params", "archived")
@@ -609,10 +605,10 @@ class ResolvedStyle:
     render **de fato** honra hoje. O tipo não carrega o objeto inteiro (nem nome/`extra`),
     só o que o render consome — o plano referencia, não copia.
 
-    ``transition`` é **carregada** desde já, por fidelidade ao estilo, mas **ainda não é
-    aplicada**: o builder/compilador/executor não leem transição hoje (o plano a representa
-    como ``Transition`` em ``Shot.transition``, que ninguém preenche). Ligá-la é fatia
-    futura; aqui ela fica só carregada, sem fingir suporte.
+    ``transition`` é **aplicada** (Plano 2 / F05.T03): quando o estilo declara transição fade
+    com duração positiva, o builder projeta ``Transition(kind="fade", duration_ticks=...)``
+    nos shots visuais base que possuem próximo vizinho. ``none`` ou ausente mantém o fade
+    legado sem alteração (byte-a-byte).
 
     ``motion`` vazio significa "sem ciclo declarado": o executor cai no seu próprio ciclo
     de Ken Burns. ``music`` vazio (ou parcial) significa "usar o default do plano" para as

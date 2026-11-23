@@ -58,6 +58,7 @@ from .render_plan import (
     Timebase,
     Timeline,
     Track,
+    Transition,
 )
 from .ticks import seconds_to_ticks, tick_windows
 
@@ -188,7 +189,9 @@ def build_render_plan(
     format: VideoFormat,
     scenes: Sequence[StoryboardScene],
     assets: Sequence[AssetReference],
-    style_snapshot: StyleSnapshot,
+    style_snapshot: StyleSnapshot | None = None,
+    style: Any = None,
+    transition: Mapping[str, Any] | Transition | None = None,
     builder_version: str = DEFAULT_BUILDER_VERSION,
     disclosure: str = DEFAULT_DISCLOSURE,
     music: bool = True,
@@ -220,6 +223,39 @@ def build_render_plan(
     motion_by_scene = _motions(motions, ordered)
     overlays_by_scene = _overlays_by_scene(overlays, ordered, manifest)
 
+    if style_snapshot is None:
+        if style is not None and hasattr(style, "snapshot") and style.snapshot is not None:
+            style_snapshot = style.snapshot
+        else:
+            style_snapshot = StyleSnapshot(style_id="default", version=1)
+
+    if music_params is None and style is not None:
+        if hasattr(style, "music") and style.music:
+            music_params = style.music
+        elif hasattr(style, "params") and isinstance(style.params, Mapping):
+            music_params = style.params.get("music")
+        elif isinstance(style, Mapping) and "music" in style:
+            music_params = style.get("music")
+
+    raw_transition = transition
+    if raw_transition is None and style is not None:
+        if hasattr(style, "transition"):
+            raw_transition = style.transition
+        elif hasattr(style, "params") and isinstance(style.params, Mapping):
+            raw_transition = style.params.get("transition")
+        elif isinstance(style, Mapping):
+            raw_transition = style.get("transition")
+
+    shot_transition: Transition | None = None
+    if isinstance(raw_transition, Transition):
+        if raw_transition.kind == "fade" and raw_transition.duration_ticks > 0:
+            shot_transition = raw_transition
+    elif isinstance(raw_transition, Mapping):
+        kind = raw_transition.get("kind", "none")
+        duration = int(raw_transition.get("duration_ticks", 0))
+        if kind == "fade" and duration > 0:
+            shot_transition = Transition(kind="fade", duration_ticks=duration)
+
     lengths: list[float] = []
     offsets: list[float] = []
     cursor = 0.0
@@ -239,7 +275,8 @@ def build_render_plan(
     narration: list[NarrationCue] = []
     subtitles: list[SubtitleCue] = []
     generated: list[GeneratedAudioSource] = []
-    for scene, window, offset_s, _length_s in zip(ordered, windows, offsets, lengths):
+    num_scenes = len(ordered)
+    for index, (scene, window, offset_s, _length_s) in enumerate(zip(ordered, windows, offsets, lengths)):
         start_tick, end_tick = window
         duration_ticks = end_tick - start_tick
         reference = manifest.get(scene.asset_id)
@@ -247,6 +284,15 @@ def build_render_plan(
             raise PlanBuildError(
                 f"scene {scene.scene_id!r} references asset {scene.asset_id!r} that is not in the manifest"
             )
+
+        base_transition: Transition | None = None
+        if (
+            shot_transition is not None
+            and index < num_scenes - 1
+            and shot_transition.duration_ticks < duration_ticks
+        ):
+            base_transition = shot_transition
+
         shot = Shot(
             shot_id=f"shot:{scene.scene_id}",
             track_id=VISUAL_TRACK,
@@ -255,6 +301,7 @@ def build_render_plan(
             asset_ref=scene.asset_id,
             composition=Composition(fit="cover"),
             effects=Effects(motion=motion_by_scene[scene.scene_id]),
+            transition=base_transition,
             paid_operation_key=scene.paid_operation_key,
         )
         scene_shots = [shot]
