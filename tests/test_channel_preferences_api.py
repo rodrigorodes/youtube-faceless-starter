@@ -146,3 +146,86 @@ def test_api_channel_profile_get_and_patch_preferences(client):
     assert get_resp2.status_code == 200
     assert get_resp2.json()["default_mode"] == "diretor"
     assert get_resp2.json()["default_format"] == "long"
+
+
+def test_api_channel_transactional_budget_soft_monthly_exceeds_hard(client):
+    body = {
+        "name": "Canal API Soft Exceeds Hard",
+        "hard_monthly_usd": 100.0,
+        "soft_monthly_usd": 150.0,
+    }
+    resp = client.post("/studio/channels/transactional", json=body)
+    assert resp.status_code == 422
+    assert "soft_monthly_usd must not exceed hard_monthly_usd" in resp.json()["detail"]
+
+
+def test_api_channel_transactional_budget_soft_video_exceeds_hard(client):
+    body = {
+        "name": "Canal API Soft Video Exceeds Hard",
+        "hard_video_usd": 10.0,
+        "soft_video_usd": 15.0,
+    }
+    resp = client.post("/studio/channels/transactional", json=body)
+    assert resp.status_code == 422
+    assert "soft_video_usd must not exceed hard_video_usd" in resp.json()["detail"]
+
+
+def test_api_channel_transactional_invalid_style_id(client):
+    body = {
+        "name": "Canal API Invalid Style",
+        "style_id": "deadbeefdeadbeefdeadbeefdeadbeef",
+    }
+    resp = client.post("/studio/channels/transactional", json=body)
+    assert resp.status_code == 422
+    assert "visual style 'deadbeefdeadbeefdeadbeefdeadbeef' does not exist" in resp.json()["detail"]
+
+
+def test_api_channel_transactional_monetary_normalization_replay(client):
+    body1 = {
+        "name": "Canal API Normalization",
+        "hard_monthly_usd": 20,
+        "soft_monthly_usd": 10,
+        "hard_video_usd": 2,
+        "soft_video_usd": 1,
+    }
+    body2 = {
+        "name": "Canal API Normalization",
+        "hard_monthly_usd": 20.0,
+        "soft_monthly_usd": 10.0,
+        "hard_video_usd": 2.0,
+        "soft_video_usd": 1.0,
+    }
+    resp1 = client.post("/studio/channels/transactional", json=body1, headers={"Idempotency-Key": "norm-api-key"})
+    assert resp1.status_code == 201
+    p1 = resp1.json()["project"]["id"]
+
+    resp2 = client.post("/studio/channels/transactional", json=body2, headers={"Idempotency-Key": "norm-api-key"})
+    assert resp2.status_code == 201
+    p2 = resp2.json()["project"]["id"]
+    assert p1 == p2
+
+
+def test_api_channel_transactional_concurrent_thread_race(client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    body = {
+        "name": "Canal API Concurrency",
+        "hard_monthly_usd": 50.0,
+        "soft_monthly_usd": 25.0,
+    }
+    headers = {"Idempotency-Key": "api-race-key-01"}
+
+    def req():
+        return client.post("/studio/channels/transactional", json=body, headers=headers)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(req)
+        f2 = executor.submit(req)
+        r1 = f1.result()
+        r2 = f2.result()
+
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    assert r1.json()["project"]["id"] == r2.json()["project"]["id"]
+    assert r1.json()["profile"]["id"] == r2.json()["profile"]["id"]
+

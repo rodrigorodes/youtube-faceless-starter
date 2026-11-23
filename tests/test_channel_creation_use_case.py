@@ -5,12 +5,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
 psycopg = pytest.importorskip("psycopg")
+from decimal import Decimal
 from app.studio.adapters.postgres.db import migrate
 from app.studio.application.channel_creation import (
     CreateChannelTransactional,
     ChannelCreationPayload,
     IdempotencyConflict,
+    _payload_hash,
 )
+from app.studio.domain.channel import ChannelStyleNotFound
+from app.studio.domain.channel_budget import BudgetLimitInvalid
 from app.studio.domain.contracts import ProductionMode, VideoFormat
 
 
@@ -105,4 +109,199 @@ def test_use_cases_wiring_exposes_create_channel_transactional(dsn, tmp_path):
     assert cases is not None
     assert cases.create_channel_transactional is not None
     assert isinstance(cases.create_channel_transactional, CreateChannelTransactional)
+
+
+def test_create_channel_transactional_budget_soft_monthly_exceeds_hard(uc_env):
+    payload = ChannelCreationPayload(
+        name="Canal Budget Invalido",
+        hard_monthly_usd=100.0,
+        soft_monthly_usd=150.0,
+    )
+    with pytest.raises(BudgetLimitInvalid, match="soft_monthly_usd must not exceed hard_monthly_usd"):
+        uc_env["uc"].execute(payload)
+
+
+def test_create_channel_transactional_budget_soft_video_exceeds_hard(uc_env):
+    payload = ChannelCreationPayload(
+        name="Canal Budget Video Invalido",
+        hard_video_usd=10.0,
+        soft_video_usd=15.0,
+    )
+    with pytest.raises(BudgetLimitInvalid, match="soft_video_usd must not exceed hard_video_usd"):
+        uc_env["uc"].execute(payload)
+
+
+def test_create_channel_transactional_invalid_style_id(uc_env):
+    payload = ChannelCreationPayload(
+        name="Canal Estilo Invalido",
+        style_id="deadbeefdeadbeefdeadbeefdeadbeef",
+    )
+    with pytest.raises(ChannelStyleNotFound, match="visual style 'deadbeefdeadbeefdeadbeefdeadbeef' does not exist"):
+        uc_env["uc"].execute(payload)
+
+
+def test_create_channel_transactional_monetary_normalization_hash(uc_env):
+    payload1 = ChannelCreationPayload(
+        name="Canal Normalizacao",
+        hard_monthly_usd=20,
+        soft_monthly_usd=10,
+        hard_video_usd=2,
+        soft_video_usd=1,
+    )
+    payload2 = ChannelCreationPayload(
+        name="Canal Normalizacao",
+        hard_monthly_usd=20.0,
+        soft_monthly_usd=10.0,
+        hard_video_usd=2.0,
+        soft_video_usd=1.0,
+    )
+    payload3 = ChannelCreationPayload(
+        name="Canal Normalizacao",
+        hard_monthly_usd=Decimal("20.00"),
+        soft_monthly_usd=Decimal("10.00"),
+        hard_video_usd=Decimal("2.00"),
+        soft_video_usd=Decimal("1.00"),
+    )
+    h1 = _payload_hash(payload1)
+    h2 = _payload_hash(payload2)
+    h3 = _payload_hash(payload3)
+    assert h1 == h2 == h3
+
+    res1 = uc_env["uc"].execute(payload1, idempotency_key="key-norm-01")
+    # Replay usando payload com float 20.0 deve reconhecer mesmo hash e devolver replay
+    res2 = uc_env["uc"].execute(payload2, idempotency_key="key-norm-01")
+    assert res1.project.id == res2.project.id
+
+
+def test_create_channel_transactional_concurrent_unique_violation_replays_cleanly(uc_env):
+    payload = ChannelCreationPayload(name="Canal Concorrente Replay", niche="Tech")
+    key = "concurrent-race-key"
+
+    # Criar primeiro o registro com a chave
+    res1 = uc_env["uc"].execute(payload, idempotency_key=key)
+
+    # Simular transação que não viu a chave no SELECT inicial, mas sofre UniqueViolation no INSERT
+    real_connect = uc_env["uc"]._connect
+    intercept = [True]
+
+    class RaceMockCursor:
+        def __init__(self, real_cur):
+            self._real_cur = real_cur
+
+        def __enter__(self):
+            self._real_cur.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return self._real_cur.__exit__(exc_type, exc_val, exc_tb)
+
+        def execute(self, query, params=None):
+            if intercept[0] and "FROM studio.channel_creation_requests WHERE idempotency_key" in str(query):
+                intercept[0] = False
+                return self._real_cur.execute(
+                    "SELECT project_id, request_hash FROM studio.channel_creation_requests WHERE 1=0"
+                )
+            return self._real_cur.execute(query, params)
+
+        def __getattr__(self, name):
+            return getattr(self._real_cur, name)
+
+    class RaceMockConn:
+        def __init__(self, real_conn):
+            self._real_conn = real_conn
+
+        def __enter__(self):
+            self._real_conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return self._real_conn.__exit__(exc_type, exc_val, exc_tb)
+
+        def cursor(self, *args, **kwargs):
+            return RaceMockCursor(self._real_conn.cursor(*args, **kwargs))
+
+        def __getattr__(self, name):
+            return getattr(self._real_conn, name)
+
+    uc_env["uc"]._connect = lambda: RaceMockConn(real_connect())
+    try:
+        replay = uc_env["uc"].execute(payload, idempotency_key=key)
+        assert replay.project.id == res1.project.id
+        assert replay.profile.id == res1.profile.id
+    finally:
+        uc_env["uc"]._connect = real_connect
+
+
+def test_create_channel_transactional_concurrent_unique_violation_conflict_on_divergent_payload(uc_env):
+    payload1 = ChannelCreationPayload(name="Canal Concorrente 1", niche="Tech")
+    payload2 = ChannelCreationPayload(name="Canal Concorrente 2", niche="Tech Divergente")
+    key = "concurrent-conflict-key"
+
+    res1 = uc_env["uc"].execute(payload1, idempotency_key=key)
+
+    real_connect = uc_env["uc"]._connect
+    intercept = [True]
+
+    class RaceMockCursor:
+        def __init__(self, real_cur):
+            self._real_cur = real_cur
+
+        def __enter__(self):
+            self._real_cur.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return self._real_cur.__exit__(exc_type, exc_val, exc_tb)
+
+        def execute(self, query, params=None):
+            if intercept[0] and "FROM studio.channel_creation_requests WHERE idempotency_key" in str(query):
+                intercept[0] = False
+                return self._real_cur.execute(
+                    "SELECT project_id, request_hash FROM studio.channel_creation_requests WHERE 1=0"
+                )
+            return self._real_cur.execute(query, params)
+
+        def __getattr__(self, name):
+            return getattr(self._real_cur, name)
+
+    class RaceMockConn:
+        def __init__(self, real_conn):
+            self._real_conn = real_conn
+
+        def __enter__(self):
+            self._real_conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return self._real_conn.__exit__(exc_type, exc_val, exc_tb)
+
+        def cursor(self, *args, **kwargs):
+            return RaceMockCursor(self._real_conn.cursor(*args, **kwargs))
+
+        def __getattr__(self, name):
+            return getattr(self._real_conn, name)
+
+    uc_env["uc"]._connect = lambda: RaceMockConn(real_connect())
+    try:
+        with pytest.raises(IdempotencyConflict):
+            uc_env["uc"].execute(payload2, idempotency_key=key)
+    finally:
+        uc_env["uc"]._connect = real_connect
+
+
+def test_create_channel_transactional_multithreaded_concurrency(uc_env):
+    from concurrent.futures import ThreadPoolExecutor
+
+    payload = ChannelCreationPayload(name="Canal Threads", niche="Finanças")
+    key = "multithread-key-1"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(uc_env["uc"].execute, payload, idempotency_key=key)
+        f2 = executor.submit(uc_env["uc"].execute, payload, idempotency_key=key)
+        res1 = f1.result()
+        res2 = f2.result()
+
+    assert res1.project.id == res2.project.id
+    assert res1.profile.id == res2.profile.id
+
 
