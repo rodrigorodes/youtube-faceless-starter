@@ -59,3 +59,26 @@ def test_library_create_dialog_has_exactly_the_prototype_fields():
 def test_library_escapes_real_names():
     html = _page([_item(ATIVO, "<script>alert(1)</script>")])
     assert "<script>alert(1)</script>" not in html
+
+
+# ---- diálogos no tema: sem `window.confirm` e com o formulário de edição formatado ------------------------------
+
+
+def test_library_archive_confirms_in_a_themed_dialog_not_the_browser_confirm():
+    """Bug: "Arquivar" abria `window.confirm`, o modal nativo do navegador, fora do tema."""
+    html = _page([_item(ATIVO, "View")])
+    assert "window.confirm" not in html and "confirm(" not in html
+    dlg = re.search(r'<dialog[^>]*id="dlg-arquivar-estilo"[^>]*>.*?</dialog>', html, re.S)
+    assert dlg and 'class="modal"' in dlg.group(0)
+    assert 'id="btn-confirmar-arquivar"' in dlg.group(0) and "voltam ao padrão do estúdio" in dlg.group(0)
+    assert "data-fechar-dialogo" in dlg.group(0)
+    assert "data-archive-style" in html  # o botão de cada estilo continua existindo
+
+
+def test_library_edit_dialog_has_a_header_and_themed_form_parts():
+    html = _page([_item(ATIVO, "View", {"motion": ["zoom_in"], "extra": {"lut": "x"}})])
+    dlg = re.search(r'<dialog[^>]*id="editar-' + ATIVO + r'"[^>]*>.*?</dialog>', html, re.S).group(0)
+    assert 'class="modal-header"' in dlg and 'class="modal-close"' in dlg and "Editar estilo" in dlg
+    assert 'class="motion-option"' in dlg and 'class="advanced"' in dlg and 'class="form-actions"' in dlg
+    for rule in (".hint {", "details.advanced", ".advanced-summary", ".motion-option:has(input:checked)", ".form-actions"):
+        assert rule in html, rule  # estilos próprios do formulário, não os padrões do navegador

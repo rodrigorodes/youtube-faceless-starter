@@ -66,7 +66,12 @@ STYLES_CSS = """
 .usage { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1.1rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
-.field .hint { color: var(--dim); font-size: 0.72rem; line-height: 1.4; }
+.hint { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 0; }
+.field .hint { margin-top: 1px; }
+dialog.estilo-dialog { width: min(720px, calc(100% - 32px)); }
+.style-form .modal-header { margin-bottom: 16px; }
+.style-form .field > label, fieldset.motion-field legend { font-size: 12px; color: var(--muted); font-weight: 600; }
+.style-form .grid-2 + .grid-2 { margin-top: 4px; }
 .input {
   width: 100%;
   padding: 0.5rem 0.6rem;
@@ -81,9 +86,26 @@ STYLES_CSS = """
 .input:user-invalid { border-color: var(--bad); }
 textarea.input { min-height: 5rem; resize: vertical; }
 fieldset.motion-field { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-fieldset.motion-field legend { font-weight: 600; font-size: 0.85rem; padding: 0; margin-bottom: 0.15rem; }
+fieldset.motion-field legend { padding: 0; margin-bottom: 6px; }
 .pill-row { display: flex; flex-wrap: wrap; gap: 0.45rem 0.9rem; align-items: center; }
-.motion-option { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+.motion-field .pill-row { gap: 8px; }
+.motion-option {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text);
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.motion-option label { cursor: pointer; }
+.motion-option:hover { border-color: var(--line2); }
+.motion-option:has(input:checked) { border-color: var(--accent); background: var(--accentbg); color: var(--accent2); }
+.motion-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.advanced { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); }
+.advanced-summary { cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--text); }
+details.advanced[open] > .advanced-summary { border-bottom: 1px solid var(--line); }
+.advanced-body { padding: 14px 14px 4px; }
+.advanced-body .input, .advanced-body textarea { background: var(--bg); }
+.form-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.form-actions .form-feedback { flex: 1 1 100%; min-height: 1em; }
+.form-feedback:empty { display: none; }
 .style-disclosure { margin-top: 1rem; }
 .style-disclosure > summary { cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; }
 .style-disclosure > summary::-webkit-details-marker { display: none; }
@@ -194,33 +216,41 @@ document.querySelectorAll('form[data-style-form]').forEach((form) => {
   });
 });
 
+const dlgArquivar = document.getElementById('dlg-arquivar-estilo');
+let arquivarAlvo = null;
 document.querySelectorAll('[data-archive-style]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    const styleId = button.getAttribute('data-archive-style');
-    const name = button.getAttribute('data-style-name') || 'este estilo';
-    const form = button.closest('form');
-    const feedback = form ? form.querySelector('[data-feedback]') : null;
-    if (!window.confirm('Arquivar "' + name + '"? Os canais que usavam voltam ao padrão do estúdio. Nada é apagado.')) return;
-    button.disabled = true;
-    if (feedback) feedback.textContent = 'Arquivando...';
-    try {
-      const response = await fetch('/studio/styles/' + encodeURIComponent(styleId) + '/archive', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        if (feedback) feedback.textContent = 'Arquivado. Atualizando...';
-        setTimeout(() => window.location.reload(), 500);
-      } else {
-        if (feedback) feedback.textContent = 'Não foi possível arquivar: '
-          + (window.StudioErro.texto(data, 'tente novamente.'));
-        button.disabled = false;
-      }
-    } catch (error) {
-      if (feedback) feedback.textContent = 'Falha de rede ao arquivar. Tente novamente.';
-      button.disabled = false;
-    }
+  button.addEventListener('click', () => {
+    arquivarAlvo = button;
+    const nome = document.getElementById('arquivar-nome');
+    if (nome) nome.textContent = '\u201c' + (button.getAttribute('data-style-name') || 'este estilo') + '\u201d';
+    const erro = document.getElementById('arquivar-erro'); if (erro) erro.textContent = '';
+    if (dlgArquivar && typeof dlgArquivar.showModal === 'function') dlgArquivar.showModal();
+    else if (dlgArquivar) dlgArquivar.setAttribute('open', '');
   });
+});
+const btnArquivar = document.getElementById('btn-confirmar-arquivar');
+if (btnArquivar) btnArquivar.addEventListener('click', async () => {
+  if (!arquivarAlvo) return;
+  const styleId = arquivarAlvo.getAttribute('data-archive-style');
+  const erro = document.getElementById('arquivar-erro');
+  btnArquivar.disabled = true;
+  if (erro) erro.textContent = 'Arquivando...';
+  try {
+    const response = await fetch('/studio/styles/' + encodeURIComponent(styleId) + '/archive', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) {
+      if (erro) erro.textContent = 'Arquivado. Atualizando...';
+      setTimeout(() => window.location.reload(), 500);
+      return;
+    }
+    if (erro) erro.textContent = 'N\u00e3o foi poss\u00edvel arquivar: '
+      + (window.StudioErro.texto(data, 'tente novamente.'));
+  } catch (error) {
+    if (erro) erro.textContent = 'Falha de rede ao arquivar. Tente novamente.';
+  }
+  btnArquivar.disabled = false;
 });
 
 function abrirDialogo(id) {
@@ -354,6 +384,11 @@ def _value(params: dict, section: str, key: str) -> str:
     return ""
 
 
+def _modal_header(title: str, title_id: str) -> str:
+    return (f'<div class="modal-header"><h2 id="{title_id}">{e(title)}</h2>'
+            '<button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>')
+
+
 def _style_form(prefix: str, *, style=None) -> str:
     """Formulário de criar/editar com divulgação progressiva em dois níveis.
 
@@ -404,11 +439,11 @@ def _style_form(prefix: str, *, style=None) -> str:
         # `renderModal` → `m.t==='style'` do protótipo: Nome, Descrição curta, Instrução de arte.
         return f"""
       <form class="style-form" style="margin:0" data-style-form data-mode="create" data-style-id="" data-version="0" data-params="{{}}">
-        <h3>Criar novo estilo</h3>
-        <div class="field" style="margin-top:12px"><label for="{prefix}-nome">Nome</label>
+        {_modal_header("Criar novo estilo", prefix + "-titulo")}
+        <div class="field"><label for="{prefix}-nome">Nome</label>
           <input type="text" id="{prefix}-nome" name="name" maxlength="120" required data-name placeholder="Ex.: Noir Poético"></div>
         {desc_fields}
-        <div class="row" style="justify-content:flex-end">
+        <div class="form-actions" style="justify-content:flex-end">
           <button class="btn ghost small" type="button" data-fechar-dialogo>Cancelar</button>
           <button class="btn primary small" type="submit" data-submit>Salvar na biblioteca</button>
         </div>
@@ -418,7 +453,7 @@ def _style_form(prefix: str, *, style=None) -> str:
     return f"""
       <form class="style-form" data-style-form data-mode="{mode}" data-style-id="{e(style_id)}"
             data-version="{version}" data-params="{e(json.dumps(params, ensure_ascii=False))}">
-        <h3>Editar estilo</h3>
+        {_modal_header("Editar estilo", prefix + "-titulo")}
         <div class="grid-2">
           <div class="field">
             <label for="{prefix}-nome">Nome do estilo</label>
@@ -468,9 +503,9 @@ def _style_form(prefix: str, *, style=None) -> str:
             {unused_note}
           </div>
         </details>
-        <div class="spread" style="margin-top:1rem">
+        <div class="form-actions">
           <div class="pill-row">
-            <button class="btn btn-primary" type="submit" data-submit>{e(submit_label)}</button>
+            <button class="btn primary" type="submit" data-submit>{e(submit_label)}</button>
             {archive_button}
           </div>
           <div class="form-feedback" data-feedback role="status" aria-live="polite"></div>
@@ -514,9 +549,26 @@ def _style_card(item: StyleListItem, ativo: bool, tem_canal: bool) -> str:
         </div>"""
 
 
-def _dialog(dialog_id: str, form_html: str) -> str:
-    return (f'<dialog id="{e(dialog_id)}" class="modal" aria-label="Estilo">'
+def _dialog(dialog_id: str, form_html: str, *, wide: bool = False) -> str:
+    return (f'<dialog id="{e(dialog_id)}" class="modal{" estilo-dialog" if wide else ""}" aria-label="Estilo">'
             f'{form_html}</dialog>')
+
+
+def _archive_dialog() -> str:
+    """Confirmação de "Arquivar" no tema (a antiga `window.confirm` era um modal nativo do navegador)."""
+    return (
+        '<dialog id="dlg-arquivar-estilo" class="modal" aria-labelledby="t-arquivar-estilo">'
+        '<div class="modal-header"><h2 id="t-arquivar-estilo">Arquivar estilo</h2>'
+        '<button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>'
+        '<p style="margin:0 0 10px">Arquivar <b id="arquivar-nome">este estilo</b>? '
+        'Os canais que usavam voltam ao padrão do estúdio.</p>'
+        '<p class="hint">Nada é apagado: o nome fica livre para reúso e o estilo continua no histórico.</p>'
+        '<p id="arquivar-erro" class="form-feedback" role="alert" aria-live="assertive"></p>'
+        '<div class="form-actions" style="justify-content:flex-end">'
+        '<button class="btn ghost small" type="button" data-fechar-dialogo>Voltar</button>'
+        '<button class="btn primary" type="button" id="btn-confirmar-arquivar" autofocus>Arquivar estilo</button></div>'
+        '</dialog>'
+    )
 
 
 def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | None = None,
@@ -537,8 +589,8 @@ def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | Non
         cards = '<div class="grid3">' + "".join(
             _style_card(item, item.style.id == channel_style_id, tem_canal) for item in view.items) + "</div>"
     dialogs = _dialog("novo-estilo-dialog", _style_form("novo-estilo")) + "".join(
-        _dialog(f"editar-{item.style.id}", _style_form(f"editar-{item.style.id}", style=item.style))
-        for item in view.items)
+        _dialog(f"editar-{item.style.id}", _style_form(f"editar-{item.style.id}", style=item.style), wide=True)
+        for item in view.items) + _archive_dialog()
     voz = (f'Ainda não há catálogo de vozes na biblioteca. A voz do canal ativo é "{e(channel_voice)}" e é definida no perfil do canal.'
            if channel_voice else "Ainda não há catálogo de vozes na biblioteca. A voz é definida no perfil de cada canal.")
     abas = (("estilos", "Estilos visuais"), ("vozes", "Vozes"), ("musicas", "Músicas"), ("modelos", "Modelos de roteiro"))
