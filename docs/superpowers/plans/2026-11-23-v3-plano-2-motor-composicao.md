@@ -50,49 +50,11 @@
     - `"middle"`: centraliza o bloco verticalmente no quadro (`h // 2 + (len(lines) * line_h + 64) // 2`).
   - Sem `position`: preserva exatamente o `caption_bottom` e layout default.
 
-- [ ] **Step 1: Write failing test in `tests/test_caption_position_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-import pytest
-from app.studio.domain.contracts import VideoFormat
-from app.studio.domain.visual_style import normalize_style_patch, ResolvedStyle
-from app.studio.adapters.render_plan_ffmpeg import caption_layout
-
-def test_caption_position_validation_and_normalization():
-    patch = normalize_style_patch({"caption": {"position": "topo"}})
-    assert patch["caption"]["position"] == "top"
-    with pytest.raises(Exception):
-        normalize_style_patch({"caption": {"position": "diagonal"}})
-
-def test_caption_layout_calculates_top_and_middle():
-    style_top = ResolvedStyle(id="s1", name="Top", version=1, caption={"position": "top"})
-    style_mid = ResolvedStyle(id="s2", name="Mid", version=1, caption={"position": "middle"})
-    style_bot = ResolvedStyle(id="s3", name="Bot", version=1, caption={"position": "bottom"})
-    lay_top = caption_layout(VideoFormat.short, style_top)
-    lay_mid = caption_layout(VideoFormat.short, style_mid)
-    lay_bot = caption_layout(VideoFormat.short, style_bot)
-    assert lay_top["caption_bottom"] < lay_mid["caption_bottom"] < lay_bot["caption_bottom"]
-    assert lay_bot["caption_bottom"] == 1560
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_caption_position_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement caption position support in `visual_style.py` and `render_plan_ffmpeg.py`**
-
-Atualizar `_clean_caption` para aceitar `position` e normalizar aliases pt-BR. Atualizar `caption_layout` para calcular `caption_bottom` de acordo com a posição solicitada (`top`, `middle`, `bottom`).
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_caption_position_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_caption_position_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement caption position support in `visual_style.py` and `render_plan_ffmpeg.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/domain/visual_style.py renderer/app/studio/adapters/render_plan_ffmpeg.py tests/test_caption_position_v3.py
