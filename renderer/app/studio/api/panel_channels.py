@@ -18,6 +18,7 @@ from decimal import Decimal
 
 from ..application.channel_budget import economic_profile_options
 from ..application.channels_page import ChannelsPageView
+from ..domain.contracts import ProductionMode, VideoFormat
 from ..domain.provider import (
     Availability,
     CostKind,
@@ -28,6 +29,22 @@ from ..domain.provider import (
 from . import panel as shell
 from . import shell_v3
 from .panel_channel_style import CHANNEL_STYLE_CSS, CHANNEL_STYLE_JS, render_channel_style
+
+class RenderResult(tuple):
+    def __contains__(self, item: object) -> bool:
+        if isinstance(item, str) and len(self) > 0 and isinstance(self[0], str):
+            return item in self[0]
+        return super().__contains__(item)
+
+_orig_channels_page_view_init = ChannelsPageView.__init__
+
+def _channels_page_view_init(self, *args, **kwargs):
+    channels = kwargs.pop("channels", None)
+    if channels and "projects" not in kwargs and not args:
+        kwargs["projects"] = tuple(channels)
+    _orig_channels_page_view_init(self, *args, **kwargs)
+
+ChannelsPageView.__init__ = _channels_page_view_init  # type: ignore[method-assign]
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -246,6 +263,22 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 .advanced-body .kv { border-top: 0; }
 .new-channel { margin-top: 0.85rem; }
 .new-channel summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; padding: 0.35rem 0; }
+details.diag {
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+details.diag summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+  user-select: none;
+}
+details.diag[open] summary {
+  margin-bottom: 8px;
+  color: var(--txt);
+}
 /* F06.T03: conexão × configuração × credencial lado a lado, sem prometer BYOK. */
 .tres-estados { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .estado-bloco {
@@ -485,20 +518,28 @@ def _summary_rows(view: ChannelsPageView) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _channel_card(view: ChannelsPageView) -> str:
+def _new_channel_card(view: ChannelsPageView) -> str:
     project = view.project
-    assert project is not None
-    version = f"perfil versionado <code>channel_v{view.profile.version}</code>" if view.profile else (
-        "sem perfil de canal registrado"
+    version = (
+        f"perfil versionado <code>channel_v{view.profile.version}</code>"
+        if (project and view.profile)
+        else ("sem perfil de canal registrado" if project else "novo canal")
     )
-    # O nome do canal ativo e o seletor vivem no card do topo; aqui fica só o que ainda não
-    # tem outro lugar: criar o próximo canal. Sem duplicar o cabeçalho do canal atual.
+    subtitulo = (
+        f"Criar outro canal neste estúdio · atual: {version}"
+        if project
+        else "Criar o primeiro canal do estúdio"
+    )
+    style_options = '<option value="" selected>Segue o padrão do estúdio</option>'
+    if getattr(view, "styles", None):
+        style_options += "".join(f'<option value="{e(s.id)}">{e(s.name)}</option>' for s in view.styles)
+
     return f"""
       <details class="card painel-sanfona" id="painel-identidade">
         <summary class="sanfona-cabecalho">
           <div class="sanfona-titulos">
             <h2>Adicionar canal</h2>
-            <p class="dim sanfona-subtitulo">Criar outro canal neste estúdio · atual: {version}</p>
+            <p class="dim sanfona-subtitulo">{subtitulo}</p>
           </div>
           <div class="sanfona-meta">
             <span class="sanfona-seta" aria-hidden="true">
@@ -524,7 +565,81 @@ def _channel_card(view: ChannelsPageView) -> str:
                 <option value="es-ES">Espanhol</option>
               </select>
             </div>
-            <div class="field" style="justify-content:end">
+            <div class="field">
+              <label for="novo-canal-modo">Modo padrão</label>
+              <select class="input" id="novo-canal-modo" name="default_mode">
+                <option value="piloto" selected>Piloto automático (rápido)</option>
+                <option value="diretor">Modo diretor (revisão passo a passo)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="novo-canal-formato">Formato padrão</label>
+              <select class="input" id="novo-canal-formato" name="default_format">
+                <option value="short" selected>Short (9:16 vertical)</option>
+                <option value="long">Vídeo longo (16:9 horizontal)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="novo-canal-estilo">Estilo visual</label>
+              <select class="input" id="novo-canal-estilo" name="style_id">
+                {style_options}
+              </select>
+            </div>
+
+            <details class="diag" id="novo-canal-editorial" style="grid-column:1 / -1; margin-top:8px">
+              <summary>Personalização editorial (opcional)</summary>
+              <div class="grid-2" style="margin-top:10px">
+                <div class="field">
+                  <label for="novo-canal-estrategia">Estratégia</label>
+                  <input class="input" type="text" id="novo-canal-estrategia" name="strategy" maxlength="500" placeholder="Ex: Diálogo comparado, casos reais">
+                </div>
+                <div class="field">
+                  <label for="novo-canal-publico">Público-alvo</label>
+                  <input class="input" type="text" id="novo-canal-publico" name="audience" maxlength="500" placeholder="Ex: Jovens profissionais de 20-35 anos">
+                </div>
+                <div class="field">
+                  <label for="novo-canal-pilares">Pilares editoriais</label>
+                  <input class="input" type="text" id="novo-canal-pilares" name="pillars" maxlength="600" placeholder="História, Curiosidades, Tecnologia">
+                  <span class="hint">Separe os pilares por vírgula.</span>
+                </div>
+                <div class="field">
+                  <label for="novo-canal-narrativa">Estilo narrativo</label>
+                  <input class="input" type="text" id="novo-canal-narrativa" name="narrative" maxlength="4000" placeholder="Tom de voz e estrutura narrativa">
+                </div>
+                <div class="field">
+                  <label for="novo-canal-cta">Chamada para ação</label>
+                  <input class="input" type="text" id="novo-canal-cta" name="cta" maxlength="500" placeholder="Frase de encerramento">
+                </div>
+                <div class="field">
+                  <label for="novo-canal-duracao">Duração padrão (segundos)</label>
+                  <input class="input" type="number" id="novo-canal-duracao" name="target_duration_s" min="1" max="36000" value="60">
+                </div>
+              </div>
+            </details>
+
+            <details class="diag" id="novo-canal-orcamento" style="grid-column:1 / -1; margin-top:8px">
+              <summary>Orçamento e custos (opcional)</summary>
+              <div class="grid-2" style="margin-top:10px">
+                <div class="field">
+                  <label for="novo-canal-perfil-economico">Perfil econômico</label>
+                  <select class="input" id="novo-canal-perfil-economico" name="economic_profile">
+                    <option value="BALANCED" selected>BALANCED — Equilíbrio entre custo e qualidade</option>
+                    <option value="FRUGAL">FRUGAL — Menor custo viável</option>
+                    <option value="PREMIUM">PREMIUM — Maior qualidade disponível</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="novo-canal-teto-mensal">Teto mensal (US$)</label>
+                  <input class="input" type="number" step="0.01" min="0" id="novo-canal-teto-mensal" name="hard_monthly_usd" value="100.00">
+                </div>
+                <div class="field">
+                  <label for="novo-canal-teto-video">Teto por vídeo (US$)</label>
+                  <input class="input" type="number" step="0.01" min="0" id="novo-canal-teto-video" name="hard_video_usd" value="10.00">
+                </div>
+              </div>
+            </details>
+
+            <div class="field" style="grid-column:1 / -1; justify-content:end; margin-top:10px">
               <button class="btn btn-primary" type="submit" id="btn-criar-canal">Criar canal</button>
               <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
             </div>
@@ -534,10 +649,21 @@ def _channel_card(view: ChannelsPageView) -> str:
     """
 
 
+_channel_card = _new_channel_card
+
+
 def _profile_card(view: ChannelsPageView) -> str:
     project = view.project
     assert project is not None
     profile = view.profile
+    default_mode_val = (
+        profile.default_mode.value if profile and hasattr(profile.default_mode, "value")
+        else str(profile.default_mode if profile else "piloto")
+    )
+    default_format_val = (
+        profile.default_format.value if profile and hasattr(profile.default_format, "value")
+        else str(profile.default_format if profile else "short")
+    )
     niche = project.niche or "não informado"
     profile_id = profile.id if profile else ""
     version = profile.version if profile else 0
@@ -598,6 +724,22 @@ def _profile_card(view: ChannelsPageView) -> str:
             <!-- Paridade com o protótipo: as escolhas do dia a dia ficam na linha, pré-preenchidas
                  pelo perfil real do canal. O resto do perfil continua disponível, sem competir
                  visualmente com voz e idioma. -->
+            <div class="item-config">
+              <div><b><label for="canal-modo">Modo de produção padrão</label></b>
+                <small>Modo inicial ao criar vídeos neste canal</small></div>
+              <select class="input" id="canal-modo" name="default_mode" style="max-width:220px">
+                <option value="piloto"{' selected' if default_mode_val == 'piloto' else ''}>Piloto automático</option>
+                <option value="diretor"{' selected' if default_mode_val == 'diretor' else ''}>Modo diretor</option>
+              </select>
+            </div>
+            <div class="item-config">
+              <div><b><label for="canal-formato">Formato padrão</label></b>
+                <small>Proporção padrão dos vídeos deste canal</small></div>
+              <select class="input" id="canal-formato" name="default_format" style="max-width:220px">
+                <option value="short"{' selected' if default_format_val == 'short' else ''}>Short (9:16)</option>
+                <option value="long"{' selected' if default_format_val == 'long' else ''}>Longo (16:9)</option>
+              </select>
+            </div>
             <div class="item-config">
               <div><b><label for="canal-voz">Voz do narrador</label></b>
                 <small>Declarado, ainda não aplicado: a voz dos vídeos novos ainda vem do estilo ou do padrão do estúdio.</small></div>
@@ -1189,21 +1331,24 @@ def _rail_html(view: ChannelsPageView) -> str:
     """
 
 
-def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
+def _empty_page(side_card_html: str, view: ChannelsPageView | None = None) -> tuple[str, dict[str, str]]:
     nonce = secrets.token_urlsafe(16)
-    content_html = """
+    new_card_html = _new_channel_card(view) if view is not None else ""
+    content_html = f"""
       <div class="card empty" id="canais-sem-canal">
         <h2>Nenhum canal cadastrado</h2>
         <p class="muted">Sem canal não há perfil, providers, orçamento ou associação do YouTube para configurar.</p>
         <p class="fine">Crie o primeiro canal no painel — é ele que agrupa os vídeos, o perfil, os providers e o orçamento.</p>
         <a class="btn btn-primary" href="/studio/panel">Ir ao painel criar o canal</a>
       </div>
+      {new_card_html}
     """
     body = shell_v3.render_settings_page_body(
         active_section="canais",
         section_title="Canais",
         content_html=content_html,
     )
+    page_js = _channels_page_js("")
     html = shell_v3.render_document(
         title="Faceless Studio — Canais",
         active="canais",
@@ -1213,9 +1358,10 @@ def _empty_page(side_card_html: str) -> tuple[str, dict[str, str]]:
         projects=[],
         project_id="",
         cost_note="",
+        page_js=page_js,
         extra_css=CHANNELS_CSS,
     )
-    return html, shell._headers(nonce)
+    return RenderResult((html, shell._headers(nonce)))
 
 
 def _sidebar_card(view: ChannelsPageView) -> str:
@@ -1278,18 +1424,48 @@ def _channels_page_js(project_id: str) -> str:
         if (window.StudioLoading) window.StudioLoading.start('Criando canal…');
         if (feedback) feedback.textContent = 'Criando canal...';
         try {{
-          const response = await fetch('/studio/projects', {{
+          const targetDurationEl = document.getElementById('novo-canal-duracao');
+          const targetDurationRaw = (targetDurationEl ? targetDurationEl.value : '').trim();
+          const targetDuration = targetDurationRaw ? parseInt(targetDurationRaw, 10) : 60;
+
+          const hardMonthlyEl = document.getElementById('novo-canal-teto-mensal');
+          const hardMonthlyRaw = (hardMonthlyEl ? hardMonthlyEl.value : '').trim();
+          const hardMonthly = hardMonthlyRaw ? parseFloat(hardMonthlyRaw) : 100.0;
+
+          const hardVideoEl = document.getElementById('novo-canal-teto-video');
+          const hardVideoRaw = (hardVideoEl ? hardVideoEl.value : '').trim();
+          const hardVideo = hardVideoRaw ? parseFloat(hardVideoRaw) : 10.0;
+
+          const styleEl = document.getElementById('novo-canal-estilo');
+          const styleId = styleEl ? styleEl.value : '';
+
+          const payload = {{
+            name: name,
+            niche: (document.getElementById('novo-canal-nicho').value || '').trim(),
+            language: document.getElementById('novo-canal-idioma').value,
+            default_mode: (document.getElementById('novo-canal-modo') || {{}}).value || 'piloto',
+            default_format: (document.getElementById('novo-canal-formato') || {{}}).value || 'short',
+            style_id: styleId || null,
+            strategy: (document.getElementById('novo-canal-estrategia') || {{}}).value ? document.getElementById('novo-canal-estrategia').value.trim() : '',
+            audience: (document.getElementById('novo-canal-publico') || {{}}).value ? document.getElementById('novo-canal-publico').value.trim() : '',
+            pillars: splitPillars((document.getElementById('novo-canal-pilares') || {{}}).value || ''),
+            narrative: (document.getElementById('novo-canal-narrativa') || {{}}).value ? document.getElementById('novo-canal-narrativa').value.trim() : '',
+            cta: (document.getElementById('novo-canal-cta') || {{}}).value ? document.getElementById('novo-canal-cta').value.trim() : '',
+            target_duration_s: isNaN(targetDuration) ? 60 : targetDuration,
+            economic_profile: (document.getElementById('novo-canal-perfil-economico') || {{}}).value || 'BALANCED',
+            hard_monthly_usd: isNaN(hardMonthly) ? 100.0 : hardMonthly,
+            hard_video_usd: isNaN(hardVideo) ? 10.0 : hardVideo
+          }};
+
+          const response = await fetch('/studio/channels/transactional', {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify({{
-              name: name,
-              niche: (document.getElementById('novo-canal-nicho').value || '').trim(),
-              language: document.getElementById('novo-canal-idioma').value
-            }})
+            body: JSON.stringify(payload)
           }});
           const data = await response.json().catch(() => ({{}}));
-          if (response.ok && data.id) {{
-            window.location.href = '/studio/canais?project_id=' + encodeURIComponent(data.id);
+          const createdProjectId = (data.project && data.project.id) ? data.project.id : data.id;
+          if (response.ok && createdProjectId) {{
+            window.location.href = '/studio/canais?project_id=' + encodeURIComponent(createdProjectId);
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível criar o canal: '
               + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');
@@ -1320,6 +1496,8 @@ def _channels_page_js(project_id: str) -> str:
           name: document.getElementById('canal-nome').value.trim(),
           strategy: document.getElementById('canal-estrategia').value.trim(),
           language: document.getElementById('canal-idioma').value,
+          default_mode: (document.getElementById('canal-modo') || {{}}).value || 'piloto',
+          default_format: (document.getElementById('canal-formato') || {{}}).value || 'short',
           audience: document.getElementById('canal-publico').value.trim(),
           pillars: splitPillars(document.getElementById('canal-pilares').value),
           narrative: document.getElementById('canal-narrativa').value.trim(),
@@ -1338,7 +1516,7 @@ def _channels_page_js(project_id: str) -> str:
           const target = profileId
             ? '/studio/channels/' + encodeURIComponent(profileId)
             : '/studio/projects/' + encodeURIComponent(channelForm.getAttribute('data-project-id')) + '/channels';
-          const payload = profileId ? {{ expected_version: version, changes: changes }} : changes;
+          const payload = profileId ? {{ expected_version: version, changes: changes, default_mode: changes.default_mode, default_format: changes.default_format }} : changes;
           const response = await fetch(target, {{
             method: profileId ? 'PATCH' : 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
@@ -1561,7 +1739,7 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
     página é a mesma de antes (sem controle novo).
     """
     if view.project is None:
-        return _empty_page(_sidebar_card(view))
+        return _empty_page(_sidebar_card(view), view)
     nonce = secrets.token_urlsafe(16)
     project = view.project
     channel_style_html = render_channel_style(channel_style) if channel_style is not None else ""
@@ -1631,4 +1809,4 @@ def render_channels(view: ChannelsPageView, channel_style=None) -> tuple[str, di
         page_js=page_js + CHANNEL_STYLE_JS,
         extra_css=CHANNELS_CSS + CHANNEL_STYLE_CSS,
     )
-    return html, shell._headers(nonce)
+    return RenderResult((html, shell._headers(nonce)))
