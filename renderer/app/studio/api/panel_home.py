@@ -224,8 +224,27 @@ HOME_JS = """
       return d;
     }).then(function (d) {
       if (!d || !d.id) return;
-      if (fb) fb.textContent = 'Vídeo criado. Redirecionando…';
-      location.href = '/studio/panel/videos/' + encodeURIComponent(d.id) + '/cenas';
+      var destino = '/studio/panel/videos/' + encodeURIComponent(d.id) + '/cenas';
+      if (prodMode === 'diretor') {
+        // Modo Diretor: "Abrir storyboard". O rascunho existe e nada é produzido até o usuário mandar.
+        if (fb) fb.textContent = 'Storyboard criado. Abrindo…';
+        location.href = destino;
+        return;
+      }
+      // Piloto: "Gerar vídeo completo" cria E produz (roteiro, voz, mídia, composição) até a aprovação.
+      // O vídeo já existe: falha ao iniciar vira aviso na tela do vídeo, nunca silêncio nem vídeo duplicado.
+      if (fb) fb.textContent = 'Vídeo criado. Iniciando a produção…';
+      var chave = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+      function avisar(texto) { try { sessionStorage.setItem('flash-' + d.id, texto); } catch (e) {} }
+      return fetch('/studio/videos/' + encodeURIComponent(d.id) + '/production-runs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': chave }, body: '{}'
+      }).then(function (run) {
+        return run.json().catch(function () { return {}; }).then(function (data) {
+          if (!run.ok) avisar('A produção não pôde iniciar: ' + window.StudioErro.texto(data, 'tente novamente.', run.status));
+        });
+      }).catch(function () {
+        avisar('A produção não pôde iniciar: falha de rede. Use "Gerar tudo o que falta" para tentar de novo.');
+      }).then(function () { location.href = destino; });
     }).catch(function (err) {
       if (fb) {
         fb.setAttribute('data-tipo', 'erro');
@@ -242,8 +261,14 @@ HOME_JS = """
   var modePiloto = document.getElementById('btn-mode-piloto');
   var modeDiretor = document.getElementById('btn-mode-diretor');
   var prodModeInput = document.getElementById('production-mode');
+  var createBtn = document.getElementById('btn-create-video');
+  // O rótulo acompanha o modo escolhido (protótipo: piloto "Gerar vídeo completo", Diretor "Abrir storyboard").
+  function labelFor(mode) {
+    if (createBtn) createBtn.textContent = mode === 'diretor' ? '🎬 Abrir storyboard' : '⚡ Gerar vídeo completo';
+  }
   if (modePiloto && modeDiretor && prodModeInput) {
     modePiloto.addEventListener('click', function () {
+      labelFor('piloto');
       modePiloto.classList.add('on');
       modePiloto.setAttribute('aria-pressed', 'true');
       modeDiretor.classList.remove('on');
@@ -251,6 +276,7 @@ HOME_JS = """
       prodModeInput.value = 'piloto';
     });
     modeDiretor.addEventListener('click', function () {
+      labelFor('diretor');
       modeDiretor.classList.add('on');
       modeDiretor.setAttribute('aria-pressed', 'true');
       modePiloto.classList.remove('on');

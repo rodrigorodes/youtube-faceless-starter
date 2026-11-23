@@ -162,3 +162,11 @@ def test_home_v3_quick_creation_action_button_director_mode():
     assert "Padrões de Canal Geek · 45s · Tech Clean" in html
 
 
+
+
+def test_home_shortcut_starts_the_production_for_piloto_only_and_the_label_follows_the_mode():
+    """Bug: o Início só criava o rascunho; "Gerar vídeo completo" nunca iniciava a produção do piloto."""
+    from app.studio.api.panel_home import HOME_JS
+    assert "/production-runs" in HOME_JS and "Idempotency-Key" in HOME_JS
+    assert HOME_JS.index("if (prodMode === 'diretor')") < HOME_JS.index("/production-runs")  # Diretor sai antes de produzir
+    assert "labelFor('diretor')" in HOME_JS and "Abrir storyboard" in HOME_JS
