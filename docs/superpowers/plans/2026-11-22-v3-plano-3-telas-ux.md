@@ -47,33 +47,11 @@
   - Botão de ação: "⚡ Gerar vídeo completo" (no piloto) ou "🎬 Abrir storyboard" (no diretor)
   - JavaScript inline enviando POST para `/studio/videos` e, se roteiro, para `/studio/videos/{id}/sources`
 
-- [ ] **Step 1: Write failing test in `tests/test_home_v3.py`**
-
-```python
-def test_home_v3_quick_creation_has_idea_and_script_toggle():
-    html = _home()
-    assert 'name="tipo-entrada"' in html or 'data-kind="input-toggle"' in html
-    assert "Tenho uma ideia" in html
-    assert "Já tenho roteiro" in html
-    assert 'id="home-topico"' in html or 'id="homeTopic"' in html
-    assert "Padrões do canal" in html or "padrão do canal" in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py -k test_home_v3_quick_creation_has_idea_and_script_toggle -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement quick creation card in `renderer/app/studio/api/panel_home.py`**
-
-Atualizar o formulário da Home com seletor de pills (Ideia / Roteiro), textarea com placeholder ajustável, indicação dos padrões do canal e script inline para criar o rascunho e associar o roteiro como fonte quando fornecido.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_home_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement quick creation card in `renderer/app/studio/api/panel_home.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_home.py tests/test_home_v3.py
