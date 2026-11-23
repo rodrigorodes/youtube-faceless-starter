@@ -106,35 +106,11 @@ git commit -m "feat(studio): suportar familia de fontes e estilo de legenda caix
   - `LOADED_ONLY_GROUPS`: atualizado como complemento exato.
   - `build_render_plan`: quando `style.transition` estiver ativo (`kind == "fade"` e `duration_ticks > 0`), aplica `Transition(kind="fade", duration_ticks=duration_ticks)` em todos os shots visuais base, exceto quando a duração do fade exceder a do shot.
 
-- [ ] **Step 1: Write failing test in `tests/test_transition_applied_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.domain.visual_style import APPLIED_GROUPS, LOADED_ONLY_GROUPS
-from app.studio.domain.render_plan import Transition
-
-def test_transition_is_promoted_to_applied_groups():
-    assert "transition" in APPLIED_GROUPS
-    assert "transition" not in LOADED_ONLY_GROUPS
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_transition_applied_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update `visual_style.py` and `render_plan_builder.py`**
-
-Promover `"transition"` para `APPLIED_GROUPS`. No `build_render_plan`, se `style.transition` tiver `kind == "fade"`, instanciar `Transition` no shot correspondente.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_transition_applied_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_transition_applied_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update `visual_style.py` and `render_plan_builder.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/domain/visual_style.py renderer/app/studio/domain/render_plan_builder.py tests/test_transition_applied_v3.py
