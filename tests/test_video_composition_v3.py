@@ -48,6 +48,65 @@ def _sample_style_view(style: VisualStyle | None = None) -> VideoStyleView:
     )
 
 
+def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
+    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
+    html = str(render_video_workspace(video, active_area="composicao", script=None, scenes=[], sources=[]))
+
+    # Controles ativos habilitados
+    assert 'name="comp-posicao" value="top"' in html
+    assert 'name="comp-posicao" value="middle"' in html
+    assert 'name="comp-posicao" value="bottom"' in html
+    assert 'id="composicao-caption-font"' in html
+    assert 'name="comp-fonte"' in html
+    assert 'name="comp-estilo" value="box"' in html
+    assert 'name="comp-estilo" value="simple"' in html
+    assert 'name="comp-transicao" value="fade"' in html
+    assert 'name="comp-transicao" value="none"' in html
+
+    # Nenhum dos acima deve conter disabled em sua tag de input / select
+    for enabled_input in [
+        'name="comp-posicao" value="top"',
+        'name="comp-posicao" value="middle"',
+        'name="comp-posicao" value="bottom"',
+        'name="comp-estilo" value="box"',
+        'name="comp-estilo" value="simple"',
+        'name="comp-transicao" value="fade"',
+        'name="comp-transicao" value="none"',
+    ]:
+        match = re.search(r'<input[^>]*' + re.escape(enabled_input) + r'[^>]*>', html)
+        assert match is not None, f"Input tag for {enabled_input} not found"
+        assert "disabled" not in match.group(0), f"Input {enabled_input} should not be disabled"
+
+    select_match = re.search(r'<select[^>]*id="composicao-caption-font"[^>]*>', html)
+    assert select_match is not None, "Select composicao-caption-font not found"
+    assert "disabled" not in select_match.group(0), "Select composicao-caption-font should not be disabled"
+
+    for font_opt in ("dejavu", "roboto", "georgia", "inter"):
+        assert f'value="{font_opt}"' in html
+
+    # Controles ainda sem suporte permanecem disabled com badge
+    deslizar_match = re.search(r'<input[^>]*value="deslizar"[^>]*>', html)
+    assert deslizar_match is not None
+    assert "disabled" in deslizar_match.group(0)
+
+    for fps_val in ("24", "30", "60"):
+        fps_match = re.search(r'<input[^>]*value="' + fps_val + r'"[^>]*>', html)
+        assert fps_match is not None
+        assert "disabled" in fps_match.group(0)
+
+    assert '<span class="pill pill-espera">Em breve</span>' in html
+
+    # Em PAGE_JS, #form-composicao empacota os novos campos para PATCH /style-patch
+    assert "comp-posicao" in html
+    assert "composicao-caption-font" in html
+    assert "comp-estilo" in html
+    assert "comp-transicao" in html
+    assert "position" in html
+    assert "font_family" in html
+    assert "style_kind" in html
+    assert "transition" in html
+
+
 def test_v3_composition_tab_renders_active_controls():
     video = Video(id="1" * 32, project_id="2" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
     style = _sample_style()
@@ -92,48 +151,27 @@ def test_v3_composition_tab_labels_unsupported_controls_honestly():
     res = render_video_workspace(video, active_area="composicao", style_view=style_view, script=None, scenes=[], sources=[])
     html = str(res)
 
-    # 1. Posição da legenda: Topo / Meio / Base rotulado "Em breve no Plano 2", disabled
-    assert "Posição da legenda" in html
-    pos_match = re.search(r'Posição da legenda.*?(?:Topo.*?Meio.*?Base|Base.*?Meio.*?Topo)', html, re.S | re.I)
-    assert pos_match is not None, "bloco de posição da legenda não encontrado"
-    pos_block = pos_match.group(0)
-    assert "Em breve no Plano 2" in pos_block
-    assert "disabled" in pos_block
+    # Controles ainda sem suporte permanecem desabilitados e rotulados como 'Em breve'
+    # 1. Transição 'deslizar'
+    assert 'value="deslizar"' in html
+    deslizar_match = re.search(r'<input[^>]*value="deslizar"[^>]*>', html)
+    assert deslizar_match is not None
+    assert "disabled" in deslizar_match.group(0)
 
-    # 2. Fonte da legenda: Inter / Roboto / Georgia rotulado "Em breve no Plano 2", disabled
-    assert "Fonte da legenda" in html
-    fonte_match = re.search(r'Fonte da legenda.*?(?:Inter.*?Roboto.*?Georgia)', html, re.S | re.I)
-    assert fonte_match is not None, "bloco de fonte da legenda não encontrado"
-    fonte_block = fonte_match.group(0)
-    assert "Em breve no Plano 2" in fonte_block
-    assert "disabled" in fonte_block
+    # 2. Destaque por palavra
+    destaque_match = re.search(r'<input[^>]*value="destaque"[^>]*>', html)
+    if destaque_match is not None:
+        assert "disabled" in destaque_match.group(0)
 
-    # 3. Estilo da legenda: Destaque por palavra / Caixa / Simples rotulado "Em breve no Plano 2", disabled
-    assert "Estilo da legenda" in html
-    estilo_match = re.search(r'Estilo da legenda.*?(?:Destaque por palavra.*?Caixa.*?Simples)', html, re.S | re.I)
-    assert estilo_match is not None, "bloco de estilo da legenda não encontrado"
-    estilo_block = estilo_match.group(0)
-    assert "Em breve no Plano 2" in estilo_block
-    assert "disabled" in estilo_block
-
-    # 4. Transição entre cenas: Fade / Corte seco / Deslizar rotulado "Em breve no Plano 2", disabled
-    assert "Transição entre cenas" in html
-    trans_match = re.search(r'Transição entre cenas.*?(?:Fade.*?Corte seco.*?Deslizar)', html, re.S | re.I)
-    assert trans_match is not None, "bloco de transição entre cenas não encontrado"
-    trans_block = trans_match.group(0)
-    assert "Em breve no Plano 2" in trans_block
-    assert "disabled" in trans_block
-
-    # 5. Taxa de quadros / FPS: 25 fps vigente, 24/30/60 marcadas como "Em breve no Plano 2"
+    # 3. Taxa de quadros / FPS: 25 fps vigente, 24/30/60 marcadas como 'Em breve', disabled
     assert "Taxa de quadros" in html or "FPS" in html
-    fps_match = re.search(r'(?:Taxa de quadros|FPS).*?60 fps', html, re.S | re.I)
-    assert fps_match is not None, "bloco de FPS não encontrado"
-    fps_block = fps_match.group(0)
-    assert "25 fps" in fps_block
-    assert "Em breve no Plano 2" in fps_block
+    for fps in ("24", "30", "60"):
+        fps_match = re.search(r'<input[^>]*value="' + fps + r'"[^>]*>', html)
+        assert fps_match is not None
+        assert "disabled" in fps_match.group(0)
 
-    # Badges visuais padrão pill
-    assert '<span class="pill pill-espera">Em breve no Plano 2</span>' in html
+    # Badge visual padrão pill
+    assert '<span class="pill pill-espera">Em breve</span>' in html
 
 
 def test_v3_composition_tab_submits_supported_changes_to_style_patch():
@@ -148,12 +186,16 @@ def test_v3_composition_tab_submits_supported_changes_to_style_patch():
     assert 'id="comp-patch-revision"' in html
     assert 'id="btn-salvar-composicao"' in html
 
-    # Client JS manipula PATCH para /style-patch com os campos suportados (caption, palette, motion, music)
+    # Client JS manipula PATCH para /style-patch com os campos suportados
     assert "form-composicao" in html
     assert "PATCH" in html
     assert "style-patch" in html
     assert "expected_revision" in html
     assert "caption" in html
+    assert "position" in html
+    assert "font_family" in html
+    assert "style_kind" in html
+    assert "transition" in html
     assert "palette" in html
     assert "motion" in html
     assert "music" in html

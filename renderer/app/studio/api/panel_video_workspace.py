@@ -675,6 +675,12 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
     style_patch_revision = getattr(raw_video, "style_patch_revision", 0) or 0
     font_size_val = caption.get("font_size", 42)
     bottom_val = caption.get("bottom", 96)
+    raw_pos = caption.get("position", "bottom")
+    caption_pos = "top" if raw_pos in ("top", "topo") else ("middle" if raw_pos in ("middle", "meio") else "bottom")
+    caption_font = caption.get("font_family", "dejavu")
+    raw_style = caption.get("style_kind", "box")
+    caption_style = "simple" if raw_style in ("simple", "simples") else "box"
+    trans_kind = transition.get("kind", "fade")
     color_text_val = palette.get("caption_text", "#ffffff")
     color_box_val = palette.get("caption_box", "#00000099")
     color_accent_val = palette.get("accent", "#a78bfa")
@@ -697,6 +703,33 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '    <div class="campo">'
         '      <label for="composicao-bottom">Distância da base (bottom, px)</label>'
         f'      <input type="number" id="composicao-bottom" name="caption.bottom" class="input campo" value="{e(str(bottom_val))}" min="0" max="400">'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label>Posição da legenda</label>'
+        '      <div style="display:flex;gap:1.5rem;margin-top:0.35rem">'
+        f'        <label><input type="radio" name="comp-posicao" value="top"{" checked" if caption_pos == "top" else ""}> Topo</label>'
+        f'        <label><input type="radio" name="comp-posicao" value="middle"{" checked" if caption_pos == "middle" else ""}> Meio</label>'
+        f'        <label><input type="radio" name="comp-posicao" value="bottom"{" checked" if caption_pos == "bottom" else ""}> Base</label>'
+        '      </div>'
+        '    </div>'
+        '    <div class="grid-2" style="margin-top:1rem">'
+        '      <div class="campo">'
+        '        <label for="composicao-caption-font">Fonte da legenda</label>'
+        '        <select id="composicao-caption-font" name="comp-fonte" class="input campo">'
+        f'          <option value="dejavu"{" selected" if caption_font == "dejavu" else ""}>DejaVu (padrão)</option>'
+        f'          <option value="roboto"{" selected" if caption_font == "roboto" else ""}>Roboto</option>'
+        f'          <option value="georgia"{" selected" if caption_font == "georgia" else ""}>Georgia</option>'
+        f'          <option value="inter"{" selected" if caption_font == "inter" else ""}>Inter</option>'
+        '        </select>'
+        '      </div>'
+        '      <div class="campo">'
+        '        <label>Estilo da legenda</label>'
+        '        <div style="display:flex;gap:0.75rem;margin-top:0.35rem;flex-wrap:wrap">'
+        f'          <label><input type="radio" name="comp-estilo" value="box"{" checked" if caption_style == "box" else ""}> Caixa</label>'
+        f'          <label><input type="radio" name="comp-estilo" value="simple"{" checked" if caption_style == "simple" else ""}> Simples</label>'
+        '          <label><input type="radio" name="comp-estilo" value="destaque" disabled> Destaque por palavra <span class="pill pill-espera">Em breve</span></label>'
+        '        </div>'
+        '      </div>'
         '    </div>'
         '  </div>'
         '  <div>'
@@ -734,51 +767,22 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '    </div>'
         '  </div>'
         '</div>'
-        '<div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--line, #e3e0ea)">'
-        '  <h3>Evolução de Composição</h3>'
+        '<div class="grid-2" style="margin-top:1rem">'
         '  <div class="campo">'
-        '    <label>Posição da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '    <div style="display:flex;gap:1.5rem;margin-top:0.35rem">'
-        '      <label><input type="radio" name="caption_pos" value="topo" disabled> Topo</label>'
-        '      <label><input type="radio" name="caption_pos" value="meio" disabled> Meio</label>'
-        '      <label><input type="radio" name="caption_pos" value="base" checked disabled> Base (vigente)</label>'
+        '    <label>Transição entre cenas</label>'
+        '    <div style="display:flex;gap:1rem;margin-top:0.35rem">'
+        f'      <label><input type="radio" name="comp-transicao" value="fade"{" checked" if trans_kind == "fade" else ""}> Fade (suave)</label>'
+        f'      <label><input type="radio" name="comp-transicao" value="none"{" checked" if trans_kind == "none" else ""}> Corte seco</label>'
+        '      <label><input type="radio" name="comp-transicao" value="deslizar" disabled> Deslizar <span class="pill pill-espera">Em breve</span></label>'
         '    </div>'
         '  </div>'
-        '  <div class="grid-2" style="margin-top:1rem">'
-        '    <div class="campo">'
-        '      <label for="composicao-fonte-fam">Fonte da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '      <select id="composicao-fonte-fam" class="input campo" disabled>'
-        '        <option value="inter" selected disabled>Inter</option>'
-        '        <option value="roboto" disabled>Roboto</option>'
-        '        <option value="georgia" disabled>Georgia</option>'
-        '      </select>'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label>Estilo da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '      <div style="display:flex;gap:1rem;margin-top:0.35rem;flex-wrap:wrap">'
-        '        <label><input type="radio" name="caption_style" value="destaque" disabled> Destaque por palavra</label>'
-        '        <label><input type="radio" name="caption_style" value="caixa" checked disabled> Caixa (vigente)</label>'
-        '        <label><input type="radio" name="caption_style" value="simples" disabled> Simples</label>'
-        '      </div>'
-        '    </div>'
-        '  </div>'
-        '  <div class="grid-2" style="margin-top:1rem">'
-        '    <div class="campo">'
-        '      <label>Transição entre cenas <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '      <div style="display:flex;gap:1rem;margin-top:0.35rem">'
-        '        <label><input type="radio" name="transicao_tipo" value="fade" checked disabled> Fade</label>'
-        '        <label><input type="radio" name="transicao_tipo" value="corte" disabled> Corte seco</label>'
-        '        <label><input type="radio" name="transicao_tipo" value="deslizar" disabled> Deslizar</label>'
-        '      </div>'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label>Taxa de quadros / FPS</label>'
-        '      <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.35rem;flex-wrap:wrap">'
-        '        <span class="pill pill-ok">25 fps (vigente)</span>'
-        '        <label><input type="radio" name="fps_opt" value="24" disabled> 24 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '        <label><input type="radio" name="fps_opt" value="30" disabled> 30 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '        <label><input type="radio" name="fps_opt" value="60" disabled> 60 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
-        '      </div>'
+        '  <div class="campo">'
+        '    <label>Taxa de quadros / FPS</label>'
+        '    <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.35rem;flex-wrap:wrap">'
+        '      <span class="pill pill-ok">25 fps (vigente)</span>'
+        '      <label><input type="radio" name="fps_opt" value="24" disabled> 24 fps <span class="pill pill-espera">Em breve</span></label>'
+        '      <label><input type="radio" name="fps_opt" value="30" disabled> 30 fps <span class="pill pill-espera">Em breve</span></label>'
+        '      <label><input type="radio" name="fps_opt" value="60" disabled> 60 fps <span class="pill pill-espera">Em breve</span></label>'
         '    </div>'
         '  </div>'
         '</div>'
@@ -1861,10 +1865,28 @@ PAGE_JS = """
       var revInput = document.getElementById('comp-patch-revision');
       var expectedRev = revInput ? Number(revInput.value) || 0 : 0;
 
+      var posRadio = compForm.querySelector('input[name="comp-posicao"]:checked');
+      var fontSelect = document.getElementById('composicao-caption-font');
+      var estiloRadio = compForm.querySelector('input[name="comp-estilo"]:checked');
+      var transRadio = compForm.querySelector('input[name="comp-transicao"]:checked');
+
+      var captionPos = posRadio ? posRadio.value : 'bottom';
+      var captionFont = fontSelect ? fontSelect.value : 'dejavu';
+      var captionEstilo = estiloRadio ? estiloRadio.value : 'box';
+      var transKind = transRadio ? transRadio.value : 'fade';
+      var transTicks = transKind === 'fade' ? 25 : 0;
+
       var patch = {
         caption: {
           font_size: fontSizeInput ? Number(fontSizeInput.value) || 42 : 42,
-          bottom: bottomInput ? Number(bottomInput.value) || 96 : 96
+          bottom: bottomInput ? Number(bottomInput.value) || 96 : 96,
+          position: captionPos,
+          font_family: captionFont,
+          style_kind: captionEstilo
+        },
+        transition: {
+          kind: transKind,
+          duration_ticks: transTicks
         },
         palette: {
           caption_text: colorTextInput ? colorTextInput.value.trim() : '#ffffff',
