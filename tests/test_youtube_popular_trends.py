@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
-from app.studio.adapters.youtube_trends import fetch_popular_trends
+from app.studio.adapters.youtube_trends import fetch_popular_trends, parse_iso8601_duration
 from app.studio.application.categories import YouTubeApiError
 from app.studio.domain.trends import TrendItem, validate_trends
 
@@ -197,3 +197,81 @@ def test_search_asks_for_brazilian_portuguese_and_keeps_every_video_ordered_by_v
     first = _urls(mock_urlopen)[0]
     assert "regionCode=BR" in first and "relevanceLanguage=pt" in first and f"maxResults={SEARCH_RESULTS_PER_TERM}" in first
     assert len(items) == 1 and [e.views for e in items[0].evidence] == [300, 200, 100]
+
+
+def test_parse_iso8601_duration_standard():
+    text, sec = parse_iso8601_duration("PT11M40S")
+    assert text == "11:40"
+    assert sec == 700
+
+
+def test_parse_iso8601_duration_with_hours():
+    text, sec = parse_iso8601_duration("PT1H2M10S")
+    assert text == "01:02:10"
+    assert sec == 3730
+
+
+def test_parse_iso8601_duration_seconds_only():
+    text, sec = parse_iso8601_duration("PT45S")
+    assert text == "00:45"
+    assert sec == 45
+
+
+def test_parse_iso8601_duration_invalid_or_none():
+    assert parse_iso8601_duration(None) == ("", 0)
+    assert parse_iso8601_duration("") == ("", 0)
+    assert parse_iso8601_duration("INVALID") == ("", 0)
+    assert parse_iso8601_duration("PT0S") == ("", 0)
+    assert parse_iso8601_duration("P1DT2H") == ("", 0)
+
+
+def test_fetch_popular_trends_includes_content_details_and_duration(monkeypatch):
+    payload = {
+        "items": [
+            {
+                "id": "vid_dur",
+                "snippet": {"title": "Vídeo com Duração", "channelTitle": "Canal"},
+                "statistics": {"viewCount": "50000"},
+                "contentDetails": {"duration": "PT11M40S"},
+            }
+        ]
+    }
+    mock_urlopen = MagicMock(return_value=_mock_response(payload))
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    items = fetch_popular_trends("fake-key", "BR")
+    assert len(items) == 1
+    ev = items[0].evidence[0]
+    assert ev.duration == "11:40"
+    assert ev.duration_s == 700
+
+    url = _urls(mock_urlopen)[0]
+    assert "contentDetails" in url
+
+
+def test_fetch_search_trends_includes_content_details_and_duration(monkeypatch):
+    from app.studio.adapters.youtube_trends import fetch_search_trends
+
+    search = {"items": [{"id": {"videoId": "v1"}}]}
+    details = {
+        "items": [
+            {
+                "id": "v1",
+                "snippet": {"title": "Vídeo Busca", "channelTitle": "Canal Busca"},
+                "statistics": {"viewCount": "12000"},
+                "contentDetails": {"duration": "PT1H2M10S"},
+            }
+        ]
+    }
+    mock_urlopen = MagicMock(side_effect=[_mock_response(search), _mock_response(details)])
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    items = fetch_search_trends("fake-key", ["query"])
+    assert len(items) == 1
+    ev = items[0].evidence[0]
+    assert ev.duration == "01:02:10"
+    assert ev.duration_s == 3730
+
+    second_url = _urls(mock_urlopen)[1]
+    assert "contentDetails" in second_url
+

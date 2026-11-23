@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -9,6 +10,40 @@ from datetime import datetime, timedelta, timezone
 
 from ..application.categories import YouTubeApiError
 from ..domain.trends import Evidence, TrendItem
+
+ISO8601_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def parse_iso8601_duration(duration_str: str | None) -> tuple[str, int]:
+    """Converte duração ISO 8601 da YouTube API (ex.: 'PT11M40S') em ('11:40', 700).
+
+    Formata como 'MM:SS' quando hours == 0 e 'HH:MM:SS' quando hours > 0.
+    Retorna ('', 0) para valores nulos, vazios, inválidos ou sem duração positiva (ex.: 'PT0S').
+    """
+    if not duration_str or not isinstance(duration_str, str):
+        return ("", 0)
+    match = ISO8601_DURATION_RE.match(duration_str.strip())
+    if not match:
+        return ("", 0)
+    hours_s, minutes_s, seconds_s = match.groups()
+    if hours_s is None and minutes_s is None and seconds_s is None:
+        return ("", 0)
+    try:
+        hours = int(hours_s) if hours_s else 0
+        minutes = int(minutes_s) if minutes_s else 0
+        seconds = int(seconds_s) if seconds_s else 0
+    except (ValueError, TypeError):
+        return ("", 0)
+
+    total_seconds = hours * 3600 + minutes * 60 + seconds
+    if total_seconds <= 0:
+        return ("", 0)
+
+    if hours > 0:
+        formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        formatted = f"{minutes:02d}:{seconds:02d}"
+    return (formatted, total_seconds)
 
 
 # `search.list` custa 100 unidades POR CHAMADA, não por vídeo: pedir mais vídeos por termo não encarece e dá
@@ -51,7 +86,7 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = SEAR
         evidence: list[Evidence] = []
         total_views = 0
         p2 = urllib.parse.urlencode({
-            "part": "statistics,snippet",
+            "part": "snippet,statistics,contentDetails",
             "id": ",".join(vids),
             "key": yt_key,
         })
@@ -63,8 +98,11 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = SEAR
                 for v in d2.get("items", []):
                     snip = v.get("snippet", {})
                     stats = v.get("statistics", {})
+                    content_details = v.get("contentDetails", {})
                     vc = int(stats.get("viewCount") or 0)
                     total_views += vc
+                    raw_duration = content_details.get("duration")
+                    duration_text, duration_s = parse_iso8601_duration(raw_duration)
                     published_str = snip.get("publishedAt")
                     published_at = None
                     if published_str:
@@ -79,6 +117,8 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = SEAR
                             channel=snip.get("channelTitle", "")[:100],
                             views=vc,
                             published_at=published_at,
+                            duration=duration_text,
+                            duration_s=duration_s,
                         )
                     )
         except urllib.error.HTTPError as e:
@@ -110,7 +150,7 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10,
     past = now - timedelta(days=7)
 
     query = {
-        "part": "snippet,statistics",
+        "part": "snippet,statistics,contentDetails",
         "chart": "mostPopular",
         "regionCode": region_code,
         "maxResults": max_results,
@@ -142,7 +182,10 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10,
             continue
         snip = v.get("snippet", {})
         stats = v.get("statistics", {})
+        content_details = v.get("contentDetails", {})
         vc = int(stats.get("viewCount") or 0)
+        raw_duration = content_details.get("duration")
+        duration_text, duration_s = parse_iso8601_duration(raw_duration)
 
         published_str = snip.get("publishedAt")
         published_at = None
@@ -163,6 +206,8 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10,
             channel=channel,
             views=vc,
             published_at=published_at,
+            duration=duration_text,
+            duration_s=duration_s,
         )
 
         items.append(
@@ -180,3 +225,6 @@ def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10,
         )
 
     return items
+
+
+fetch_search_trends = fetch_youtube_trends

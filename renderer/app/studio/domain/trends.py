@@ -18,6 +18,8 @@ class Evidence(BaseModel):
     channel: str = Field(default="", max_length=100)
     views: int | None = Field(default=None, ge=0)
     published_at: datetime | None = None
+    duration: str = Field(default="", max_length=50)
+    duration_s: int = Field(default=0, ge=0)
 
 
 class TrendItem(BaseModel):
