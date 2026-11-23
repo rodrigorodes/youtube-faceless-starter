@@ -9,7 +9,7 @@ from app.studio.application import config  # noqa: E402
 from app.studio.application.config import ProjectConfig, ProviderNotFound, build, register  # noqa: E402
 from app.studio.application.errors import VisualStyleNotFound  # noqa: E402
 from app.studio.application.use_cases import CreateProject, CreateVideo, ProjectNotFound, TransitionVideo  # noqa: E402
-from app.studio.domain.contracts import Project, Video, VideoFormat, VideoStatus  # noqa: E402
+from app.studio.domain.contracts import ProductionMode, Project, Video, VideoFormat, VideoStatus  # noqa: E402
 from app.studio.domain.states import InvalidTransition  # noqa: E402
 from app.studio.domain.visual_style import VisualStyle, VisualStyleArchived  # noqa: E402
 
@@ -26,8 +26,15 @@ class FakeRepo:
     def get_project(self, project_id):
         return self.projects.get(project_id)
 
-    def create_video(self, project_id, topic, fmt, style_id=None):
-        return Video(id="v" * 32, project_id=project_id, topic=topic, format=fmt, style_id=style_id)
+    def create_video(self, project_id, topic, fmt, style_id=None, production_mode=ProductionMode.piloto):
+        return Video(
+            id="v" * 32,
+            project_id=project_id,
+            topic=topic,
+            format=fmt,
+            style_id=style_id,
+            production_mode=production_mode,
+        )
 
     def get_video(self, video_id):
         return None
@@ -100,6 +107,15 @@ def test_create_video_requires_existing_project():
         CreateVideo(repo).execute("x" * 32, "ADE 2026", VideoFormat.short)
     p = CreateProject(repo).execute("canal")
     assert CreateVideo(repo).execute(p.id, "ADE 2026", VideoFormat.short).status == VideoStatus.IDEA
+
+
+def test_create_video_preserves_production_mode():
+    repo = FakeRepo()
+    p = CreateProject(repo).execute("canal")
+    video = CreateVideo(repo).execute(
+        p.id, "ADE 2026", VideoFormat.short, production_mode=ProductionMode.diretor
+    )
+    assert video.production_mode == ProductionMode.diretor
 
 
 def test_registry_builds_by_name_and_rejects_unknown():
