@@ -125,6 +125,37 @@ def test_monetization_risk_detection_and_penalty():
     assert bd_risk.total_score <= bd_safe.total_score - 25
 
 
+def test_execucao_disambiguation_benign_vs_danger():
+    published = T0 - timedelta(hours=24)
+    # Frase benigna com "execução" não deve acionar risco de desmonetização
+    bd_benign = calculate_priority(
+        views=100_000,
+        published_at=published,
+        niche_median_views=50_000.0,
+        is_trending_chart=False,
+        has_category=True,
+        recent_channel_titles=[],
+        title="Como fazer a execução de projeto com perfeição",
+        now=T0,
+    )
+    assert bd_benign.risk_level == "ok"
+    assert bd_benign.risk_status == "Sem risco detectado"
+
+    # Frase com execução sumária deve acionar risco
+    bd_danger = calculate_priority(
+        views=100_000,
+        published_at=published,
+        niche_median_views=50_000.0,
+        is_trending_chart=False,
+        has_category=True,
+        recent_channel_titles=[],
+        title="Caso de execução sumária na cidade",
+        now=T0,
+    )
+    assert bd_danger.risk_level == "danger"
+    assert "monetização" in bd_danger.risk_status.lower()
+
+
 def test_zero_and_edge_cases_no_zerodivision():
     bd = calculate_priority(
         views=0,

@@ -104,6 +104,26 @@ def test_trend_cards_duration_and_niche_ratio():
     assert any("▲" in c.niche_ratio_text or "▼" in c.niche_ratio_text for c in cards)
 
 
+def test_trend_cards_defensive_duration_s():
+    ev_invalid = ev("v_inv", "C1", 100_000)
+    ev_invalid["duration_s"] = "not_a_number"
+    ev_str = ev("v_str", "C2", 100_000)
+    ev_str["duration_s"] = "125"  # 02:05
+    ev_int = ev("v_int", "C3", 100_000)
+    ev_int["duration_s"] = 3661  # 01:01:01
+
+    records = [
+        Rec("T_inv", SEARCH_SOURCE, T0, [ev_invalid], 100_000.0),
+        Rec("T_str", SEARCH_SOURCE, T0, [ev_str], 100_000.0),
+        Rec("T_int", SEARCH_SOURCE, T0, [ev_int], 100_000.0),
+    ]
+    cards = build_trend_cards(records, now=T0)
+    card_map = {c.evidence[0]["url"].split("=")[-1]: c for c in cards}
+    assert card_map["v_inv"].duration_text == ""
+    assert card_map["v_str"].duration_text == "02:05"
+    assert card_map["v_int"].duration_text == "01:01:01"
+
+
 class FakeTrendRepo:
     def __init__(self, records=None, last_collected=None, saved_trends=None):
         self._records = records or []
@@ -269,5 +289,40 @@ def test_build_panel_tipo_filtering_and_saved_trends_outside_7_day_window():
     assert view_saved.trends[0].is_saved is True
     assert view_saved.trends[0].duration_text == "15:00"
     assert view_saved.trends[0].priority_score == 90
+
+
+def test_build_panel_tipo_perenes_and_sem_risco():
+    now = T0
+    # 1. Perene: > 180 dias e >= 100.000 views, título seguro
+    ev_perene = ev("v_perene", "Canal Perene", 250_000, title="Tema Perene Consolidado")
+    ev_perene["published_at"] = (now - timedelta(days=200)).isoformat()
+    rec_perene = Rec("Tema Perene Consolidado", "YouTube Brasil (Em Alta)", now, [ev_perene], 250_000.0)
+
+    # 2. Risco alto (danger): título com palavra de risco de monetização
+    ev_danger = ev("v_danger", "Canal Polêmico", 80_000, title="Massacre e tiroteio na fronteira")
+    ev_danger["published_at"] = (now - timedelta(days=1)).isoformat()
+    rec_danger = Rec("Massacre e tiroteio na fronteira", "YouTube Brasil (Em Alta)", now, [ev_danger], 80_000.0)
+
+    # 3. Recente e seguro: < 180 dias, sem risco
+    ev_safe = ev("v_safe", "Canal Seguro", 40_000, title="Tema Recente e Seguro")
+    ev_safe["published_at"] = (now - timedelta(days=2)).isoformat()
+    rec_safe = Rec("Tema Recente e Seguro", "YouTube Brasil (Em Alta)", now, [ev_safe], 40_000.0)
+
+    trend_repo = FakeTrendRepo(records=[rec_perene, rec_danger, rec_safe], last_collected=now)
+    panel = BuildPanel(FakePanelRepo(), 15.0, lambda: now, trends=trend_repo)
+
+    # tipo == "perenes" -> apenas os vídeos com is_evergreen == True
+    view_perenes = panel.execute(days=7, project_id="p1", tipo="perenes")
+    assert view_perenes.tipo == "perenes"
+    assert len(view_perenes.trends) == 1
+    assert view_perenes.trends[0].topic == "Tema Perene Consolidado"
+    assert view_perenes.trends[0].is_evergreen is True
+
+    # tipo == "sem_risco" -> apenas os vídeos com risk_level == "ok"
+    view_sem_risco = panel.execute(days=7, project_id="p1", tipo="sem_risco")
+    assert view_sem_risco.tipo == "sem_risco"
+    assert len(view_sem_risco.trends) == 2
+    assert all(t.risk_level == "ok" for t in view_sem_risco.trends)
+    assert not any("Massacre" in t.topic for t in view_sem_risco.trends)
 
 

@@ -25,7 +25,7 @@ RISK_KEYWORDS = (
     "assassinato", "assassino", "suicidio", "chacina", "massacre",
     "estupro", "terrorismo", "arma de fogo", "armas de fogo", "tiroteio",
     "sequestro", "tortura", "gore", "crime hediondo", "homicidio",
-    "execucao", "automutilacao", "pedofilia",
+    "execucao sumaria", "execucao publica", "automutilacao", "pedofilia",
     # Drogas ilícitas / Explícito
     "cocaina", "heroina", "trafico de drogas", "drogas ilicitas",
     "porno", "sexo explicito",
@@ -35,6 +35,8 @@ RISK_KEYWORDS = (
     # Saúde falsa / Curas milagrosas extremas
     "cura do cancer", "cura milagrosa", "remedio milagroso",
 )
+
+_RISK_PATTERNS = tuple(re.compile(r"\b" + re.escape(kw) + r"\b") for kw in RISK_KEYWORDS)
 
 
 @dataclass(frozen=True)
@@ -86,13 +88,17 @@ def calculate_priority(
     title: str,
     now: datetime,
 ) -> PriorityBreakdown:
-    # 1. Velocidade de views/hora (S_vel)
+    # Normalização de timezone de published_at
+    pub: datetime | None = None
     if published_at is not None:
         pub = published_at
         if pub.tzinfo is None and now.tzinfo is not None:
             pub = pub.replace(tzinfo=timezone.utc)
         elif pub.tzinfo is not None and now.tzinfo is None:
             pub = pub.replace(tzinfo=None)
+
+    # 1. Velocidade de views/hora (S_vel)
+    if pub is not None:
         delta_s = max(0.0, (now - pub).total_seconds())
         hours = max(1.0, delta_s / 3600.0)
     else:
@@ -154,7 +160,7 @@ def calculate_priority(
 
     # 6. Diagnóstico de risco e classificação perene
     norm_title = _normalize_text(title)
-    has_risk = any(keyword in norm_title for keyword in RISK_KEYWORDS)
+    has_risk = any(pattern.search(norm_title) is not None for pattern in _RISK_PATTERNS)
 
     raw_score = (
         0.20 * velocity_score
@@ -178,12 +184,7 @@ def calculate_priority(
     total_score = max(0, min(100, int(round(raw_score))))
 
     is_evergreen = False
-    if published_at is not None:
-        pub = published_at
-        if pub.tzinfo is None and now.tzinfo is not None:
-            pub = pub.replace(tzinfo=timezone.utc)
-        elif pub.tzinfo is not None and now.tzinfo is None:
-            pub = pub.replace(tzinfo=None)
+    if pub is not None:
         age_days = (now - pub).total_seconds() / 86400.0
         if age_days > 180.0 and views >= 100_000:
             is_evergreen = True

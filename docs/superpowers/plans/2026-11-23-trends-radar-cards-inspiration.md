@@ -194,7 +194,7 @@ git commit -m "feat(trends): implement pure domain priority score and risk diagn
 ### Task 3: Banco de Dados e Repositório de Ideias Guardadas (`saved_trends`)
 
 **Files:**
-- Create: `renderer/app/studio/adapters/postgres/migrations/0012_saved_trends.sql`
+- Create: `renderer/app/studio/adapters/postgres/migrations/0049_saved_trends.sql`
 - Modify: `renderer/app/studio/application/ports.py`
 - Modify: `renderer/app/studio/adapters/postgres/trend_repo.py`
 - Test: `tests/test_trend_repo.py`
@@ -244,7 +244,7 @@ Expected: FAIL com `AttributeError: 'PostgresTrendRepository' has no attribute '
 
 - [ ] **Step 3: Criar migração SQL e implementar métodos em `trend_repo.py` e `ports.py`**
 
-Criar `0012_saved_trends.sql` com schema `studio.saved_trends` (`project_id`, `video_id`, `title`, `channel_title`, `thumbnail_url`, `video_url`, `duration`, `views`, `category_name`, `score`, `created_at`).  
+Criar `0049_saved_trends.sql` com schema `studio.saved_trends` (`project_id`, `video_id`, `title`, `channel_title`, `thumbnail_url`, `video_url`, `duration`, `views`, `category_name`, `score`, `created_at`).  
 Implementar `save_trend_snapshot`, `unsave_trend`, `list_saved_trends` e `is_trend_saved` em `trend_repo.py` com suporte para PostgreSQL e SQLite in-memory de teste.
 
 - [ ] **Step 4: Executar o teste para verificar que passa**
@@ -255,7 +255,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add renderer/app/studio/adapters/postgres/migrations/0012_saved_trends.sql renderer/app/studio/application/ports.py renderer/app/studio/adapters/postgres/trend_repo.py tests/test_trend_repo.py
+git add renderer/app/studio/adapters/postgres/migrations/0049_saved_trends.sql renderer/app/studio/application/ports.py renderer/app/studio/adapters/postgres/trend_repo.py tests/test_trend_repo.py
 git commit -m "feat(trends): implement permanent saved_trends schema and repository methods"
 ```
 

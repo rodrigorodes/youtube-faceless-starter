@@ -1,4 +1,4 @@
--- Ideias guardadas (saved_trends) por projeto e vídeo.
+-- 0049_saved_trends.sql: Ideias guardadas (saved_trends) por projeto e vídeo.
 CREATE TABLE IF NOT EXISTS studio.saved_trends (
     project_id text NOT NULL,
     video_id text NOT NULL,

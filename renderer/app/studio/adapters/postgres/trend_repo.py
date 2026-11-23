@@ -67,7 +67,9 @@ def _saved_snapshot(row: dict) -> SavedTrendSnapshot:
         try:
             created_at = datetime.fromisoformat(created_at)
         except ValueError:
-            pass
+            created_at = None
+    elif not isinstance(created_at, datetime):
+        created_at = None
     return SavedTrendSnapshot(
         project_id=row["project_id"],
         video_id=row["video_id"],

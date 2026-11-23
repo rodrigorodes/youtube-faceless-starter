@@ -61,6 +61,10 @@ def format_duration(seconds: int) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _parse_duration_s(val: Any) -> int:
+    return int(val) if val and str(val).isdigit() else 0
+
+
 def _parse_published_at(ev: dict, default_at: datetime) -> datetime:
     pub = ev.get("published_at")
     if isinstance(pub, datetime):
@@ -118,7 +122,8 @@ def _cards_of(record: Any) -> list[TrendCard]:
     if record.source_name == SEARCH_SOURCE and evidence:
         res = []
         for ev in evidence:
-            dur = ev.get("duration") or (format_duration(int(ev["duration_s"])) if ev.get("duration_s") else "")
+            dur_s = _parse_duration_s(ev.get("duration_s"))
+            dur = ev.get("duration") or (format_duration(dur_s) if dur_s > 0 else "")
             res.append(TrendCard(
                 topic=str(ev.get("title") or record.topic)[:300], source_name=record.source_name, source_url=record.source_url,
                 observed_at=record.observed_at, metric_value=(float(ev["views"]) if ev.get("views") is not None else None),
@@ -129,7 +134,8 @@ def _cards_of(record: Any) -> list[TrendCard]:
     dur = ""
     if evidence:
         ev0 = evidence[0]
-        dur = ev0.get("duration") or (format_duration(int(ev0["duration_s"])) if ev0.get("duration_s") else "")
+        dur_s = _parse_duration_s(ev0.get("duration_s"))
+        dur = ev0.get("duration") or (format_duration(dur_s) if dur_s > 0 else "")
     return [TrendCard(
         topic=record.topic, source_name=record.source_name, source_url=record.source_url, observed_at=record.observed_at,
         metric_value=record.metric_value, evidence=evidence[:1], category_id=category_id, query=None,
@@ -204,8 +210,10 @@ def build_trend_cards(
         )
 
         dur = card.duration_text or str(ev.get("duration") or "")
-        if not dur and ev.get("duration_s"):
-            dur = format_duration(int(ev["duration_s"]))
+        if not dur:
+            dur_s = _parse_duration_s(ev.get("duration_s"))
+            if dur_s > 0:
+                dur = format_duration(dur_s)
 
         enriched[key] = dataclasses.replace(
             card,

@@ -212,3 +212,35 @@ def test_saved_trends_upsert_and_project_isolation(repo):
     assert len(repo.list_saved_trends(p1)) == 2
 
 
+def test_saved_snapshot_defensive_created_at():
+    from app.studio.adapters.postgres.trend_repo import _saved_snapshot
+
+    row_invalid_str = {
+        "project_id": "p1",
+        "video_id": "v1",
+        "title": "Title",
+        "created_at": "not-a-datetime",
+    }
+    snap = _saved_snapshot(row_invalid_str)
+    assert snap.created_at is None
+
+    row_none = {
+        "project_id": "p1",
+        "video_id": "v1",
+        "title": "Title",
+        "created_at": None,
+    }
+    snap_none = _saved_snapshot(row_none)
+    assert snap_none.created_at is None
+
+    row_valid_str = {
+        "project_id": "p1",
+        "video_id": "v1",
+        "title": "Title",
+        "created_at": "2026-11-23T12:00:00+00:00",
+    }
+    snap_valid = _saved_snapshot(row_valid_str)
+    assert isinstance(snap_valid.created_at, datetime)
+
+
+

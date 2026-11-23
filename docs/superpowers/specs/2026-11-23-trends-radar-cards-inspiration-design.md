@@ -195,6 +195,6 @@ $$\text{Prioridade} = 0.20 \cdot S_{\text{vel}} + 0.20 \cdot S_{\text{nicho}} + 
 ## 7. O que Fica a Critério do Construtor (Builder)
 
 - Implementação do parser de duração ISO 8601 (via regex ou biblioteca padrão).
-- Mapeamento da migração `0012_saved_trends.sql` compatível com PostgreSQL e SQLite de testes.
+- Mapeamento da migração `0049_saved_trends.sql` compatível com PostgreSQL e SQLite de testes.
 - Tratamento de fallbacks visuais caso miniaturas do YouTube demorem a responder.
 - Ajuste fino da interação JavaScript de clique rápido no botão de guardar (feedback visual otimista).
