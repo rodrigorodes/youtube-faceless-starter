@@ -175,6 +175,29 @@ document.querySelectorAll('[data-connect]').forEach((button) => {
   });
 });
 
+function confirmLink(profileId, version, name, youtubeId) {
+  askConfirm({
+    message: 'Vincular "' + name + '" a este canal do YouTube? O canal do estúdio passa a publicar aqui.',
+    confirmLabel: 'Vincular'
+  }, async () => {
+    announce('Vinculando…');
+    try {
+      const result = await postJson('/studio/channels/' + encodeURIComponent(profileId), 'PATCH',
+        { expected_version: version, changes: { youtube_channel_id: youtubeId } });
+      if (result.ok) {
+        announce('Vinculado. Atualizando…', 'ok');
+        setTimeout(() => window.location.reload(), 600);
+      } else if (result.status === 409) {
+        announce('Outra alteração venceu a corrida: recarregue a página e tente de novo.', 'bad');
+      } else {
+        announce('Não foi possível vincular: ' + detailOf(result.data, 'tente novamente.'), 'bad');
+      }
+    } catch (error) {
+      announce('Falha de rede ao vincular. Tente novamente.', 'bad');
+    }
+  });
+}
+
 document.querySelectorAll('[data-link]').forEach((button) => {
   button.addEventListener('click', () => {
     const youtubeId = button.getAttribute('data-youtube');
@@ -186,28 +209,16 @@ document.querySelectorAll('[data-link]').forEach((button) => {
       return;
     }
     const option = select.selectedOptions && select.selectedOptions[0];
-    const version = Number((option && option.getAttribute('data-version')) || '0');
-    const name = (option && option.getAttribute('data-name')) || 'o canal do estúdio';
-    askConfirm({
-      message: 'Vincular "' + name + '" a este canal do YouTube? O canal do estúdio passa a publicar aqui.',
-      confirmLabel: 'Vincular'
-    }, async () => {
-      announce('Vinculando…');
-      try {
-        const result = await postJson('/studio/channels/' + encodeURIComponent(profileId), 'PATCH',
-          { expected_version: version, changes: { youtube_channel_id: youtubeId } });
-        if (result.ok) {
-          announce('Vinculado. Atualizando…', 'ok');
-          setTimeout(() => window.location.reload(), 600);
-        } else if (result.status === 409) {
-          announce('Outra alteração venceu a corrida: recarregue a página e tente de novo.', 'bad');
-        } else {
-          announce('Não foi possível vincular: ' + detailOf(result.data, 'tente novamente.'), 'bad');
-        }
-      } catch (error) {
-        announce('Falha de rede ao vincular. Tente novamente.', 'bad');
-      }
-    });
+    confirmLink(profileId, Number((option && option.getAttribute('data-version')) || '0'),
+      (option && option.getAttribute('data-name')) || 'o canal do estúdio', youtubeId);
+  });
+});
+
+// Vínculo direto do cartão "Canal do YouTube": o canal do estúdio ativo já é conhecido.
+document.querySelectorAll('[data-link-direct]').forEach((button) => {
+  button.addEventListener('click', () => {
+    confirmLink(button.getAttribute('data-profile'), Number(button.getAttribute('data-version') || '0'),
+      button.getAttribute('data-name') || 'o canal do estúdio', button.getAttribute('data-youtube'));
   });
 });
 
@@ -523,14 +534,42 @@ def _sidebar_card(accounts: list[dict]) -> str:
     """
 
 
+def _dedupe_channels(channels: list[dict]) -> list[dict]:
+    """Um canal do YouTube autorizado várias vezes aparece uma vez: a autorização conectada mais nova.
+
+    Cada "Conectar conta Google" cria uma autorização nova para o mesmo canal; listar todas faz parecer
+    que há três canais e esconde qual vale. Autorização conectada vence as demais; entre iguais, a de
+    validade mais longa (a mais recente).
+    """
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for channel in channels:
+        key = str(channel.get("youtube_channel_id") or channel.get("grant_id") or "")
+        rank = (str(channel.get("status") or "").upper() == "CONNECTED", str(channel.get("token_expires_at") or ""))
+        if key not in best:
+            order.append(key)
+            best[key] = channel
+        elif rank > (str(best[key].get("status") or "").upper() == "CONNECTED", str(best[key].get("token_expires_at") or "")):
+            best[key] = channel
+    return [best[key] for key in order]
+
+
 def _yt_card(accounts: list[dict], profile: ChannelProfile | None) -> str:
-    """`ytCard` do protótipo: estado do vínculo do canal ativo com o YouTube (dado real)."""
+    """`ytCard` do protótipo: estado do vínculo do canal ativo com o YouTube (dado real).
+
+    Três estados honestos: vinculado e conectado; conta já autorizada mas canal do estúdio ainda sem
+    destino (falta só vincular — autorizar de novo não resolve); sem nenhuma autorização.
+    """
     youtube_id = (profile.youtube_channel_id if profile else "") or ""
     found = None
+    available = None  # canal autorizado e conectado, ainda sem destino neste canal do estúdio
     for account in accounts:
         for channel in account.get("channels") or []:
             if youtube_id and str(channel.get("youtube_channel_id") or "") == youtube_id:
                 found = channel
+            if (available is None and str(channel.get("status") or "").upper() == "CONNECTED"
+                    and channel.get("youtube_channel_id")):
+                available = channel
     status = str((found or {}).get("status") or "").upper()
     if found and status == "CONNECTED":
         pill = '<span class="pill ok">✓ Conectado</span>'
@@ -540,6 +579,16 @@ def _yt_card(accounts: list[dict], profile: ChannelProfile | None) -> str:
         acoes = ('<button class="btn small" type="button" data-connect>Reconectar</button>'
                  f'<button class="btn small" type="button" data-revoke data-grant="{e(found.get("grant_id") or "")}" '
                  f'data-youtube="{e(youtube_id)}" data-title="{e(title)}">Revogar acesso</button>')
+    elif available is not None and profile is not None and not youtube_id:
+        title = str(available.get("title") or available.get("youtube_channel_id"))
+        pill = '<span class="pill warn">◐ Conta conectada · falta vincular</span>'
+        texto = (f"A conta Google já está autorizada e o canal <b>{e(title)}</b> foi encontrado. "
+                 f"Falta escolher que <b>{e(profile.name)}</b> publica nele. "
+                 "Não precisa autorizar de novo: o acesso fica guardado no servidor.")
+        acoes = ('<button class="btn primary small" type="button" data-link-direct '
+                 f'data-profile="{e(profile.id)}" data-version="{profile.version}" data-name="{e(profile.name)}" '
+                 f'data-youtube="{e(available.get("youtube_channel_id"))}">Vincular a {e(title)}</button>'
+                 '<button class="btn small" type="button" data-connect>Conectar outra conta</button>')
     else:
         pill = '<span class="pill warn">○ Desconectado</span>'
         texto = ("Sem vínculo com um canal do YouTube. Você pode criar e aprovar vídeos normalmente, "
@@ -619,7 +668,8 @@ def render_connections(board: dict, profiles: list[ChannelProfile], *,
     """
     from . import panel_channels
     nonce = secrets.token_urlsafe(16)
-    accounts = list(board.get("accounts") or [])
+    accounts = [{**account, "channels": _dedupe_channels(list(account.get("channels") or []))}
+                for account in (board.get("accounts") or [])]
     profiles = list(profiles or [])
     profiles_by_id = {profile.id: profile for profile in profiles}
     ativo = profiles_by_id.get(project_id) or next((p for p in profiles if p.project_id == project_id), None)
