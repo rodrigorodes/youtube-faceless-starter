@@ -75,41 +75,11 @@ git commit -m "feat(studio): atualizar hero da Home com seletor ideia vs roteiro
   - Submissão AJAX chamando `POST /studio/channels/transactional` com feedback inline
   - Painel de perfil existente exibindo e editando `default_mode` e `default_format`
 
-- [ ] **Step 1: Write failing test in `tests/test_channels_v3_ux.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_channels import render_channels
-from app.studio.application.channels_page import ChannelsPageView
-from app.studio.domain.channel import ChannelProfile
-from app.studio.domain.contracts import ProductionMode, VideoFormat
-
-def test_channels_page_renders_transactional_form_and_preferences():
-    view = ChannelsPageView(project=None, profile=None, channels=[])
-    html = render_channels(view)
-    assert 'id="form-novo-canal-v3"' in html or 'id="new-channel-form"' in html
-    assert 'name="default_mode"' in html or 'name="modo-padrao"' in html
-    assert 'name="default_format"' in html or 'name="formato-padrao"' in html
-    assert "/studio/channels/transactional" in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channels_v3_ux.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement V3 channel creation and profile editing in `panel_channels.py`**
-
-Adicionar campos de modo padrão e formato padrão no formulário de criação e no cartão de perfil do canal. Atualizar o script de criação para submeter o JSON completo para `/studio/channels/transactional`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channels_v3_ux.py tests/test_channels_page.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_channels_v3_ux.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement V3 channel creation and profile editing in `panel_channels.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_channels.py tests/test_channels_v3_ux.py
