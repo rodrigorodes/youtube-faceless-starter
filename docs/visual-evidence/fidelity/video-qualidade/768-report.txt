@@ -1,7 +1,6 @@
-{"screen": "video-qualidade", "viewport": "768", "text_similarity": 52.5, "text_diffs": 9, "field_similarity": 6.5, "field_diffs": 2, "style_diffs": 4, "pixel_diff_pct": 9.13, "height_ref": 1734, "height_app": 1292, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "video-qualidade", "viewport": "768", "text_similarity": 46.2, "text_diffs": 8, "field_similarity": 6.5, "field_diffs": 2, "style_diffs": 0, "pixel_diff_pct": 9.13, "height_ref": 1734, "height_app": 1292, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
-[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
 [replace] REF=['Curiosidades Históricas / O mistério do navio Mary Celeste', '⚡ Criado no piloto automático · v1', 'O mistério do navio Mary Celeste', 'Aguardando aprovação'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho']
 [delete] REF=['🎙 Rodrigo Faber', '🎨 Cinemática Sombria', 'Editar no Modo Diretor'] | APP=[]
@@ -16,11 +15,3 @@
 [replace] REF=['button[submit]:✓ Aprovar e preparar publicação →', 'button[submit]:Pedir ajustes (volta ao storyboard)', 'button[submit]:🧭 Roteiro da demo'] | APP=['button[button]:✓ Aprovar e preparar publicação →', 'a:Pedir ajustes (volta ao storyboard)']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
-'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'Pedir ajustes (volta ao storyboard)' ref<button.btn ghost long small> app<a.btn ghost long small>
-    textAlign: ref=center | app=start

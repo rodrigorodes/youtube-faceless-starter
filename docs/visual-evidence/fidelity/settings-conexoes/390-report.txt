@@ -1,19 +1,32 @@
-{"screen": "settings-conexoes", "viewport": "390", "text_similarity": 26.3, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 5, "pixel_diff_pct": 17.17, "height_ref": 3383, "height_app": 1339, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-conexoes", "viewport": "390", "text_similarity": 37.3, "text_diffs": 20, "field_similarity": 4.5, "field_diffs": 2, "style_diffs": 3, "pixel_diff_pct": 15.33, "height_ref": 3383, "height_app": 2205, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
-[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
-[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Identidade do canal, produção, integrações e controles avançados.']
-[replace] REF=['Canal do YouTube', '✓ Conectado', '@CuriosidadesHistoricas · escopos:'] | APP=['Providers', 'Equipe', 'Avançado e diagnóstico', 'Contas do Google e canais do YouTube', 'Ação primária:', 'conectar a conta e escolher o canal']
-[replace] REF=[','] | APP=['— Enviar (subir) os vídeos para o canal.']
-[replace] REF=['· token guardado no servidor (simulado).', 'Reconectar', 'Revogar acesso', 'Ao conectar, o Google abre a tela de consentimento; o servidor troca o código e guarda os tokens. Nenhuma credencial volta ao navegador.', 'Equipe', '+ Convidar'] | APP=['— Ler o canal e os vídeos — para conferir o destino antes de publicar.', 'Os tokens ficam no cofre do servidor. Nenhum valor de credencial é exibido nesta página.']
+[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Canal: Musica']
+[replace] REF=['✓ Conectado', '@CuriosidadesHistoricas · escopos:', 'youtube.upload', ',', 'youtube.readonly', '· token guardado no servidor (simulado).'] | APP=['○ Desconectado', 'Sem vínculo com um canal do YouTube. Você pode criar e aprovar vídeos normalmente, mas só publica depois de conectar.', 'Conectar conta Google']
+[replace] REF=['Rodrigo', 'Dono · acesso total', 'Ana Souza', 'Editora · cria e aprova', 'Léo Lima', 'Leitor · só visualiza'] | APP=['Nenhuma organização com membros cadastrada.']
+[delete] REF=['+ Adicionar provider'] | APP=[]
+[replace] REF=['OpenCode · texto', 'modelo de linguagem configurado'] | APP=['opencode', 'openai/gpt-6-luna']
+[replace] REF=['Roteiro (texto)', '· rate limit: 60 chamada(s)/min · qualidade 75'] | APP=['text.generate, text.json', '· rate limit: não declarado']
+[replace] REF=['~US$ 0,02 por roteiro (estimativa, não é preço cobrado)', 'Credencial no secret store · valor nunca exibido'] | APP=['Custo desconhecido — nenhum preço confirmado; não é tratado como zero (preço do bridge)', 'Porta:', 'opencode:openai/gpt-6-luna']
+[replace] REF=['Configurar', 'Texto demo', 'respostas fixas'] | APP=['Narração (voz)', 'piper', 'pt_BR-faber-medium']
+[replace] REF=['Roteiro (texto)', '· rate limit: não declarado · qualidade 20 ·', 'demonstração, não executa em produção'] | APP=['voice.speak', '· rate limit: não declarado']
+[replace] REF=['US$ 0 (sem custo por chamada)', 'Não exige credencial (execução local)'] | APP=['Sem custo (síntese local)', 'Porta:', 'piper:pt_BR-faber-medium']
+[replace] REF=['Configurar', 'Narração (voz)', 'Piper local', 'voz local pt-BR'] | APP=['Imagens por IA', 'opencode', 'openrouter/recraft/recraft-v4.1-flash-v2:free']
+[replace] REF=['Narração (voz)', '· rate limit: não declarado · qualidade 62'] | APP=['image.generate', '· rate limit: não declarado']
+[replace] REF=['US$ 0 (sem custo por chamada)', 'Não exige credencial (execução local)'] | APP=['Estimado US$ 0,05 (por imagem)', 'Porta:', 'opencode:openrouter/recraft/recraft-v4.1-flash-v2:free']
+[replace] REF=['Configurar', 'Voz externa (TTS)', 'voz neural de alta fidelidade', '! Indisponível', 'Capability:', 'Narração (voz)'] | APP=['Render', 'ffmpeg', 'rich']
+[replace] REF=['Imagens por IA', '· rate limit: 20 chamada(s)/min · qualidade 80'] | APP=['render.video', '· rate limit: não declarado']
+[replace] REF=['~US$ 0,05 por imagem (estimativa, não é preço cobrado)', 'Credencial no secret store · valor nunca exibido'] | APP=['Sem custo (render local)', 'Porta:', 'ffmpeg:rich']
+[delete] REF=['Configurar', 'Placeholder de imagem', 'quadro cinza', '✓ Disponível', 'Capability:', 'Imagens por IA'] | APP=[]
+[delete] REF=['ambiente=mockup · versão=v4'] | APP=[]
+[replace] REF=['fila: 0 · workers: 1', 'configuração pública do canal: c1', '🧭 Roteiro da demo'] | APP=['configuração pública do canal: ceaa051c958f4d868d2408196099623c', 'Nenhuma conta conectada', 'Conecte uma conta do Google para autorizar os canais do YouTube em que o estúdio publica.', 'Cada canal do YouTube precisa da própria autorização. Conectar uma conta não publica nada sozinho: o canal só entra no ar quando você vincular um canal do estúdio a ele.', 'O que será pedido', 'Ao conectar uma conta do Google, o Studio pede permissão para:']
 
 ## CAMPOS/BOTOES (ref -> app)
-[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:Providers', 'a:Equipe', 'a:Avançado e diagnóstico', 'button[button]:Conectar conta Google']
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'button[button]:Conectar conta Google', 'a:+ Convidar', 'button[button]:Testar conexão', 'button[button]:Testar conexão']
+[delete] REF=['button[submit]:🧭 Roteiro da demo'] | APP=[]
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
 'youtube.upload' ref<code.mono> app<code.>
     fontFamily: ref=ui-monospace, Menlo, monospace | app=monospace
     fontSize: ref=12px | app=11.48px
@@ -26,32 +39,5 @@
     lineHeight: ref=18px | app=18.368px
     color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
     borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-'Equipe' ref<h3.> app<a.btn small>
-    fontSize: ref=15px | app=12px
-    fontWeight: ref=700 | app=600
-    lineHeight: ref=22.5px | app=18px
-    backgroundColor: ref=rgba(0, 0, 0, 0) | app=rgb(28, 30, 36)
-    borderTopWidth: ref=0px | app=1px
-    borderTopColor: ref=rgb(243, 243, 247) | app=rgb(44, 46, 55)
-    borderTopLeftRadius: ref=0px | app=7px
-    paddingTop: ref=0px | app=4px
-    paddingRight: ref=0px | app=10px
-    paddingBottom: ref=0px | app=4px
-    paddingLeft: ref=0px | app=10px
-    display: ref=block | app=flex
-    gap: ref=normal | app=6px
-'Avançado e diagnóstico' ref<summary.> app<a.btn small>
-    fontSize: ref=14px | app=12px
+'Avançado e diagnóstico' ref<summary.> app<summary.>
     fontWeight: ref=650 | app=600
-    lineHeight: ref=21px | app=18px
-    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-    backgroundColor: ref=rgba(0, 0, 0, 0) | app=rgb(28, 30, 36)
-    borderTopWidth: ref=0px | app=1px
-    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(44, 46, 55)
-    borderTopLeftRadius: ref=0px | app=7px
-    paddingTop: ref=0px | app=4px
-    paddingRight: ref=0px | app=10px
-    paddingBottom: ref=0px | app=4px
-    paddingLeft: ref=0px | app=10px
-    display: ref=list-item | app=flex
-    gap: ref=normal | app=6px

@@ -1,12 +1,12 @@
-{"screen": "settings-canais", "viewport": "1440", "text_similarity": 15.2, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 4.57, "height_ref": 1000, "height_app": 1066, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-canais", "viewport": "1440", "text_similarity": 15.8, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 4.55, "height_ref": 1000, "height_app": 1066, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']
-[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Identidade do canal, produção, integrações e controles avançados.']
+[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Canal: Musica']
 [replace] REF=['Curiosidades Históricas'] | APP=['Musica']
 [replace] REF=['História e mistérios · Português (BR)', '🎨 Cinemática Sombria', '🎙 Rodrigo Faber', 'Econômico', 'YouTube conectado', 'Providers prontos'] | APP=['Sem perfil editorial · valem os padrões do estúdio.']
 [replace] REF=['Ciência em 60s', 'Ciência para curiosos · Português (BR)', '🎨 Ilustração Moderna', '🎙 Caio Mendes', 'Equilibrado', 'YouTube desconectado'] | APP=['Musica', 'Sem perfil editorial · valem os padrões do estúdio.', 'Abrir estúdio', 'Editar', 'Musica', 'Sem perfil editorial · valem os padrões do estúdio.']
-[replace] REF=['Assistente em 6 passos', '🧭 Roteiro da demo'] | APP=['Comece com o essencial']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
 
 ## CAMPOS/BOTOES (ref -> app)
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:+ Novo canal', 'a:Abrir estúdio', 'a:Editar', 'a:Abrir estúdio']

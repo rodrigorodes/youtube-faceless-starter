@@ -1,25 +1,16 @@
-{"screen": "settings-canais", "viewport": "390", "text_similarity": 18.8, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 5, "pixel_diff_pct": 14.57, "height_ref": 1473, "height_app": 1844, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-canais", "viewport": "390", "text_similarity": 15.6, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 14.55, "height_ref": 1473, "height_app": 1824, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
-[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
-[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Identidade do canal, produção, integrações e controles avançados.']
+[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Canal: Musica']
 [replace] REF=['Curiosidades Históricas'] | APP=['Musica']
 [replace] REF=['História e mistérios · Português (BR)', '🎨 Cinemática Sombria', '🎙 Rodrigo Faber', 'Econômico', 'YouTube conectado', 'Providers prontos'] | APP=['Sem perfil editorial · valem os padrões do estúdio.']
 [replace] REF=['Ciência em 60s', 'Ciência para curiosos · Português (BR)', '🎨 Ilustração Moderna', '🎙 Caio Mendes', 'Equilibrado', 'YouTube desconectado'] | APP=['Musica', 'Sem perfil editorial · valem os padrões do estúdio.', 'Abrir estúdio', 'Editar', 'Musica', 'Sem perfil editorial · valem os padrões do estúdio.']
-[replace] REF=['Assistente em 6 passos', '🧭 Roteiro da demo'] | APP=['Comece com o essencial']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
 
 ## CAMPOS/BOTOES (ref -> app)
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:+ Novo canal', 'a:Abrir estúdio', 'a:Editar', 'a:Abrir estúdio']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
-'+ Novo canal' ref<button.btn primary small> app<a.btn primary small>
-    textAlign: ref=center | app=start
-'Abrir estúdio' ref<button.btn small> app<a.btn small>
-    textAlign: ref=center | app=start
-'Editar' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
 'Criar novo canal' ref<b.> app<b.>
     display: ref=inline | app=block

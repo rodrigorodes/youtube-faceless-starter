@@ -1,4 +1,4 @@
-{"screen": "videos", "viewport": "768", "text_similarity": 12.6, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 10.88, "height_ref": 1000, "height_app": 3972, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "videos", "viewport": "768", "text_similarity": 12.6, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 0, "pixel_diff_pct": 10.88, "height_ref": 1000, "height_app": 3972, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
@@ -13,5 +13,3 @@
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:✦ Criar vídeo']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start

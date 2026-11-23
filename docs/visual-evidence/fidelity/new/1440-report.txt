@@ -1,4 +1,4 @@
-{"screen": "new", "viewport": "1440", "text_similarity": 49.4, "text_diffs": 9, "field_similarity": 14.0, "field_diffs": 3, "style_diffs": 3, "pixel_diff_pct": 2.14, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "new", "viewport": "1440", "text_similarity": 49.4, "text_diffs": 9, "field_similarity": 14.0, "field_diffs": 3, "style_diffs": 2, "pixel_diff_pct": 2.14, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Não disponível: nenhuma chamada registrada neste mês.', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']
@@ -17,8 +17,6 @@
 [replace] REF=['button[button]:', 'button[button]:', 'select[select-one]:', 'button[submit]:Ouvir amostra de Rodrigo Faber', 'button[submit]:Ouvir amostra de Marina Alves', 'button[submit]:Ouvir amostra de Caio Mendes'] | APP=['select[select-one]:duration', 'input[radio]:estilo-novo', 'summary:Configuração precisa de atenção', 'a:', 'button[submit]:⚡ Criar e abrir vídeo →']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
 'Short · 9:16' ref<button.> app<span.>
     backgroundColor: ref=rgb(34, 29, 51) | app=rgba(0, 0, 0, 0)
     borderTopLeftRadius: ref=18px | app=0px

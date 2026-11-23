@@ -2666,7 +2666,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             board = uc.list_connections.execute()
             profiles = uc.list_channel_profiles.execute(True) if uc.list_channel_profiles else []
             projects, p_id = _topbar(uc, project_id)
-            return render_connections(board, profiles, projects=projects, project_id=p_id or "")
+            channel_view = None
+            if p_id and uc.channels_page is not None:
+                try:
+                    channel_view = uc.channels_page.execute(p_id)
+                except Exception:  # noqa: BLE001 - a página degrada para "catálogo indisponível"
+                    channel_view = None
+            team = None
+            if uc.team_view is not None:
+                try:
+                    team = uc.team_view.execute(org_id=None)
+                except Exception:  # noqa: BLE001
+                    team = None
+            return render_connections(board, profiles, projects=projects, project_id=p_id or "",
+                                      channel_view=channel_view, team=team)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

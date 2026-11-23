@@ -32,3 +32,27 @@ referência × produto em 1440 e 390 px, mais estilos computados).
 - `tests/test_reference_browser.py`: 4 passed (geometria da casca contra o protótipo no Chromium).
 - Testes antigos presos à proposta anterior (breadcrumb, "Continuar de onde parou", cartões de Vídeos, redirect de Canais) foram atualizados ao protótipo V4/V3, com os motivos nos próprios testes.
 - Não há afirmação de equivalência pixel a pixel: a conferência foi visual, tela a tela.
+
+
+## Rodada Fidelity Gate (fonte: `prototype-v4-v3/index.html` + `v3.js`)
+`scripts/fidelity_gate.py` renderiza protótipo e app em 1440×1000, 768×1000 e 390×844 e grava, por tela,
+texto/campos/estilos computados/overflow/diff de pixels e a imagem lado a lado em `docs/visual-evidence/fidelity/`
+(`summary.json`, `<tela>/<vp>-{report.txt,side.png}`). 17 telas × 3 viewports; sem overflow horizontal no app.
+
+Telas portadas ao protótipo nesta rodada: Início, Criar vídeo (painel Personalizar), Vídeos (colunas Vídeo/Modo/Formato/Estado/Cenas/Custo),
+Tendências (`pgIdeas`), Desempenho (`pgAnalytics`), Biblioteca (`pgLibrary`: abas, cartões com ✓ Ativo no canal / Vincular ao canal,
+diálogo "Criar novo estilo"), Configurações (subtítulo "Canal: …", Canais, Marca & Editorial em dois cartões,
+Conexões & Equipe em página única: cartão YouTube + Equipe, Providers externos por tarefa, "Avançado e diagnóstico"), assistente Criar canal (`pgWizard`).
+
+### Exceções funcionais (dado ou backend que o produto não tem)
+- Dados ilustrativos do mockup não entram (Mary Celeste, selo "Mockup", orçamento fictício, "Roteiro da demo", números/tendências fictícios).
+- Biblioteca: Vozes, Músicas e Modelos de roteiro não têm catálogo; a aba diz isso. Estilos reais usam a paleta real como gradiente; descrição/instrução de arte gravadas em `params.extra`.
+- Desempenho: sem gráfico diário (não há série real). Criar vídeo: a duração do painel Personalizar não é enviada ao backend.
+- Conexões: "+ Adicionar provider"/"Configurar" não existem no backend; a gestão real de contas Google (vincular/revogar) fica em "Avançado e diagnóstico".
+  Equipe: "+ Convidar" leva à página de Equipe; sem organização, mostra texto explícito.
+- `.hero` usa `var(--hero)` (gradiente do tema) em vez do literal do protótipo; botão de guia "Roteiro da demo" ausente.
+- Alturas de Vídeos/Tendências/Produção diferem porque o banco local tem dezenas de itens reais contra 3 do mockup.
+- Pendente de revisão visual fina: abas do vídeo (composição/qualidade/publicação) e Produção & Orçamento ainda têm diferenças de estrutura reportadas nos `*-report.txt`; não declaradas como idênticas.
+- Não há afirmação de equivalência pixel a pixel; o diff de pixels do gate é maior que zero em todas as telas por causa de dados reais.
+
+Validação: suíte completa 2545 passed, 4 falhas pré-existentes (as mesmas listadas acima); testes que dependem de Postgres são pulados (`STUDIO_TEST_DSN` ausente).

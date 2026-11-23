@@ -1,7 +1,6 @@
-{"screen": "video-cenas", "viewport": "768", "text_similarity": 49.6, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 6, "pixel_diff_pct": 16.71, "height_ref": 1589, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "video-cenas", "viewport": "768", "text_similarity": 42.9, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 16.71, "height_ref": 1589, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
-[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
 [replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0', 'A cidade subterrânea de Derinkuyu', 'Rascunho (Diretor)', 'Vídeo 16:9', '🎙 Rodrigo Faber'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho', 'Short 9:16']
 [replace] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.', 'Conte sua história, cena por cena', 'Selecione uma cena para editar. As demais ficam preservadas.', '↶ Desfazer', '↷ Refazer'] | APP=['Storyboard integrado', 'Texto, mídia, B-roll e narração de cada cena na mesma bancada. Edite sem trocar de tela.']
@@ -13,16 +12,5 @@
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'a:+ Nova cena']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
-'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'+ Nova cena' ref<button.btn small> app<a.btn small>
-    textAlign: ref=center | app=start
 'Gerar tudo o que falta' ref<button.btn ghost small> app<a.btn small>
     backgroundColor: ref=rgba(0, 0, 0, 0) | app=rgb(28, 30, 36)
-    textAlign: ref=center | app=start
-'🎬 Gerar o que falta e renderizar' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start

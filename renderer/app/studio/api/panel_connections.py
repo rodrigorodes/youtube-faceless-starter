@@ -523,31 +523,114 @@ def _sidebar_card(accounts: list[dict]) -> str:
     """
 
 
+def _yt_card(accounts: list[dict], profile: ChannelProfile | None) -> str:
+    """`ytCard` do protótipo: estado do vínculo do canal ativo com o YouTube (dado real)."""
+    youtube_id = (profile.youtube_channel_id if profile else "") or ""
+    found = None
+    for account in accounts:
+        for channel in account.get("channels") or []:
+            if youtube_id and str(channel.get("youtube_channel_id") or "") == youtube_id:
+                found = channel
+    status = str((found or {}).get("status") or "").upper()
+    if found and status == "CONNECTED":
+        pill = '<span class="pill ok">✓ Conectado</span>'
+        title = str(found.get("title") or youtube_id)
+        texto = (f'{e(title)} · escopos: ' + ", ".join(f"<code class=\"mono\">{e(sc)}</code>" for sc, _ in _SCOPES_EXPLAINED)
+                 + " · token guardado no servidor.")
+        acoes = ('<button class="btn small" type="button" data-connect>Reconectar</button>'
+                 f'<button class="btn small" type="button" data-revoke data-grant="{e(found.get("grant_id") or "")}" '
+                 f'data-youtube="{e(youtube_id)}" data-title="{e(title)}">Revogar acesso</button>')
+    else:
+        pill = '<span class="pill warn">○ Desconectado</span>'
+        texto = ("Sem vínculo com um canal do YouTube. Você pode criar e aprovar vídeos normalmente, "
+                 "mas só publica depois de conectar.")
+        acoes = '<button class="btn primary small" type="button" data-connect>Conectar conta Google</button>'
+    return f"""<div class="card"><div class="between"><h3>Canal do YouTube</h3>{pill}</div>
+        <p class="sub" style="margin:8px 0 12px">{texto}</p>
+        <div class="row">{acoes}</div>
+        <p class="sample" style="margin-top:10px">Ao conectar, o Google abre a tela de consentimento; o servidor troca o código e guarda os tokens. Nenhuma credencial volta ao navegador.</p>
+        <div class="conn-status" id="conexoes-status" role="status" aria-live="polite"></div></div>"""
+
+
+def _team_card(team) -> str:
+    """Cartão Equipe: membros reais da organização; convite/gestão ficam na página de Equipe."""
+    if team is None or getattr(team, "organization", None) is None:
+        linhas = '<p class="sample" style="margin-top:8px">Nenhuma organização com membros cadastrada.</p>'
+    else:
+        linhas = "".join(
+            f'<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)">'
+            f'<b>{e(m.display_name or m.email)}</b><span class="sub">{e(m.role.value)}</span></div>'
+            for m in team.members) or '<p class="sample" style="margin-top:8px">Nenhum membro cadastrado.</p>'
+    return (f'<div class="card"><div class="between"><h3>Equipe</h3>'
+            f'<a class="btn small" href="/studio/panel/equipe">+ Convidar</a></div>'
+            f'<div style="margin-top:8px">{linhas}</div></div>')
+
+
+_KINDS = (("TEXT", "Roteiro (texto)"), ("VOICE", "Narração (voz)"), ("IMAGE", "Imagens por IA"), ("RENDERER", "Render"))
+
+
+def _prov_card(card, project_id: str) -> str:
+    """`provCard` do protótipo com os dados reais do catálogo (sem credencial/qualidade inventadas)."""
+    from . import panel_channels
+    from ..domain.provider import Availability
+    ok = card.availability is Availability.AVAILABLE
+    pill = '<span class="pill ok">✓ Disponível</span>' if ok else '<span class="pill warn">! Indisponível</span>'
+    modelo = f' <code class="mono">{e(card.model)}</code>' if card.model else ""
+    caps = ", ".join(card.capabilities) if card.capabilities else "não declarada"
+    rate = f"{card.rate_limit_per_min} chamada(s)/min" if card.rate_limit_per_min else "não declarado"
+    motivo = ("" if ok else f'<p class="sample" style="color:var(--warn)"><b>Motivo:</b> {e(card.reason or "sem motivo registrado")}</p>')
+    if ok:
+        teste = (f'<span class="provider-acao"><button type="button" class="btn small" data-test-provider="{e(card.kind.value)}" '
+                 f'data-provider-spec="{e(card.spec)}" data-project-id="{e(project_id)}">Testar conexão</button>'
+                 '<span class="provider-result" role="status" aria-live="polite"></span></span>')
+    else:
+        teste = '<button type="button" class="btn small" disabled>Testar conexão</button>'
+    return (f'<div class="card flat" style="padding:14px" data-provider-kind="{e(card.kind.value)}" data-provider-spec="{e(card.spec)}">'
+            f'<div class="between"><div><b>{e(card.name)}</b>{modelo}</div>{pill}</div>'
+            f'<p class="sample" style="margin-top:6px">Capability: <b style="color:var(--text)">{e(caps)}</b> · rate limit: {e(rate)}</p>'
+            f'<p class="sample"><b>Custo:</b> {panel_channels._provider_cost(card)}</p>'
+            f'<p class="sample">Porta: <code class="mono">{e(card.spec)}</code></p>{motivo}'
+            f'<div class="row" style="margin-top:8px">{teste}</div></div>')
+
+
+def _providers_card(channel_view, project_id: str) -> str:
+    from . import panel_channels
+    cards = list(getattr(channel_view, "providers", None) or [])
+    erro = getattr(channel_view, "providers_error", None)
+    grupos = []
+    for key, label in _KINDS:
+        itens = "".join(_prov_card(c, project_id) for c in cards if c.kind.name == key)
+        vazio = '<p class="sample">Nenhum provider cadastrado.</p>'
+        grupos.append(f'<h4 style="margin:14px 0 8px;color:var(--accent2)">{label}</h4><div class="grid2">{itens or vazio}</div>')
+    aviso = f'<p class="warning" role="note">Catálogo de providers indisponível: {e(erro)}.</p>' if erro else ""
+    return f"""<div class="card" id="painel-providers"><div class="between" style="margin-bottom:6px"><div><h3>Providers externos</h3>
+        <p class="sub">Catálogo da conta, por tarefa. Cada canal escolhe qual usar em Produção &amp; Orçamento.</p></div></div>
+        <div class="note info" style="margin:10px 0 16px">Chaves e tokens ficam no servidor (secret store). Aqui aparece só a <b>referência</b> e o estado — nenhum valor volta ao navegador.</div>
+        {aviso}{"".join(grupos)}</div>"""
+
+
 def render_connections(board: dict, profiles: list[ChannelProfile], *,
                        projects: list[tuple[str, str]] | None = None,
-                       project_id: str = "") -> tuple[str, dict[str, str]]:
-    """Página de Conexões: casca aprovada + conta → canais real + conectar/confirmar/revogar."""
+                       project_id: str = "", channel_view=None, team=None) -> tuple[str, dict[str, str]]:
+    """`pgSettings` → Conexões & Equipe: cartão YouTube + Equipe, Providers externos, diagnóstico.
+
+    A gestão completa conta → canais (vincular, desvincular, revogar) continua disponível num
+    bloco recolhido; é a função real que o protótipo só simula.
+    """
+    from . import panel_channels
     nonce = secrets.token_urlsafe(16)
     accounts = list(board.get("accounts") or [])
     profiles = list(profiles or [])
     profiles_by_id = {profile.id: profile for profile in profiles}
+    ativo = profiles_by_id.get(project_id) or next((p for p in profiles if p.project_id == project_id), None)
     body = _accounts_card(accounts, profiles, profiles_by_id) if accounts else _empty_card()
     content_html = f"""
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h2>Contas do Google e canais do YouTube</h2>
-            <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem">
-              Ação primária: <b>conectar a conta e escolher o canal</b>. Confirme o canal do YouTube antes de
-              vincular — errar de canal custa segundos para evitar e horas para consertar.
-            </p>
-          </div>
-          <button class="btn btn-primary" type="button" data-connect>Conectar conta Google</button>
-        </div>
-        <div class="conn-status" id="conexoes-status" role="status" aria-live="polite"></div>
-      </div>
-      {body}
-      {_scopes_card()}
+      <div class="grid2" style="margin-bottom:16px">{_yt_card(accounts, ativo)}{_team_card(team)}</div>
+      {_providers_card(channel_view, project_id)}
+      <details class="diag" style="margin-top:16px"><summary>Avançado e diagnóstico</summary>
+        <p class="mono" style="margin-top:8px">chaves: não exibidas<br>configuração pública do canal: {e(project_id)}</p>
+        <div class="stack" style="margin-top:12px">{body}{_scopes_card()}</div>
+      </details>
       {_confirm_dialog()}
     """
     body_page = shell_v3.render_settings_page_body(
@@ -565,7 +648,7 @@ def render_connections(board: dict, profiles: list[ChannelProfile], *,
         projects=projects or [],
         project_id=project_id,
         cost_note="",
-        page_js=CONNECTIONS_SCRIPT,
-        extra_css=CONNECTIONS_CSS,
+        page_js=CONNECTIONS_SCRIPT + panel_channels._channels_page_js(project_id),
+        extra_css=CONNECTIONS_CSS + panel_channels.CHANNELS_CSS,
     )
     return html, shell._headers(nonce)

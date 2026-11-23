@@ -1,4 +1,4 @@
-{"screen": "video-fontes", "viewport": "1440", "text_similarity": 66.7, "text_diffs": 5, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 3, "pixel_diff_pct": 4.28, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "video-fontes", "viewport": "1440", "text_similarity": 66.7, "text_diffs": 5, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 0, "pixel_diff_pct": 4.28, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']
@@ -11,9 +11,3 @@
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'button[button]:+ Adicionar fonte']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
-'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start

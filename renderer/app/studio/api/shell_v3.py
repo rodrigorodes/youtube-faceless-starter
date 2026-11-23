@@ -187,13 +187,14 @@ SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
 
 
 def render_settings_nav(active_section: str, project_id: str = "") -> str:
+    subpagina = active_section in ("equipe", "avancado")
     active_section = {"estrategia": "marca", "equipe": "conexoes", "avancado": "conexoes"}.get(active_section, active_section)
     items = []
     for key, label, href in SETTINGS_SECTIONS:
         curr = ' aria-current="page"' if key == active_section else ""
         items.append(f'<li><a href="{e(with_channel(href, project_id))}"{curr}>{e(label)}</a></li>')
     secondary = ""
-    if active_section == "conexoes":
+    if subpagina:  # Equipe e Avançado são subpáginas; a própria aba Conexões é a página única do protótipo
         secondary = '<div class="row" style="margin-bottom:16px">' + "".join(
             f'<a class="btn small" href="{e(with_channel(href, project_id))}">{label}</a>'
             for label, href in (("Providers", "/studio/panel/conexoes"),

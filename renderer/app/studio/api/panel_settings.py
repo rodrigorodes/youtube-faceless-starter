@@ -196,18 +196,8 @@ def render_settings_section(section: str, view: ChannelsPageView, *, channel_sty
     identidade_html = style_html if section == "marca" else ""
     if section == "marca":
         return _render_marca(view, nonce, _marca_cards(view) + identidade_html)
+    # `pgSettings` não tem cartão de cabeçalho por aba: o título/subtítulo da página já dizem o canal.
     content_html = f"""
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h2>{e(title)}</h2>
-            <p class="dim" style="margin:0">{e(lead)}</p>
-          </div>
-          <span class="selo">CANAL</span>
-        </div>
-        <p class="micro" style="margin:10px 0 0">Canal ativo: <b>{e(view.project.name)}</b> ·
-        vídeos existentes preservam o snapshot deles.</p>
-      </div>
       {reusados}
       {identidade_html}
     """

@@ -1,7 +1,6 @@
-{"screen": "video-composicao", "viewport": "768", "text_similarity": 56.1, "text_diffs": 12, "field_similarity": 10.3, "field_diffs": 3, "style_diffs": 8, "pixel_diff_pct": 7.8, "height_ref": 2409, "height_app": 2614, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "video-composicao", "viewport": "768", "text_similarity": 52.1, "text_diffs": 11, "field_similarity": 10.3, "field_diffs": 3, "style_diffs": 4, "pixel_diff_pct": 7.8, "height_ref": 2409, "height_app": 2614, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
-[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
 [replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0', 'A cidade subterrânea de Derinkuyu', 'Rascunho (Diretor)', 'Vídeo 16:9', '🎙 Rodrigo Faber'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho', 'Short 9:16']
 [delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
@@ -20,12 +19,6 @@
 [replace] REF=['select[select-one]:Cinemática Sombria (canal) Documentário ', 'button[submit]:🎬 Gerar o que falta e renderizar', 'button[submit]:🧭 Roteiro da demo'] | APP=['summary:Cores da legenda', 'input[text]:palette.caption_text', 'input[text]:palette.caption_box', 'input[text]:palette.accent', 'select[select-one]:Nenhum estilo resolvido', 'button[submit]:Salvar composição']
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start
-'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
-'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
-    textAlign: ref=center | app=start
 'Música' ref<span.> app<span.>
     fontSize: ref=11.5px | app=12.5px
     lineHeight: ref=17.25px | app=18.75px
@@ -46,5 +39,3 @@
     lineHeight: ref=18px | app=18.75px
     color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
     borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-'🎬 Gerar o que falta e renderizar' ref<button.btn primary> app<a.btn primary>
-    textAlign: ref=center | app=start

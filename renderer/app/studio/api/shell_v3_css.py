@@ -483,14 +483,14 @@ dialog, dialog.modal, .modal {
   background: var(--panel);
   border: 1px solid var(--line2);
   border-radius: 16px;
-  padding: 24px;
-  width: min(540px, 92%);
+  padding: 22px;
+  width: min(560px, 100%);
   max-height: 88vh;
   overflow: auto;
   color: var(--text);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
 }
-dialog::backdrop { background: rgba(5, 5, 8, 0.72); backdrop-filter: blur(4px); }
+dialog::backdrop { background: rgba(5, 5, 8, 0.72); overflow: hidden; overscroll-behavior: contain; }
 .modal-header, .dialogo-cab {
   display: flex;
   justify-content: space-between;
@@ -536,8 +536,8 @@ dialog::backdrop { background: rgba(5, 5, 8, 0.72); backdrop-filter: blur(4px); 
 .seg .seg-btn:focus-within, .modecard:focus-within { outline: 2px solid var(--accent2); outline-offset: 2px; }
 .tog { display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none; }
 .tog input { position:absolute;opacity:0; }
-.tog i { width:34px;height:20px;border-radius:12px;background:var(--panel3);border:1px solid var(--line);position:relative;flex:none;pointer-events:none; }
-.tog i:after { content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--muted); }
+.tog i { width:34px;height:20px;border-radius:12px;background:var(--panel3);border:1px solid var(--line);position:relative;flex:none;pointer-events:none;transition:0.15s; }
+.tog i:after { content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:0.15s; }
 .tog input:checked+i { background:var(--accentbg);border-color:var(--accent); }
 .tog input:checked+i:after { left:16px;background:var(--accent2); }
 .tog input:focus-visible+i { outline:2px solid var(--accent2);outline-offset:2px; }
@@ -575,4 +575,5 @@ details.diag summary { cursor: pointer; font-weight: 650; color: var(--muted); }
   .top .l, .top .r { flex-wrap: wrap; }
   #chstyle { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 """
