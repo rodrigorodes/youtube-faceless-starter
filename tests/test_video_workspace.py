@@ -499,10 +499,27 @@ def test_publicacao_declares_the_intent_invalidation_rule():
     assert 'id="publicacao-intencao"' in html and "invalida a intenção anterior" in html
 
 
+def _com_hash(view, content_hash="c" * 64):
+    from dataclasses import replace
+
+    from app.studio.application.script_view import VersionView
+    return replace(view, versions=[VersionView(version=view.version, current=True, approved=False, rejected=False,
+                                               superseded=False, hash_short=content_hash[:8],
+                                               content_hash=content_hash)])
+
+
+def test_qualidade_does_not_offer_script_approval_for_a_script_without_content_hash():
+    """Bug: roteiro curto não tem plano nem hash; o botão enviava hash vazio e a API respondia "Revise os campos: content_hash"."""
+    content = _content(_render("qualidade", script_view=_script_view(approved=False)))  # sem hash na versão corrente
+    assert 'id="btn-approve-script"' not in content
+    assert "não se aplica" in content and "aprovação do vídeo" in content
+
+
 def test_qualidade_approves_the_script_version_inline_without_leaving_for_the_old_script_page():
-    html = _render("qualidade", script_view=_script_view(approved=False))
+    html = _render("qualidade", script_view=_com_hash(_script_view(approved=False)))
     content = _content(html)
     assert 'id="btn-approve-script"' in content and 'data-version="2"' in content
+    assert 'data-hash="' + "c" * 64 + '"' in content
     assert "Aprovar versão 2 do roteiro" in content
     assert "/roteiro" not in content
     assert "/script/approve" in html  # o clique chama a API existente

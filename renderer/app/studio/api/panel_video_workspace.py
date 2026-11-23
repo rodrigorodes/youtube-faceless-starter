@@ -1128,16 +1128,23 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
     )
     script_line = ""
     if script_view is not None and script_view.has_script:
-        script_line = (f'<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: '
-                       f'{"aprovada" if script_view.approved else "não registrada"}.</p>')
-        if not script_view.approved and script_view.version:
-            # Aprovar a versão do roteiro acontece aqui, sem sair para a página antiga de Roteiro.
-            versao_hash = next((v.content_hash for v in script_view.versions if v.current and v.content_hash), "")
-            script_line += (
-                '<div style="margin:0 0 12px"><button type="button" class="btn small" id="btn-approve-script" '
-                f'data-video-id="{e(video_id)}" data-version="{script_view.version}" data-hash="{e(versao_hash)}">'
-                f'Aprovar versão {script_view.version} do roteiro</button> '
-                '<span id="approve-script-feedback" class="feedback" role="status" aria-live="polite"></span></div>')
+        versao_hash = next((v.content_hash for v in script_view.versions if v.current and v.content_hash), "")
+        if script_view.approved:
+            script_line = '<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: aprovada.</p>'
+        elif not versao_hash:
+            # Roteiro curto (gerado pelas fontes) não tem plano de capítulos e, sem plano, não tem hash de conteúdo:
+            # a aprovação por versão não se aplica e a decisão é a aprovação do vídeo (acima).
+            script_line = ('<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: não se aplica a roteiro '
+                           'curto, sem plano de capítulos. Vale a aprovação do vídeo.</p>')
+        else:
+            script_line = '<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: não registrada.</p>'
+            if script_view.version:
+                # Aprovar a versão do roteiro acontece aqui, sem sair para a página antiga de Roteiro.
+                script_line += (
+                    '<div style="margin:0 0 12px"><button type="button" class="btn small" id="btn-approve-script" '
+                    f'data-video-id="{e(video_id)}" data-version="{script_view.version}" data-hash="{e(versao_hash)}">'
+                    f'Aprovar versão {script_view.version} do roteiro</button> '
+                    '<span id="approve-script-feedback" class="feedback" role="status" aria-live="polite"></span></div>')
     aside = aside.replace("</aside>", f"{script_line}</aside>") if script_line else aside
     return f'<div class="two"><div class="stack">{preview_card}{issues_card}{technical_details}</div>{aside}</div>'
 
