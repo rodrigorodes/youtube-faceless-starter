@@ -542,6 +542,7 @@ dialog::backdrop { background: rgba(5, 5, 8, 0.72); overflow: hidden; overscroll
 .tog input:checked+i:after { left:16px;background:var(--accent2); }
 .tog input:focus-visible+i { outline:2px solid var(--accent2);outline-offset:2px; }
 .feedback:empty { display: none; }
+.feedback.erro { color: var(--bad); }
 .hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .sr, .sr-only { position: absolute; left: -9999px; }
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }

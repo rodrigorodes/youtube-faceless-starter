@@ -26,6 +26,7 @@ from ..application.panel import VideoDetailView
 from ..domain.contracts import Video, VideoFormat, VideoStatus
 from ..domain.panel import Stage, classify
 from . import approval_form
+from .publicacao_js import PUBLICACAO_JS
 from . import panel as legacy
 from . import shell_v3
 from .falha_producao import explicar_falha
@@ -1215,8 +1216,13 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     if is_published:
         action = '<div class="note okn">✓ Publicado.</div>'
     else:
-        action = (f'<button type="button" class="btn ok long" id="btn-publicar-acao" data-video-id="{e(video_id)}">'
-                  f"{action_btn_text}</button>"
+        # Sem versão aprovada nem em revisão não há o que publicar: o botão fica desligado e diz por quê.
+        blocked_attr = (' disabled aria-describedby="publicar-motivo"' if not approved and not reviewable else "")
+        reason = ('<p class="sample" id="publicar-motivo" style="margin-top:8px">Aprove uma versão na aba Qualidade '
+                  "para liberar a publicação.</p>" if blocked_attr else "")
+        action = (f'<button type="button" class="btn ok long" id="btn-publicar-acao" data-video-id="{e(video_id)}"{blocked_attr}>'
+                  f"{action_btn_text}</button>{reason}"
+                  '<p id="publicar-feedback" class="feedback" role="status" aria-live="polite" style="margin-top:8px"></p>'
                   '<div style="margin-top:8px"><a class="btn small long" href="/studio/panel/conexoes">Abrir Conexões</a></div>'
                   '<p class="sample" style="margin-top:10px">Nada é enviado sem este clique.</p>')
     aside = (
@@ -1717,11 +1723,55 @@ PAGE_JS = """
   }
 
   if (btnPublishAction) {
-    btnPublishAction.addEventListener('click', function (e) {
-      if (scheduleRadio && scheduleRadio.checked) {
-        if (!validateBrasiliaSchedule()) {
-          e.preventDefault();
-          return false;
+    // O clique aprova a versão (se ainda estiver em revisão) e executa a publicação pela API existente.
+    // O resultado vem do servidor e é traduzido; só `UPLOADED` aparece como sucesso.
+    var pubFeedback = document.getElementById('publicar-feedback');
+    var say = function (text, bad) {
+      if (!pubFeedback) return;
+      pubFeedback.textContent = text;
+      pubFeedback.classList.toggle('erro', !!bad);
+    };
+    btnPublishAction.addEventListener('click', async function (ev) {
+      ev.preventDefault();
+      var scheduled = !!(scheduleRadio && scheduleRadio.checked);
+      if (scheduled && !validateBrasiliaSchedule()) return;
+      var videoId = btnPublishAction.getAttribute('data-video-id') || '';
+      var reloading = false;
+      btnPublishAction.disabled = true;
+      btnPublishAction.classList.add('carregando');
+      if (window.StudioLoading) window.StudioLoading.start();
+      try {
+        if (document.getElementById('approve') && window.StudioAprovacao) {
+          say('Aprovando a versão…');
+          var at = '';
+          if (scheduled) {
+            var raw = scheduleInput.value.trim();
+            at = new Date(raw.length === 16 ? raw + ':00-03:00' : raw + '-03:00').toISOString();
+          }
+          var ap = await window.StudioAprovacao.aprovar(at);
+          if (!ap.ok) {
+            say('Não foi possível aprovar a versão: ' + window.StudioErro.texto(ap.data, 'tente novamente.', ap.status), true);
+            return;
+          }
+        }
+        say('Enviando ao YouTube…');
+        var res = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/publication/publish', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          say('Não foi possível publicar: ' + window.StudioErro.texto(data, 'tente novamente.', res.status), true);
+          return;
+        }
+        var out = window.StudioPublicacao.explicar(data);
+        say(out.texto, !out.ok);
+        if (out.ok) { reloading = true; setTimeout(function () { location.reload(); }, 1500); }
+      } catch (err) {
+        say('Falha de rede ao publicar. Confira a aba antes de tentar de novo: o envio pode ter sido feito.', true);
+      } finally {
+        if (!reloading) {
+          btnPublishAction.disabled = false;
+          btnPublishAction.classList.remove('carregando');
+          if (window.StudioLoading) window.StudioLoading.done();
         }
       }
     });
@@ -2046,7 +2096,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
     # O JS do formulário de aprovação só entra na área Publicação (W5.1); o resto não mudou.
     page_js = (PAGE_JS + (STORYBOARD_JS if active_area == "cenas" else "")
                + (RUN_JS if active_area in ("cenas", "composicao") else "")
-               + (approval_form.APPROVAL_JS if active_area == "publicacao" else ""))
+               + (PUBLICACAO_JS + approval_form.APPROVAL_JS if active_area == "publicacao" else ""))
     html = shell_v3.render_document(
         title="Faceless Studio — Vídeo",
         active="videos",

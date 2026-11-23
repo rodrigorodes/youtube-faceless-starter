@@ -22,7 +22,8 @@ APPROVAL_JS = ERRO_JS + """
   var out = document.getElementById('result');
   if (!form) return;
   form.addEventListener('submit', function (event) { event.preventDefault(); });
-  async function send(action) {
+  // Corpo e POST da decisão, sem efeito na tela: a aba Publicação reusa `aprovar` antes de publicar.
+  function corpo(action, publishAt) {
     var v = function (id) {
       var el = document.getElementById(id);
       return el ? el.value.trim() : '';
@@ -32,21 +33,31 @@ APPROVAL_JS = ERRO_JS + """
       body.output_asset_id = form.dataset.outputAssetId;
       body.title = v('title'); body.description = v('description');
       body.tags = v('tags') ? v('tags').split(',').map(function (t) { return t.trim(); }).filter(Boolean) : [];
-      if (v('publish_at')) body.publish_at = new Date(v('publish_at')).toISOString();
+      if (publishAt !== undefined) { if (publishAt) body.publish_at = publishAt; }
+      else if (v('publish_at')) body.publish_at = new Date(v('publish_at')).toISOString();
       if (v('override_reason')) body.override_reason = v('override_reason');
     } else if (v('reject_reason')) { body.reason = v('reject_reason'); }
+    return body;
+  }
+  async function enviarDecisao(action, publishAt) {
+    var r = await fetch(form.dataset.base + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo(action, publishAt)) });
+    var data = await r.json().catch(function () { return {}; });
+    return { ok: r.ok, status: r.status, data: data };
+  }
+  window.StudioAprovacao = { aprovar: function (publishAt) { return enviarDecisao('approve', publishAt); } };
+  async function send(action) {
     var btn = action === 'approve' ? document.getElementById('approve') : document.getElementById('reject');
     if (btn) { btn.disabled = true; btn.classList.add('carregando'); }
     if (window.StudioLoading) window.StudioLoading.start();
     if (out) out.textContent = 'Enviando…';
     try {
-      var r = await fetch(form.dataset.base + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      var data = await r.json().catch(function () { return {}; });
-      if (r.ok) {
+      var res = await enviarDecisao(action);
+      var data = res.data;
+      if (res.ok) {
         if (out) out.textContent = action === 'approve' ? 'Aprovado. A publicação é feita pelo servidor do Studio.' : 'Rejeitado.';
         setTimeout(function () { location.reload(); }, 900);
       } else {
-        if (out) out.textContent = 'Não foi possível concluir: ' + window.StudioErro.texto(data, 'tente novamente.', r.status);
+        if (out) out.textContent = 'Não foi possível concluir: ' + window.StudioErro.texto(data, 'tente novamente.', res.status);
         if (btn) { btn.disabled = false; btn.classList.remove('carregando'); }
         if (window.StudioLoading) window.StudioLoading.done();
       }
