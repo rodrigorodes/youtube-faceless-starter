@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 from ..domain.categories import ProjectCategory
-from ..domain.contracts import VideoFormat
+from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage, classify, is_known_cost, topic_key
 from .editorial import VideoNotFound
 from .errors import InvalidInput
@@ -492,6 +492,11 @@ class BuildPanel:
             raise VideoNotFound(video_id)
 
         st = classify(d.video.status, job=d.video.job_status, step_running=d.video.step_running, publication=d.video.publication_status)
+        if st is Stage.FAILED and d.video.status is VideoStatus.APPROVED and d.video.publication_status is PublicationStatus.FAILED:
+            # Só a publicação falhou: o render e a aprovação continuam valendo. No detalhe do vídeo isso é
+            # "Aprovado" (com a falha de publicação visível em `publication`), nunca "falha de produção":
+            # senão a tela pede para renderizar de novo uma etapa anterior que já está pronta.
+            st = Stage.APPROVED
         usage_rows = (
             [(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) for u in d.usage]
             if d.usage else d.video.cost_rows

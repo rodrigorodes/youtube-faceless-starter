@@ -1139,3 +1139,22 @@ def test_video_detail_running_run_explains_no_retry_without_inert_button():
     assert 'id="btn-start-production"' not in main_area
     assert "Nova tentativa só é válida quando a execução está em falha" in main_area
     assert "Abrir execução" in main_area
+
+
+def test_detail_keeps_an_approved_rendered_video_approved_when_only_the_publication_failed():
+    """Bug: a publicação falhar jogava o vídeo em `FAILED`, e o workspace pedia para renderizar de novo."""
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", "Tema", VideoStatus.APPROVED, pub=PublicationStatus.FAILED)
+    detail = VideoDetail(video=row, steps=[], usage=[], render_error=None,
+                         publication=PubInfo(PublicationStatus.FAILED, 1, "no YouTube destination is configured"))
+    view = BuildPanel(FakePanelRepo(detail_map={"v1": detail}), 15.0, lambda: now).detail("v1")
+    assert view.stage == Stage.APPROVED
+    assert view.publication.status == PublicationStatus.FAILED  # a falha continua visível
+
+
+def test_detail_still_reports_failure_when_the_video_itself_failed():
+    now = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+    row = _row("v1", "Tema", VideoStatus.FAILED, pub=PublicationStatus.FAILED)
+    detail = VideoDetail(video=row, steps=[], usage=[], render_error="boom", publication=None)
+    view = BuildPanel(FakePanelRepo(detail_map={"v1": detail}), 15.0, lambda: now).detail("v1")
+    assert view.stage == Stage.FAILED

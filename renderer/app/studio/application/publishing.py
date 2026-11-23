@@ -219,6 +219,28 @@ class RetryPublication:
         return pub
 
 
+class RearmPublication:
+    """Recoloca na fila uma publicação bloqueada **antes** de qualquer envio ao YouTube.
+
+    O gate (canal sem destino, autorização, aprovação desatualizada…) manda a publicação para a DLQ sem
+    ter aberto sessão de upload. Corrigida a causa, o registro precisa voltar a ser tentável; do contrário
+    o vídeo já renderizado e aprovado fica parado. O repositório só rearma quando prova que nada foi
+    enviado (sem sessão, sem id do YouTube, sem estado remoto desconhecido); o resto segue exigindo
+    reconciliação humana (`retry` continua recusando).
+    """
+
+    def __init__(self, videos: VideoRepository, pubs):
+        self.videos, self.pubs = videos, pubs
+
+    def execute(self, video_id: str) -> Publication:
+        _require_video(self.videos, video_id)
+        pub = self.pubs.rearm_blocked(video_id)
+        if pub is None:
+            raise StateConflict("the publication cannot be re-armed: it may have reached YouTube; "
+                                "human reconciliation required")
+        return pub
+
+
 class GetPublication:
     def __init__(self, videos: VideoRepository, pubs: PublicationRepository):
         self.videos, self.pubs = videos, pubs
@@ -293,3 +315,4 @@ class Publishing:
     preview: GetPreview
     publish: object | None = None      # F8: executor nativo (RunPublication), sem acoplar o núcleo ao adaptador
     reconcile: object | None = None    # F8: reconciliação de resultado ambíguo
+    rearm: object | None = None        # recoloca na fila a publicação bloqueada antes de qualquer envio

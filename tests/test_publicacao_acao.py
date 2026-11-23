@@ -90,3 +90,52 @@ def test_stale_approval_and_expired_schedule_are_explained():
         {"result": "BLOCKED", "detail": "the video metadata changed since the publication intent; confirm the publication again"})["texto"]
     assert "horário" in _explicar(
         {"result": "BLOCKED", "detail": "publication schedule has expired or is too close; reschedule before publishing"})["texto"]
+
+
+# --------------------------------------------------------------------------- falha só da publicação
+
+DESTINO = "no YouTube destination is configured for this channel; connect the channel in Canais → Conexão"
+
+
+def _falhou():
+    from app.studio.application.ports import PubInfo
+    from app.studio.domain.contracts import PublicationStatus
+
+    return _view(status=VideoStatus.APPROVED, stage=Stage.APPROVED,
+                 publication=PubInfo(status=PublicationStatus.FAILED, attempt=1, error=DESTINO))
+
+
+def test_failed_publication_says_so_and_never_asks_to_render_again():
+    content = _content(_render("publicacao", view=_falhou()))
+    text = " ".join(re.sub(r"<[^>]+>", " ", content).split())
+    assert "A publicação falhou" in text
+    assert "destino do YouTube" in text and DESTINO in text  # explicação + motivo técnico
+    assert "não precisa renderizar de novo" in text.lower()
+    assert "Aprove uma versão na aba Qualidade" not in text
+    tag = re.search(r'<button[^>]*id="btn-publicar-acao"[^>]*>', content).group(0)
+    assert 'data-rearm="1"' in tag and "disabled" not in tag
+    assert "Tentar publicar de novo" in text
+
+
+def test_failed_publication_is_a_pill_in_the_header_of_every_area_and_the_dock_does_not_offer_render():
+    for area in ("cenas", "qualidade", "publicacao"):
+        html = _render(area, view=_falhou())
+        assert "Publicação falhou" in _content(html), area
+        assert "Gerar o que falta e renderizar" not in html, area
+
+
+def test_overview_next_step_points_at_the_publication_not_at_production():
+    html = _render("qualidade", view=_falhou())
+    assert "Aprovação disponível após a renderização" not in _content(html)
+
+
+def test_publish_script_rearms_before_publishing_when_the_button_asks_for_it():
+    html = _render("publicacao", view=_falhou())
+    assert "/publication/rearm" in html and "data-rearm" in html
+
+
+def test_publication_reason_is_explained_on_the_server_with_the_same_rules():
+    from app.studio.api.publicacao_js import explicar_motivo
+
+    assert "destino do YouTube" in explicar_motivo(DESTINO)
+    assert explicar_motivo("something odd") is None and explicar_motivo(None) is None

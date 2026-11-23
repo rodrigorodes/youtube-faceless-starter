@@ -295,6 +295,23 @@ class PostgresPublicationRepository(_Base):
         check_id(video_id)
         return None  # A falha não prova que o executor anterior parou ou que o YouTube não recebeu o vídeo.
 
+    def rearm_blocked(self, video_id: str) -> Publication | None:
+        """Volta para a fila uma publicação em DLQ que **provadamente** nunca enviou nada.
+
+        Prova exigida, no próprio UPDATE (atômico, sem leitura prévia): falha permanente em DLQ, sem
+        sessão de upload, sem id do YouTube, sem estado remoto desconhecido e sem lease vivo. Qualquer
+        outra DLQ (sessão aberta, ambígua, com id) continua exigindo reconciliação humana e devolve
+        `None`. A tentativa já gasta vira a nova base: o orçamento de tentativas recomeça.
+        """
+        return self._one(
+            "UPDATE studio.publications SET status = 'PENDING', dead_letter = false, failure_class = NULL, "
+            "next_attempt_at = NULL, lease_until = NULL, attempt_base = attempt, updated_at = now() "
+            "WHERE video_id = %s AND invalidated_at IS NULL AND status = 'FAILED' AND dead_letter "
+            "AND failure_class = 'PERMANENT' AND upload_uri IS NULL AND youtube_video_id IS NULL "
+            "AND (remote_state IS NULL OR remote_state = 'NONE') AND offset_bytes = 0 "
+            f"AND (lease_until IS NULL OR lease_until <= clock_timestamp()) RETURNING {_PUB}",
+            (check_id(video_id),))
+
 
 def _lease(row: dict) -> PublicationLease:
     return PublicationLease(

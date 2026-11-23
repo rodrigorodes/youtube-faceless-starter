@@ -2215,6 +2215,16 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def retry_publication(video_id: str):
         return run(lambda uc: publishing(uc).retry.execute(check_id(video_id)))
 
+    @router.post("/videos/{video_id}/publication/rearm", response_model=Publication, response_model_exclude={"upload_uri"})
+    def rearm_publication(video_id: str):
+        """Recoloca na fila a publicação bloqueada antes de qualquer envio (409 se não houver prova disso)."""
+        def go(uc):
+            rearm = publishing(uc).rearm
+            if rearm is None:
+                raise HTTPException(503, "publication rearm unavailable")
+            return rearm.execute(check_id(video_id))
+        return run(go)
+
     @router.post("/publications/execute", response_model=PublicationRunOut,
                  response_model_exclude={"publication": {"upload_uri"}})
     def execute_publication(body: PublishIn | None = None):

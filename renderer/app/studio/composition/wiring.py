@@ -98,7 +98,7 @@ from ..domain.provider import (CostEstimate, NoProviderAvailable, ProviderImplem
 from ..domain.visual_style import resolve_style
 from ..application.observability import BridgeAlerts, Resume, record_provider_decision
 from ..application.publishing import (Approve, ClaimPublication, GetPreview, GetPublication, GetThumbnail, MarkFailed, MarkThumbnail, MarkUploaded,
-                                       Publishing, Reject, RetryPublication, SetUploadUri)
+                                       Publishing, RearmPublication, Reject, RetryPublication, SetUploadUri)
 from ..application.publication_execution import (FallbackTokenProvider, MissingTokenProvider, ReconcilePublication,
                                                 RunPublication, TargetChannelTokenProvider)
 from ..application.channel_grant import EnsureGrantAccessToken
@@ -632,7 +632,7 @@ class Studio:
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
             preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files),
-            publish=publish, reconcile=reconcile)
+            publish=publish, reconcile=reconcile, rearm=RearmPublication(repo, pubs))
         trend_repo = PostgresTrendRepository(connect)
         ingest_trends = IngestTrends(trend_repo, repo, s.trend_hosts)
         category_repo = PostgresCategoryRepository(connect)

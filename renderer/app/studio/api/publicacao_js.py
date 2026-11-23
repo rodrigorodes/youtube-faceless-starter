@@ -4,40 +4,60 @@
 DEAD_LETTER, BLOCKED) e um `detail` técnico em inglês. A tela mostra primeiro o que aconteceu e o
 que fazer, e mantém o motivo técnico no fim — nada é escondido, e só `UPLOADED` conta como sucesso.
 
-Uso: `window.StudioPublicacao.explicar(dadosDaApi)` devolve `{ok, texto}`.
+As regras (`MOTIVOS`) são a única fonte: o servidor as usa para a falha já registrada e o navegador as
+recebe em JSON para o resultado do clique. Uso no navegador:
+`window.StudioPublicacao.explicar(dadosDaApi)` devolve `{ok, texto}`.
 """
+from __future__ import annotations
 
-PUBLICACAO_JS = r"""
+import json
+import re
+
+# [padrão do detalhe técnico, explicação com o próximo passo], do mais específico ao mais genérico.
+# Só construções comuns a Python e a JavaScript (sem lookbehind nem grupos nomeados).
+MOTIVOS: tuple[tuple[str, str], ...] = (
+    (r"no YouTube destination is configured|no channel profile is configured|invalid project identifier",
+     "Este canal ainda não tem um destino do YouTube conectado. Conecte o canal em Conexões e tente de novo."),
+    (r"no connected authorization",
+     "Não há autorização vigente para o canal do YouTube de destino. Refaça a conexão em Conexões."),
+    (r"access token belongs to",
+     "A conta Google conectada não é a do canal de destino. Conecte a conta certa em Conexões."),
+    (r"needs to be reconnected|credentials are unusable",
+     "A conexão com o YouTube precisa ser refeita. Conecte a conta Google de novo em Conexões."),
+    (r"OAuth refresh failed",
+     "Não foi possível renovar o acesso ao Google agora. Tente de novo em instantes."),
+    (r"intent is missing|metadata changed|destination changed|render revision changed|checksum changed"
+     r"|not the current render|no longer matches",
+     "A aprovação ficou desatualizada (o vídeo ou os dados mudaram depois dela). Aprove a versão de novo."),
+    (r"QA did not pass",
+     "O QA não passou. Corrija os problemas ou aprove com o motivo do override."),
+    (r"no successful render",
+     "Ainda não há um vídeo renderizado para publicar."),
+    (r"rendered file is missing",
+     "O arquivo do vídeo renderizado não foi encontrado. Renderize de novo."),
+    (r"schedule has expired|too close",
+     "O horário agendado já passou ou está perto demais (mínimo de 15 minutos). Escolha outro horário."),
+    (r"disabled by configuration",
+     "A publicação está desligada neste ambiente. Nada foi enviado ao YouTube."),
+    (r"remote state is unknown|reported success without a video id|could not be recorded|disappeared while recording",
+     "Não dá para saber se o YouTube recebeu o vídeo. Não reenvie: a publicação precisa ser reconciliada."),
+    (r"already has another YouTube id",
+     "Este vídeo já tem outro identificador do YouTube registrado. É preciso revisar manualmente."),
+)
+_COMPILADAS = tuple((re.compile(padrao, re.I), texto) for padrao, texto in MOTIVOS)
+
+
+def explicar_motivo(detalhe: str | None) -> str | None:
+    """Explicação em português do motivo técnico registrado; `None` quando não há regra (nada é inventado)."""
+    for padrao, texto in _COMPILADAS:
+        if detalhe and padrao.search(detalhe):
+            return texto
+    return None
+
+
+_TEMPLATE = r"""
 (function () {
-  // [padrão do detalhe técnico, explicação com o próximo passo], do mais específico ao mais genérico.
-  var MOTIVOS = [
-    [/no YouTube destination is configured|no channel profile is configured|invalid project identifier/i,
-      'Este canal ainda não tem um destino do YouTube conectado. Conecte o canal em Conexões e tente de novo.'],
-    [/no connected authorization/i,
-      'Não há autorização vigente para o canal do YouTube de destino. Refaça a conexão em Conexões.'],
-    [/access token belongs to/i,
-      'A conta Google conectada não é a do canal de destino. Conecte a conta certa em Conexões.'],
-    [/needs to be reconnected|credentials are unusable/i,
-      'A conexão com o YouTube precisa ser refeita. Conecte a conta Google de novo em Conexões.'],
-    [/OAuth refresh failed/i,
-      'Não foi possível renovar o acesso ao Google agora. Tente de novo em instantes.'],
-    [/intent is missing|metadata changed|destination changed|render revision changed|checksum changed|not the current render|no longer matches/i,
-      'A aprovação ficou desatualizada (o vídeo ou os dados mudaram depois dela). Aprove a versão de novo.'],
-    [/QA did not pass/i,
-      'O QA não passou. Corrija os problemas ou aprove com o motivo do override.'],
-    [/no successful render/i,
-      'Ainda não há um vídeo renderizado para publicar.'],
-    [/rendered file is missing/i,
-      'O arquivo do vídeo renderizado não foi encontrado. Renderize de novo.'],
-    [/schedule has expired|too close/i,
-      'O horário agendado já passou ou está perto demais (mínimo de 15 minutos). Escolha outro horário.'],
-    [/disabled by configuration/i,
-      'A publicação está desligada neste ambiente. Nada foi enviado ao YouTube.'],
-    [/remote state is unknown|reported success without a video id|could not be recorded|disappeared while recording/i,
-      'Não dá para saber se o YouTube recebeu o vídeo. Não reenvie: a publicação precisa ser reconciliada.'],
-    [/already has another YouTube id/i,
-      'Este vídeo já tem outro identificador do YouTube registrado. É preciso revisar manualmente.']
-  ];
+  var MOTIVOS = __MOTIVOS__.map(function (m) { return [new RegExp(m[0], 'i'), m[1]]; });
 
   function motivo(detalhe) {
     if (!detalhe) return '';
@@ -69,3 +89,6 @@ PUBLICACAO_JS = r"""
   window.StudioPublicacao = { explicar: explicar };
 })();
 """
+
+
+PUBLICACAO_JS = _TEMPLATE.replace("__MOTIVOS__", json.dumps(MOTIVOS, ensure_ascii=False))

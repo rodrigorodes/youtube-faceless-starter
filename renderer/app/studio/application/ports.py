@@ -977,6 +977,9 @@ class PublicationQueueRepository(Protocol):
     def resolve_ambiguous(self, publication_id: str, *, retry: bool, error: str, failure_class: str) -> bool:
         """Reconciliação: `retry=True` só quando provou que não há vídeo; senão DLQ/humano."""
 
+    def rearm_blocked(self, video_id: str) -> Publication | None:
+        """Rearma a DLQ que provadamente nunca enviou nada (sem sessão, sem id, sem estado remoto); senão `None`."""
+
 
 class ProviderProbe(Protocol):
     """Sonda de conexão de um provider; roda no adaptador (nunca no core)."""

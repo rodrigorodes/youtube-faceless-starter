@@ -21,6 +21,7 @@ ERRO_JS = r"""
     [/temporarily unavailable/i, 'O Google/YouTube está indisponível agora. Tente de novo em instantes.', true],
     [/OAuth is not configured/i, 'A conexão com o Google não está configurada neste ambiente (credenciais OAuth).', true],
     [/OAuth failed/i, 'O Google recusou a autorização. Tente conectar de novo.', true],
+    [/cannot be re-armed|human reconciliation required|automatic retry disabled/i, 'Esta publicação pode já ter chegado ao YouTube. Confira o canal e reconcilie manualmente antes de tentar de novo.', true],
     [/publication executor is not configured/i, 'A publicação ainda não está configurada neste ambiente. Nada foi enviado ao YouTube.', false],
     [/publication not found/i, 'Publicação não encontrada. Atualize a página.', false],
     [/database unavailable/i, 'O banco de dados está indisponível. Tente de novo em instantes.', false],

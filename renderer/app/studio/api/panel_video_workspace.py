@@ -26,7 +26,7 @@ from ..application.panel import VideoDetailView
 from ..domain.contracts import Video, VideoFormat, VideoStatus
 from ..domain.panel import Stage, classify
 from . import approval_form
-from .publicacao_js import PUBLICACAO_JS
+from .publicacao_js import PUBLICACAO_JS, explicar_motivo
 from . import panel as legacy
 from . import shell_v3
 from .falha_producao import explicar_falha
@@ -97,6 +97,10 @@ def _next_step(view, video_id: str) -> tuple[str, str, str, str]:
         return ("Aprove a versão",
                 "A prévia e a aprovação desta versão estão na página de prévia.",
                 f"/studio/videos/{e(video_id)}/preview", "Abrir prévia")
+    if view.stage == Stage.APPROVED and _publication_failed(view):
+        return ("A publicação falhou",
+                "A versão continua renderizada e aprovada. Veja o motivo, corrija a causa e tente publicar de novo.",
+                area_href(video_id, "publicacao"), "Abrir publicação")
     if view.stage in (Stage.APPROVED, Stage.COMPLETED):
         return ("Prepare a publicação",
                 "A versão está aprovada; revise a intenção de publicação antes de enviar.",
@@ -1159,6 +1163,8 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
         scheduled_note = f'<div class="aviso aviso-info" style="margin-bottom:1rem">Agendado para {e(data_str)} · Brasília. Ainda não publicado.</div>'
 
     action_btn_text = "Atualizar agendamento" if is_scheduled else "Publicar agora"
+    if _publication_failed(view) and not is_published:
+        action_btn_text = "Tentar publicar de novo"
 
     checked_now = ' checked' if not is_scheduled else ''
     checked_sched = ' checked' if is_scheduled else ''
@@ -1208,9 +1214,20 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     else:
         preview_html = '<p class="sample" style="margin-top:12px">A prévia fica disponível após a renderização.</p>'
 
+    failed_pub = (_publication_failed(view) and not is_published)
+    failure_note = ""
+    if failed_pub:
+        raw = (getattr(pub, "error", None) or "").strip()
+        explained = explicar_motivo(raw)
+        failure_note = (
+            '<div class="note" id="publicacao-falhou" role="alert" style="margin-bottom:14px">'
+            '<b>A publicação falhou.</b> A versão continua renderizada e aprovada: não precisa renderizar de novo. '
+            f'{e(explained) if explained else "Corrija a causa e tente de novo."}'
+            + (f'<br><span class="sample">Motivo técnico: {e(raw)}</span>' if raw else "")
+            + "</div>")
     left = (
         '<div class="card"><h3 style="margin-bottom:12px">Dados de publicação no YouTube</h3>'
-        f"{gate_note}{summary}{heading}{decision}{options_card}{preview_html}</div>"
+        f"{failure_note}{gate_note}{summary}{heading}{decision}{options_card}{preview_html}</div>"
     )
     destino = (e(channel_name) if channel_name else "Canal do vídeo")
     if is_published:
@@ -1220,7 +1237,8 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
         blocked_attr = (' disabled aria-describedby="publicar-motivo"' if not approved and not reviewable else "")
         reason = ('<p class="sample" id="publicar-motivo" style="margin-top:8px">Aprove uma versão na aba Qualidade '
                   "para liberar a publicação.</p>" if blocked_attr else "")
-        action = (f'<button type="button" class="btn ok long" id="btn-publicar-acao" data-video-id="{e(video_id)}"{blocked_attr}>'
+        rearm_attr = ' data-rearm="1"' if (_publication_failed(view) and not is_published) else ""
+        action = (f'<button type="button" class="btn ok long" id="btn-publicar-acao" data-video-id="{e(video_id)}"{rearm_attr}{blocked_attr}>'
                   f"{action_btn_text}</button>{reason}"
                   '<p id="publicar-feedback" class="feedback" role="status" aria-live="polite" style="margin-top:8px"></p>'
                   '<div style="margin-top:8px"><a class="btn small long" href="/studio/panel/conexoes">Abrir Conexões</a></div>'
@@ -1754,6 +1772,18 @@ PAGE_JS = """
             return;
           }
         }
+        if (btnPublishAction.hasAttribute('data-rearm')) {
+          // A publicação anterior foi bloqueada antes de enviar algo: volta para a fila (o servidor só aceita
+          // quando prova que nada foi enviado) e então tenta publicar. Nenhuma etapa anterior é refeita.
+          say('Preparando nova tentativa…');
+          var rearm = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/publication/rearm', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          var rearmData = await rearm.json().catch(function () { return {}; });
+          if (!rearm.ok) {
+            say('Não foi possível tentar de novo: ' + window.StudioErro.texto(rearmData, 'tente novamente.', rearm.status), true);
+            return;
+          }
+        }
         say('Enviando ao YouTube…');
         var res = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/publication/publish', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -1927,6 +1957,12 @@ def _style_name(style_view) -> str | None:
     return getattr(style_view, "inherited_style_name", None) or None
 
 
+def _publication_failed(view) -> bool:
+    """A publicação registrada falhou (o render e a aprovação do vídeo seguem valendo)."""
+    status = getattr(getattr(view, "publication", None), "status", None)
+    return str(getattr(status, "value", status) or "").upper() == "FAILED"
+
+
 def _version_dialog(view) -> str:
     """Histórico de versões do protótipo, só com o que existe: a versão renderizada, se houver."""
     if view.stage in _PREVIEW_STAGES:
@@ -1954,6 +1990,8 @@ def _workspace_header(view, video_id: str, title: str, *, channel_name: str = ""
     fmt = getattr(getattr(view.video, "format", None), "value", getattr(view.video, "format", None))
     pills = [f'<span class="pill {tone}">{e(label)}</span>',
              f'<span class="pill">{"Short 9:16" if fmt == "short" else "Vídeo 16:9"}</span>']
+    if _publication_failed(view) and view.stage != Stage.FAILED:
+        pills.insert(1, '<span class="pill bad">Publicação falhou</span>')
     if channel_voice:
         pills.append(f'<span class="pill">🎙 {e(channel_voice)}</span>')
     style_name = _style_name(style_view)
