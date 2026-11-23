@@ -63,6 +63,7 @@ class ChannelsPageView:
     oauth_unavailable_reason: str | None = None
     oauth_authorize_path: str | None = None
     oauth_revoke_path: str | None = None
+    channels: Sequence[object] = ()
 
     @property
     def cost_summary(self) -> CostSummary | None:

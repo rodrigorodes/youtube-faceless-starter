@@ -36,16 +36,6 @@ class RenderResult(tuple):
             return item in self[0]
         return super().__contains__(item)
 
-_orig_channels_page_view_init = ChannelsPageView.__init__
-
-def _channels_page_view_init(self, *args, **kwargs):
-    channels = kwargs.pop("channels", None)
-    if channels and "projects" not in kwargs and not args:
-        kwargs["projects"] = tuple(channels)
-    _orig_channels_page_view_init(self, *args, **kwargs)
-
-ChannelsPageView.__init__ = _channels_page_view_init  # type: ignore[method-assign]
-
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
 KIND_LABELS = {
@@ -636,6 +626,18 @@ def _new_channel_card(view: ChannelsPageView) -> str:
                   <label for="novo-canal-teto-video">Teto por vídeo (US$)</label>
                   <input class="input" type="number" step="0.01" min="0" id="novo-canal-teto-video" name="hard_video_usd" value="10.00">
                 </div>
+              </div>
+            </details>
+
+            <details class="diag" id="novo-canal-provedores" style="grid-column:1 / -1; margin-top:8px">
+              <summary>Provedores e Conexões</summary>
+              <div style="margin-top:10px">
+                <p class="fine" style="margin:0 0 8px">
+                  O roteamento de provedores (roteiro, imagens, voz e render) é determinado automaticamente pelo <strong>perfil econômico</strong> selecionado.
+                </p>
+                <p class="fine" style="margin:0">
+                  Após criar o canal, você poderá revisar a disponibilidade de cada provedor, executar testes de conexão e personalizar portas específicas na aba de Provedores.
+                </p>
               </div>
             </details>
 

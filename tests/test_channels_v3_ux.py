@@ -89,6 +89,11 @@ def test_channel_creation_form_renders_progressive_disclosure_sections():
     assert 'name="hard_monthly_usd"' in html and 'id="novo-canal-teto-mensal"' in html
     assert 'name="hard_video_usd"' in html and 'id="novo-canal-teto-video"' in html
 
+    # Providers customization section
+    assert 'id="novo-canal-provedores"' in html
+    assert "Provedores e Conexões" in html
+    assert "perfil econômico" in html
+
 
 def test_channel_creation_script_uses_transactional_endpoint():
     pid = "a" * 32
