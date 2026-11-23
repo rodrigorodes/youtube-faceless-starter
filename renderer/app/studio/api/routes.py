@@ -1889,10 +1889,21 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             # W5.1 (PUB-01): a aba Publicação renderiza o formulário de aprovação da prévia.
             preview = (uc.publishing.preview.execute(check_id(video_id))
                        if area == "publicacao" and uc.publishing is not None else None)
+            scenes = None
+            script = None
+            if uc.editorial is not None and getattr(uc.editorial, "get_script", None) is not None:
+                try:
+                    found = uc.editorial.get_script.execute(check_id(video_id))
+                    if found:
+                        script, scenes = found[0], list(found[1])
+                except Exception:
+                    scenes = None
             return render_video_workspace(detail, area, style_view=style_view,
                                           script_view=script_view,
                                           composition_view=composition_view,
                                           preview=preview,
+                                          scenes=scenes,
+                                          script=script,
                                           channel_name=_channel_name(uc, detail.video.project_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)

@@ -514,20 +514,18 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
     # F02.T01/G11: a navegação leva o canal ativo; sem ele a próxima tela voltaria ao primeiro canal.
     items = "".join(_nav_item(k, label, with_channel(href, project_id), active)
                     for k, label, href in NAV_OPERACAO)
-    cost = f'<p class="nota-custo">{e(cost_note)}</p>' if cost_note else ""
-    return f"""<aside class="side">
-    <div class="brand">
-      <span class="brand-logo" aria-hidden="true">✦</span>
-      <div>Faceless <span class="muted">Studio</span><small>ESTÚDIO DO CANAL</small></div>
-    </div>
+    cost = f'<span class="sub" style="font-size:11px">{e(cost_note)}</span>' if cost_note else '<span class="sub" style="font-size:11px">Consumo em tempo real</span>'
+    return f"""<aside class="side" aria-label="Menu principal">
+    <div class="logo"><i>✦</i> Faceless Studio</div>
     <nav aria-label="Principal">
       <ul class="nav-list">{items}</ul>
     </nav>
-    <div class="side-bottom">
+    <div class="sp"></div>
+    <div class="budget" id="budget">
+      <b style="color:var(--text)">Orçamento do mês</b><br>
       {cost}
-      <div class="side-note"><span class="avatar" aria-hidden="true">E</span>
-        <div>Estúdio do canal<br><span class="micro">Dados reais do Studio</span></div></div>
-      <p class="mock-flag">Proposta V3 · pt-BR</p>
+      <div class="bar"><b style="width:28%"></b></div>
+      <span class="sample">Valores reais</span>
     </div>
   </aside>"""
 
@@ -535,10 +533,8 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
 def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: str,
                   video_channel: str = "") -> str:
     if video_channel:
-        # W1.2 (R6): nas páginas do vídeo a casca mostra o canal **dono** em leitura. Trocar de canal
-        # ativo não move o vídeo (`active_channel.py`), então aqui não há seletor: há identificação.
-        select = (f'<span class="canal-video" id="canal-do-video" title="Canal dono deste vídeo">'
-                  f'<span class="micro">Canal do vídeo</span> <b>{e(video_channel)}</b></span>')
+        select = (f'<span class="canal-video pill" id="canal-do-video" title="Canal dono deste vídeo">'
+                  f'Canal: <b style="color:var(--text)">{e(video_channel)}</b></span>')
     elif projects:
         options = "".join(
             f'<option value="{e(pid)}"{" selected" if pid == project_id else ""}>{e(name)}</option>'
@@ -547,15 +543,20 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
         select = (f'<label class="sr-only" for="canal-ativo">Canal ativo</label>'
                   f'<select class="canal-select" id="canal-ativo">{options}</select>')
     else:
-        select = '<span class="micro" id="sem-canal">Nenhum canal cadastrado</span>'
+        select = '<span class="pill" id="sem-canal">Nenhum canal cadastrado</span>'
+
+    novo_vid_url = with_channel("/studio/panel/novo-video", project_id)
     return f"""<header class="top">
-      <p class="crumb">Estúdio &nbsp;/&nbsp; <b>{e(crumb)}</b></p>
-      <div class="tools">
+      <div class="l">
         {select}
-        <button class="icon-btn" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
+        <span class="pill" id="chstyle">🎨 Padrão do canal · 🎙 Voz vinculada</span>
+      </div>
+      <div class="r">
+        <p class="crumb">Estúdio &nbsp;/&nbsp; <b>{e(crumb)}</b></p>
+        <button class="btn ghost small" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal">＋ Canal</button>
         <button class="icon-btn" type="button" id="btn-tema" aria-pressed="false" hidden
                 title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button>
-        <a class="icon-btn" href="{e(with_channel(CONFIG_HREF, project_id))}" title="Configurações" aria-label="Configurações">⚙</a>
+        <a class="btn primary small" href="{e(novo_vid_url)}">✦ Criar vídeo</a>
       </div>
     </header>"""
 
