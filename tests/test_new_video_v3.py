@@ -63,7 +63,7 @@ def test_new_video_uses_v3_shell_and_nav():
     assert html.count("<h1") == 1
     assert "Novo vídeo do canal" in html
     assert "CRIAR / NOVO VÍDEO" in html
-    assert "Estúdio &nbsp;/&nbsp; <b>Novo vídeo</b>" in html
+    assert 'class="crumb"' not in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
     assert re.search(r'href="/studio/panel/novo-video(?:\?project_id=[^"]+)?" aria-current="page"', main)
@@ -88,10 +88,9 @@ def test_new_video_channel_preset_aside():
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(selected_project_id="p1"))
-    assert "Predefinição do canal" in html
+    # `pgNew` do protótipo: cartão "Resumo" com o canal e o que ele define.
+    assert 'aria-labelledby="t-preset"' in html and ">Resumo<" in html
     assert "Canal Gamer" in html
-    # A identidade do canal é a sanfona real, não o topo genérico de Configurações.
-    assert re.search(r'href="/studio/canais(?:\?project_id=[^"]*)?#painel-perfil"', html)
 
 
 def test_new_video_empty_state_without_channels():
@@ -240,8 +239,8 @@ def test_new_video_has_prototype_usability_fields():
     assert "Roteiro pronto" in html
     assert 'id="duracao-alvo"' in html or 'id="duration"' in html
     assert "Duração" in html
-    assert 'id="revisar-roteiro"' in html or 'id="reviewScript"' in html
-    assert "Revisar roteiro" in html
+    # protótipo V4/V3: o roteiro pronto é escolha explícita e a revisão acontece dentro do vídeo
+    assert 'id="usar-roteiro"' in html
     assert "Criar e abrir vídeo" in html
 
 

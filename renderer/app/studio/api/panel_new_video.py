@@ -24,6 +24,16 @@ NEW_VIDEO_JS = """
   var erroTema = $('#erro-tema');
   var btnCriar = $('#btn-criar-abrir') || $('#btn-criar');
   var fb = $('#feedback-criar');
+  var useScript = $('#usar-roteiro');
+  function updateSummary() {
+    var mode = $('input[name="modo-producao"]:checked');
+    var format = $('input[name="formato-novo"]:checked');
+    $('#resumo-modo').textContent = mode && mode.value === 'diretor' ? 'Modo Diretor' : 'Piloto automático';
+    $('#resumo-formato').textContent = format && format.value === 'long' ? 'Vídeo 16:9' : 'Short 9:16';
+    $('#campo-roteiro').hidden = !useScript.checked;
+    $('#estrutura-roteiro').hidden = useScript.checked;
+  }
+  if (form) form.addEventListener('change', updateSummary);
 
   document.querySelectorAll('.modecard').forEach(function (mc) {
     mc.addEventListener('click', function () {
@@ -31,8 +41,27 @@ NEW_VIDEO_JS = """
       mc.setAttribute('aria-pressed', 'true');
       var r = mc.querySelector('input[type="radio"]');
       if (r) r.checked = true;
+      updateSummary();
     });
   });
+  try {
+    var draft = JSON.parse(sessionStorage.getItem('studio-video-draft') || 'null');
+    if (draft) {
+      useScript.checked = draft.kind === 'script';
+      temaCampo.value = useScript.checked ? 'Vídeo a partir do meu roteiro' : draft.text;
+      $('#roteiro-pronto').value = useScript.checked ? draft.text : '';
+      ['formato-novo', 'modo-producao'].forEach(function (name, index) {
+        var value = index ? draft.mode : draft.format;
+        var input = Array.from(document.getElementsByName(name)).find(function (el) { return el.value === value; });
+        if (input) { input.checked = true; input.dispatchEvent(new Event('change', {bubbles:true})); }
+      });
+      document.querySelectorAll('.modecard').forEach(function (mc) {
+        mc.setAttribute('aria-pressed', String(mc.querySelector('input').checked));
+      });
+      sessionStorage.removeItem('studio-video-draft');
+    }
+  } catch (e) {}
+  updateSummary();
 
   if (form && temaCampo && btnCriar) {
     form.addEventListener('submit', function (ev) {
@@ -52,7 +81,7 @@ NEW_VIDEO_JS = """
       var est = $('input[name="estilo-novo"]:checked');
       var modo = $('input[name="modo-producao"]:checked');
       var scriptField = $('#roteiro-pronto');
-      var scriptText = (scriptField ? scriptField.value : '').trim();
+      var scriptText = (useScript.checked && scriptField ? scriptField.value : '').trim();
 
       var payload = {
         project_id: canalSel.value,
@@ -166,6 +195,8 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
 
     style_options = _style_options(view, disabled)
     idioma = e(_language_label(view.channel_language)) if view.has_profile else "nenhum idioma definido (canal sem perfil)"
+    nota_canal = ("O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo."
+                  if view.has_profile else "Canal sem perfil: valem os padrões do estúdio para voz e estilo.")
     voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
     estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
 
@@ -198,7 +229,6 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
             <h1 id="t-novo">Novo vídeo do canal</h1>
             <p class="sub">Tudo em uma tela. Voz e estilo vêm do canal e você pode trocar só para este vídeo.</p>
           </div>
-          <a class="btn ghost small" href="/studio/panel">← Voltar ao Início</a>
         </div>
         {gate}
 
@@ -229,26 +259,28 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
               <div class="card">
                 <h3 style="margin-bottom:10px">2 · Tema ou roteiro</h3>
                 <div class="field">
-                  <label for="tema-novo">Sobre o que é o vídeo?</label>
-                  <textarea id="tema-novo" name="topic" rows="3" maxlength="300" required aria-describedby="dica-tema"
-                            placeholder="Descreva a história que você quer contar. Ex.: por que as cidades surgiram?"{disabled}></textarea>
-                  <p class="sub" id="dica-tema" style="font-size:11px;margin-top:4px">De 3 a 300 caracteres.</p>
+                  <label for="tema-novo">Tema do vídeo</label>
+                  <input type="text" id="tema-novo" name="topic" minlength="3" maxlength="300" required
+                            placeholder="Ex.: A cidade subterrânea de Derinkuyu"{disabled}>
                   <p class="campo-erro" id="erro-tema" style="display:none;color:var(--bad)">Informe o tema do vídeo (mínimo de 3 caracteres).</p>
                 </div>
-                <div class="field" style="margin-top:10px">
+                <div class="field"><label class="tog"><input type="checkbox" id="usar-roteiro"{disabled}><i></i><span>Já tenho um roteiro pronto para colar</span></label></div>
+                <div id="campo-roteiro" hidden>
+                <div class="field">
                   <label for="roteiro-pronto">Roteiro pronto (opcional)</label>
                   <textarea id="roteiro-pronto" name="script" rows="4" maxlength="50000"
                             placeholder="Cole seu roteiro ou escreva depois. Separe as cenas por uma linha em branco."{disabled}></textarea>
                   <p class="sub" style="font-size:11px;margin-top:4px">Seu texto será preservado nas fontes e usado na criação das cenas.</p>
                 </div>
-                <div class="field" style="margin-top:10px">
-                  <label class="check" for="revisar-roteiro" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-                    <input id="revisar-roteiro" type="checkbox" checked{disabled}>
-                    Revisar roteiro antes de gerar voz e imagens
-                  </label>
+                </div>
+                <div class="field" id="estrutura-roteiro">
+                  <label for="estrutura">Estrutura do roteiro</label>
+                  <select id="estrutura" disabled><option>Definida pelo perfil editorial do canal</option></select>
                 </div>
               </div>
 
+              <details class="diag" id="video-custom">
+                <summary>Personalizar este vídeo · formato, voz e estilo</summary>
               <div class="card">
                 <h3 style="margin-bottom:10px">3 · Formato, duração e estilo</h3>
                 <div class="row" style="margin-bottom:14px">
@@ -276,30 +308,31 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a>
                 </p>
               </div>
+              </details>
             </div>
 
             <aside class="stack" style="position:sticky;top:80px">
               <aside class="painel" aria-labelledby="t-preset">
-                <h3 id="t-preset">Predefinição do canal</h3>
+                <h3 id="t-preset">Resumo</h3>
                 <p class="sub" style="margin:4px 0 12px">{e(current_channel_name)}</p>
-                <table class="tabela-kv">
-                  <caption class="sr-only">O que o canal define para cada vídeo</caption>
-                  <tr><th scope="row">Canal</th><td class="texto-canal">{e(current_channel_name)}</td></tr>
-                  <tr><th scope="row">Idioma</th><td>{idioma}</td></tr>
-                  <tr><th scope="row">Voz</th><td>{voz}</td></tr>
-                  <tr><th scope="row">Estilo</th><td>{estilo}</td></tr>
-                </table>
-                <p class="sub" style="font-size:11px;margin:12px 0 14px">
-                  <a href="/studio/canais#painel-perfil">Personalizar identidade do canal →</a>
-                </p>
+                <div class="between sub"><span>Modo</span><b id="resumo-modo"></b></div>
+                <div class="between sub"><span>Formato</span><b id="resumo-formato"></b></div>
+                <div class="between sub"><span>Idioma</span><b>{idioma}</b></div>
+                <div class="between sub"><span>Voz</span><b>{voz}</b></div>
+                <div class="between sub"><span>Estilo</span><b>{estilo}</b></div>
+                <div class="between sub"><span>Estimativa de custo</span><b>Não disponível</b></div>
                 <div class="hr"></div>
+                <details class="diag"><summary>Disponibilidade de produção</summary>
+                  {''.join(f'<p class="sample">{e(stage.label)} · {e("Disponível" if stage.available else (stage.reason or "Indisponível"))}</p>' for stage in view.pipeline) or '<p class="sample">Disponibilidade não informada.</p>'}
+                  <a href="/studio/panel/conexoes">Configurar providers</a>
+                </details>
                 <p class="sample" style="margin-bottom:10px">Criar o rascunho prepara as cenas e fontes sem iniciar cobrança.</p>
                 <button class="btn primary long" type="submit" id="btn-criar-abrir"{disabled}>Criar e abrir vídeo →</button>
                 <p class="feedback" id="feedback-criar" role="status" style="margin-top:8px"></p>
               </aside>
 
-              <div class="card" aria-labelledby="t-caminho">
-                <h3 id="t-caminho" style="font-size:15px;margin:0 0 10px">Seu caminho até publicar</h3>
+              <details class="diag" aria-labelledby="t-caminho">
+                <summary id="t-caminho">Seu caminho até publicar</summary>
                 <p class="sub" style="font-size:13px;line-height:1.6;margin:0 0 10px">
                   1. Adicione fontes e revise o roteiro.<br>
                   2. Gere narração e monte as cenas.<br>
@@ -309,9 +342,9 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                 <p class="sample" style="margin:0">
                   Etapas reunidas dentro do vídeo. Você pode voltar para ajustar qualquer parte.
                 </p>
-              </div>
+              </details>
 
-              <div class="note info">O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo.</div>
+              <div class="note info">{nota_canal}</div>
             </aside>
           </div>
         </form>

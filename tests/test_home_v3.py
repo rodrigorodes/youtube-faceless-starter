@@ -36,21 +36,24 @@ def test_home_uses_the_v3_hero_and_sections():
     assert html.count("<h1") == 1
     assert re.search(r"<h1[^>]*>O que você vai criar hoje\?</h1>", html)
     text = _visible_text(html)
-    assert "SEU ESPAÇO DE CRIAÇÃO" in text
-    assert "De uma ideia para um vídeo pronto" in text
-    assert "Continuar de onde parou" in text
-    assert "Tendências do canal" in text
-    assert "Ver todos os vídeos" in text and "Ver todas as tendências" in text
-    assert 'class="hero"' in html and 'class="campo-tema"' in html
-    # formato como no protótipo: Vídeo (16:9) marcado por padrão e Short (9:16)
-    assert re.search(r'name="format"[^>]*value="long"[^>]*checked', html)
-    assert "Short (9:16)" in text and "Vídeo (16:9)" in text
+    # `pgHome` do protótipo V4/V3: hero → "Precisa de você" / "Primeiros passos" → tendências.
+    assert "O que você vai criar hoje?" in text
+    assert "Digite um tema ou cole seu roteiro" in text
+    assert "Comece por uma tendência no seu nicho" in text
+    assert "Ver todas as tendências" in text
+    assert "Continuar de onde parou" not in text and "Ver todos os vídeos" not in text
+    assert 'class="hero"' in html and 'class="prompt"' in html
+    # formato como no protótipo: Short 9:16 marcado por padrão (o canal sem perfil não define outro)
+    assert re.search(r'name="format"[^>]*value="short"[^>]*checked', html)
+    assert "Short · 9:16" in text and "Vídeo · 16:9" in text
 
 
 def test_home_navigation_is_the_approved_ia():
     html = _home()
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
-    labels = [re.sub(r"<[^>]+>", "", li).strip() for li in re.findall(r"<li>(.*?)</li>", main, re.S)]
+    # os ícones do protótipo são glifos (`⌂ ✦ ▤ …`) dentro de `<span aria-hidden>`: não são rótulo.
+    labels = [re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", "", li).strip()
+              for li in re.findall(r"<li>(.*?)</li>", main, re.S)]
     # NAV do protótipo (`prototype/index.html:583`): sete itens numa lista só, Configurações incluso.
     assert labels == ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho",
                       "Biblioteca", "Configurações"]
@@ -66,44 +69,48 @@ def test_home_navigation_is_the_approved_ia():
 def test_home_drops_the_legacy_chrome():
     html = _home()
     text = _visible_text(html)
-    for legacy in ("Estado das fases", "Série / Playlist", "Transforme uma ideia", "Precisa de você",
+    for legacy in ("Estado das fases", "Série / Playlist", "Transforme uma ideia",
                    "Última falha", "Mockup com dados de exemplo"):
         assert legacy not in text, legacy
     assert 'class="rail"' not in html and 'class="sidebar"' not in html
 
 
-def test_home_topbar_has_breadcrumb_channel_selector_and_theme_toggle():
+def test_home_topbar_has_channel_selector_and_no_theme_toggle():
     html = _home()
-    assert re.search(r'<p class="crumb">Estúdio &nbsp;/&nbsp; <b>Início</b></p>', html)
+    # topbar do protótipo: seletor de canal + pill de estilo/voz à esquerda, "✦ Criar vídeo" à direita.
     assert '<select class="canal-select" id="canal-ativo">' in html and "Canal Principal" in html
-    btn = re.search(r'<button[^>]*id="btn-tema"[^>]*>', html).group(0)
-    assert " hidden" in btn  # sem JS não existe controle morto
-    assert 'name="color-scheme" content="light dark"' in html
-    assert "light-dark(" in html
+    assert 'id="chstyle"' in html
+    assert 'id="btn-tema"' not in html  # o protótipo é dark nativo, sem alternância de tema
+    assert 'class="crumb"' not in html
 
 
-def test_home_shows_real_videos_with_status_and_empty_state():
-    empty = _home()
-    assert "Nenhum vídeo ainda" in _visible_text(empty)
+def test_home_shows_only_videos_that_need_you_and_first_steps_when_empty():
+    empty = _visible_text(_home())
+    assert "Primeiros passos do canal" in empty
+    assert "Precisa de você" not in empty
 
     html = _home(videos=[
         _row("v-old", "Vídeo concluído", VideoStatus.PUBLISHED, updated_at=NOW - timedelta(days=1)),
         _row("v-wait", "Aguardando você", VideoStatus.AWAITING_APPROVAL, updated_at=NOW - timedelta(hours=5)),
+        _row("v-fail", "Falhou aqui", VideoStatus.FAILED, updated_at=NOW - timedelta(hours=1)),
     ])
-    grid = html[html.index('class="grade"'):]
-    assert 'href="/studio/panel/videos/v-wait"' in grid and 'href="/studio/panel/videos/v-old"' in grid
-    # o que precisa de você vem primeiro, mesmo sendo mais antigo
-    assert grid.index("v-wait") < grid.index("v-old")
+    grid = html[html.index('class="grade"'):html.index('id="tendencias"')]
     text = _visible_text(grid)
-    assert "Esperando sua aprovação" in text
-    assert "Nenhum vídeo ainda" not in text
+    # "Precisa de você": aprovar antes de retomar falha; o que não depende do usuário não aparece
+    assert 'href="/studio/panel/videos/v-wait"' in grid and 'href="/studio/panel/videos/v-fail"' in grid
+    assert "v-old" not in grid
+    assert grid.index("v-wait") < grid.index("v-fail")
+    assert "Aguardando aprovação" in text and "Revisar e aprovar" in text
+    assert "Falhou na produção" in text and "Ver e retomar" in text
+    assert "Precisa de você" in _visible_text(html)
+    assert "Primeiros passos" not in _visible_text(html)
 
 
 def test_home_trend_card_shows_evidence_and_creates_from_topic():
     html = _home(trends=[_trend()])
-    card = html[html.index('class="cartao-tendencia"'):]
+    card = html[html.index('class="card cartao-tendencia"'):]
     text = _visible_text(card)
-    for expected in ("YouTube Brasil (Em Alta)", "GTA VI: dia 3", "Região", "Brasil", "Canal X", "18/11/2026"):
+    for expected in ("YouTube Brasil (Em Alta)", "GTA VI: dia 3", "Brasil", "Canal X", "18/11/2026"):
         assert expected in text, expected
     assert 'data-usar-tendencia="GTA VI: dia 3"' in card
     assert 'href="https://www.youtube.com/watch?v=abc123XYZ_0"' in card
@@ -131,7 +138,6 @@ def test_home_v3_quick_creation_has_idea_and_script_toggle():
     assert "Tenho uma ideia" in html
     assert "Já tenho roteiro" in html
     assert 'id="home-topico"' in html or 'id="homeTopic"' in html
-    assert "Padrões do canal" in html or "padrão do canal" in html
     assert "Padrões de Canal Principal · 60s · Padrão" in html
     assert "⚡ Gerar vídeo completo" in html
     assert "/studio/panel/novo-video" in html

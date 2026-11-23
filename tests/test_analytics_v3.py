@@ -56,7 +56,7 @@ def _analytics_page():
 def test_analytics_uses_v3_shell_and_nav():
     html, _ = _analytics_page()
     assert html.count("<h1") == 1
-    assert "Estúdio &nbsp;/&nbsp; <b>Desempenho</b>" in html
+    assert 'class="crumb"' not in html
     assert "CRESCIMENTO DO CANAL" in html
     assert "Desempenho</h1>" in html
     assert "Acompanhe o resultado sem perder o foco na criação." in html

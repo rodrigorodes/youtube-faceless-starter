@@ -35,10 +35,12 @@ def test_advanced_page_is_the_v3_shell_and_says_what_is_real():
     html, headers = render_advanced(_view())
     assert html.count("<h1") == 1
     assert "Diagnóstico do Estúdio" in html
-    # Fica dentro da área de Configurações, com o item "Avançado" ativo no menu lateral.
+    # Fica dentro de Configurações: o protótipo só tem quatro abas, então "Avançado" mora em
+    # "Conexões & Equipe" (aba ativa) e é alcançado pelo atalho secundário.
     cfg = re.search(r'<nav aria-label="Seções de configuração">(.*?)</nav>', html, re.S).group(1)
     ativo = re.search(r'<a[^>]*aria-current="page"[^>]*>(.*?)</a>', cfg, re.S).group(0)
-    assert "Avançado" in ativo
+    assert "Conexões" in ativo
+    assert re.search(r'<a class="btn small" href="[^"]*/studio/panel/avancado[^"]*">Avançado e diagnóstico</a>', cfg)
     assert "Banco de dados: respondendo." in html
     assert "opencode:luna" in html and "piper" in html
     assert "indisponível: binário ausente" in html     # motivo real, não "erro"

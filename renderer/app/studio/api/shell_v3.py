@@ -87,13 +87,14 @@ PRODUCT_CSS = """
 .form-feedback { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
 /* Configurações grid */
-.grade-config { display: grid; grid-template-columns: 210px 1fr; gap: 24px; align-items: start; }
-.menu-config { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.grade-config { display: flex; flex-direction: column; gap: 0; }
+.grade-config > nav, .config-corpo { width:100%; min-width:0; }
+.menu-config { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); }
 .menu-config a {
-  display: block; padding: 8px 12px; border-radius: 8px; color: var(--muted); font-weight: 550; text-decoration: none;
+  display: block; padding: 10px 14px; color: var(--muted); font-weight: 600; text-decoration: none; border-bottom:2px solid transparent; margin-bottom:-1px;
 }
 .menu-config a:hover { background: var(--panel2); color: var(--text); }
-.menu-config a[aria-current=page] { background: var(--accentbg); color: var(--accent2); font-weight: 650; }
+.menu-config a[aria-current=page] { color:var(--accent2); border-bottom-color:var(--accent); }
 .config-corpo { display: flex; flex-direction: column; gap: 18px; }
 
 /* Galeria de estilos (novo vídeo / biblioteca) */
@@ -115,6 +116,12 @@ PRODUCT_CSS = """
 .pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .pills .pill { cursor: pointer; }
 .pills .pill:has(input:checked) { background: var(--accentbg); border-color: var(--accent); color: var(--accent2); font-weight: 650; }
+.field[hidden] { display:none; }
+.between.sub b { color:var(--text); }
+@media(max-width:1000px) {
+  .grade, .grade-tendencias { grid-template-columns:minmax(0,1fr); }
+  .grade-config { grid-template-columns:minmax(0,1fr); }
+}
 """
 
 _SVG = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" '
@@ -171,24 +178,29 @@ _ALIASES = {
 # (`/studio/configuracoes/{secao}`) ou a tela que já existe.
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
     ("canais", "Canais", "/studio/configuracoes/canais"),
-    ("estrategia", "Estratégia editorial", "/studio/configuracoes/estrategia"),
-    ("marca", "Marca e estilo", "/studio/configuracoes/marca"),
-    ("producao", "Produção e orçamento", "/studio/configuracoes/producao"),
-    ("conexoes", "Conexões e providers", "/studio/panel/conexoes"),
-    ("equipe", "Conta e equipe", "/studio/panel/equipe"),
-    ("avancado", "Avançado e diagnóstico", "/studio/panel/avancado"),
+    ("marca", "Marca & Editorial", "/studio/configuracoes/marca"),
+    ("producao", "Produção & Orçamento", "/studio/configuracoes/producao"),
+    ("conexoes", "Conexões & Equipe", "/studio/panel/conexoes"),
 )
 
 
 def render_settings_nav(active_section: str, project_id: str = "") -> str:
+    active_section = {"estrategia": "marca", "equipe": "conexoes", "avancado": "conexoes"}.get(active_section, active_section)
     items = []
     for key, label, href in SETTINGS_SECTIONS:
         curr = ' aria-current="page"' if key == active_section else ""
         items.append(f'<li><a href="{e(with_channel(href, project_id))}"{curr}>{e(label)}</a></li>')
+    secondary = ""
+    if active_section == "conexoes":
+        secondary = '<div class="row" style="margin-bottom:16px">' + "".join(
+            f'<a class="btn small" href="{e(with_channel(href, project_id))}">{label}</a>'
+            for label, href in (("Providers", "/studio/panel/conexoes"),
+                                ("Equipe", "/studio/panel/equipe"),
+                                ("Avançado e diagnóstico", "/studio/panel/avancado"))) + "</div>"
     return f"""<nav aria-label="Seções de configuração">
       <ul class="menu-config" id="menu-config">
         {"".join(items)}
-      </ul>
+      </ul>{secondary}
     </nav>"""
 
 
@@ -196,9 +208,9 @@ def render_settings_page_body(*, active_section: str, section_title: str, conten
                               project_id: str = "") -> str:
     # W1.5/UX: textos do protótipo (`prototype/index.html:622` → `heading('CONFIGURAÇÕES', ...)`).
     return f"""      <section class="pagina" id="pagina-configuracoes" aria-labelledby="t-config">
-        <p class="eyebrow">CONFIGURAÇÕES</p>
-        <h1 class="h1" id="t-config">Seu estúdio, do seu jeito</h1>
-        <p class="lead" style="margin-bottom:24px">Identidade do canal, produção, integrações e controles avançados.</p>
+        <div class="head"><div><p class="eyebrow">Ajustes</p>
+        <h1 class="h1" id="t-config">Configurações</h1>
+        <p class="sub">Identidade do canal, produção, integrações e controles avançados.</p></div></div>
 
         <div class="grade-config">
           {render_settings_nav(active_section, project_id)}
@@ -236,7 +248,9 @@ _NAV_LABELS["configuracoes"] = "Configurações"
 
 def _nav_item(key: str, label: str, href: str, active: str) -> str:
     current = ' aria-current="page"' if key == active else ""
-    return f'<li><a href="{e(href)}"{current}>{_ICONS[key]}{e(label)}</a></li>'
+    glyph = {"inicio": "⌂", "novo-video": "✦", "videos": "▤", "tendencias": "◎",
+             "desempenho": "▥", "biblioteca": "❖", "configuracoes": "⚙"}[key]
+    return f'<li><a href="{e(href)}"{current}><span aria-hidden="true">{glyph}</span>{e(label)}</a></li>'
 
 
 def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") -> str:
@@ -254,8 +268,7 @@ def render_sidebar(*, active: str, cost_note: str = "", project_id: str = "") ->
     <div class="budget" id="budget">
       <b style="color:var(--text)">Orçamento do mês</b><br>
       {cost}
-      <div class="bar"><b style="width:28%"></b></div>
-      <span class="sample">Valores reais</span>
+      <span class="sample">Uso registrado no Studio</span>
     </div>
   </aside>"""
 
@@ -271,7 +284,7 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
             for pid, name in projects
         )
         select = (f'<label class="sr-only" for="canal-ativo">Canal ativo</label>'
-                  f'<select class="canal-select" id="canal-ativo">{options}</select>')
+                  f'<select class="canal-select" id="canal-ativo">{options}<option value="__new">＋ Novo canal…</option></select>')
     else:
         select = '<span class="pill" id="sem-canal">Nenhum canal cadastrado</span>'
 
@@ -279,13 +292,10 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
     return f"""<header class="top">
       <div class="l">
         {select}
-        <button class="btn ghost small" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal" style="white-space:nowrap">＋ Canal</button>
+        {'' if projects else '<a class="btn small" href="/studio/canais/novo">＋ Novo canal</a>'}
         <span class="pill" id="chstyle">🎨 Padrão do canal · 🎙 Voz vinculada</span>
       </div>
       <div class="r">
-        <p class="crumb">Estúdio &nbsp;/&nbsp; <b>{e(crumb)}</b></p>
-        <button class="icon-btn" type="button" id="btn-tema" aria-pressed="false" hidden
-                title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button>
         <a class="btn primary" href="{e(novo_vid_url)}">✦ Criar vídeo</a>
       </div>
     </header>"""
@@ -403,6 +413,7 @@ SHELL_JS = """
   // ---- canal ativo: recarrega a tela no canal escolhido ----
   var sel = $('#canal-ativo');
   if (sel) sel.addEventListener('change', function () {
+    if (sel.value === '__new') { location.href = '/studio/canais/novo'; return; }
     window.StudioLoading.start();
     var u = new URL(location.href);
     u.searchParams.set('project_id', sel.value);
@@ -472,11 +483,8 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark">
   <title>{e(title)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;560;600;650;700;720;760;780;800&display=swap" rel="stylesheet">
   <style nonce="{nonce}">{V3_CSS}{PRODUCT_CSS}{extra_css}</style>
   <script nonce="{nonce}">{THEME_BOOT_JS}</script>
 </head>
@@ -493,7 +501,6 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
     </div>
   </main>
 </div>
-{render_novo_canal_dialog()}
 <script nonce="{nonce}">{SHELL_JS}</script>
 {f'<script nonce="{nonce}">{page_js}</script>' if page_js else ''}
 </body>

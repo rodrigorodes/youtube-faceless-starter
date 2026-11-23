@@ -53,7 +53,7 @@ def _trend(topic="GTA VI: dia 3", region="BR", url="https://www.youtube.com/watc
 def test_trends_uses_v3_shell_and_nav():
     html, _ = _trends_page()
     assert html.count("<h1") == 1
-    assert "Estúdio &nbsp;/&nbsp; <b>Tendências</b>" in html
+    assert 'class="crumb"' not in html
     assert "O QUE ESTÁ SUBINDO" in html
     assert "Tendências</h1>" in html
     assert "Cada tendência vem com a evidência" in html

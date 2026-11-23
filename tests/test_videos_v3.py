@@ -1,4 +1,4 @@
-"""UX V3: Tela Vídeos segue a proposta aprovada (docs/backlogs/ux/faceless-studio-v3-proposta-ptbr.html).
+"""UX V3: Tela Vídeos segue a proposta aprovada (docs/backlogs/faceless-visual-evolution 2/prototype-v4-v3, `pgVideos`).
 
 Lista de todos os vídeos do canal, busca por tema e filtro por situação.
 """
@@ -27,9 +27,9 @@ def _videos_page(videos=None):
 def test_videos_uses_v3_shell_and_nav():
     html, _ = _videos_page()
     assert html.count("<h1") == 1
-    assert "Estúdio &nbsp;/&nbsp; <b>Vídeos</b>" in html
-    assert "SEU CONTEÚDO" in html
-    assert "Todos os vídeos do canal, em um só lugar." in html
+    assert "Biblioteca de vídeos" in html  # eyebrow do protótipo
+    assert '<p class="sub">Canal Principal</p>' in html  # subtítulo = nome do canal
+    assert 'class="crumb"' not in html
     assert re.search(r'href="/studio/panel/novo-video(?:\?project_id=[^"]+)?"', html)
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
@@ -41,11 +41,10 @@ def test_videos_uses_v3_shell_and_nav():
 def test_videos_search_and_filter_controls():
     html, _ = _videos_page()
     assert 'id="busca-videos"' in html
-    assert 'name="filtro"' in html
-    assert re.search(r'name="filtro"[^>]*value="todos"[^>]*checked', html)
-    assert 'value="producao"' in html
-    assert 'value="aprovar"' in html
-    assert 'value="publicados"' in html
+    # pills do protótipo (`vfilter`): "Todos" ativo por padrão, com contagem real
+    assert re.search(r'class="pill btnlike accent"[^>]*data-filtro="todos">Todos · 0</span>', html)
+    for key in ("aprovar", "rascunho", "falha", "publicados"):
+        assert f'data-filtro="{key}"' in html, key
 
 
 def test_videos_empty_state():
@@ -62,7 +61,7 @@ def test_videos_renders_real_cards_with_filter_attributes():
     html, _ = _videos_page(videos=rows)
     assert 'data-situacao="publicados"' in html
     assert 'data-situacao="aprovar"' in html
-    assert 'data-situacao="producao"' in html
+    assert 'data-situacao="outros"' in html  # em produção: só aparece em "Todos"
     assert 'href="/studio/panel/videos/v1"' in html
     assert 'href="/studio/panel/videos/v2"' in html
     assert 'href="/studio/panel/videos/v3"' in html
@@ -79,17 +78,25 @@ def test_videos_satisfies_ux_contract():
 
 
 def test_videos_filters_follow_the_prototype_labels():
-    """Os quatro filtros da UX de referência, com o rótulo honesto do protótipo."""
+    """Os cinco filtros de `pgVideos`, com contagem ao lado do rótulo."""
     html, _ = _videos_page()
-    for label in ("Todos", "Em criação", "Esperando você", "Publicados"):
-        assert f"> {label}</label>" in html, label
+    for label in ("Todos", "Para aprovar", "Rascunhos", "Com falha", "Publicados"):
+        assert f"{label} · 0</span>" in html, label
+
+
+def test_videos_table_has_only_columns_the_product_knows():
+    rows = [_row("v1", "Qualquer", VideoStatus.AWAITING_APPROVAL, updated_at=NOW)]
+    html, _ = _videos_page(videos=rows)
+    head = re.search(r"<thead>(.*?)</thead>", html, re.S).group(1)
+    assert re.findall(r"<th>(.*?)</th>", head) == ["Vídeo", "Formato", "Estado", "Custo", "Atualizado"]
+    assert "Não informado" not in html
 
 
 # ------------------------------------------- UX-01/W1.1: "Aprovado" não é "Publicado"
 
 
 def _card_of(html: str, video_id: str) -> str:
-    cards = re.findall(r'<article class="cartao-projeto".*?</article>', html, re.S)
+    cards = re.findall(r'<tr class="click".*?</tr>', html, re.S)
     picked = [c for c in cards if f'"/studio/panel/videos/{video_id}"' in c]
     assert len(picked) == 1, f"cartão de {video_id} não é único: {len(picked)}"
     return picked[0]

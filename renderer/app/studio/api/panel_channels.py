@@ -1467,7 +1467,7 @@ def _channels_page_js(project_id: str) -> str:
           const data = await response.json().catch(() => ({{}}));
           const createdProjectId = (data.project && data.project.id) ? data.project.id : data.id;
           if (response.ok && createdProjectId) {{
-            window.location.href = '/studio/canais?project_id=' + encodeURIComponent(createdProjectId);
+            window.location.href = '/studio/panel?project_id=' + encodeURIComponent(createdProjectId);
           }} else {{
             if (feedback) feedback.textContent = 'Não foi possível criar o canal: '
               + (typeof data.detail === 'string' ? data.detail : 'resposta inválida do servidor.');

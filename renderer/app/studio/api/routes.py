@@ -1727,11 +1727,26 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.get("/configuracoes")
     def settings_root_redirect(project_id: str | None = None):
         # F02.T01/G11: o redirect não pode trocar o canal ativo.
-        target = _with_channel(_SETTINGS_SECTIONS["canais"], project_id)
+        # A primeira aba de Configurações é a lista de canais (`pgSettings` → Canais).
+        target = _with_channel("/studio/configuracoes/canais", project_id)
         return RedirectResponse(url=target, status_code=302)
 
     @router.get("/configuracoes/{section}")
     def settings_section_redirect(section: str, project_id: str | None = None):
+        if section == "canais":
+            def channel_list(uc):
+                if uc.channels_page is None:
+                    raise HTTPException(503, "channel services unavailable")
+                view = uc.channels_page.execute(_active_channel(uc, project_id))
+                profiles = {}
+                for pid, _name in view.projects:
+                    try:
+                        profiles[pid] = uc.channels_page.get_profile.execute(pid)
+                    except Exception:  # canal sem perfil legível: o cartão diz isso em vez de inventar
+                        profiles[pid] = None
+                return panel_settings.render_channel_list(view, profiles)
+            page, headers = run(channel_list)
+            return HTMLResponse(page, headers=headers)
         if section in panel_settings.SECTIONS:
             def get_page(uc):
                 if uc.channels_page is None:
@@ -1905,6 +1920,16 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                                           scenes=scenes,
                                           script=script,
                                           channel_name=_channel_name(uc, detail.video.project_id))
+        page, headers = run(get_page)
+        return HTMLResponse(page, headers=headers)
+
+    @router.get("/canais/novo", response_class=HTMLResponse)
+    def new_channel_page_html(project_id: str | None = None):
+        from .panel_channel_create import render_channel_create
+        def get_page(uc):
+            if uc.channels_page is None:
+                raise HTTPException(503, "channel services unavailable")
+            return render_channel_create(uc.channels_page.execute(_active_channel(uc, project_id)))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

@@ -85,16 +85,16 @@ def test_propagate_is_idempotent_on_the_same_document():
 
 def test_settings_redirect_keeps_the_active_channel():
     client = TestClient(app)
-    r = client.get(f"/studio/configuracoes/canais?project_id={B}", auth=AUTH, follow_redirects=False)
+    r = client.get(f"/studio/configuracoes/conexoes?project_id={B}", auth=AUTH, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == f"/studio/canais?project_id={B}"
+    assert r.headers["location"] == f"/studio/panel/conexoes?project_id={B}"
 
 
 def test_settings_root_redirect_keeps_the_active_channel():
     client = TestClient(app)
     r = client.get(f"/studio/configuracoes?project_id={B}", auth=AUTH, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == f"/studio/canais?project_id={B}"
+    assert r.headers["location"] == f"/studio/configuracoes/canais?project_id={B}"
 
 def test_the_video_page_shell_shows_the_owner_channel_and_not_the_empty_state():
     """W1.2 (R6): páginas do vídeo mostram o canal **dono** (leitura), nunca a casca vazia."""

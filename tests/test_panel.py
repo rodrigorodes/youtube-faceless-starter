@@ -955,8 +955,7 @@ def test_render_panel_matches_approved_mockup_structure_without_illustrative_dat
 
     assert 'class="hero"' in html
     assert "O que você vai criar hoje?" in visible
-    assert "Continuar de onde parou" in visible
-    assert "Tendências do canal" in visible
+    assert "Comece por uma tendência no seu nicho" in visible
 
     for forbidden in (
         "Como a OpenAI ganha dinheiro?", "1,2 mi views", "890 mil views", "650 mil views",
@@ -966,10 +965,11 @@ def test_render_panel_matches_approved_mockup_structure_without_illustrative_dat
         assert forbidden not in visible
 
 
-def test_render_panel_format_selector_defaults_to_long():
+def test_render_panel_format_selector_defaults_to_the_channel_format():
     html = _render_panel_html()
-    assert re.search(r'name="format"[^>]*value="long"[^>]*checked', html)
-    assert 'name="format"' in html and 'value="short"' in html
+    # protótipo V4/V3: o formato padrão é o do canal (Short 9:16 quando o canal não define outro)
+    assert re.search(r'name="format"[^>]*value="short"[^>]*checked', html)
+    assert 'name="format"' in html and 'value="long"' in html
     assert "Série / Playlist" not in _visible_text(html)
 
 
@@ -992,8 +992,6 @@ def test_home_create_form_opens_the_video_page_without_starting_production():
     assert "/production-runs" not in html
     # O destino é a página do vídeo (onde a fonte é registrada e a produção começa).
     assert "location.href = '/studio/panel/videos/' + encodeURIComponent(d.id)" in html
-    # A tela declara o novo fluxo, sem prometer que a produção já começa.
-    assert "informar a fonte" in _visible_text(html)
 
 
 # ---------- PROD-04 (achado 3): a criação carrega o vídeo base da tendência ----------

@@ -24,7 +24,6 @@ AUTH = ("test-user", "test-browser-password")
 # W1.5: sete seções do protótipo. Estas continuam sendo redirecionamento para a tela canônica.
 # `estilos` e `identidade` são apelidos legados (não aparecem no menu) que não podem virar 404.
 REDIRECTS = {
-    "canais": "/studio/canais",
     "estilos": "/studio/panel/estilos",
     "conexoes": "/studio/panel/conexoes",
     "equipe": "/studio/panel/equipe",
@@ -33,7 +32,7 @@ REDIRECTS = {
 }
 
 # W1.5: seções com página própria (`panel_settings`), renderizadas pela aplicação — sem redirect.
-OWN_PAGES = ("estrategia", "marca", "producao")
+OWN_PAGES = ("canais", "estrategia", "marca", "producao")
 
 
 @pytest.mark.parametrize("section,target", REDIRECTS.items())
@@ -52,7 +51,7 @@ def test_sections_with_their_own_page_do_not_redirect(section):
 def test_settings_root_opens_the_first_section():
     r = TestClient(app).get("/studio/configuracoes", auth=AUTH, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/studio/canais"
+    assert r.headers["location"] == "/studio/configuracoes/canais"
 
 
 def test_unknown_settings_section_is_404():
