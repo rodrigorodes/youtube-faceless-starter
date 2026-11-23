@@ -248,17 +248,9 @@ git commit -m "feat(studio): herdar modo e formato do canal ativo na tela de nov
 **Files:**
 - Test: Todas as suítes unitárias e Playwright E2E
 
-- [ ] **Step 1: Run unit test suite**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_*.py tests/test_new_video_v3.py -v`
-Expected: Todos passando com zero erros.
-
-- [ ] **Step 2: Run complete studio unit tests**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channels_page.py tests/test_channel_repo.py tests/test_channel_domain.py -v`
-Expected: Todos passando.
-
-- [ ] **Step 3: Commit final integration milestone**
+- [x] **Step 1: Run unit test suite**
+- [x] **Step 2: Run complete studio unit tests**
+- [x] **Step 3: Commit final integration milestone**
 
 ```bash
 git commit --allow-empty -m "chore: marco do plano 1 - fundacao de canal e video concluida"
