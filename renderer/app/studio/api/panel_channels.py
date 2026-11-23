@@ -1510,6 +1510,8 @@ def _channels_page_js(project_id: str) -> str:
         // Duração é inteiro 1–36000: vazio não é 0, então o campo só entra quando preenchido.
         const duracaoRaw = (document.getElementById('canal-duracao').value || '').trim();
         if (duracaoRaw) changes.target_duration_s = Number(duracaoRaw);
+        const estiloEl = document.getElementById('canal-estilo');
+        if (estiloEl) changes.style_id = estiloEl.value || null;
         if (!changes.name) {{ if (feedback) feedback.textContent = 'Informe o nome do perfil.'; return; }}
         if (button) {{ button.disabled = true; button.classList.add('carregando'); }}
         if (window.StudioLoading) window.StudioLoading.start(profileId ? 'Salvando nova versão do canal…' : 'Criando perfil do canal…');
