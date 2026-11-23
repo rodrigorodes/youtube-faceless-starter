@@ -41,7 +41,7 @@
 - Consumes: `render_new_video_v3` de `renderer/app/studio/api/panel_new_video.py`
 - Produces: Suite `tests/test_new_video_v3.py` com 18/18 testes passando no design de tela única.
 
-- [ ] **Step 1: Write the updated tests in `tests/test_new_video_v3.py`**
+- [x] **Step 1: Write the updated tests in `tests/test_new_video_v3.py`**
 
 Substituir os 4 testes que ainda buscavam o wizard de 3 etapas (`test_new_video_has_three_steps`, `test_new_video_concept_fields`, `test_new_video_review_and_creation_panels`, `test_new_video_empty_state_without_channels`) pelos testes da tela única:
 
@@ -67,12 +67,12 @@ def test_new_video_empty_state_without_channels():
     assert re.search(r'<button[^>]*id="btn-criar-abrir"[^>]*disabled', html)
 ```
 
-- [ ] **Step 2: Run test to verify it passes**
+- [x] **Step 2: Run test to verify it passes**
 
 Run: `PYTHONPATH=renderer python3 -m pytest tests/test_new_video_v3.py -v`
 Expected: 18 passed in ~0.25s
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_new_video_v3.py
