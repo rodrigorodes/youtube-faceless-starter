@@ -425,7 +425,6 @@ def render_home(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, str
         disabled = " disabled"
 
     body = f"""      <section class="pagina" id="pagina-inicio" aria-labelledby="t-inicio">
-        <p class="eyebrow">SEU ESPAÇO DE CRIAÇÃO</p>
 {_hero(view, topic=topic, disabled=disabled, gate=gate)}
 
         <div class="secao" id="videos" style="margin-top:28px">

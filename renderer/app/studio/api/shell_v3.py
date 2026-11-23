@@ -327,11 +327,11 @@ def render_novo_canal_dialog() -> str:
   </dialog>"""
 
 
-# Aplicado cedo (no <head>) para a escolha de tema não piscar. A chave é a mesma das telas legadas.
+# Aplicado cedo (no <head>) para garantir 100% fidelidade ao dark mode nativo do protótipo.
 THEME_BOOT_JS = (
-    "try{var t=localStorage.getItem('studio-theme');"
-    "if(t==='light'||t==='dark'){var r=document.documentElement;"
-    "r.style.colorScheme=t;r.setAttribute('data-theme',t);}}catch(e){}"
+    "try{var r=document.documentElement;"
+    "r.style.colorScheme='dark';r.setAttribute('data-theme','dark');"
+    "localStorage.setItem('studio-theme','dark');}catch(e){}"
 )
 
 SHELL_JS = """
@@ -474,6 +474,9 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{e(title)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;560;600;650;700;720;760;780;800&display=swap" rel="stylesheet">
   <style nonce="{nonce}">{V3_CSS}{PRODUCT_CSS}{extra_css}</style>
   <script nonce="{nonce}">{THEME_BOOT_JS}</script>
 </head>

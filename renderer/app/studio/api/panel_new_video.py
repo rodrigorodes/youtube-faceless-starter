@@ -298,7 +298,7 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                 <p class="feedback" id="feedback-criar" role="status" style="margin-top:8px"></p>
               </aside>
 
-              <div class="card painel" aria-labelledby="t-caminho">
+              <div class="card" aria-labelledby="t-caminho">
                 <h3 id="t-caminho" style="font-size:15px;margin:0 0 10px">Seu caminho até publicar</h3>
                 <p class="sub" style="font-size:13px;line-height:1.6;margin:0 0 10px">
                   1. Adicione fontes e revise o roteiro.<br>

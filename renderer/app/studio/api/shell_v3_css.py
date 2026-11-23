@@ -161,7 +161,7 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
   padding: 26px;
   margin-bottom: 24px;
 }
-.card {
+.card, .painel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
