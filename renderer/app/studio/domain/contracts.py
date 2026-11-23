@@ -35,6 +35,11 @@ class VideoFormat(str, Enum):
     long = "long"
 
 
+class ProductionMode(str, Enum):
+    piloto = "piloto"
+    diretor = "diretor"
+
+
 class AssetKind(str, Enum):
     image = "image"
     voice = "voice"
@@ -74,6 +79,7 @@ class Video(_Model):
     topic: str = Field(min_length=3, max_length=300)
     format: VideoFormat
     status: VideoStatus = VideoStatus.IDEA
+    production_mode: ProductionMode = ProductionMode.piloto
     title: str = ""
     description: str = ""
     tags: list[str] = Field(default_factory=list)

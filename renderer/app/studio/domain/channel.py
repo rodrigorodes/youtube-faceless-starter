@@ -17,6 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from .contracts import ProductionMode, VideoFormat
 from .ids import check_id
 from .youtube_channel import OAuthStatus
 from .youtube_identity import ChannelAuthorization, validate_youtube_channel_id
@@ -50,6 +51,8 @@ CREATABLE_FIELDS = (
     "cta",
     "style_id",
     "youtube_channel_id",
+    "default_mode",
+    "default_format",
     "archived",
 )
 
@@ -69,6 +72,8 @@ UPDATABLE_FIELDS = (
     "cta",
     "style_id",
     "youtube_channel_id",
+    "default_mode",
+    "default_format",
     "archived",
 )
 
@@ -179,6 +184,34 @@ def clean_pillars(pillars: object) -> tuple[str, ...]:
     return tuple(cleaned[:MAX_PILLARS])
 
 
+def validate_production_mode(value: object) -> ProductionMode:
+    if isinstance(value, ProductionMode):
+        return value
+    if isinstance(value, str) and not isinstance(value, bool):
+        cleaned = value.strip()
+        try:
+            return ProductionMode(cleaned)
+        except ValueError:
+            pass
+    raise ChannelFieldInvalid(
+        f"default_mode must be one of {[m.value for m in ProductionMode]}, got {value!r}"
+    )
+
+
+def validate_video_format(value: object) -> VideoFormat:
+    if isinstance(value, VideoFormat):
+        return value
+    if isinstance(value, str) and not isinstance(value, bool):
+        cleaned = value.strip()
+        try:
+            return VideoFormat(cleaned)
+        except ValueError:
+            pass
+    raise ChannelFieldInvalid(
+        f"default_format must be one of {[m.value for m in VideoFormat]}, got {value!r}"
+    )
+
+
 @dataclass(frozen=True)
 class ChannelProfile:
     id: str
@@ -209,6 +242,8 @@ class ChannelProfile:
     # YT-02: o canal do YouTube **em que** este canal publica (identidade oficial, `UC...`).
     # None = destino não escolhido; a publicação segue pelo caminho antigo até a YT-03.
     youtube_channel_id: str | None = None
+    default_mode: ProductionMode = ProductionMode.piloto
+    default_format: VideoFormat = VideoFormat.short
     version: int = 1
     archived: bool = False
     created_at: datetime | None = None
@@ -247,6 +282,8 @@ class ChannelProfile:
                 raise ChannelFieldInvalid("youtube_channel_id must be a string or null")
             object.__setattr__(self, "youtube_channel_id",
                                validate_youtube_channel_id(self.youtube_channel_id))
+        object.__setattr__(self, "default_mode", validate_production_mode(self.default_mode))
+        object.__setattr__(self, "default_format", validate_video_format(self.default_format))
         object.__setattr__(self, "version", validate_version(self.version))
         if not isinstance(self.archived, bool):
             raise ChannelFieldInvalid("archived must be a boolean")
