@@ -17,10 +17,12 @@ existindo e não são tocadas aqui.
 """
 from __future__ import annotations
 
+import json
 import secrets
 from html import escape as e
 
-from ..domain.contracts import VideoStatus
+from ..application.panel import VideoDetailView
+from ..domain.contracts import Video, VideoFormat, VideoStatus
 from ..domain.panel import Stage
 from . import approval_form
 from . import panel as legacy
@@ -261,21 +263,248 @@ def _area_narracao(view, *, style_view=None, script_view=None, video_id: str, co
     return identidade + trechos_card + honest_wave
 
 
-def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
-    count_text = "não disponível"
-    if script_view is not None and script_view.has_script:
-        count_text = str(script_view.scene_count)
-    return (
-        '<div class="card"><h3>Cenas e mídias</h3>'
-        f'<p class="muted">Número de cenas no roteiro: {e(count_text)}.</p>'
-        '<p class="vazio">A leitura de cenas por mídia (texto, legenda e asset de cada cena) '
-        "ainda não está disponível nesta tela.</p>"
-        '<p class="micro">A edição por cena — trocar a mídia, ajustar a legenda — entra na onda 4. '
-        "Até lá, o roteiro é a fonte de verdade.</p>"
-        f'<p><a class="btn" href="/studio/videos/{e(video_id)}/roteiro">'
-        "Abrir roteiro e estrutura</a></p>"
-        "</div>"
+class WorkspaceResult(tuple):
+    """Resultado de render_video_workspace compatível com (html, headers) e com 'text in res'."""
+
+    def __contains__(self, item: object) -> bool:
+        return item in self[0]
+
+    def __str__(self) -> str:
+        return self[0]
+
+
+def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
+                scenes=None, script=None) -> str:
+    if scenes is None and script is None:
+        count_text = "não disponível"
+        if script_view is not None and script_view.has_script:
+            count_text = str(script_view.scene_count)
+        return (
+            '<div class="card"><h3>Cenas e mídias</h3>'
+            f'<p class="muted">Número de cenas no roteiro: {e(count_text)}.</p>'
+            '<p class="vazio">A leitura de cenas por mídia (texto, legenda e asset de cada cena) '
+            "ainda não está disponível nesta tela.</p>"
+            '<p class="micro">A edição por cena — trocar a mídia, ajustar a legenda — entra na onda 4. '
+            "Até lá, o roteiro é a fonte de verdade.</p>"
+            f'<p><a class="btn" href="/studio/videos/{e(video_id)}/roteiro">'
+            "Abrir roteiro e estrutura</a></p>"
+            "</div>"
+        )
+
+    # Modo Storyboard V3 (com cenas fornecidas ou lista explícita)
+    raw_scenes = scenes
+    if raw_scenes is None and script is not None:
+        raw_scenes = getattr(script, "scenes", None)
+        if raw_scenes is None and isinstance(script, dict):
+            raw_scenes = script.get("scenes")
+    if raw_scenes is None:
+        raw_scenes = []
+
+    normalized_scenes = []
+    for idx, s in enumerate(raw_scenes):
+        s_id = getattr(s, "id", None) or (s.get("id") if isinstance(s, dict) else f"s{idx + 1}")
+        s_idx = getattr(s, "idx", None) if getattr(s, "idx", None) is not None else (s.get("idx") if isinstance(s, dict) else idx)
+        s_narration = getattr(s, "narration", None) or getattr(s, "text", None) or (s.get("narration") or s.get("text") if isinstance(s, dict) else "")
+        s_caption = getattr(s, "caption", "") or (s.get("caption", "") if isinstance(s, dict) else "")
+        s_label = getattr(s, "label", None) or getattr(s, "title", None) or (s.get("label") or s.get("title") if isinstance(s, dict) else f"Cena {idx + 1}")
+        s_prompt = getattr(s, "image_prompt", None) or getattr(s, "prompt", None) or (s.get("image_prompt") or s.get("prompt") if isinstance(s, dict) else "")
+        s_dur = getattr(s, "duration_s", None) or getattr(s, "duration", None) or (s.get("duration_s") or s.get("duration") if isinstance(s, dict) else None)
+        s_asset = getattr(s, "asset_id", None) or (s.get("asset_id") if isinstance(s, dict) else None)
+        s_audio = getattr(s, "audio_state", None) or (s.get("audio_state") if isinstance(s, dict) else ("ok" if s_dur else "none"))
+
+        normalized_scenes.append({
+            "id": str(s_id or f"s{idx+1}"),
+            "idx": int(s_idx if s_idx is not None else idx),
+            "narration": str(s_narration or ""),
+            "caption": str(s_caption or ""),
+            "label": str(s_label or f"Cena {idx + 1}"),
+            "image_prompt": str(s_prompt or ""),
+            "duration_s": float(s_dur) if s_dur is not None else None,
+            "asset_id": str(s_asset) if s_asset else None,
+            "audio_state": str(s_audio or "none"),
+        })
+
+    pills_html = []
+    for s in normalized_scenes:
+        i = s["idx"]
+        label = s["label"] or f"Cena {i + 1}"
+        is_first = (i == 0)
+        pressed = "true" if is_first else "false"
+        cls = "btn btn-sm btn-cena-pill active btn-primario" if is_first else "btn btn-sm btn-cena-pill btn-ghost"
+        pills_html.append(
+            f'<button type="button" class="{cls}" data-scene-idx="{i}" aria-pressed="{pressed}">'
+            f'{i + 1} · {e(label)}'
+            f'</button>'
+        )
+    if not pills_html:
+        pills_html.append('<span class="pill">Nenhuma cena registrada</span>')
+
+    header_card = (
+        '<div class="card" id="storyboard-v3-header" style="margin-bottom:16px;">'
+        '<div class="spread" style="align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">'
+        '<div>'
+        '<h2 style="margin:0;">Cenas e mídias · Storyboard</h2>'
+        '<p class="micro" style="margin:2px 0 0 0;">Edite cada cena individualmente, troque mídia e acompanhe a narração.</p>'
+        '</div>'
+        '<div class="row" style="display:flex;gap:8px;align-items:center;">'
+        '<button type="button" class="btn btn-ghost btn-sm" id="btn-undo-cenas" title="Desfazer alteração" disabled>↶ Desfazer</button>'
+        '<button type="button" class="btn btn-ghost btn-sm" id="btn-redo-cenas" title="Refazer alteração" disabled>↷ Refazer</button>'
+        '</div>'
+        '</div>'
+        f'<div class="seletor-cenas" id="seletor-cenas" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        + "".join(pills_html)
+        + '</div></div>'
     )
+
+    if normalized_scenes:
+        foco = normalized_scenes[0]
+        total = len(normalized_scenes)
+        f_idx = foco["idx"]
+        f_label = foco["label"] or f"Cena {f_idx + 1}"
+        f_dur = f"{foco['duration_s']:.1f} s" if foco["duration_s"] is not None else "sem duração medida"
+        f_audio = foco["audio_state"]
+        f_audio_badge = f'<span class="pill pill-{e(f_audio)} badge-audio" id="foco-audio-badge">Áudio: {e(f_audio)}</span>'
+        f_asset_id = foco["asset_id"]
+        has_img = "block" if f_asset_id else "none"
+        no_img = "none" if f_asset_id else "flex"
+
+        focused_card = (
+            f'<div class="card cena-em-foco" id="cena-em-foco" data-active-idx="{f_idx}" data-video-id="{e(video_id)}">'
+            '<div class="spread" style="align-items:center;margin-bottom:14px;border-bottom:1px solid var(--linha);padding-bottom:10px;">'
+            '<div>'
+            f'<h3 id="foco-titulo" style="margin:0;">Cena {f_idx + 1} de {total} · {e(f_label)}</h3>'
+            f'<span class="micro" id="foco-duracao">{e(f_dur)}</span>'
+            '</div>'
+            '<div class="row" style="display:flex;gap:8px;align-items:center;">'
+            f'{f_audio_badge}'
+            '</div>'
+            '</div>'
+            '<div class="grade-cena-foco" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+            '<div class="col-visual">'
+            '<label><strong>Mídia da cena</strong></label>'
+            '<div class="cena-midia-preview" id="foco-midia-preview" style="background:var(--superficie-2);border-radius:var(--raio);min-height:160px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;margin-bottom:8px;border:1px solid var(--linha);">'
+            f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" alt="Preview da cena {f_idx + 1}" style="max-width:100%;max-height:220px;object-fit:cover;display:{has_img};" onerror="this.style.display=\'none\';var p=document.getElementById(\'foco-midia-placeholder\');if(p)p.style.display=\'flex\';">'
+            f'<div id="foco-midia-placeholder" style="display:{no_img};align-items:center;justify-content:center;flex-direction:column;gap:6px;padding:16px;text-align:center;">'
+            '<span style="font-size:36px;" aria-hidden="true">🎞️</span>'
+            '<span class="micro">Arte gerada por IA / Stock Pexels</span>'
+            '</div>'
+            '</div>'
+            '<button type="button" class="btn btn-sm btn-ghost" id="btn-trocar-midia" data-action="trocar-midia" style="width:100%;">Trocar mídia</button>'
+            '</div>'
+            '<div class="col-narrativa" style="display:flex;flex-direction:column;gap:10px;">'
+            '<div>'
+            '<label for="cena-narration"><strong>Narração da cena</strong></label>'
+            f'<textarea id="cena-narration" class="campo" rows="4" style="width:100%;resize:vertical;" placeholder="Texto narrado da cena...">{e(foco["narration"])}</textarea>'
+            '</div>'
+            '<div>'
+            '<label for="cena-prompt"><strong>Prompt visual da cena</strong></label>'
+            f'<textarea id="cena-prompt" class="campo" rows="2" style="width:100%;resize:vertical;" placeholder="Descrição visual para geração de imagem...">{e(foco["image_prompt"])}</textarea>'
+            '</div>'
+            '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;">'
+            '<button type="button" class="btn btn-sm btn-primario" id="btn-regenerar-voz" data-action="regenerar-voz">Regenerar voz</button>'
+            '<button type="button" class="btn btn-sm btn-ghost" id="btn-historico-voz" data-action="historico-voz">Histórico da voz</button>'
+            '</div>'
+            '</div>'
+            '</div>'
+            '</div>'
+        )
+    else:
+        focused_card = (
+            f'<div class="card cena-em-foco" id="cena-em-foco" data-active-idx="0" data-video-id="{e(video_id)}">'
+            '<div class="spread" style="align-items:center;margin-bottom:14px;border-bottom:1px solid var(--linha);padding-bottom:10px;">'
+            '<div>'
+            '<h3 id="foco-titulo" style="margin:0;">Nenhuma cena no roteiro</h3>'
+            '<span class="micro" id="foco-duracao">0.0 s</span>'
+            '</div>'
+            '<div class="row" style="display:flex;gap:8px;align-items:center;">'
+            '<span class="pill pill-none badge-audio" id="foco-audio-badge">Áudio: none</span>'
+            '</div>'
+            '</div>'
+            '<p class="vazio">Gere ou adicione cenas no roteiro para editar narração e mídia.</p>'
+            '<div class="row" style="display:flex;gap:8px;margin-top:12px;">'
+            '<button type="button" class="btn btn-sm" id="btn-trocar-midia" disabled>Trocar mídia</button>'
+            '<button type="button" class="btn btn-sm btn-primario" id="btn-regenerar-voz" disabled>Regenerar voz</button>'
+            '<button type="button" class="btn btn-sm btn-ghost" id="btn-historico-voz" disabled>Histórico da voz</button>'
+            '</div>'
+            '</div>'
+        )
+
+    script_items = []
+    for s in normalized_scenes:
+        i = s["idx"]
+        label = s["label"] or f"Cena {i + 1}"
+        dur_str = f" · {s['duration_s']:.1f} s" if s["duration_s"] is not None else ""
+        script_items.append(
+            f'<li style="padding:8px 0;border-bottom:1px solid var(--linha);">'
+            f'<p style="margin:0 0 4px 0;"><strong>{i + 1}. {e(label)}</strong><span class="micro">{e(dur_str)}</span></p>'
+            f'<p style="margin:0 0 4px 0;">{e(s["narration"])}</p>'
+            f'<p class="micro muted" style="margin:0;">Prompt: {e(s["image_prompt"])}</p>'
+            f'</li>'
+        )
+
+    if not script_items:
+        script_content = '<p class="vazio">Nenhuma cena registrada no roteiro.</p>'
+    else:
+        script_content = f'<ul class="pilha" style="gap:8px;list-style:none;padding:0;margin:0;">{"".join(script_items)}</ul>'
+
+    full_script_details = (
+        f'<details class="diag" id="detalhes-roteiro-completo" style="margin-top:16px;">'
+        f'<summary>Ver roteiro completo · {len(normalized_scenes)} cenas</summary>'
+        f'<div class="roteiro-completo-conteudo" style="padding-top:12px;">'
+        f'{script_content}'
+        f'</div>'
+        f'</details>'
+    )
+
+    scenes_json = json.dumps(normalized_scenes, ensure_ascii=False)
+    script_data_tag = f'<script type="application/json" id="storyboard-scenes-data">{scenes_json}</script>'
+
+    dialogs = (
+        '<dialog class="modal" id="dialog-audio-history" aria-labelledby="t-audio-history">'
+        '<div class="modal-card">'
+        '<div class="spread" style="align-items:center;margin-bottom:10px;">'
+        '<h3 id="t-audio-history" style="margin:0;">Histórico da voz — Cena <span id="modal-audio-scene-num">1</span></h3>'
+        '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
+        '</div>'
+        '<p class="micro">Versões anteriores geradas para a narração desta cena. Você pode ouvir e restaurar qualquer versão.</p>'
+        '<ul class="pilha" id="lista-historico-audio" style="margin:12px 0;">'
+        '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">'
+        '<span><strong>v2 (atual)</strong> · voz gerada</span>'
+        '<span class="pill pill-ok">ativa</span>'
+        '</li>'
+        '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">'
+        '<span><strong>v1</strong> · versão inicial</span>'
+        '<div class="row" style="display:flex;gap:6px;">'
+        '<button type="button" class="btn btn-sm btn-ghost">Ouvir</button>'
+        '<button type="button" class="btn btn-sm btn-restaurar-audio">Restaurar voz</button>'
+        '</div>'
+        '</li>'
+        '</ul>'
+        '<div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
+        '<button type="button" class="btn btn-sm modal-close">Fechar</button>'
+        '</div>'
+        '</div>'
+        '</dialog>'
+        '<dialog class="modal" id="dialog-trocar-midia" aria-labelledby="t-trocar-midia">'
+        '<div class="modal-card">'
+        '<div class="spread" style="align-items:center;margin-bottom:10px;">'
+        '<h3 id="t-trocar-midia" style="margin:0;">Trocar mídia — Cena <span id="modal-media-scene-num">1</span></h3>'
+        '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
+        '</div>'
+        '<p class="micro">Selecione uma imagem de banco ou edite o prompt para gerar uma nova arte.</p>'
+        '<div class="campo" style="margin:12px 0;">'
+        '<label for="trocar-midia-prompt"><strong>Prompt visual da cena</strong></label>'
+        '<textarea id="trocar-midia-prompt" class="campo" rows="3" style="width:100%;"></textarea>'
+        '</div>'
+        '<div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
+        '<button type="button" class="btn btn-sm modal-close">Cancelar</button>'
+        '<button type="button" class="btn btn-sm btn-primario" id="btn-confirmar-trocar-midia">Salvar nova mídia</button>'
+        '</div>'
+        '</div>'
+        '</dialog>'
+    )
+
+    return header_card + focused_card + full_script_details + dialogs + script_data_tag
 
 
 _TRACK_KIND_LABELS = {"visual": "visual", "narration": "narração", "subtitle": "legenda"}
@@ -530,10 +759,14 @@ _AREA_RENDERERS = {
 }
 
 
-def _content(view, area: str, *, style_view, script_view, video_id, composition_view=None, preview=None) -> str:
+def _content(view, area: str, *, style_view, script_view, video_id, composition_view=None, preview=None,
+             scenes=None, script=None) -> str:
     if area == "publicacao":
         return _area_publicacao(view, style_view=style_view, script_view=script_view,
                                 video_id=video_id, preview=preview)
+    if area == "cenas":
+        return _area_cenas(view, style_view=style_view, script_view=script_view, video_id=video_id,
+                           composition_view=composition_view, scenes=scenes, script=script)
     return _AREA_RENDERERS[area](
         view, style_view=style_view, script_view=script_view, video_id=video_id,
         composition_view=composition_view,
@@ -716,6 +949,196 @@ PAGE_JS = """
   document.addEventListener('input', function (ev) { if (ev.target.hasAttribute && ev.target.hasAttribute('aria-invalid')) syncAria(ev.target); });
   document.addEventListener('change', function (ev) { syncAria(ev.target); }, true);
   document.addEventListener('invalid', function (ev) { syncAria(ev.target); }, true);
+
+  // --- Storyboard V3 Client JS (Cena em foco, Desfazer/Refazer, Modais) ---
+  var scenesDataEl = document.getElementById('storyboard-scenes-data');
+  var scenesData = [];
+  if (scenesDataEl && scenesDataEl.textContent) {
+    try { scenesData = JSON.parse(scenesDataEl.textContent); } catch (e) { scenesData = []; }
+  }
+
+  var currentActiveIdx = 0;
+  var undoStack = [];
+  var redoStack = [];
+  var MAX_SNAPSHOTS = 30;
+
+  function getStoryboardSnapshot() {
+    var narEl = document.getElementById('cena-narration');
+    var prmEl = document.getElementById('cena-prompt');
+    return {
+      scenes: JSON.parse(JSON.stringify(scenesData)),
+      activeIdx: currentActiveIdx,
+      narration: narEl ? narEl.value : '',
+      prompt: prmEl ? prmEl.value : ''
+    };
+  }
+
+  function updateUndoRedoButtons() {
+    var btnUndo = document.getElementById('btn-undo-cenas');
+    var btnRedo = document.getElementById('btn-redo-cenas');
+    if (btnUndo) btnUndo.disabled = (undoStack.length === 0);
+    if (btnRedo) btnRedo.disabled = (redoStack.length === 0);
+  }
+
+  function pushSnapshot() {
+    undoStack.push(getStoryboardSnapshot());
+    if (undoStack.length > MAX_SNAPSHOTS) undoStack.shift();
+    redoStack = [];
+    updateUndoRedoButtons();
+  }
+
+  function focusScene(idx) {
+    if (!scenesData || idx < 0 || idx >= scenesData.length) return;
+    currentActiveIdx = idx;
+    var s = scenesData[idx];
+
+    document.querySelectorAll('.btn-cena-pill').forEach(function (pill) {
+      var pIdx = Number(pill.getAttribute('data-scene-idx'));
+      var isAct = (pIdx === idx);
+      pill.setAttribute('aria-pressed', isAct ? 'true' : 'false');
+      if (isAct) {
+        pill.classList.add('active', 'btn-primario');
+        pill.classList.remove('btn-ghost');
+      } else {
+        pill.classList.remove('active', 'btn-primario');
+        pill.classList.add('btn-ghost');
+      }
+    });
+
+    var card = document.getElementById('cena-em-foco');
+    if (card) card.setAttribute('data-active-idx', String(idx));
+
+    var titulo = document.getElementById('foco-titulo');
+    if (titulo) titulo.textContent = 'Cena ' + (idx + 1) + ' de ' + scenesData.length + ' · ' + (s.label || ('Cena ' + (idx + 1)));
+
+    var duracao = document.getElementById('foco-duracao');
+    if (duracao) duracao.textContent = (typeof s.duration_s === 'number') ? (s.duration_s.toFixed(1) + ' s') : 'sem duração medida';
+
+    var badge = document.getElementById('foco-audio-badge');
+    if (badge) {
+      badge.textContent = 'Áudio: ' + (s.audio_state || 'none');
+      badge.className = 'pill pill-' + (s.audio_state || 'none') + ' badge-audio';
+    }
+
+    var nar = document.getElementById('cena-narration');
+    if (nar) nar.value = s.narration || '';
+
+    var prm = document.getElementById('cena-prompt');
+    if (prm) prm.value = s.image_prompt || '';
+
+    var videoId = card ? (card.getAttribute('data-video-id') || '') : '';
+    var img = document.getElementById('foco-midia-img');
+    var placeholder = document.getElementById('foco-midia-placeholder');
+    if (img && placeholder) {
+      if (s.asset_id) {
+        img.src = '/studio/videos/' + encodeURIComponent(videoId) + '/scenes/' + idx + '/asset';
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+      } else {
+        img.style.display = 'none';
+        placeholder.style.display = 'flex';
+      }
+    }
+
+    var numAudio = document.getElementById('modal-audio-scene-num');
+    if (numAudio) numAudio.textContent = String(idx + 1);
+
+    var numMedia = document.getElementById('modal-media-scene-num');
+    if (numMedia) numMedia.textContent = String(idx + 1);
+
+    var mediaPrompt = document.getElementById('trocar-midia-prompt');
+    if (mediaPrompt) mediaPrompt.value = s.image_prompt || '';
+  }
+
+  document.querySelectorAll('.btn-cena-pill').forEach(function (pill) {
+    pill.addEventListener('click', function () {
+      var idx = Number(pill.getAttribute('data-scene-idx'));
+      focusScene(idx);
+    });
+  });
+
+  var narEl = document.getElementById('cena-narration');
+  if (narEl) {
+    narEl.addEventListener('input', function () {
+      pushSnapshot();
+      if (scenesData[currentActiveIdx]) {
+        scenesData[currentActiveIdx].narration = narEl.value;
+      }
+    });
+  }
+
+  var prmEl = document.getElementById('cena-prompt');
+  if (prmEl) {
+    prmEl.addEventListener('input', function () {
+      pushSnapshot();
+      if (scenesData[currentActiveIdx]) {
+        scenesData[currentActiveIdx].image_prompt = prmEl.value;
+      }
+    });
+  }
+
+  var btnUndo = document.getElementById('btn-undo-cenas');
+  if (btnUndo) {
+    btnUndo.addEventListener('click', function () {
+      if (undoStack.length === 0) return;
+      redoStack.push(getStoryboardSnapshot());
+      var snap = undoStack.pop();
+      if (snap) {
+        scenesData = snap.scenes;
+        focusScene(snap.activeIdx);
+        var nar = document.getElementById('cena-narration');
+        if (nar) nar.value = snap.narration;
+        var prm = document.getElementById('cena-prompt');
+        if (prm) prm.value = snap.prompt;
+      }
+      updateUndoRedoButtons();
+    });
+  }
+
+  var btnRedo = document.getElementById('btn-redo-cenas');
+  if (btnRedo) {
+    btnRedo.addEventListener('click', function () {
+      if (redoStack.length === 0) return;
+      undoStack.push(getStoryboardSnapshot());
+      var snap = redoStack.pop();
+      if (snap) {
+        scenesData = snap.scenes;
+        focusScene(snap.activeIdx);
+        var nar = document.getElementById('cena-narration');
+        if (nar) nar.value = snap.narration;
+        var prm = document.getElementById('cena-prompt');
+        if (prm) prm.value = snap.prompt;
+      }
+      updateUndoRedoButtons();
+    });
+  }
+
+  function wireModal(triggerId, dialogId) {
+    var trigger = document.getElementById(triggerId);
+    var dialog = document.getElementById(dialogId);
+    if (!trigger || !dialog) return;
+    trigger.addEventListener('click', function () {
+      if (typeof dialog.showModal === 'function') {
+        try { dialog.showModal(); } catch (e) { dialog.setAttribute('open', ''); dialog.style.display = 'block'; }
+      } else {
+        dialog.setAttribute('open', '');
+        dialog.style.display = 'block';
+      }
+    });
+    dialog.querySelectorAll('.modal-close').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (typeof dialog.close === 'function') {
+          dialog.close();
+        } else {
+          dialog.removeAttribute('open');
+          dialog.style.display = 'none';
+        }
+      });
+    });
+  }
+
+  wireModal('btn-historico-voz', 'dialog-audio-history');
+  wireModal('btn-trocar-midia', 'dialog-trocar-midia');
 })();
 """
 
@@ -739,20 +1162,58 @@ def _workspace_header(view, video_id: str, title: str, stage_label: str) -> str:
         </div>"""
 
 
-def render_video_workspace(view, area, *, style_view=None, script_view=None,
+def render_video_workspace(view, area: str = "cenas", *, active_area: str | None = None,
+                           style_view=None, script_view=None,
                            composition_view=None, preview=None, projects=(), project_id: str = "",
-                           channel_name: str = "") -> tuple[str, dict[str, str]]:
+                           channel_name: str = "", script=None, scenes=None,
+                           sources=None) -> WorkspaceResult:
     """Workspace do vídeo: uma área por rota, reusando os blocos reais do detalhe.
 
     O que a rota precisa passar:
-    - `view`: o `VideoDetailView` já montado (`BuildPanel.detail(video_id)`);
+    - `view`: o `VideoDetailView` já montado (`BuildPanel.detail(video_id)`) ou um `Video`;
     - `area`: o segmento da URL (`cenas`…`fontes`, ou `producao`); desconhecido cai em `cenas`;
     - `style_view`: o `VideoStyleView` do vídeo (opcional) — dá o estilo/voz efetivos;
     - `script_view`: o `ScriptPageView` do vídeo (opcional) — dá cenas/trechos e aprovação do roteiro;
     - `composition_view`: a `CompositionView` (W2.3, opcional) — o plano persistido em leitura;
     - `preview`: o `Preview` da publicação (opcional, W5.1) — só a área Publicação usa;
-    - `projects`/`project_id`/`channel_name`: contexto da casca (seletor de canal, crumb).
+    - `projects`/`project_id`/`channel_name`: contexto da casca (seletor de canal, crumb);
+    - `scenes`: lista opcional de `Scene` para o Storyboard V3;
+    - `script`: roteiro opcional para o Storyboard V3.
     """
+    if active_area is not None:
+        area = active_area
+    if not hasattr(view, "video"):
+        video_obj = view if isinstance(view, Video) else Video(
+            id=getattr(view, "id", "v" * 32),
+            project_id=getattr(view, "project_id", "p" * 32),
+            topic=getattr(view, "topic", "Tema"),
+            format=getattr(view, "format", VideoFormat.short),
+            status=getattr(view, "status", VideoStatus.SCRIPTED),
+        )
+        view = VideoDetailView(
+            video=video_obj,
+            stage=Stage.PENDING,
+            cost_text="sem registro de uso",
+            steps=[],
+            usage=[],
+            render_error=None,
+            publication=None,
+            sources=list(sources or []),
+            latest_run=None,
+        )
+    elif sources is not None and not view.sources:
+        view = VideoDetailView(
+            video=view.video,
+            stage=view.stage,
+            cost_text=view.cost_text,
+            steps=view.steps,
+            usage=view.usage,
+            render_error=view.render_error,
+            publication=view.publication,
+            sources=list(sources),
+            latest_run=view.latest_run,
+        )
+
     nonce = secrets.token_urlsafe(16)
     active_area = _normalize_area(area)
     video_id = view.video.id
@@ -766,7 +1227,8 @@ def render_video_workspace(view, area, *, style_view=None, script_view=None,
         {_video_area_nav(video_id, active_area)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,
-                  preview=preview if active_area == "publicacao" else None)}
+                  preview=preview if active_area == "publicacao" else None,
+                  scenes=scenes, script=script)}
       </section>"""
 
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"
@@ -783,4 +1245,4 @@ def render_video_workspace(view, area, *, style_view=None, script_view=None,
         cost_note="",
         page_js=page_js,
     )
-    return html, legacy._headers(nonce)
+    return WorkspaceResult((html, legacy._headers(nonce)))

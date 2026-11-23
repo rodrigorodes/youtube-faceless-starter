@@ -75,7 +75,7 @@ def render_script(view: ScriptPageView, *, video_channel: str = "") -> tuple[str
             <div class="spread" style="margin-top:16px">
               <p class="fine" style="margin:0">Aprovar congela esta versão (<code>script_v{version_no}</code>). Editar cria a v{version_no + 1} e invalida só o que depende dela.</p>
               <div class="row">
-                <a class="btn" href="/studio/panel/videos/{e(view.video_id)}">Editar cenas</a>
+                <a class="btn" href="/studio/panel/videos/{e(view.video_id)}/cenas">Editar cenas</a>
                 {approve_button}
               </div>
             </div>
