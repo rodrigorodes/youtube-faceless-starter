@@ -24,7 +24,7 @@ from .channels import CreateChannelProfile, GetChannelProfile, ListChannelProfil
 from .channel_creation import CreateChannelTransactional
 from .styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                      UpdateVisualStyle, VisualStyleUsage)
-from .video_style import SetChannelStylePatch, BuildVideoStyleView, SetVideoStyle
+from .video_style import SetChannelStylePatch, BuildVideoStyleView, SetVideoStyle, SetVideoStylePatch
 from .channel_budget import GetChannelBudget, SetChannelBudget
 from .providers import ProviderService
 from .secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -181,6 +181,7 @@ class UseCases:
     styles_page: "BuildStylesPage | None" = None
     # VS-05b (UI/API): o override de estilo por vídeo (o canal herda, o vídeo pode sobrepor).
     set_video_style: SetVideoStyle | None = None
+    set_video_style_patch: SetVideoStylePatch | None = None
     video_style_view: BuildVideoStyleView | None = None
     # F02.T03: view model da tela Avançado (diagnóstico read-only).
     advanced_page: "BuildAdvancedView | None" = None
@@ -249,6 +250,7 @@ class UseCases:
                   visual_style_usage: VisualStyleUsage | None = None,
                   styles_page: "BuildStylesPage | None" = None,
                   set_video_style: SetVideoStyle | None = None,
+                  set_video_style_patch: SetVideoStylePatch | None = None,
                   video_style_view: BuildVideoStyleView | None = None,
                   style_repo: "VisualStyleRepository | None" = None,
                   advanced_page: "BuildAdvancedView | None" = None,
@@ -272,5 +274,5 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    resolve_actor, invite_member, change_member_role, remove_member,
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
-                   archive_visual_style, visual_style_usage, styles_page, set_video_style, video_style_view,
+                   archive_visual_style, visual_style_usage, styles_page, set_video_style, set_video_style_patch, video_style_view,
                    advanced_page, composition_view, create_channel_transactional)

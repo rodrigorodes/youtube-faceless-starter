@@ -655,17 +655,22 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
     plan_card = _composition_plan_card(composition_view)
 
     # Controles ativos suportados e controles de evolução (Plano 2) com honestidade visual
+    raw_video = getattr(view, "video", view)
+    style_patch_revision = getattr(raw_video, "style_patch_revision", 0) or 0
     font_size_val = caption.get("font_size", 42)
     bottom_val = caption.get("bottom", 96)
     color_text_val = palette.get("caption_text", "#ffffff")
     color_box_val = palette.get("caption_box", "#00000099")
     color_accent_val = palette.get("accent", "#a78bfa")
+    music_bpm = music.get("bpm", 122)
+    music_seed = music.get("seed", 7)
     is_static_motion = isinstance(motion, (list, tuple)) and len(motion) == 0
 
     controls_card = (
         '<div class="card" id="card-controles-composicao">'
         '<h2>Ajustes de composição e legendas V3</h2>'
-        f'<form id="form-composicao" data-video-id="{e(video_id)}" data-endpoint="/studio/videos/{e(video_id)}/style">'
+        f'<form id="form-composicao" data-video-id="{e(video_id)}" data-endpoint="/studio/videos/{e(video_id)}/style-patch">'
+        f'<input type="hidden" id="comp-patch-revision" value="{style_patch_revision}">'
         '<div class="grid-2">'
         '  <div>'
         '    <h3>Legenda (Controles ativos)</h3>'
@@ -694,12 +699,24 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '    </div>'
         '  </div>'
         '</div>'
-        '<div class="campo" style="margin-top:1rem">'
-        '  <label for="composicao-motion">Movimento de câmera</label>'
-        '  <select id="composicao-motion" name="motion" class="input campo">'
-        f'    <option value="zoom_lento"{" selected" if not is_static_motion else ""}>Zoom lento (Ken Burns padrão: zoom_in, pan_left)</option>'
-        f'    <option value="estatico"{" selected" if is_static_motion else ""}>Estático (sem movimento)</option>'
-        '  </select>'
+        '<div class="grid-2" style="margin-top:1rem">'
+        '  <div class="campo">'
+        '    <label for="composicao-motion">Movimento de câmera</label>'
+        '    <select id="composicao-motion" name="motion" class="input campo">'
+        f'      <option value="zoom_lento"{" selected" if not is_static_motion else ""}>Zoom lento (Ken Burns padrão: zoom_in, pan_left)</option>'
+        f'      <option value="estatico"{" selected" if is_static_motion else ""}>Estático (sem movimento)</option>'
+        '    </select>'
+        '  </div>'
+        '  <div class="grid-2">'
+        '    <div class="campo">'
+        '      <label for="composicao-music-bpm">Andamento da música (BPM)</label>'
+        f'      <input type="number" id="composicao-music-bpm" name="music.bpm" class="input campo" value="{e(str(music_bpm))}" min="20" max="300">'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label for="composicao-music-seed">Semente da música (seed)</label>'
+        f'      <input type="number" id="composicao-music-seed" name="music.seed" class="input campo" value="{e(str(music_seed))}" min="0">'
+        '    </div>'
+        '  </div>'
         '</div>'
         '<div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--line, #e3e0ea)">'
         '  <h3>Evolução de Composição</h3>'
@@ -1757,7 +1774,7 @@ PAGE_JS = """
     });
   }
 
-  // Composição V3: submissão de alterações de estilo (PATCH /studio/videos/{id}/style)
+  // Composição V3: submissão de alterações de estilo (PATCH /studio/videos/{id}/style-patch)
   var compForm = document.getElementById('form-composicao');
   if (compForm) {
     compForm.addEventListener('submit', async function (ev) {
@@ -1771,8 +1788,12 @@ PAGE_JS = """
       var colorBoxInput = document.getElementById('composicao-color-box');
       var colorAccentInput = document.getElementById('composicao-color-accent');
       var motionInput = document.getElementById('composicao-motion');
+      var bpmInput = document.getElementById('composicao-music-bpm');
+      var seedInput = document.getElementById('composicao-music-seed');
+      var revInput = document.getElementById('comp-patch-revision');
+      var expectedRev = revInput ? Number(revInput.value) || 0 : 0;
 
-      var payload = {
+      var patch = {
         caption: {
           font_size: fontSizeInput ? Number(fontSizeInput.value) || 42 : 42,
           bottom: bottomInput ? Number(bottomInput.value) || 96 : 96
@@ -1782,7 +1803,16 @@ PAGE_JS = """
           caption_box: colorBoxInput ? colorBoxInput.value.trim() : '#00000099',
           accent: colorAccentInput ? colorAccentInput.value.trim() : '#a78bfa'
         },
-        motion: (motionInput && motionInput.value === 'estatico') ? [] : ['zoom_in', 'pan_left']
+        motion: (motionInput && motionInput.value === 'estatico') ? [] : ['zoom_in', 'pan_left'],
+        music: {
+          bpm: bpmInput ? Number(bpmInput.value) || 122 : 122,
+          seed: seedInput ? Number(seedInput.value) || 7 : 7
+        }
+      };
+
+      var payload = {
+        expected_revision: expectedRev,
+        patch: patch
       };
 
       if (button) { button.disabled = true; button.classList.add('carregando'); }
@@ -1790,7 +1820,7 @@ PAGE_JS = """
       if (feedback) feedback.textContent = 'Salvando composição...';
 
       try {
-        var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/style', {
+        var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/style-patch', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)

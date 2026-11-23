@@ -25,7 +25,7 @@ from ..domain.provider import (Availability, EconomicProfile, NoProviderAvailabl
 from ..domain.youtube_channel import YouTubeChannelInvalid
 from ..domain.youtube_identity import (ChannelAuthorizationInvalid, GoogleAccountInvalid, OAuthGrantInvalid,
                                        YouTubeChannelIdentityInvalid)
-from ..domain.visual_style import (DuplicateVisualStyle, VisualStyleArchived, VisualStyleFieldInvalid,
+from ..domain.visual_style import (DuplicateVisualStyle, StylePatchInvalid, VisualStyleArchived, VisualStyleFieldInvalid,
                                    VisualStyleNameInvalid, VisualStyleParamsInvalid, VisualStyleVersionConflict,
                                    VisualStyleVersionInvalid)
 from ..application.analytics import DailyMetric
@@ -40,7 +40,7 @@ from ..application.media import AssetRefused, SceneMediaRefused, SceneNotFound
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
-from ..application.video_style import ChannelStylePatchConflict
+from ..application.video_style import ChannelStylePatchConflict, VideoStylePatchConflict
 from ..application.youtube_oauth import ChannelNotConnected, ConsentStateInvalid, consent_project_id
 from ..application.connections import AuthorizationNotFound, ConnectionNotFound
 from ..application.render import RenderRefused
@@ -539,6 +539,18 @@ class ChannelStylePatchIn(BaseModel):
 
 
 class ChannelStylePatchOut(BaseModel):
+    revision: int
+    patch: dict | None = None
+
+
+class VideoStylePatchIn(BaseModel):
+    """F05.T02: patch tipado do vídeo com revisão otimista (0 = nunca personalizado)."""
+
+    expected_revision: int = Field(default=0, ge=0)
+    patch: dict | None = None
+
+
+class VideoStylePatchOut(BaseModel):
     revision: int
     patch: dict | None = None
 
@@ -2622,6 +2634,27 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if video is None:
                 raise HTTPException(404, "video not found")
             return video
+        return run(go)
+
+    @router.patch("/videos/{video_id}/style-patch", response_model=VideoStylePatchOut)
+    def set_video_style_patch(video_id: str, body: VideoStylePatchIn):
+        """F05.T02: grava/remove o override tipado do vídeo, com controle otimista.
+
+        `patch` vazio/ausente remove o override (o vídeo volta a herdar do canal, nunca `{}`).
+        Revisão divergente é 409 e nada é gravado; patch fora da allowlist é 422 com a chave nomeada.
+        """
+        def go(uc):
+            service = _need(uc, "set_video_style_patch", "style services unavailable")
+            try:
+                stored = service.execute(video_id, body.expected_revision, body.patch)
+            except VideoStylePatchConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except (StylePatchInvalid, ValueError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+            if stored is None:
+                raise HTTPException(404, "video not found")
+            return VideoStylePatchOut(revision=stored.revision,
+                                      patch=stored.patch.to_mapping() if stored.patch else None)
         return run(go)
 
     @router.patch("/channels/{profile_id}/style-patch", response_model=ChannelStylePatchOut)

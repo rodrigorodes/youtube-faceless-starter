@@ -86,7 +86,7 @@ from ..application.composition_view import BuildCompositionView
 from ..application.styles import (ArchiveVisualStyle, CreateVisualStyle, GetVisualStyle, ListVisualStyles,
                                  UpdateVisualStyle, VisualStyleUsage)
 from ..application.styles_page import BuildStylesPage
-from ..application.video_style import BuildVideoStyleView, SetChannelStylePatch, SetVideoStyle
+from ..application.video_style import BuildVideoStyleView, SetChannelStylePatch, SetVideoStyle, SetVideoStylePatch
 from ..application.channel_budget import ChannelBudgetFloor, GetChannelBudget, SetChannelBudget
 from ..application.providers import ProviderService
 from ..application.secrets import GetPublicProjectConfig, SetPublicProjectConfig
@@ -757,6 +757,7 @@ production=production, script_view=script_view,
                                   visual_style_usage=VisualStyleUsage(style_repo),
                                   styles_page=styles_page,
                                   set_video_style=SetVideoStyle(repo),
+                                  set_video_style_patch=SetVideoStylePatch(repo),
                                   video_style_view=video_style_view,
                                   style_repo=style_repo,
                                   advanced_page=BuildAdvancedView(providers_service, panel_repo),
