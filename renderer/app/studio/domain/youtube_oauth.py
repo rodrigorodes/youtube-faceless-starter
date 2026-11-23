@@ -23,6 +23,8 @@ DEFAULT_SCOPES = (YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE)
 EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email"
 # Conexões por conta: além do YouTube, o e-mail identifica a conta Google (a API do YouTube não o expõe).
 ACCOUNT_SCOPES = DEFAULT_SCOPES + (EMAIL_SCOPE,)
+# Ao conceder `userinfo.email`, o Google devolve na resposta do token também estes nomes curtos (OIDC).
+OPENID_SCOPES = frozenset({"openid", "email", "profile"})
 TOKEN_SKEW = timedelta(seconds=120)  # nunca usar um token que vence durante a requisição
 _STATE_MIN, _STATE_MAX = 16, 256
 _VERIFIER_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
@@ -66,6 +68,10 @@ def validate_scopes(scopes: Sequence[str]) -> tuple[str, ...]:
         if not isinstance(scope, str) or not scope.strip():
             raise OAuthScopeMissing("every OAuth scope must be a non-empty string")
         scope = scope.strip()
+        if scope in OPENID_SCOPES:
+            if scope not in cleaned:
+                cleaned.append(scope)
+            continue
         if not scope.startswith("https://") or " " in scope:
             raise OAuthScopeMissing("OAuth scopes must be https URLs")
         if scope not in cleaned:

@@ -164,6 +164,7 @@ class OAuthFake:
     def __init__(self, *, email="EU@gmail.com", channel_id="UC_principal", title="Canal principal"):
         self.identity_value = OAuthIdentity(channel_id=channel_id, title=title, email=email)
         self.exchange_error = None
+        self.granted_scopes = DEFAULT_SCOPES
         self.exchange_calls = []
         self.revoked = []
 
@@ -176,7 +177,8 @@ class OAuthFake:
         self.exchange_calls.append((code, redirect_uri, code_verifier))
         if self.exchange_error:
             raise self.exchange_error
-        return OAuthTokenResponse(access_token=ACCESS, refresh_token=REFRESH, expires_in=3600, scopes=DEFAULT_SCOPES)
+        return OAuthTokenResponse(access_token=ACCESS, refresh_token=REFRESH, expires_in=3600,
+                                  scopes=self.granted_scopes)
 
     def refresh(self, refresh_token):  # pragma: no cover - não usado aqui
         raise AssertionError("refresh não deveria ser chamado no consentimento")
@@ -279,6 +281,16 @@ def test_complete_refuses_wrong_or_expired_state_before_calling_google():
     assert w["oauth"].exchange_calls == []
     with pytest.raises(AccountConsentStateInvalid):
         w["complete"].execute("code-123", "!!!inválido!!!")
+
+
+def test_complete_accepts_the_openid_scopes_google_returns_with_the_email_scope():
+    # regressão: `openid` (não-URL) na resposta do token derrubava a conexão com "must be https URLs"
+    w = world()
+    w["oauth"].granted_scopes = ("openid", "https://www.googleapis.com/auth/userinfo.email",
+                                 *DEFAULT_SCOPES)
+    result = connect(w)
+    assert result["account"]["email"] == "EU@gmail.com"
+    assert "openid" in next(iter(w["grants"].rows.values())).scopes
 
 
 def test_complete_without_an_account_email_never_invents_the_account():

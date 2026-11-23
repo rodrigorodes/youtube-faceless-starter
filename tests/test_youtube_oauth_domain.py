@@ -39,6 +39,15 @@ def test_scopes_require_youtube_upload_and_reject_unknown_or_blank():
             validate_scopes(scopes)
 
 
+def test_scopes_accept_the_openid_names_google_adds_to_the_token_response():
+    # ao pedir `userinfo.email`, o Google devolve também `openid` (e às vezes `email`/`profile`)
+    granted = ["https://www.googleapis.com/auth/userinfo.email", "openid", YOUTUBE_UPLOAD_SCOPE,
+               YOUTUBE_READONLY_SCOPE, "email", "profile"]
+    assert validate_scopes(granted) == tuple(granted)
+    with pytest.raises(OAuthScopeMissing):
+        validate_scopes([YOUTUBE_UPLOAD_SCOPE, "OPENID"])  # só os nomes padrão exatos
+
+
 def test_authorization_url_is_offline_consent_with_pkce_and_no_secret():
     verifier, challenge = pkce_pair()
     url = authorization_url(client_id="client-123.apps.googleusercontent.com",
