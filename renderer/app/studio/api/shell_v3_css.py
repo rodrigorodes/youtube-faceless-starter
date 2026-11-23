@@ -569,6 +569,7 @@ details.diag summary { cursor: pointer; font-weight: 650; color: var(--muted); }
   .cartao-tendencia, .cartao-projeto { min-width:0; overflow-wrap:anywhere; }
   .side .budget, .side .sp { display: none; }
   .scene, .two, .grid2, .grid3, .grid4 { grid-template-columns: 1fr; }
+  .two > *, .scene > * { min-width: 0; }  /* o protótipo estoura a largura aqui (trilhas nowrap); não repetimos o defeito */
   .dock { left: 12px; right: 12px; bottom: 64px; }
   .content { padding: 18px 14px 150px; }
   .top { padding: 12px 14px; flex-wrap: wrap; }

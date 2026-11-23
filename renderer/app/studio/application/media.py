@@ -254,11 +254,72 @@ class SwapSceneMedia:
         return self.assets.add(asset)
 
 
+BROLL_NOTE_MAX = 200
+
+
+@dataclass(frozen=True)
+class SceneBrollResult:
+    scene_id: str
+    enabled: bool
+    note: str | None
+    changed: bool
+
+
+class SetSceneBroll:
+    """Liga/desliga o B-roll de **uma** cena e grava a nota (UI do storyboard).
+
+    Leve por desenho: não cria versão de roteiro nem limpa a mídia da cena. Idempotente — o mesmo
+    valor não escreve (``changed=False``). A nota é normalizada (strip; vazia vira ``None``).
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository):
+        self.videos, self.scripts, self.assets = videos, scripts, assets
+
+    def execute(self, video_id: str, scene_id: str, *, enabled: bool, note: str | None = None) -> SceneBrollResult:
+        _require_video(self.videos, video_id)
+        scene = _scene(self.scripts, video_id, scene_id)
+        clean = (note or "").strip() or None
+        if clean is not None and len(clean) > BROLL_NOTE_MAX:
+            raise SceneMediaRefused(f"broll note exceeds {BROLL_NOTE_MAX} characters")
+        enabled = bool(enabled)
+        if scene.broll_enabled == enabled and scene.broll_note == clean:
+            return SceneBrollResult(scene_id=scene.id, enabled=enabled, note=clean, changed=False)
+        if not self.assets.set_scene_broll(video_id, scene.id, enabled, clean):
+            raise SceneNotFound(scene_id)
+        return SceneBrollResult(scene_id=scene.id, enabled=enabled, note=clean, changed=True)
+
+
 def _scene(scripts: ScriptRepository, video_id: str, scene_id: str) -> Scene:
     scene = _scene_by_id(scripts.scenes(video_id), scene_id)
     if scene is None:
         raise SceneNotFound(scene_id)
     return scene
+
+
+class SceneAssetFile:
+    """Arquivo da mídia vinculada a **uma** cena (preview do storyboard).
+
+    Só devolve um arquivo regular dentro da raiz de armazenamento; qualquer outra coisa (cena sem
+    mídia, caminho fora da raiz, arquivo ausente) é ``None`` e o chamador responde 404.
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, root):
+        self.videos, self.scripts, self.assets, self.root = videos, scripts, assets, root
+
+    def execute(self, video_id: str, scene_id: str):
+        from pathlib import Path
+        _require_video(self.videos, video_id)
+        scene = _scene(self.scripts, video_id, scene_id)
+        asset = self.assets.get(scene.asset_id) if scene.asset_id else None
+        if asset is None:
+            return None
+        root = Path(self.root).resolve()
+        try:
+            target = (root / asset.path).resolve()
+            target.relative_to(root)
+        except (ValueError, OSError):
+            return None
+        return target if target.is_file() else None
 
 
 @dataclass(frozen=True)
@@ -268,3 +329,5 @@ class Media:
     list_assets: ListAssets
     list_candidates: "ListSceneCandidates | None" = None
     swap: "SwapSceneMedia | None" = None
+    broll: "SetSceneBroll | None" = None
+    asset_file: "SceneAssetFile | None" = None

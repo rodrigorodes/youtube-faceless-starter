@@ -1,0 +1,44 @@
+[
+ {
+  "screen": "videos",
+  "viewport": "1440",
+  "text_similarity": 12.9,
+  "text_diffs": 7,
+  "field_similarity": 0.0,
+  "field_diffs": 1,
+  "style_diffs": 0,
+  "pixel_diff_pct": 5.18,
+  "height_ref": 1000,
+  "height_app": 3170,
+  "overflow_ref": 0,
+  "overflow_app": 0
+ },
+ {
+  "screen": "videos",
+  "viewport": "768",
+  "text_similarity": 12.6,
+  "text_diffs": 7,
+  "field_similarity": 0.0,
+  "field_diffs": 1,
+  "style_diffs": 0,
+  "pixel_diff_pct": 10.87,
+  "height_ref": 1000,
+  "height_app": 3972,
+  "overflow_ref": 0,
+  "overflow_app": 0
+ },
+ {
+  "screen": "videos",
+  "viewport": "390",
+  "text_similarity": 12.6,
+  "text_diffs": 7,
+  "field_similarity": 0.0,
+  "field_diffs": 1,
+  "style_diffs": 0,
+  "pixel_diff_pct": 13.09,
+  "height_ref": 1127,
+  "height_app": 6893,
+  "overflow_ref": 0,
+  "overflow_app": 0
+ }
+]

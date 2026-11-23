@@ -1,0 +1,15 @@
+{"screen": "videos", "viewport": "390", "text_similarity": 12.6, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 0, "pixel_diff_pct": 13.09, "height_ref": 1127, "height_app": 6893, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Curiosidades Históricas'] | APP=['Musica']
+[replace] REF=['Todos · 3', 'Para aprovar · 1', 'Rascunhos · 1'] | APP=['Todos · 44', 'Para aprovar · 0', 'Rascunhos · 44']
+[replace] REF=['Publicados · 1'] | APP=['Publicados · 0']
+[replace] REF=['O mistério do navio Mary Celeste', 'v1 · Cinemática Sombria'] | APP=['As Grandes Invenções de Roma f6d9', 'v0 · padrão do canal']
+[replace] REF=['Aguardando aprovação', '3', 'US$ 0,38', 'A cidade subterrânea de Derinkuyu', 'v0 · Documentário Realista', '🎬 Diretor'] | APP=['Rascunho', '0', 'sem registro de uso', 'Video', 'v0 · padrão do canal']
+[replace] REF=['Publicado', '2', 'US$ 0,41', '🧭 Roteiro da demo'] | APP=['Rascunho', '0', 'sem registro de uso', 'Musica', 'v0 · padrão do canal', '🎬 Diretor']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:✦ Criar vídeo']
+
+## ESTILOS COMPUTADOS (mesmo texto)

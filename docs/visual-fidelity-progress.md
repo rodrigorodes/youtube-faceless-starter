@@ -67,3 +67,10 @@ Validação: suíte completa 2545 passed, 4 falhas pré-existentes (as mesmas li
 - Perfil econômico: `FRUGAL` → `ECONOMY` (valor real do domínio).
 - Workspace do vídeo → "+ Nova cena": ação na própria bancada (POST `/script/scenes`, texto-padrão do protótipo, foco e toast), sem ir ao roteiro.
 - Exceções funcionais: voz/duração por vídeo não enviadas ao backend; catálogos de voz/estilos/música do protótipo ausentes; "+ Nova cena" validada só com rotas mockadas.
+
+## Rodada VE-08: workspace do vídeo (Vídeos, Storyboard, Mídia/B-roll, Gerar/Renderizar, Progresso, Composição)
+- Storyboard: todos os `sceneCard()` na bancada, Desfazer/Refazer completo, B-roll por cena (`POST …/scenes/{id}/broll`), preview real (`GET …/scenes/{id}/asset`), nova cena sem recarregar, modais `<dialog>`.
+- Gerar/Renderizar: diálogo "Atualizar esta versão", execução única, cartão de progresso com etapas reais, retoma após reload; página de execução no padrão `tabProd`.
+- Composição: trilhas com origem real da mídia e voz, prévia viva dos parâmetros.
+- Evidências e divergências: `docs/visual-evidence/ve-08/` (`VE-08-DIVERGENCES.md`, `fidelity-report.md`); testes `tests/ve08` (Playwright, backend simulado).
+- Não declarado 100% idêntico; ver D1–D21.

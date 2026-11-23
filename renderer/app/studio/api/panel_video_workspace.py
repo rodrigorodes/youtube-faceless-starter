@@ -32,6 +32,7 @@ from .panel_videos import _ESTADO
 
 # Ordem e rótulos do protótipo (`VIDEO_TABS`). A fonte única é `panel_video_nav` (a página legada
 # do vídeo também usa a nav, sem import circular). Os nomes seguem reexportados daqui.
+from .panel_video_storyboard_js import RUN_JS, STORYBOARD_JS
 from .panel_video_nav import (ALL_AREA_IDS, ALL_VALID_AREAS, AREA_IDS, AREA_LABELS, DEFAULT_AREA, VIDEO_AREAS, area_href,
                               normalize_area, normalize_area as _normalize_area,
                               video_area_nav, video_area_nav as _video_area_nav)
@@ -355,7 +356,7 @@ def _scene_count_text(scene: dict) -> str:
     return f"{_words(scene['narration'])} palavras · {secs}"
 
 
-def _normalize_scenes(scenes, script) -> list[dict]:
+def _normalize_scenes(scenes, script, assets=None) -> list[dict]:
     """Cenas do roteiro em dicts simples (aceita `Scene`, objetos e dicts)."""
     raw_scenes = scenes
     if raw_scenes is None and script is not None:
@@ -404,6 +405,7 @@ def _normalize_scenes(scenes, script) -> list[dict]:
             "audio_history": normalized_hist,
             "broll_enabled": bool(s_broll_enabled or False),
             "broll_note": str(s_broll_note) if s_broll_note is not None else None,
+            "asset_tag": _asset_tag((assets or {}).get(int(s_idx if s_idx is not None else idx))) if s_asset else "",
         })
 
     return normalized_scenes
@@ -414,191 +416,182 @@ def _script_version(script) -> int:
     return int(value or 0)
 
 
-def _nova_cena_btn(video_id: str, script) -> str:
+def _scene_editable(view, script=None) -> bool:
+    """O roteiro só aceita edição em IDEA/SCRIPTED e com roteiro versionado; fora disso a UI não finge."""
+    status = getattr(getattr(view, "video", None), "status", None)
+    return status in (VideoStatus.IDEA, VideoStatus.SCRIPTED) and bool(_script_version(script))
+
+
+_LOCKED_TITLE = "O roteiro só pode ser editado enquanto o vídeo está em Ideia ou Roteirizado."
+
+
+def _nova_cena_btn(video_id: str, script, editable: bool = True) -> str:
     """`addscene` do protótipo: adiciona a cena na própria bancada (sem trocar de tela).
 
     Sem roteiro versionado não há como gravar uma cena; o botão fica desabilitado e diz por quê.
     """
     version = _script_version(script)
-    off = "" if version else ' disabled title="Este vídeo ainda não tem roteiro para receber cenas."'
-    return (f'<button type="button" class="btn small" id="btn-nova-cena" data-video-id="{e(video_id)}" '
-            f'data-script-version="{version}"{off}>+ Nova cena</button>')
+    off = ""
+    if not version:
+        off = ' disabled title="Este vídeo ainda não tem roteiro para receber cenas."'
+    elif not editable:
+        off = f' disabled title="{_LOCKED_TITLE}"'
+    return (f'<button type="button" class="btn small" id="btn-nova-cena" data-a="addscene" '
+            f'data-video-id="{e(video_id)}" data-script-version="{version}"{off}>+ Nova cena</button>')
+
+
+def _asset_tag(asset) -> str:
+    """Tag do `thumb` do protótipo ('Arte IA' / 'Vídeo stock'), decidida pelo asset real."""
+    if asset is None:
+        return ""
+    if str(getattr(asset, "license", "")).startswith("ai-generated"):
+        return "Arte IA"
+    kind = getattr(getattr(asset, "kind", None), "value", getattr(asset, "kind", ""))
+    return "Vídeo stock" if kind == "video" else "Imagem stock"
+
+
+def _clock(secs: float) -> str:
+    return f"0:{int(round(secs)):02d}"
+
+
+def _scene_secs(scene: dict) -> int:
+    dur = scene.get("duration_s")
+    return int(round(dur)) if dur else _secs(scene["narration"])
+
+
+def _scene_thumb(video_id: str, s: dict, i: int) -> str:
+    """`thumb(s, v, 230, 132)`: sem mídia o vazio tracejado; com mídia, o asset real da cena."""
+    if not s.get("asset_id"):
+        return ('<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3);'
+                'border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px">'
+                'Sem mídia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>')
+    tag = (s.get("asset_tag") or "Mídia") + (" · +B-roll" if s.get("broll_enabled") else "")
+    return ('<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3)">'
+            f'<img src="/studio/videos/{e(video_id)}/scenes/{e(s["id"])}/asset" alt="Mídia da cena {i + 1}" '
+            'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+            f'<span class="tag">{e(tag)}</span><span class="time">{_clock(_scene_secs(s))}</span></div>')
+
+
+def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, editable: bool) -> str:
+    """`sceneCard(v, s, i)` do protótipo, com os dados reais da cena (a mesma estrutura, os mesmos textos)."""
+    sid = e(s["id"])
+    aud_cls, aud_txt = _AUDIO_BADGE.get(s["audio_state"], _AUDIO_BADGE["none"])
+    secs = _scene_secs(s)
+    media = bool(s.get("asset_id"))
+    broll = bool(s.get("broll_enabled"))
+    lock = "" if editable else f' disabled title="{_LOCKED_TITLE}"'
+    ro = "" if editable else f' readonly title="{_LOCKED_TITLE}"'
+    broll_btn_style = "border-color:var(--accent);color:var(--accent2)" if broll else ""
+    note = (f'<input type="text" class="sample" style="margin-top:6px;font-size:12px" aria-label="Descrição do B-roll" '
+            f'data-a="brollnote" data-sid="{sid}" value="{e(s.get("broll_note") or "")}" '
+            f'placeholder="O que mostrar no B-roll?"{ro}>') if broll else ""
+    return (
+        f'<div class="scene" data-sid="{sid}">'
+        f'<div>{_scene_thumb(video_id, s, i)}'
+        '<div class="row" style="margin-top:8px">'
+        f'<button class="btn small" style="flex:1" data-a="media" data-sid="{sid}"{lock}>'
+        f'{"Trocar mídia" if media else "Escolher mídia"}</button>'
+        f'<button class="btn small {"" if broll else "ghost"}" style="{broll_btn_style}" '
+        f'aria-pressed="{"true" if broll else "false"}" data-a="broll" data-sid="{sid}"{lock}>'
+        f'{"B-roll ativo" if broll else "+ B-roll"}</button></div>'
+        f'{note}</div>'
+        '<div><div class="between" style="margin-bottom:6px">'
+        f'<span class="num">CENA {i + 1} · {e(s["label"].upper())}</span>'
+        f'<span class="sample" data-count="{sid}">{e(_scene_count_text(s))}</span></div>'
+        f'<label class="sr" for="tx-{sid}">Texto da cena {i + 1}</label>'
+        f'<textarea id="tx-{sid}" rows="4" data-a="text" data-sid="{sid}"{ro}>{e(s["narration"])}</textarea>'
+        '<div class="field" style="margin:8px 0 0">'
+        f'<label for="pr-{sid}">Prompt da imagem</label>'
+        f'<input type="text" id="pr-{sid}" data-a="prompt" data-sid="{sid}" value="{e(s["image_prompt"])}"{ro}></div></div>'
+        '<div class="player"><div class="between"><span class="lbl">NARRAÇÃO</span>'
+        f'<span class="pill {aud_cls}" data-audpill="{sid}">{aud_txt}</span></div>'
+        f'<p class="sample">{e(voice_name)}</p>'
+        f'<div class="prog" style="--d:{secs}s"><b></b></div>'
+        '<div class="row">'
+        f'<button class="btn small primary" style="flex:1" data-a="play" data-sid="{sid}"'
+        f'{" disabled" if s["audio_state"] == "none" else ""}>▶ Ouvir trecho</button></div>'
+        f'<button class="btn small ghost long" style="margin-top:6px" data-a="regen" data-sid="{sid}"{lock}>'
+        f'{"Gerar áudio da cena" if s["audio_state"] == "none" else "Regenerar áudio da cena"}</button>'
+        '<p class="sample" style="margin-top:6px" data-f="voicenote">Áudio real da cena: gerado pelo estúdio, não simulado.</p>'
+        '<div class="row" style="margin-top:8px;justify-content:space-between"><span>'
+        f'<button class="btn ghost small" aria-label="Mover cena para cima" data-a="mv" data-d="-1" data-sid="{sid}"'
+        f'{" disabled" if (i == 0 or not editable) else ""}>↑</button>'
+        f'<button class="btn ghost small" aria-label="Mover cena para baixo" data-a="mv" data-d="1" data-sid="{sid}"'
+        f'{" disabled" if (i == total - 1 or not editable) else ""}>↓</button></span>'
+        f'<button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="{sid}"{lock}>Excluir</button>'
+        '</div></div></div>'
+    )
+
+
+def _storyboard_dialogs() -> str:
+    """Modais do v3 (`nativeModal`): histórico da voz e mídia da cena; abertos com `showModal()`."""
+    return (
+        '<dialog class="modal" id="dlg-audio-history" aria-labelledby="t-audio-history">'
+        '<h2 id="t-audio-history">Versões da voz desta cena</h2>'
+        '<p class="sample" id="audio-history-scene"></p>'
+        '<div id="audio-history-list"></div>'
+        '<form method="dialog" style="margin-top:16px"><button class="btn ghost small" value="close">Voltar</button></form>'
+        '</dialog>'
+        '<dialog class="modal" id="dlg-media" aria-labelledby="t-media">'
+        '<h2 id="t-media">Mídia para esta cena</h2>'
+        '<p class="sample" id="media-scene"></p>'
+        '<div class="row" style="margin:12px 0" id="media-tabs">'
+        '<button type="button" class="btn small primary" data-a="media-tab" data-v="video">Deste vídeo</button>'
+        '<button type="button" class="btn small" data-a="media-tab" data-v="channel">Do canal</button>'
+        '<button type="button" class="btn small" data-a="media-tab" data-v="files">Meus arquivos</button>'
+        '<button type="button" class="btn small" data-a="media-tab" data-v="stock">Stock</button>'
+        '<button type="button" class="btn small" data-a="media-tab" data-v="generate">Gerar</button></div>'
+        '<div id="media-body" role="status"></div>'
+        '<form method="dialog" style="margin-top:16px"><button class="btn ghost small" value="close">Voltar</button></form>'
+        '</dialog>'
+    )
 
 
 def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
-                scenes=None, script=None, channel_voice: str | None = None) -> str:
-    if not scenes and (script is None or not getattr(script, "scenes", None)):
-        # `prior.scenes` do protótipo (sem cenas): cabeçalho "Storyboard integrado" + cartão vazio.
-        # Nada de cena inventada: criar cenas é no roteiro; gerar o que falta é na produção.
-        return (
-            '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
-            '<p class="sub">Texto, mídia, B-roll e narração de cada cena na mesma bancada. '
-            "Edite sem trocar de tela.</p></div>"
-            f'<div class="row">{_nova_cena_btn(video_id, script)}'
-            f'<a class="btn small" href="{area_href(video_id, "producao")}">Gerar tudo o que falta</a></div></div>'
-            '<div class="stack"></div>'
-            '<div class="card"><p class="sub">Sem cenas. Use "+ Nova cena" para adicionar a primeira.</p></div>'
-            '<p class="sample" id="storyboard-feedback" role="status" style="margin-top:8px"></p>'
-        )
-
-    normalized_scenes = _normalize_scenes(scenes, script)
-
-    pills_html = []
-    for s in normalized_scenes:
-        i = s["idx"]
-        label = s["label"] or f"Cena {i + 1}"
-        is_first = (i == 0)
-        pressed = "true" if is_first else "false"
-        cls = "btn small primary btn-cena-pill active" if is_first else "btn small btn-cena-pill"
-        pills_html.append(
-            f'<button type="button" class="{cls}" data-scene-idx="{i}" aria-pressed="{pressed}">'
-            f'{i + 1} · {e(label)}{" · atualizar voz" if s["audio_state"] == "stale" else ""}'
-            f'</button>'
-        )
-
-    header_card = (
-        '<div id="storyboard-v3-header">'
-        '<div class="between" style="margin-bottom:16px"><div><h2>Conte sua história, cena por cena</h2>'
-        '<p class="sub">Selecione uma cena para editar. As demais ficam preservadas.</p></div>'
-        '<div class="row">'
-        '<button type="button" class="btn small" id="btn-undo-cenas" title="Desfazer alteração" disabled>↶ Desfazer</button>'
-        '<button type="button" class="btn small" id="btn-redo-cenas" title="Refazer alteração" disabled>↷ Refazer</button>'
-        f'{_nova_cena_btn(video_id, script)}'
-        '</div></div>'
-        '<div class="row seletor-cenas" id="seletor-cenas" style="margin-bottom:16px">'
-        + "".join(pills_html)
-        + '</div></div>'
-    )
-
-    foco = normalized_scenes[0]
-    f_idx = foco["idx"]
-    f_label = foco["label"] or f"Cena {f_idx + 1}"
-    f_asset_id = foco["asset_id"]
-    audio_cls, audio_txt = _AUDIO_BADGE.get(foco["audio_state"], _AUDIO_BADGE["none"])
+                scenes=None, script=None, channel_voice: str | None = None, scene_assets=None) -> str:
+    """`tabScenes` do protótipo (com Desfazer/Refazer do v3): um `sceneCard` completo por cena, na ordem do roteiro."""
+    editable = _scene_editable(view, script)
+    items = _normalize_scenes(scenes, script, scene_assets)
     voice_name = channel_voice or "Voz padrão do estúdio"
-    broll_on = bool(foco.get("broll_enabled"))
-    first_scene_id = foco["id"]
-    script_version = getattr(script, "version", None) or (script.get("version") if isinstance(script, dict) else None) or 0
-    focused_card = (
-        f'<div class="scene cena-em-foco" id="cena-em-foco" data-active-idx="{f_idx}" data-video-id="{e(video_id)}" '
-        f'data-script-version="{int(script_version)}">'
-        '<div>'
-        f'<div class="thumb" id="foco-midia-preview" style="height:132px;background:var(--panel3);'
-        f'{"" if f_asset_id else "border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px"}">'
-        f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" '
-        f'alt="Mídia da cena {f_idx + 1}" style="width:100%;height:100%;object-fit:cover;'
-        f'display:{"block" if f_asset_id else "none"};">'
-        f'<span class="tag" id="foco-midia-tag" style="display:{"block" if f_asset_id else "none"}">Cena {f_idx + 1}</span>'
-        f'<div id="foco-midia-placeholder" style="display:{"none" if f_asset_id else "block"}">'
-        'Sem mídia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>'
-        '</div>'
-        '<div class="row" style="margin-top:8px">'
-        f'<button type="button" class="btn small" id="btn-trocar-midia" data-action="trocar-midia" style="flex:1">'
-        f'{"Trocar mídia" if f_asset_id else "Escolher mídia"}</button>'
-        f'<label class="btn small {"" if broll_on else "ghost"}" id="lbl-broll" style="cursor:pointer;'
-        f'{"border-color:var(--accent);color:var(--accent2)" if broll_on else ""}">'
-        f'<input type="checkbox" id="cena-broll-enabled" name="broll_enabled"{" checked" if broll_on else ""} class="sr-only">'
-        f'<span id="lbl-broll-txt">{"B-roll ativo" if broll_on else "+ B-roll"}</span>'
-        '</label>'
-        '</div>'
-        f'<div id="cena-broll-note-wrap" style="margin-top:6px;display:{"block" if broll_on else "none"}">'
-        f'<input class="sample" type="text" id="cena-broll-note" name="broll_note" aria-label="Descrição do B-roll" '
-        f'style="font-size:12px;width:100%" placeholder="O que mostrar no B-roll?" value="{e(foco.get("broll_note") or "")}">'
-        '</div>'
-        '</div>'
-        '<div>'
-        '<div class="between" style="margin-bottom:6px">'
-        f'<span class="num" id="foco-titulo">CENA {f_idx + 1} · {e(f_label.upper())}</span>'
-        f'<span class="sample" id="foco-duracao">{e(_scene_count_text(foco))}</span>'
-        '</div>'
-        '<label class="sr" for="cena-narration">Texto da cena</label>'
-        f'<textarea id="cena-narration" rows="4" placeholder="Texto narrado da cena...">{e(foco["narration"])}</textarea>'
-        '<div class="field" style="margin:8px 0 0">'
-        '<label for="cena-prompt">Prompt da imagem</label>'
-        f'<input type="text" id="cena-prompt" value="{e(foco["image_prompt"])}">'
-        '</div>'
-        '</div>'
-        '<div class="player">'
-        '<div class="between">'
-        '<span class="lbl">NARRAÇÃO</span>'
-        f'<span class="pill {audio_cls} badge-audio" id="foco-audio-badge">{audio_txt}</span>'
-        '</div>'
-        f'<p class="sample" id="foco-voz-nome">{e(voice_name)}</p>'
-        '<div class="prog" id="foco-prog"><b></b></div>'
-        '<div class="row">'
-        f'<button type="button" class="btn small primary" id="btn-ouvir-trecho" data-scene-id="{e(first_scene_id)}" '
-        f'style="flex:1"{" disabled" if foco["audio_state"] == "none" else ""}>▶ Ouvir trecho</button>'
-        '</div>'
-        '<button type="button" class="btn small ghost long" id="btn-regenerar-voz" data-action="regenerar-voz" '
-        f'style="margin-top:6px">{"Gerar áudio da cena" if foco["audio_state"] == "none" else "Regenerar áudio da cena"}</button>'
-        '<div class="row" style="margin-top:8px;justify-content:space-between">'
-        '<span>'
-        '<button type="button" class="btn ghost small" id="btn-mover-cima" aria-label="Mover cena para cima">↑</button>'
-        '<button type="button" class="btn ghost small" id="btn-mover-baixo" aria-label="Mover cena para baixo">↓</button>'
-        '</span>'
-        '<button type="button" class="btn ghost small" id="btn-excluir-cena" style="color:var(--bad)">Excluir</button>'
-        '</div>'
-        '</div>'
-        '</div>'
-        '<div class="row" style="margin-top:12px">'
-        '<button type="button" class="btn small" id="btn-historico-voz" data-action="historico-voz">Histórico da voz</button>'
-        f'<a class="btn ghost small" href="{area_href(video_id, "producao")}">Gerar tudo o que falta</a>'
-        '</div>'
-        '<p class="sample" id="storyboard-feedback" role="status" style="margin-top:8px"></p>'
-    )
-
+    version = _script_version(script)
+    cards = "".join(_scene_card(video_id, s, i, len(items), voice_name=voice_name, editable=editable)
+                    for i, s in enumerate(items))
+    blank = {"id": "__sid__", "label": "", "narration": "", "image_prompt": "", "duration_s": None,
+             "asset_id": None, "audio_state": "none", "broll_enabled": False, "broll_note": None}
+    template = ('<template id="scene-card-template">'
+                + _scene_card(video_id, blank, 0, 2, voice_name=voice_name, editable=editable) + '</template>')
+    empty = ('<div class="card" id="storyboard-empty"><p class="sub">Sem cenas. Adicione a primeira cena.</p></div>'
+             if not items else "")
+    data = {"video_id": video_id, "version": version, "editable": editable, "voice": voice_name,
+            "scenes": [{k: v for k, v in s.items() if k != "audio_history"} | {"audio_history": s["audio_history"]}
+                       for s in items]}
+    data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     script_content = "".join(
-        f'<p style="margin-top:12px"><b>{sc["idx"] + 1}. {e(sc["label"] or "Cena " + str(sc["idx"] + 1))}</b>'
-        f'<br>{e(sc["narration"])}</p>'
-        for sc in normalized_scenes)
-
-    full_script_details = (
-        f'<details class="diag" id="detalhes-roteiro-completo" style="margin-top:18px">'
-        f'<summary>Ver roteiro completo · {len(normalized_scenes)} cenas</summary>'
-        f'{script_content}'
-        f'</details>'
+        f'<p style="margin-top:12px"><b>{i + 1}. {e(sc["label"])}</b><br>{e(sc["narration"])}</p>'
+        for i, sc in enumerate(items))
+    return (
+        '<div id="storyboard" data-video-id="' + e(video_id) + '">'
+        '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
+        '<p class="sub">Texto, mídia, B-roll e narração de cada cena na mesma bancada. '
+        'Edite sem trocar de tela.</p></div>'
+        '<div class="row">'
+        '<button type="button" class="btn small" id="btn-undo-cenas" data-a="undo-v3" disabled>↶ Desfazer</button>'
+        '<button type="button" class="btn small" id="btn-redo-cenas" data-a="redo-v3" disabled>↷ Refazer</button>'
+        f'{_nova_cena_btn(video_id, script, editable)}</div></div>'
+        f'<div class="stack" id="storyboard-cards">{cards}</div>'
+        f'{empty}'
+        '<div class="row" style="margin-top:12px">'
+        '<button type="button" class="btn small" id="btn-historico-voz" data-a="audio-history">Histórico da voz</button>'
+        '<button type="button" class="btn ghost small" id="btn-gerar-faltante" data-a="genmissing" '
+        f'data-video-id="{e(video_id)}">Gerar tudo o que falta</button></div>'
+        '<p class="sample" id="storyboard-feedback" role="status" aria-live="polite" style="margin-top:8px"></p>'
+        f'<details class="diag" style="margin-top:18px"><summary>Ver roteiro completo · {len(items)} cenas</summary>'
+        f'<div id="storyboard-fullscript">{script_content}</div></details>'
+        f'{template}{_storyboard_dialogs()}'
+        f'<script type="application/json" id="storyboard-data">{data_json}</script>'
+        '</div>'
     )
 
-    scenes_json = json.dumps(normalized_scenes, ensure_ascii=False).replace("</", "<\\/")
-    script_data_tag = f'<script type="application/json" id="storyboard-scenes-data">{scenes_json}</script>'
-
-    dialogs = (
-        '<dialog class="modal" id="dialog-audio-history" aria-labelledby="t-audio-history">'
-        '<div class="modal-card">'
-        '<div class="spread" style="align-items:center;margin-bottom:10px;">'
-        '<h3 id="t-audio-history" style="margin:0;">Versões da voz desta cena · Cena <span id="modal-audio-scene-num">1</span></h3>'
-        '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
-        '</div>'
-        '<p class="micro">Versões anteriores geradas para a narração desta cena. Você pode ouvir e restaurar qualquer versão.</p>'
-        '<ul class="pilha" id="dialog-audio-history-list" style="margin:12px 0;">'
-        '<li class="vazio">Nenhuma versão anterior gravada para esta cena.</li>'
-        '</ul>'
-        '<div id="audio-history-feedback" class="form-feedback" role="status" style="margin-top:8px;"></div>'
-        '<div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
-        '<button type="button" class="btn btn-sm modal-close">Fechar</button>'
-        '</div>'
-        '</div>'
-        '</dialog>'
-        '<dialog class="modal" id="dialog-trocar-midia" aria-labelledby="t-trocar-midia">'
-        '<div class="modal-card">'
-        '<div class="spread" style="align-items:center;margin-bottom:10px;">'
-        '<h3 id="t-trocar-midia" style="margin:0;">Mídia para esta cena · Cena <span id="modal-media-scene-num">1</span></h3>'
-        '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
-        '</div>'
-        '<p class="micro">Selecione uma imagem de banco ou edite o prompt para gerar uma nova arte.</p>'
-        '<div class="campo" style="margin:12px 0;">'
-        '<label for="trocar-midia-prompt"><strong>Prompt visual da cena</strong></label>'
-        '<textarea id="trocar-midia-prompt" class="campo" rows="3" style="width:100%;"></textarea>'
-        '</div>'
-        '<div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
-        '<button type="button" class="btn btn-sm modal-close">Cancelar</button>'
-        '<button type="button" class="btn btn-sm btn-primario" id="btn-confirmar-trocar-midia">Salvar nova mídia</button>'
-        '</div>'
-        '</div>'
-        '</dialog>'
-    )
-
-    return header_card + focused_card + full_script_details + dialogs + script_data_tag
 
 
 _TRACK_KIND_LABELS = {"visual": "visual", "narration": "narração", "subtitle": "legenda"}
@@ -684,7 +677,7 @@ def _composition_plan_card(composition_view) -> str:
 
 
 def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
-                     scenes=None, script=None) -> str:
+                     scenes=None, script=None, scene_assets=None, channel_voice: str | None = None) -> str:
     style = _effective_style(style_view)
     if style is None:
         head = ('<p class="aviso">Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de '
@@ -775,7 +768,7 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
                 f'{" checked" if checked else ""}>{e(label)}</label>')
 
     soon = '<span class="pill pill-espera">Em breve</span>'
-    first_scene = next(iter(_normalize_scenes(scenes, script)), None)
+    first_scene = next(iter(_normalize_scenes(scenes, script, scene_assets)), None)
     sample_text = " ".join((first_scene["narration"] if first_scene else "").split()[:6]) or "Legenda de exemplo"
     short = getattr(getattr(raw_video, "format", None), "value", getattr(raw_video, "format", "short")) == "short"
     cap_scale = 0.5 if short else 0.42
@@ -789,17 +782,17 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         cap_px = round(42 * cap_scale)
     preview_card = (
         '<div class="card"><h3 style="margin-bottom:12px">Prévia da composição</h3>'
-        f'<div class="frame {"r916" if short else "r169"}" id="frame"><div class="bg" style="background:var(--panel3)"></div>'
+        f'<div class="frame {"r916" if short else "r169"}{" static" if is_static_motion else ""}" id="frame" data-short="{"1" if short else "0"}"><div class="bg" style="background:var(--panel3)"></div>'
         '<span style="font-size:60px;position:relative">🎞️</span>'
         f'<div class="cap" id="cap" style="{cap_pos_css};font-size:{cap_px}px;{cap_box_css}'
         f'font-family:{e(cap_font_css)},sans-serif">{e(sample_text)}</div></div>'
         '<p class="sample" style="margin-top:8px;text-align:center">Prévia aproximada das legendas — '
         "não é o vídeo renderizado.</p></div>"
     )
-    scene_items = _normalize_scenes(scenes, script)
+    scene_items = _normalize_scenes(scenes, script, scene_assets)
     base_track = " → ".join(
-        f'Cena {i + 1} ({"com mídia" if sc["asset_id"] else "sem mídia"})' for i, sc in enumerate(scene_items)
-    ) or "sem cenas"
+        f'Cena {i + 1} ({(sc["asset_tag"] or "com mídia") if sc["asset_id"] else "sem mídia"})'
+        for i, sc in enumerate(scene_items)) or "sem cenas"
     total_secs = sum(_secs(sc["narration"]) for sc in scene_items)
     pos_label = {"top": "topo", "middle": "meio", "bottom": "base"}[caption_pos]
     if scene_items:
@@ -812,9 +805,9 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
             f'<div class="track"><span>Mídia base</span><div style="background:var(--accentbg);border-color:var(--line2);'
             f'color:var(--accent2)">{e(base_track)}</div></div>'
             f'<div class="track"><span>B-roll</span><div style="color:var(--warn)">{broll_text}</div></div>'
-            f'<div class="track"><span>Narração</span><div style="color:var(--ok)">Narração contínua · ~{_fmt_t(total_secs)}</div></div>'
+            f'<div class="track"><span>Narração</span><div style="color:var(--ok)">Narração contínua · {e(channel_voice or "Voz padrão do estúdio")} · ~{_fmt_t(total_secs)}</div></div>'
             f'<div class="track"><span>Música</span><div>bpm {e(str(music_bpm))} · seed {e(str(music_seed))}</div></div>'
-            f'<div class="track"><span>Legendas</span><div>{e(cap_font_css)} · '
+            f'<div class="track"><span>Legendas</span><div id="track-legendas">{e(cap_font_css)} · '
             f'{"Texto simples" if caption_style == "simple" else "Caixa discreta"} · {pos_label}</div></div></div>'
         )
     else:
@@ -1286,28 +1279,59 @@ _AREA_RENDERERS = {
 }
 
 
-def _dock(view, video_id: str, scenes, script) -> str:
+def _run_is_live(view) -> bool:
+    """Produção em andamento: o estágio observável OU uma execução viva (entre etapas o estágio pode piscar)."""
+    run = getattr(view, "latest_run", None)
+    return view.stage == Stage.IN_PRODUCTION or (run is not None and run.state in _LIVE_RUN_STATES)
+
+
+def _impact_dialog(missing: int) -> str:
+    """`impact` do v3 ("Atualizar esta versão"): o que a produção vai refazer, antes de iniciar."""
+    return (
+        '<dialog class="modal" id="dlg-impacto" aria-labelledby="t-impacto">'
+        '<h2 id="t-impacto">Atualizar esta versão</h2>'
+        f'<p style="margin:12px 0"><span id="impact-n">{missing}</span> cena(s) precisam de mídia ou voz atualizadas. '
+        'As demais serão preservadas; a montagem será atualizada.</p>'
+        '<p class="sub">Estimativa de custo indisponível: o custo é medido durante a execução.</p>'
+        '<p class="sample">A publicação anterior não muda. Será necessária nova aprovação.</p>'
+        '<div class="row" style="margin-top:16px">'
+        '<button type="button" class="btn primary" id="btn-confirmar-render" autofocus>Confirmar atualização</button>'
+        '<form method="dialog"><button class="btn ghost small" value="close">Voltar</button></form></div>'
+        '</dialog>'
+    )
+
+
+def _dock(view, video_id: str, scenes, script, scene_assets=None) -> str:
     """`dock(v)` do protótipo: resumo fixo no rodapé, nas abas Cenas e Composição."""
-    items = _normalize_scenes(scenes, script)
+    items = _normalize_scenes(scenes, script, scene_assets)
     if view.stage == Stage.COMPLETED:
         return ('<div class="dock"><span class="sub">Publicado.</span>'
                 f'<a class="btn small" href="{area_href(video_id, "publicacao")}">Ver publicação</a></div>')
     total = sum(_secs(sc["narration"]) for sc in items)
     missing = sum(1 for sc in items if not sc["asset_id"] or sc["audio_state"] != "ok")
-    needs = view.stage in (Stage.PENDING, Stage.FAILED)
-    aviso = (f'<span class="pill warn">{missing} cena(s) sem mídia ou áudio atual</span>'
+    running = _run_is_live(view)
+    needs = view.stage in (Stage.PENDING, Stage.FAILED) and not running
+    aviso = (f'<span class="pill warn" id="dock-missing">{missing} cena(s) sem mídia ou áudio atual</span>'
              if needs and missing else "")
-    if needs:
-        acao = f'<a class="btn primary" href="{area_href(video_id, "producao")}">🎬 Gerar o que falta e renderizar</a>'
+    if running:
+        acao = ('<button type="button" class="btn primary" id="btn-render" disabled aria-busy="true" '
+                f'data-video-id="{e(video_id)}">⚡ Produção em andamento…</button>')
+    elif needs:
+        acao = (f'<button type="button" class="btn primary" id="btn-render" data-a="render" '
+                f'data-video-id="{e(video_id)}">🎬 Gerar o que falta e renderizar</button>')
     else:
         acao = f'<a class="btn ok" href="{area_href(video_id, "qualidade")}">Ir para aprovação →</a>'
-    return (f'<div class="dock"><div class="row"><b>{len(items)} cenas</b>'
-            f'<span class="sub">~{_fmt_t(total)} · estimativa de custo não disponível</span>{aviso}</div>'
-            f'<div class="row">{acao}</div></div>')
+    return (f'<div class="dock" id="dock" data-needs="{"1" if needs else "0"}"><div class="row" id="dock-info">'
+            f'<b id="dock-count">{len(items)} cenas</b>'
+            f'<span class="sub" id="dock-dur">~{_fmt_t(total)} · estimativa de custo não disponível</span>{aviso}'
+            '<span class="sample" id="run-feedback" role="status" aria-live="polite"></span></div>'
+            f'<div class="row">{acao}</div></div>'
+            f'{_impact_dialog(missing) if needs else ""}')
 
 
 def _content(view, area: str, *, style_view, script_view, video_id, composition_view=None, preview=None,
-             scenes=None, script=None, channel_voice: str | None = None, channel_name: str = "") -> str:
+             scenes=None, script=None, channel_voice: str | None = None, channel_name: str = "",
+             scene_assets=None) -> str:
     if area == "publicacao":
         return _area_publicacao(view, style_view=style_view, script_view=script_view,
                                 video_id=video_id, preview=preview, channel_name=channel_name)
@@ -1318,11 +1342,13 @@ def _content(view, area: str, *, style_view, script_view, video_id, composition_
     if area == "cenas":
         return _area_cenas(view, style_view=style_view, script_view=script_view, video_id=video_id,
                            composition_view=composition_view, scenes=scenes, script=script,
-                           channel_voice=channel_voice) + _dock(view, video_id, scenes, script)
+                           channel_voice=channel_voice, scene_assets=scene_assets
+                           ) + _dock(view, video_id, scenes, script, scene_assets)
     if area == "composicao":
         return _area_composicao(view, style_view=style_view, script_view=script_view, video_id=video_id,
                                 composition_view=composition_view, scenes=scenes,
-                                script=script) + _dock(view, video_id, scenes, script)
+                                script=script, scene_assets=scene_assets,
+                                channel_voice=channel_voice) + _dock(view, video_id, scenes, script, scene_assets)
     return _AREA_RENDERERS[area](
         view, style_view=style_view, script_view=script_view, video_id=video_id,
         composition_view=composition_view,
@@ -1527,564 +1553,6 @@ PAGE_JS = """
   document.addEventListener('change', function (ev) { syncAria(ev.target); }, true);
   document.addEventListener('invalid', function (ev) { syncAria(ev.target); }, true);
 
-  // --- Storyboard V3 Client JS (Cena em foco, Desfazer/Refazer, Modais) ---
-  var scenesDataEl = document.getElementById('storyboard-scenes-data');
-  var scenesData = [];
-  if (scenesDataEl && scenesDataEl.textContent) {
-    try { scenesData = JSON.parse(scenesDataEl.textContent); } catch (e) { scenesData = []; }
-  }
-
-  var currentActiveIdx = 0;
-  var undoStack = [];
-  var redoStack = [];
-  var MAX_SNAPSHOTS = 30;
-
-  var AUDIO_BADGE = {
-    ok: ['ok', '\u2713 \u00c1udio atual'],
-    stale: ['warn', '\u00c1udio desatualizado'],
-    none: ['bad', 'Sem \u00e1udio ainda']
-  };
-  function setBadge(badge, state) {
-    var b = AUDIO_BADGE[state] || AUDIO_BADGE.none;
-    badge.textContent = b[1];
-    badge.className = 'pill ' + b[0] + ' badge-audio';
-  }
-  function countText(s) {
-    var words = ((s.narration || '').trim().match(/\\S+/g) || []).length;
-    var secs = (typeof s.duration_s === 'number' && s.duration_s) ? (s.duration_s.toFixed(1) + 's')
-      : ('~' + Math.max(2, Math.round(words / 2.6)) + 's');
-    return words + ' palavras \u00b7 ' + secs;
-  }
-  function syncBroll() {
-    var chk = document.getElementById('cena-broll-enabled');
-    var lbl = document.getElementById('lbl-broll');
-    var txt = document.getElementById('lbl-broll-txt');
-    if (!chk || !lbl) return;
-    lbl.classList.toggle('ghost', !chk.checked);
-    lbl.style.borderColor = chk.checked ? 'var(--accent)' : '';
-    lbl.style.color = chk.checked ? 'var(--accent2)' : '';
-    if (txt) txt.textContent = chk.checked ? 'B-roll ativo' : '+ B-roll';
-  }
-
-  function getStoryboardSnapshot() {
-    var narEl = document.getElementById('cena-narration');
-    var prmEl = document.getElementById('cena-prompt');
-    return {
-      scenes: JSON.parse(JSON.stringify(scenesData)),
-      activeIdx: currentActiveIdx,
-      narration: narEl ? narEl.value : '',
-      prompt: prmEl ? prmEl.value : ''
-    };
-  }
-
-  function updateUndoRedoButtons() {
-    var btnUndo = document.getElementById('btn-undo-cenas');
-    var btnRedo = document.getElementById('btn-redo-cenas');
-    if (btnUndo) btnUndo.disabled = (undoStack.length === 0);
-    if (btnRedo) btnRedo.disabled = (redoStack.length === 0);
-  }
-
-  function pushSnapshot() {
-    undoStack.push(getStoryboardSnapshot());
-    if (undoStack.length > MAX_SNAPSHOTS) undoStack.shift();
-    redoStack = [];
-    updateUndoRedoButtons();
-  }
-
-  function focusScene(idx) {
-    if (!scenesData || idx < 0 || idx >= scenesData.length) return;
-    currentActiveIdx = idx;
-    var s = scenesData[idx];
-
-    document.querySelectorAll('.btn-cena-pill').forEach(function (pill) {
-      var pIdx = Number(pill.getAttribute('data-scene-idx'));
-      var isAct = (pIdx === idx);
-      pill.setAttribute('aria-pressed', isAct ? 'true' : 'false');
-      if (isAct) {
-        pill.classList.add('active', 'primary');
-      } else {
-        pill.classList.remove('active', 'primary');
-      }
-    });
-
-    var card = document.getElementById('cena-em-foco');
-    if (card) card.setAttribute('data-active-idx', String(idx));
-
-    var titulo = document.getElementById('foco-titulo');
-    if (titulo) titulo.textContent = 'CENA ' + (idx + 1) + ' · ' + (s.label || ('Cena ' + (idx + 1))).toUpperCase();
-
-    var duracao = document.getElementById('foco-duracao');
-    if (duracao) duracao.textContent = countText(s);
-
-    var badge = document.getElementById('foco-audio-badge');
-    if (badge) {
-      setBadge(badge, s.audio_state);
-    }
-
-    var nar = document.getElementById('cena-narration');
-    if (nar) nar.value = s.narration || '';
-
-    var prm = document.getElementById('cena-prompt');
-    if (prm) prm.value = s.image_prompt || '';
-
-    var brollChk = document.getElementById('cena-broll-enabled');
-    if (brollChk) brollChk.checked = Boolean(s.broll_enabled);
-    syncBroll();
-
-    var brollNote = document.getElementById('cena-broll-note');
-    if (brollNote) brollNote.value = s.broll_note || '';
-
-    var brollWrap = document.getElementById('cena-broll-note-wrap');
-    if (brollWrap) brollWrap.style.display = s.broll_enabled ? 'block' : 'none';
-
-    var videoId = card ? (card.getAttribute('data-video-id') || '') : '';
-    var img = document.getElementById('foco-midia-img');
-    var placeholder = document.getElementById('foco-midia-placeholder');
-    if (img && placeholder) {
-      if (s.asset_id) {
-        img.src = '/studio/videos/' + encodeURIComponent(videoId) + '/scenes/' + idx + '/asset';
-        img.style.display = 'block';
-        placeholder.style.display = 'none';
-      } else {
-        img.style.display = 'none';
-        placeholder.style.display = 'block';
-      }
-      var prev = document.getElementById('foco-midia-preview');
-      if (prev) prev.style.borderStyle = s.asset_id ? '' : 'dashed';
-      var tag = document.getElementById('foco-midia-tag');
-      if (tag) { tag.textContent = 'Cena ' + (idx + 1); tag.style.display = s.asset_id ? 'block' : 'none'; }
-      var tb = document.getElementById('btn-trocar-midia');
-      if (tb) tb.textContent = s.asset_id ? 'Trocar m\u00eddia' : 'Escolher m\u00eddia';
-    }
-
-    var numAudio = document.getElementById('modal-audio-scene-num');
-    if (numAudio) numAudio.textContent = String(idx + 1);
-
-    var numMedia = document.getElementById('modal-media-scene-num');
-    if (numMedia) numMedia.textContent = String(idx + 1);
-
-    var mediaPrompt = document.getElementById('trocar-midia-prompt');
-    if (mediaPrompt) mediaPrompt.value = s.image_prompt || '';
-
-    renderAudioHistory(idx);
-  }
-  var renderActiveScene = focusScene;
-
-  var mediaImg = document.getElementById('foco-midia-img');
-  if (mediaImg) {
-    mediaImg.addEventListener('error', function () {
-      mediaImg.style.display = 'none';
-      var placeholder = document.getElementById('foco-midia-placeholder');
-      if (placeholder) placeholder.style.display = 'block';
-      var tagErr = document.getElementById('foco-midia-tag');
-      if (tagErr) tagErr.style.display = 'none';
-      var prevErr = document.getElementById('foco-midia-preview');
-      if (prevErr) prevErr.style.borderStyle = 'dashed';
-    });
-  }
-
-  document.querySelectorAll('.btn-cena-pill').forEach(function (pill) {
-    pill.addEventListener('click', function () {
-      var idx = Number(pill.getAttribute('data-scene-idx'));
-      focusScene(idx);
-    });
-  });
-
-  function renderAudioHistory(idx) {
-    var listEl = document.getElementById('dialog-audio-history-list') || document.getElementById('lista-historico-audio');
-    if (!listEl) return;
-    var s = (scenesData && scenesData[idx]) ? scenesData[idx] : null;
-    var history = (s && s.audio_history) ? s.audio_history : [];
-    if (!history || history.length === 0) {
-      listEl.innerHTML = '<li class="vazio">Nenhuma versão anterior gravada para esta cena.</li>';
-      return;
-    }
-    var html = '';
-    history.forEach(function (h) {
-      var v = h.version || 1;
-      var dur = (typeof h.duration_s === 'number') ? (h.duration_s.toFixed(1) + ' s') : 'sem duração';
-      var textSafe = (h.text || '').replace(/"/g, '&quot;');
-      html += '<li class="spread" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--linha);">' +
-        '<div><strong>v' + v + '</strong> · ' + dur + '<br><small class="micro">' + (h.text || '') + '</small></div>' +
-        '<div class="row" style="display:flex;gap:6px;">' +
-        '<button type="button" class="btn btn-sm btn-ghost btn-ouvir-audio" data-version="' + v + '">Ouvir</button>' +
-        '<button type="button" class="btn btn-sm btn-restaurar-audio" data-version="' + v + '" data-text="' + textSafe + '">Restaurar voz</button>' +
-        '</div></li>';
-    });
-    listEl.innerHTML = html;
-    wireAudioRestoreButtons();
-  }
-
-  function wireAudioRestoreButtons() {
-    document.querySelectorAll('.btn-restaurar-audio').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var versionText = btn.getAttribute('data-text') || '';
-        var narEl = document.getElementById('cena-narration');
-        var currentNarration = narEl ? narEl.value.trim() : '';
-        var s = scenesData[currentActiveIdx];
-        if (!s) return;
-
-        var isIdentical = (versionText.trim() === currentNarration);
-        var badge = document.getElementById('foco-audio-badge');
-        var pill = document.querySelector('.btn-cena-pill[data-scene-idx="' + currentActiveIdx + '"]');
-
-        if (isIdentical) {
-          s.audio_state = 'ok';
-          if (badge) {
-            setBadge(badge, 'ok');
-          }
-          if (pill) {
-            var label = s.label || ('Cena ' + (currentActiveIdx + 1));
-            pill.textContent = (currentActiveIdx + 1) + ' · ' + label;
-          }
-        } else {
-          s.audio_state = 'stale';
-          if (badge) {
-            setBadge(badge, 'stale');
-          }
-          if (pill) {
-            var label = s.label || ('Cena ' + (currentActiveIdx + 1));
-            pill.textContent = (currentActiveIdx + 1) + ' · ' + label + ' · atualizar voz';
-          }
-        }
-
-        var fb = document.getElementById('audio-history-feedback');
-        if (fb) {
-          fb.textContent = isIdentical ? 'Voz restaurada (áudio sincronizado).' : 'Voz restaurada com narração diferente (marcada como stale).';
-        }
-
-        var dialog = document.getElementById('dialog-audio-history');
-        if (dialog) {
-          if (typeof dialog.close === 'function') {
-            dialog.close();
-          } else {
-            dialog.removeAttribute('open');
-            dialog.style.display = 'none';
-          }
-        }
-      });
-    });
-  }
-
-  var isEditingNarration = false;
-  var isEditingPrompt = false;
-
-  var narEl = document.getElementById('cena-narration');
-  if (narEl) {
-    narEl.addEventListener('focusin', function () {
-      if (!isEditingNarration) {
-        pushSnapshot();
-        isEditingNarration = true;
-      }
-    });
-    narEl.addEventListener('input', function () {
-      if (!isEditingNarration) {
-        pushSnapshot();
-        isEditingNarration = true;
-      }
-      if (scenesData[currentActiveIdx]) {
-        scenesData[currentActiveIdx].narration = narEl.value;
-        var cnt = document.getElementById('foco-duracao');
-        if (cnt) cnt.textContent = countText(scenesData[currentActiveIdx]);
-      }
-    });
-    narEl.addEventListener('blur', function () {
-      isEditingNarration = false;
-    });
-  }
-
-  var prmEl = document.getElementById('cena-prompt');
-  if (prmEl) {
-    prmEl.addEventListener('focusin', function () {
-      if (!isEditingPrompt) {
-        pushSnapshot();
-        isEditingPrompt = true;
-      }
-    });
-    prmEl.addEventListener('input', function () {
-      if (!isEditingPrompt) {
-        pushSnapshot();
-        isEditingPrompt = true;
-      }
-      if (scenesData[currentActiveIdx]) {
-        scenesData[currentActiveIdx].image_prompt = prmEl.value;
-      }
-    });
-    prmEl.addEventListener('blur', function () {
-      isEditingPrompt = false;
-    });
-  }
-
-  var initBrollChk = document.getElementById('cena-broll-enabled');
-  var initBrollWrap = document.getElementById('cena-broll-note-wrap');
-  if (initBrollChk && initBrollWrap) {
-    initBrollWrap.style.display = initBrollChk.checked ? 'block' : 'none';
-  }
-
-  var brollChkEl = document.getElementById('cena-broll-enabled');
-  if (brollChkEl) {
-    brollChkEl.addEventListener('change', function () {
-      pushSnapshot();
-      var enabled = Boolean(brollChkEl.checked);
-      if (scenesData[currentActiveIdx]) {
-        scenesData[currentActiveIdx].broll_enabled = enabled;
-      }
-      var wrap = document.getElementById('cena-broll-note-wrap');
-      if (wrap) wrap.style.display = enabled ? 'block' : 'none';
-      syncBroll();
-    });
-  }
-
-  var isEditingBrollNote = false;
-  var brollNoteEl = document.getElementById('cena-broll-note');
-  if (brollNoteEl) {
-    brollNoteEl.addEventListener('focusin', function () {
-      if (!isEditingBrollNote) {
-        pushSnapshot();
-        isEditingBrollNote = true;
-      }
-    });
-    brollNoteEl.addEventListener('input', function () {
-      if (!isEditingBrollNote) {
-        pushSnapshot();
-        isEditingBrollNote = true;
-      }
-      if (scenesData[currentActiveIdx]) {
-        scenesData[currentActiveIdx].broll_note = brollNoteEl.value;
-      }
-    });
-    brollNoteEl.addEventListener('blur', function () {
-      isEditingBrollNote = false;
-    });
-  }
-
-  var btnUndo = document.getElementById('btn-undo-cenas');
-  if (btnUndo) {
-    btnUndo.addEventListener('click', function () {
-      if (undoStack.length === 0) return;
-      redoStack.push(getStoryboardSnapshot());
-      var snap = undoStack.pop();
-      if (snap) {
-        scenesData = snap.scenes;
-        focusScene(snap.activeIdx);
-        var nar = document.getElementById('cena-narration');
-        if (nar) {
-          nar.value = snap.narration;
-          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].narration = snap.narration;
-        }
-        var prm = document.getElementById('cena-prompt');
-        if (prm) {
-          prm.value = snap.prompt;
-          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].image_prompt = snap.prompt;
-        }
-      }
-      updateUndoRedoButtons();
-    });
-  }
-
-  var btnRedo = document.getElementById('btn-redo-cenas');
-  if (btnRedo) {
-    btnRedo.addEventListener('click', function () {
-      if (redoStack.length === 0) return;
-      undoStack.push(getStoryboardSnapshot());
-      var snap = redoStack.pop();
-      if (snap) {
-        scenesData = snap.scenes;
-        focusScene(snap.activeIdx);
-        var nar = document.getElementById('cena-narration');
-        if (nar) {
-          nar.value = snap.narration;
-          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].narration = snap.narration;
-        }
-        var prm = document.getElementById('cena-prompt');
-        if (prm) {
-          prm.value = snap.prompt;
-          if (scenesData[snap.activeIdx]) scenesData[snap.activeIdx].image_prompt = snap.prompt;
-        }
-      }
-      updateUndoRedoButtons();
-    });
-  }
-
-  // ---- ações reais da cena em foco: ouvir, regenerar voz, mover e excluir ----
-  var sbCard = document.getElementById('cena-em-foco');
-  var sbVideoId = sbCard ? (sbCard.getAttribute('data-video-id') || '') : '';
-  var sbVersion = sbCard ? Number(sbCard.getAttribute('data-script-version') || 0) : 0;
-  var sbFeedback = document.getElementById('storyboard-feedback');
-
-  function sbSay(text) { if (sbFeedback) sbFeedback.textContent = text; }
-  function sbCall(method, url, body) {
-    var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
-    var payload = body ? Object.assign({ idempotency_key: key }, body) : null;
-    return fetch(url, {
-      method: method,
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
-      body: payload ? JSON.stringify(payload) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, data: d }; });
-    });
-  }
-  function sbDetail(d, fallback) { return (d && typeof d.detail === 'string') ? d.detail : fallback; }
-  function sbSyncMove() {
-    var up = document.getElementById('btn-mover-cima');
-    var down = document.getElementById('btn-mover-baixo');
-    if (up) up.disabled = currentActiveIdx <= 0 || !sbVersion;
-    if (down) down.disabled = currentActiveIdx >= scenesData.length - 1 || !sbVersion;
-  }
-  var sbFocus = focusScene;
-  focusScene = function (idx) { sbFocus(idx); sbSyncMove(); syncPlayer(); };
-
-  var sbAudio = null;
-  function syncPlayer() {
-    var s = scenesData[currentActiveIdx];
-    var play = document.getElementById('btn-ouvir-trecho');
-    var regen = document.getElementById('btn-regenerar-voz');
-    if (sbAudio) { sbAudio.pause(); sbAudio = null; }
-    var prog = document.getElementById('foco-prog');
-    if (prog) prog.classList.remove('run');
-    if (play) { play.textContent = '\u25b6 Ouvir trecho'; play.disabled = !s || s.audio_state === 'none'; }
-    if (regen && s) regen.textContent = s.audio_state === 'none' ? 'Gerar \u00e1udio da cena' : 'Regenerar \u00e1udio da cena';
-  }
-  var playBtn = document.getElementById('btn-ouvir-trecho');
-  if (playBtn) {
-    playBtn.addEventListener('click', function () {
-      var s = scenesData[currentActiveIdx];
-      if (!s) return;
-      var prog = document.getElementById('foco-prog');
-      if (sbAudio) { syncPlayer(); return; }
-      sbAudio = new Audio('/studio/videos/' + encodeURIComponent(sbVideoId) + '/scenes/' +
-                          encodeURIComponent(s.id) + '/narration.wav?t=' + Date.now());
-      sbAudio.addEventListener('ended', syncPlayer);
-      sbAudio.addEventListener('error', function () { syncPlayer(); sbSay('N\u00e3o foi poss\u00edvel carregar o \u00e1udio desta cena.'); });
-      sbAudio.play().then(function () {
-        playBtn.textContent = '\u25a0 Parar';
-        if (prog) { prog.style.setProperty('--d', (s.duration_s || 3) + 's'); prog.classList.add('run'); }
-      }).catch(function () { syncPlayer(); sbSay('N\u00e3o foi poss\u00edvel tocar o \u00e1udio desta cena.'); });
-    });
-  }
-  var regenBtn = document.getElementById('btn-regenerar-voz');
-  if (regenBtn) {
-    regenBtn.addEventListener('click', function () {
-      var s = scenesData[currentActiveIdx];
-      if (!s) return;
-      regenBtn.disabled = true;
-      sbSay('Gerando o \u00e1udio da cena\u2026');
-      sbCall('POST', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/scenes/' +
-             encodeURIComponent(s.id) + '/narration/regenerate').then(function (res) {
-        regenBtn.disabled = false;
-        if (res.ok) {
-          s.audio_state = 'ok';
-          if (typeof res.data.duration_s === 'number') s.duration_s = res.data.duration_s;
-          var badge = document.getElementById('foco-audio-badge');
-          if (badge) setBadge(badge, 'ok');
-          var dur = document.getElementById('foco-duracao');
-          if (dur) dur.textContent = countText(s);
-          syncPlayer();
-          sbSay('\u00c1udio da cena atualizado.');
-        } else {
-          sbSay('N\u00e3o foi poss\u00edvel gerar o \u00e1udio: ' + sbDetail(res.data, 'tente novamente.'));
-        }
-      }).catch(function () { regenBtn.disabled = false; sbSay('Falha de rede ao gerar o \u00e1udio.'); });
-    });
-  }
-  function sbMove(delta) {
-    var from = currentActiveIdx, to = from + delta;
-    if (!sbVersion || to < 0 || to >= scenesData.length) return;
-    var order = scenesData.map(function (_s, i) { return i; });
-    order[from] = to; order[to] = from;
-    sbSay('Reordenando\u2026');
-    sbCall('POST', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/script/scenes/reorder',
-           { expected_version: sbVersion, order: order }).then(function (res) {
-      if (res.ok) { location.reload(); }
-      else { sbSay('N\u00e3o foi poss\u00edvel reordenar: ' + sbDetail(res.data, 'tente novamente.')); }
-    }).catch(function () { sbSay('Falha de rede ao reordenar.'); });
-  }
-  var upBtn = document.getElementById('btn-mover-cima');
-  var downBtn = document.getElementById('btn-mover-baixo');
-  if (upBtn) upBtn.addEventListener('click', function () { sbMove(-1); });
-  if (downBtn) downBtn.addEventListener('click', function () { sbMove(1); });
-  var delBtn = document.getElementById('btn-excluir-cena');
-  if (delBtn) {
-    delBtn.addEventListener('click', function () {
-      if (!sbVersion) return;
-      if (!window.confirm('Excluir a cena ' + (currentActiveIdx + 1) + '? Esta a\u00e7\u00e3o cria uma nova vers\u00e3o do roteiro.')) return;
-      sbSay('Excluindo\u2026');
-      sbCall('DELETE', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/script/scenes/' + currentActiveIdx,
-             { expected_version: sbVersion }).then(function (res) {
-        if (res.ok) { location.reload(); }
-        else { sbSay('N\u00e3o foi poss\u00edvel excluir: ' + sbDetail(res.data, 'tente novamente.')); }
-      }).catch(function () { sbSay('Falha de rede ao excluir.'); });
-    });
-  }
-  sbSyncMove();
-
-  // "+ Nova cena" (`addscene`): grava a cena no roteiro e volta à bancada, já em foco na cena nova.
-  var novaCena = document.getElementById('btn-nova-cena');
-  if (novaCena) {
-    novaCena.addEventListener('click', function () {
-      var vid = novaCena.getAttribute('data-video-id') || '';
-      var ver = Number(novaCena.getAttribute('data-script-version') || 0);
-      if (!vid || !ver) return;
-      novaCena.disabled = true;
-      sbSay('Adicionando cena\u2026');
-      sbCall('POST', '/studio/videos/' + encodeURIComponent(vid) + '/script/scenes', {
-        expected_version: ver,
-        label: 'Nova cena',
-        narration: 'Escreva aqui o texto da narra\u00e7\u00e3o desta cena.',
-        image_prompt: 'descreva a imagem desejada'
-      }).then(function (res) {
-        if (res.ok) {
-          try {
-            sessionStorage.setItem('sb-after-add-' + vid, String(Array.isArray(res.data.scenes) ? res.data.scenes.length - 1 : 0));
-          } catch (e) {}
-          location.reload();
-        } else {
-          novaCena.disabled = false;
-          sbSay('N\u00e3o foi poss\u00edvel adicionar a cena: ' + sbDetail(res.data, 'tente novamente.'));
-        }
-      }).catch(function () { novaCena.disabled = false; sbSay('Falha de rede ao adicionar a cena.'); });
-    });
-    try {
-      var pend = sessionStorage.getItem('sb-after-add-' + (novaCena.getAttribute('data-video-id') || ''));
-      if (pend !== null) {
-        sessionStorage.removeItem('sb-after-add-' + (novaCena.getAttribute('data-video-id') || ''));
-        var n = Number(pend);
-        if (scenesData[n]) focusScene(n);
-        var t = document.createElement('div');
-        t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = 'Cena adicionada.';
-        document.body.appendChild(t);
-        setTimeout(function () { t.remove(); }, 2400);
-      }
-    } catch (e) {}
-  }
-
-  function wireModal(triggerId, dialogId) {
-    var trigger = document.getElementById(triggerId);
-    var dialog = document.getElementById(dialogId);
-    if (!trigger || !dialog) return;
-    trigger.addEventListener('click', function () {
-      if (typeof dialog.showModal === 'function') {
-        try { dialog.showModal(); } catch (e) { dialog.setAttribute('open', ''); dialog.style.display = 'block'; }
-      } else {
-        dialog.setAttribute('open', '');
-        dialog.style.display = 'block';
-      }
-    });
-    dialog.querySelectorAll('.modal-close').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        if (typeof dialog.close === 'function') {
-          dialog.close();
-        } else {
-          dialog.removeAttribute('open');
-          dialog.style.display = 'none';
-        }
-      });
-    });
-  }
-
-  wireModal('btn-historico-voz', 'dialog-audio-history');
-  wireModal('btn-trocar-midia', 'dialog-trocar-midia');
-
   var approveBtn = document.querySelector('button[data-a="approve"]');
   if (approveBtn) {
     approveBtn.addEventListener('click', async function () {
@@ -2232,6 +1700,33 @@ PAGE_JS = """
       radio.addEventListener('change', syncBottomInputState);
     });
     syncBottomInputState();
+
+    // Prévia viva (`tabComp` do protótipo): a legenda e o movimento seguem os parâmetros antes de salvar.
+    function liveComposition() {
+      var cap = document.getElementById('cap'), frame = document.getElementById('frame');
+      if (!cap || !frame) return;
+      var pos = compForm.querySelector('input[name="comp-posicao"]:checked');
+      var posV = pos ? pos.value : 'bottom';
+      var style = (document.getElementById('composicao-caption-style') || {}).value;
+      var fontSel = document.getElementById('composicao-caption-font');
+      var size = Number((document.getElementById('composicao-font-size') || {}).value) || 42;
+      var scale = frame.getAttribute('data-short') === '1' ? 0.5 : 0.42;
+      cap.style.top = posV === 'top' ? '12%' : posV === 'middle' ? '46%' : '';
+      cap.style.bottom = posV === 'bottom' ? '12%' : '';
+      cap.style.fontSize = Math.round(size * scale) + 'px';
+      cap.style.background = style === 'simple' ? '' : 'rgba(0,0,0,.65)';
+      if (fontSel) cap.style.fontFamily = (fontSel.selectedOptions[0].textContent.replace(/ \(.*\)$/, '')) + ',sans-serif';
+      var motion = document.getElementById('composicao-motion');
+      frame.classList.toggle('static', !!motion && motion.value === 'estatico');
+      var track = document.getElementById('track-legendas');
+      if (track && fontSel) {
+        var labels = { top: 'topo', middle: 'meio', bottom: 'base' };
+        track.textContent = fontSel.selectedOptions[0].textContent.replace(/ \(.*\)$/, '') + ' \u00b7 '
+          + (style === 'simple' ? 'Texto simples' : 'Caixa discreta') + ' \u00b7 ' + labels[posV];
+      }
+    }
+    compForm.addEventListener('input', liveComposition);
+    compForm.addEventListener('change', liveComposition);
 
     compForm.addEventListener('submit', async function (ev) {
       ev.preventDefault();
@@ -2381,34 +1876,60 @@ def _workspace_header(view, video_id: str, title: str, *, channel_name: str = ""
         {_version_dialog(view)}"""
 
 
-def _progress_card(view) -> str:
-    """Cartão de `progressCard` — só quando há produção em andamento, com as etapas registradas."""
-    if view.stage != Stage.IN_PRODUCTION:
-        return ""
-    steps = list(view.steps or [])
-    done = sum(1 for s in steps if s.status == "SUCCEEDED")
-    total = len(steps)
+_RUN_PILL = {"SUCCEEDED": ("ok", "✓"), "RUNNING": ("accent", "…"), "WAITING_HUMAN": ("accent", "…"),
+             "FAILED": ("bad", "✕")}
+
+
+def _progress_html(stages, *, run_id: str = "", video_id: str = "", template: bool = False) -> str:
+    """`progressCard(v)` do protótipo: etapas reais da execução; a barra é o nº de etapas concluídas, nunca um percentual inventado."""
+    total = len(stages)
+    done = sum(1 for _label, state in stages if state == "SUCCEEDED")
     pct = round(done / total * 100) if total else 0
     pills = "".join(
-        f'<span class="pill {"ok" if s.status == "SUCCEEDED" else "accent" if s.status == "RUNNING" else "bad" if s.status == "FAILED" else ""}">'
-        f'{"✓" if s.status == "SUCCEEDED" else "…" if s.status == "RUNNING" else "✕" if s.status == "FAILED" else "○"} '
-        f'{e(legacy._PRODUCTION_STAGE_LABELS.get(s.step, s.step))}</span>'
-        for s in steps)
+        f'<span class="pill {_RUN_PILL.get(state, ("", "○"))[0]}">{_RUN_PILL.get(state, ("", "○"))[1]} {e(label)}</span>'
+        for label, state in stages)
+    attrs = (f' id="progress-card" data-run-id="{e(run_id)}" data-video-id="{e(video_id)}"'
+             if not template else "")
     return (
-        '<div class="card" style="border-color:var(--accent);margin-bottom:18px"><div class="between"><div>'
+        f'<div class="card"{attrs} style="border-color:var(--accent);margin-bottom:18px"><div class="between"><div>'
         "<h3>⚡ Produção em andamento</h3>"
         '<p class="sub">Roteiro → voz → mídia → composição → qualidade. Ao terminar, abre na aprovação.</p></div>'
-        f'<span class="pill accent">{done}/{total} etapas</span></div>'
-        f'<div class="prog" style="height:8px;margin-top:12px"><b style="width:{pct}%;transition:width .5s"></b></div>'
-        f'<div class="row" style="margin-top:8px">{pills}</div></div>'
+        f'<span class="pill accent" data-f="count">{done}/{total} etapas</span></div>'
+        f'<div class="prog" style="height:8px;margin-top:12px"><b data-f="bar" style="width:{pct}%;transition:width .5s"></b></div>'
+        f'<div class="row" style="margin-top:8px" data-f="pills">{pills}</div></div>'
     )
+
+
+def _progress_card(view, run_stages=None) -> str:
+    """Só quando há produção em andamento. Etapas: as da execução viva (`run_stages`) ou as registradas."""
+    if not _run_is_live(view):
+        return ""
+    if run_stages:
+        stages = [(legacy._PRODUCTION_STAGE_LABELS.get(stage, stage), state) for stage, state in run_stages]
+    else:
+        stages = [(legacy._PRODUCTION_STAGE_LABELS.get(st.step, st.step), st.status) for st in (view.steps or [])]
+    run = getattr(view, "latest_run", None)
+    run_id = getattr(run, "run_id", "") if run is not None and run.state in _LIVE_RUN_STATES else ""
+    return _progress_html(stages, run_id=run_id, video_id=getattr(view.video, "id", ""))
+
+
+def _progress_slot(view, run_stages=None) -> str:
+    return f'<div id="progress-slot">{_progress_card(view, run_stages)}</div>{_progress_template()}'
+
+
+def _progress_template() -> str:
+    """Molde do cartão para a produção iniciada nesta mesma tela (o JS preenche com as etapas reais)."""
+    labels = json.dumps(legacy._PRODUCTION_STAGE_LABELS, ensure_ascii=False)
+    return (f'<template id="progress-card-template" data-labels="{e(labels)}">'
+            f'{_progress_html([], template=True)}</template>')
 
 
 def render_video_workspace(view, area: str = "cenas", *, active_area: str | None = None,
                            style_view=None, script_view=None,
                            composition_view=None, preview=None, projects=(), project_id: str = "",
                            channel_name: str = "", script=None, scenes=None,
-                           sources=None, channel_voice: str | None = None) -> WorkspaceResult:
+                           sources=None, channel_voice: str | None = None, scene_assets=None,
+                           run_stages=None) -> WorkspaceResult:
     """Workspace do vídeo: uma área por rota, reusando os blocos reais do detalhe.
 
     O que a rota precisa passar:
@@ -2468,16 +1989,19 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
 {_workspace_header(view, video_id, title, channel_name=channel_name, style_view=style_view,
                    channel_voice=channel_voice)}
         {_video_area_nav(video_id, active_area, dots)}
-        {_progress_card(view)}
+        {_progress_slot(view, run_stages) if active_area in ("cenas", "composicao") else _progress_card(view, run_stages)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,
                   preview=preview if active_area in ("publicacao", "qualidade") else None,
-                  scenes=scenes, script=script, channel_voice=channel_voice, channel_name=channel_name)}
+                  scenes=scenes, script=script, channel_voice=channel_voice, channel_name=channel_name,
+                  scene_assets=scene_assets)}
       </section>"""
 
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"
     # O JS do formulário de aprovação só entra na área Publicação (W5.1); o resto não mudou.
-    page_js = PAGE_JS + (approval_form.APPROVAL_JS if active_area == "publicacao" else "")
+    page_js = (PAGE_JS + (STORYBOARD_JS if active_area == "cenas" else "")
+               + (RUN_JS if active_area in ("cenas", "composicao") else "")
+               + (approval_form.APPROVAL_JS if active_area == "publicacao" else ""))
     html = shell_v3.render_document(
         title="Faceless Studio — Vídeo",
         active="videos",

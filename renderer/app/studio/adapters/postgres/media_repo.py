@@ -57,6 +57,14 @@ class PostgresAssetRepository(_Base):
                                 check_id(expected_asset_id) if expected_asset_id else None))
             return cur.rowcount == 1
 
+    def set_scene_broll(self, video_id: str, scene_id: str, enabled: bool, note: str | None) -> bool:
+        """Grava só o B-roll de UMA cena por id estável; não cria versão de roteiro nem mexe no asset."""
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("UPDATE studio.scenes SET broll_enabled = %s, broll_note = %s "
+                               "WHERE video_id = %s AND id = %s",
+                               (bool(enabled), note, check_id(video_id), check_id(scene_id)))
+            return cur.rowcount == 1
+
 
 class PostgresProductionLock:
     """Advisory lock de sessão por vídeo, numa conexão própria (autocommit). Não espera: sem o lock, entra com False.

@@ -5,17 +5,19 @@ Studio ou estado vazio explícito. Nada do conteúdo ilustrativo do mockup vaza 
 IDs, eventos e uso de modelos ficam no `<details>` fechado; a área principal mostra etapa,
 próxima ação, custo rotulado e o que fazer em caso de falha.
 
-Sem barra de progresso e sem percentual: a produção não é linear — mostramos "etapa N de M".
-A casca (tokens e sidebar em dois grupos) vem de `api/panel.py` (G1); este módulo só acrescenta
-o layout das duas telas novas.
+A página de execução porta a aba Produção e o `progressCard` do protótipo (`prototype-v4-v3`)
+para o workspace do vídeo, na casca V3. O progresso é por etapas reais (concluídas/total), nunca
+um percentual inventado; "etapa N de M" continua dito em texto. O wizard `Novo vídeo` ainda usa a
+casca legada de `api/panel.py` e o `PRODUCTION_CSS` abaixo.
 """
 import html
+import json
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
-from ..application.panel import CostBreakdown, CostKind, MonthCost, cost_kind, cost_label
+from ..application.panel import CostBreakdown, CostKind, MonthCost, cost_breakdown, cost_kind, cost_label
 from ..application.ports import UsageInfo
 from ..application.production import has_live_lease
 from ..domain.production_run import (
@@ -26,7 +28,10 @@ from ..domain.production_run import (
     StageExecution,
     StageState,
 )
+from ..domain.panel import Stage
 from . import panel as shell
+from .panel_video_nav import area_href, video_area_nav
+from .panel_videos import _ESTADO
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
@@ -43,25 +48,14 @@ STAGE_LABELS = {
     ProductionStage.PUBLISH: "Publicação",
 }
 
-# Estado por etapa: sempre texto + ícone (nunca só cor). `state-icon` é o ícone da casca.
-_STAGE_STATE = {
-    StageState.SUCCEEDED: ("s-done", "✓", "Concluído"),
-    StageState.RUNNING: ("s-run", "◐", "Em execução"),
-    StageState.WAITING_HUMAN: ("s-act", "!", "Ação necessária"),
-    StageState.FAILED: ("s-fail", "!", "Ação necessária"),
-    StageState.CANCELLED: ("s-fail", "×", "Cancelado"),
-    StageState.SKIPPED: ("state-idle", "·", "Pulado"),
-    StageState.PENDING: ("state-idle", "○", "Sem execução ainda"),
-}
-
-_RUN_STATE = {
-    RunState.CREATED: ("state-idle", "○", "Criada"),
-    RunState.RUNNING: ("s-run", "◐", "Em execução"),
-    RunState.WAITING_HUMAN: ("s-act", "!", "Ação necessária"),
-    RunState.PAUSED: ("s-act", "!", "Pausada"),
-    RunState.FAILED: ("s-fail", "!", "Falhou"),
-    RunState.CANCELLED: ("s-fail", "×", "Cancelada"),
-    RunState.SUCCEEDED: ("s-done", "✓", "Concluída"),
+_RUN_LABEL = {
+    RunState.CREATED: "Criada",
+    RunState.RUNNING: "Em execução",
+    RunState.WAITING_HUMAN: "Aguardando você",
+    RunState.PAUSED: "Pausada",
+    RunState.FAILED: "Falhou",
+    RunState.CANCELLED: "Cancelada",
+    RunState.SUCCEEDED: "Concluída",
 }
 
 _MODE_LABELS = {"INTERACTIVE": "modo interativo", "BUDGET_GUARDED": "modo com teto"}
@@ -102,9 +96,6 @@ PRODUCTION_CSS = """
 .origin-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
 .page-goal { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem; }
 .page-goal b { color: var(--text); }
-.act-card { border-color: #7a2436; }
-.act-card h2 { margin-top: 0.5rem; }
-.exec-meta { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.25rem; }
 @media (max-width: 820px) {
   .wizard-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -158,28 +149,13 @@ class ExecutionView:
     usage: tuple[UsageInfo, ...] = ()
     events: tuple[OutboxEvent, ...] = ()
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # `VideoDetailView` do vídeo (cabeçalho do workspace). Sem ele, o cabeçalho usa só o tema.
+    detail: Any = None
 
 
 # ---------------------------------------------------------------------------
 # Utilitários de apresentação
 # ---------------------------------------------------------------------------
-
-
-def _badge(kind: str, icon: str, label: str) -> str:
-    return (
-        f'<span class="state {e(kind)}"><span class="state-icon" aria-hidden="true">{e(icon)}</span> '
-        f'<span>{e(label)}</span></span>'
-    )
-
-
-def stage_badge(state: StageState) -> str:
-    kind, icon, label = _STAGE_STATE.get(state, ("state-idle", "○", "Sem execução ainda"))
-    return _badge(kind, icon, label)
-
-
-def run_badge(state: RunState) -> str:
-    kind, icon, label = _RUN_STATE.get(state, ("state-idle", "○", "Estado desconhecido"))
-    return _badge(kind, icon, label)
 
 
 def elapsed_text(created_at: datetime | None, now: datetime) -> str:
@@ -506,44 +482,190 @@ def render_new_video(view: NewVideoView) -> tuple[str, dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Página de execução (F2-04/F2-05)
+# Página de execução (F2-04/F2-05) — porta a aba Produção (`tabProd`) e o `progressCard`
+# do protótipo para o workspace do vídeo, só com etapas reais da execução.
 # ---------------------------------------------------------------------------
 
+# Estado da etapa → (classe do `.ic`, glifo, texto, classe do pill). Sempre ícone + texto.
+_STEP_VIEW = {
+    StageState.SUCCEEDED: ("ok", "✓", "Concluída", "ok"),
+    StageState.RUNNING: ("run", "…", "Em andamento", "accent"),
+    StageState.WAITING_HUMAN: ("", "!", "Aguardando você", "warn"),
+    StageState.FAILED: ("fail", "✕", "Falhou", "bad"),
+    StageState.CANCELLED: ("fail", "×", "Cancelada", "bad"),
+    StageState.SKIPPED: ("", "○", "Pulada", ""),
+    StageState.PENDING: ("", "○", "Aguardando", ""),
+}
 
-def _steps_html(view: ExecutionView) -> tuple[str, int, int]:
+_RUN_PILL = {
+    RunState.CREATED: "",
+    RunState.RUNNING: "accent",
+    RunState.WAITING_HUMAN: "warn",
+    RunState.PAUSED: "warn",
+    RunState.FAILED: "bad",
+    RunState.CANCELLED: "bad",
+    RunState.SUCCEEDED: "ok",
+}
+
+ACTIVE_RUN_STATES = (RunState.CREATED, RunState.RUNNING, RunState.WAITING_HUMAN, RunState.PAUSED)
+POLL_INTERVAL_MS = 2500
+
+_STEP_ERR_STYLE = "color:var(--bad);font-size:12.5px"
+
+
+def _usd(value: float) -> str:
+    return "US$ " + f"{value:.2f}".replace(".", ",")
+
+
+def _stage_cost_text(view: ExecutionView, stage: ProductionStage,
+                     free_providers: frozenset[str]) -> tuple[str, bool]:
+    """Custo da etapa e se ele foi realmente medido.
+
+    O uso registrado só é atribuído a uma etapa quando o `step` do registro é o id dela; do
+    contrário a etapa mostra "não medido" — nunca zero. Custo desconhecido nunca é somado.
+    """
+    rows = [(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind)
+            for u in view.usage if u.step == stage.value]
+    breakdown = cost_breakdown(rows, free_providers)
+    parts = []
+    if breakdown.real_calls:
+        parts.append(f"Real {_usd(breakdown.real_usd)}")
+    if breakdown.estimate_calls:
+        parts.append(f"Estimado {_usd(breakdown.estimate_usd)}")
+    if breakdown.free_calls and not parts and not breakdown.unknown_calls:
+        parts.append("Sem custo")
+    measured = bool(parts) and not breakdown.unknown_calls
+    if breakdown.unknown_calls and parts:
+        parts.append("parte não medida")
+    return (" · ".join(parts) if parts else "não medido"), measured
+
+
+def _cost_headline(cost: CostBreakdown) -> str:
+    if cost.calls == 0:
+        return "sem registro de uso"
+    parts = []
+    if cost.real_calls:
+        parts.append(f"Real {_usd(cost.real_usd)}")
+    if cost.estimate_calls:
+        parts.append(f"Estimado {_usd(cost.estimate_usd)}")
+    if not parts:
+        parts.append("sem custo" if not cost.unknown_calls else "não medido")
+    return " · ".join(parts)
+
+
+def _label_rows(rows: Sequence[tuple[str, str]]) -> str:
+    return "".join(
+        f'<div class="between sub" style="padding:2px 0"><span>{e(label)}</span><span>{e(value)}</span></div>'
+        for label, value in rows
+    )
+
+
+def _cost_rows_html(cost: CostBreakdown) -> str:
+    return _label_rows([
+        ("Real", _usd(cost.real_usd) if cost.real_calls else "nenhum"),
+        ("Estimado", _usd(cost.estimate_usd) if cost.estimate_calls else "nenhum"),
+        ("Sem custo", f"{cost.free_calls} chamada(s)" if cost.free_calls else "nenhum"),
+        ("Desconhecido", f"{cost.unknown_calls} chamada(s)" if cost.unknown_calls else "nenhum"),
+    ])
+
+
+def _position_html(view: ExecutionView) -> str:
     current = _current_stage(view.stages)
     index = _stage_index(view.stages, current)
-    items = []
-    for execution in view.stages:
-        aria = ' aria-current="step"' if execution.stage_id is current else ""
-        label = STAGE_LABELS.get(execution.stage_id, execution.stage_id.value)
-        items.append(f'<li{aria}>{stage_badge(execution.state)} <span>{e(label)}</span></li>')
-    if not items:
-        return '<p class="muted">Nenhuma etapa registrada nesta execução.</p>', 0, 0
     total = len(view.stages)
-    return f'<ol class="steps" aria-label="Etapas da produção">{"".join(items)}</ol>', index or total, total
+    position = f"Etapa <b>{index or total} de {total}</b>. " if total else ""
+    current_label = STAGE_LABELS.get(current, current.value) if current is not None else "nenhuma"
+    next_line = next_action_text(view.next_action, view.next_stage)
+    return (f'{position}Etapa atual: <b>{e(current_label)}</b>. '
+            f'Próxima ação: <b>{e(next_line)}</b>.')
 
 
-def _act_card(title: str, what: str, detail_html: str, buttons: Sequence[str]) -> str:
-    row = f'<div class="row" style="margin-top:0.75rem">{"".join(buttons)}</div>' if buttons else ""
-    return f"""
-      <div class="card act-card">
-        <span class="state s-fail"><span class="state-icon" aria-hidden="true">!</span> <span>Ação necessária</span></span>
-        <h2 style="margin-top:0.6rem">{e(title)}</h2>
-        <p class="muted" style="margin:0.5rem 0 0">{e(what)}</p>
-        {detail_html}
-        {row}
-        <p class="fine">Detalhe técnico (IDs, eventos, mensagem crua) em <b>Avançado</b>, no fim da página — não aqui.</p>
-      </div>
-    """
+def _step_rows_html(view: ExecutionView, free_providers: frozenset[str]) -> tuple[str, bool]:
+    current = _current_stage(view.stages)
+    rows, partial = [], False
+    for execution in view.stages:
+        ic_cls, glyph, text, _ = _STEP_VIEW.get(execution.state, _STEP_VIEW[StageState.PENDING])
+        label = STAGE_LABELS.get(execution.stage_id, execution.stage_id.value)
+        cost_text, measured = _stage_cost_text(view, execution.stage_id, free_providers)
+        partial = partial or not measured
+        err = (f'<p data-step-err style="{_STEP_ERR_STYLE}">{e(execution.error)}</p>'
+               if execution.state is StageState.FAILED and execution.error else "")
+        aria = ' aria-current="step"' if execution.stage_id is current else ""
+        rows.append(
+            f'<div class="step" data-step="{e(execution.stage_id.value)}"{aria}>'
+            f'<span class="ic {ic_cls}" aria-hidden="true">{glyph}</span>'
+            f'<div style="flex:1"><b>{e(label)}</b>{err}<p class="sample" data-step-text>{text}</p></div>'
+            f'<span class="sample">{e(cost_text)}</span></div>')
+    return "".join(rows), partial
 
 
-def _action_button(view: ExecutionView, key: str, label: str, *, primary: bool = False) -> str:
-    css = "btn btn-primary" if primary else "btn"
+def _action_button(view: ExecutionView, key: str, label: str, *, primary: bool = False,
+                   small: bool = False) -> str:
+    css = "btn" + (" primary" if primary else "") + (" small" if small else "")
     return (
         f'<button type="button" class="{css}" data-run-action="{e(key)}" '
         f'data-video-id="{e(view.run.video_id)}" data-run-id="{e(view.run.run_id)}">{e(label)}</button>'
     )
+
+
+def _steps_card_html(view: ExecutionView, free_providers: frozenset[str]) -> tuple[str, bool]:
+    rows, partial = _step_rows_html(view, free_providers)
+    retry = (_action_button(view, "retry", "↻ Retomar de onde parou", primary=True, small=True)
+             if view.run.state is RunState.FAILED else "")
+    body = rows or '<p class="sub" style="margin-top:8px">Nenhuma etapa registrada nesta execução.</p>'
+    position = (f'<p class="sample" id="exec-position" style="margin-top:12px">{_position_html(view)}</p>'
+                if view.stages else "")
+    return (f'<section class="card" aria-labelledby="h-etapas">'
+            f'<div class="between"><h3 id="h-etapas">Etapas da produção</h3>{retry}</div>'
+            f'<div style="margin-top:8px">{body}</div>{position}</section>'), partial
+
+
+def _progress_card_html(view: ExecutionView) -> str:
+    """`progressCard` do protótipo: só com a execução ativa, contando etapas reais concluídas."""
+    if view.run.state not in ACTIVE_RUN_STATES:
+        return ""
+    total = len(view.stages)
+    done = sum(1 for s in view.stages if s.state is StageState.SUCCEEDED)
+    width = round(done / total * 100) if total else 0
+    pills = "".join(
+        '<span class="pill{cls}" data-pill="{stage}">{glyph} {label}</span>'.format(
+            cls=(" " + pill_cls) if pill_cls else "", stage=e(s.stage_id.value), glyph=glyph,
+            label=e(STAGE_LABELS.get(s.stage_id, s.stage_id.value)))
+        for s in view.stages
+        for _, glyph, _, pill_cls in [_STEP_VIEW.get(s.state, _STEP_VIEW[StageState.PENDING])]
+    )
+    route = " → ".join(STAGE_LABELS.get(s.stage_id, s.stage_id.value) for s in view.stages)
+    sub = f"{route}." if route else "Nenhuma etapa registrada nesta execução."
+    return (
+        f'<section class="card" id="prod-card" aria-labelledby="h-andamento" style="border-color:var(--accent);'
+        f'margin-bottom:18px" data-run-state="{e(view.run.state.value)}" '
+        f'data-poll-url="/studio/videos/{e(view.run.video_id)}/production-runs/{e(view.run.run_id)}">'
+        f'<div class="between"><div><h3 id="h-andamento">⚡ Produção em andamento</h3>'
+        f'<p class="sub">{e(sub)}</p></div>'
+        f'<span class="pill accent" id="prod-count">{done}/{total} etapas</span></div>'
+        f'<div class="prog" aria-hidden="true" style="height:8px;margin-top:12px">'
+        f'<b id="prod-bar" style="width:{width}%;transition:width .5s"></b></div>'
+        f'<div class="row" style="margin-top:8px">{pills}</div></section>'
+    )
+
+
+def _act_card(title: str, what: str, detail_html: str, buttons: Sequence[str], *, tone: str = "bad") -> str:
+    row = f'<div class="row" style="margin-top:12px">{"".join(buttons)}</div>' if buttons else ""
+    return f"""
+      <section class="card" style="border-color:var(--{tone})" aria-labelledby="h-acao-exec">
+        <span class="pill {tone}"><span aria-hidden="true">!</span> Ação necessária</span>
+        <h3 id="h-acao-exec" style="margin-top:8px">{e(title)}</h3>
+        <div class="note" style="margin:10px 0 0">{e(what)}</div>
+        {detail_html}
+        {row}
+        <p class="sample" style="margin-top:10px">Detalhe técnico (IDs, eventos, mensagem crua) em <b>Diagnóstico técnico</b>.</p>
+      </section>
+    """
+
+
+def _revisar_link(view: ExecutionView, *, primary: bool = False) -> str:
+    css = "btn primary" if primary else "btn"
+    return f'<a class="{css}" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>'
 
 
 def _action_card_html(view: ExecutionView) -> str:
@@ -557,45 +679,60 @@ def _action_card_html(view: ExecutionView) -> str:
         raw = (stage.error if stage and stage.error else None) or view.run.reason
         what = ("O que fazer: revise a etapa que falhou e use «Tentar novamente». "
                 "Nada foi publicado.")
-        detail = f'<p class="muted" style="margin:0.5rem 0 0">{e(raw)}</p>' if raw else ""
+        detail = f'<p class="sub" style="margin-top:10px">{e(raw)}</p>' if raw else ""
         buttons = []
         if state is RunState.FAILED:
             buttons.append(_action_button(view, "retry", "Tentar novamente", primary=True))
-        buttons.append(
-            f'<a class="btn" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>'
-        )
+        buttons.append(_revisar_link(view))
         return _act_card(title, what, detail, buttons)
     if state is RunState.WAITING_HUMAN and view.next_action == "approve":
         title = "Aprovação necessária antes de continuar"
         what = ("O que fazer: revise o artefato renderizado e aprove no vídeo para seguir. "
                 "A publicação nunca é automática.")
-        buttons = [f'<a class="btn btn-primary" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>']
-        return _act_card(title, what, "", buttons)
+        return _act_card(title, what, "", [_revisar_link(view, primary=True)], tone="warn")
     if state in (RunState.WAITING_HUMAN, RunState.PAUSED):
         title = "A execução está aguardando você"
         what = "O que fazer: retome a execução para continuar de onde parou."
-        buttons = [_action_button(view, "resume", "Continuar", primary=True)]
-        return _act_card(title, what, "", buttons)
+        return _act_card(title, what, "", [_action_button(view, "resume", "Continuar", primary=True)],
+                         tone="warn")
     return ""
+
+
+def _rail_actions_html(view: ExecutionView) -> str:
+    live_lease = has_live_lease(view.stages, view.now)
+    actions = available_actions(view.run.state, view.next_action, live_lease=live_lease)
+    buttons = [_action_button(view, a.key, a.label, primary=a.primary) for a in actions]
+    if artifact_available(view.next_action):
+        buttons.append(_revisar_link(view))
+    body = (
+        f'<div class="row" style="margin-top:10px">{"".join(buttons)}</div>'
+        if buttons else '<p class="sub" style="margin-top:8px">Nenhuma ação disponível neste estado.</p>'
+    )
+    return f"""
+      <section class="card" aria-labelledby="h-acoes">
+        <h3 id="h-acoes">Ações</h3>
+        {body}
+        <div id="run-action-feedback" class="sample" style="margin-top:8px" role="status" aria-live="polite"></div>
+        <p class="sample" style="margin-top:8px">“Revisar” só aparece quando existe artefato para revisar.</p>
+      </section>
+    """
 
 
 def _usage_rows_html(view: ExecutionView, free_providers: frozenset[str] = frozenset()) -> str:
     if not view.usage:
-        return '<p class="muted">Sem registro de uso de modelos para este vídeo.</p>'
+        return '<p class="sub">Sem registro de uso de modelos para este vídeo.</p>'
     rows = []
     for usage in view.usage:
         classified = cost_kind(usage.cost_confirmation_kind, usage.provider, usage.model,
                                usage.cost_usd, free_providers)
-        rows.append(
-            f'<div class="kv"><span>{e(usage.step)} · {e(usage.provider)}/{e(usage.model)}</span>'
-            f'<span>{e(_cost_cell(classified, usage.cost_usd))}</span></div>'
-        )
-    return "".join(rows)
+        rows.append((f"{usage.step} · {usage.provider}/{usage.model}",
+                     _cost_cell(classified, usage.cost_usd)))
+    return _label_rows(rows)
 
 
 def _event_rows_html(view: ExecutionView) -> str:
     if not view.events:
-        return '<p class="muted">Nenhum evento registrado para esta execução.</p>'
+        return '<p class="sub">Nenhum evento registrado para esta execução.</p>'
     rows = []
     for event in view.events:
         head = event.event_type.value
@@ -604,74 +741,112 @@ def _event_rows_html(view: ExecutionView) -> str:
         if isinstance(event.payload, dict) and event.payload.get("error"):
             head += " · " + str(event.payload["error"])
         when = event.created_at.strftime("%d/%m %H:%M:%S") if event.created_at else "sem horário"
-        rows.append(f'<div class="kv"><span>{e(head)}</span><span>{e(when)}</span></div>')
-    return "".join(rows)
+        rows.append((head, when))
+    return _label_rows(rows)
 
 
-def _advanced_html(view: ExecutionView, free_providers: frozenset[str] = frozenset()) -> str:
+def _diag_html(view: ExecutionView, free_providers: frozenset[str] = frozenset()) -> str:
+    """`details.diag` do protótipo + o diagnóstico avançado (IDs, eventos, uso de modelos)."""
     return f"""
-      <details class="advanced" id="advanced-diagnostics">
-        <summary class="advanced-summary">Avançado — diagnóstico (IDs, eventos, uso de modelos)</summary>
-        <div class="advanced-body">
-          <p>Execução <code>{e(view.run.run_id)}</code> · vídeo <code>{e(view.run.video_id)}</code></p>
-          <p>Modo declarado pelo servidor: <code>{e(view.mode)}</code>.</p>
-          <p><b>Eventos da execução</b></p>
-          {_event_rows_html(view)}
-          <p><b>Registro de uso de modelos</b></p>
-          {_usage_rows_html(view, free_providers)}
-        </div>
+      <details class="diag" id="advanced-diagnostics">
+        <summary>Diagnóstico técnico</summary>
+        <p class="mono" style="margin-top:8px">video_id={e(view.run.video_id)}<br>modo={e(view.mode)}<br>estado={e(view.run.state.value)}<br>execução={e(view.run.run_id)}</p>
+        <p style="margin-top:12px"><b>Avançado — diagnóstico (IDs, eventos, uso de modelos)</b></p>
+        <p class="sub" style="margin-top:6px">Modo declarado pelo servidor: <span class="mono">{e(view.mode)}</span>.</p>
+        <p class="sub" style="margin:10px 0 2px"><b>Eventos da execução</b></p>
+        {_event_rows_html(view)}
+        <p class="sub" style="margin:10px 0 2px"><b>Registro de uso de modelos</b></p>
+        {_usage_rows_html(view, free_providers)}
       </details>
     """
 
 
-def _rail_actions_html(view: ExecutionView) -> str:
-    live_lease = has_live_lease(view.stages, view.now)
-    actions = available_actions(view.run.state, view.next_action, live_lease=live_lease)
-    buttons = [_action_button(view, a.key, a.label, primary=a.primary) for a in actions]
-    if artifact_available(view.next_action):
-        buttons.append(f'<a class="btn" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>')
-    body = (
-        f'<div class="row" style="margin-top:0.5rem">{"".join(buttons)}</div>'
-        if buttons else '<p class="muted">Nenhuma ação disponível neste estado.</p>'
-    )
-    return f"""
-      <section class="card" aria-labelledby="h-acoes">
-        <h2 id="h-acoes">Ações</h2>
-        {body}
-        <div id="run-action-feedback" class="form-feedback" role="status" aria-live="polite"></div>
-        <p class="fine">“Revisar” só aparece quando existe artefato para revisar.</p>
-      </section>
-    """
-
-
-def render_execution(view: ExecutionView, *, video_channel: str = "",
-                     free_providers: frozenset[str] = frozenset()) -> tuple[str, dict[str, str]]:
-    nonce = secrets.token_urlsafe(16)
-    steps_html, index, total = _steps_html(view)
-    position = f'Etapa <b>{index} de {total}</b>. ' if total else ""
-    current = _current_stage(view.stages)
-    current_label = (
-        STAGE_LABELS.get(current, current.value) if current is not None else "nenhuma"
-    )
-    next_line = next_action_text(view.next_action, view.next_stage)
-    mode_label = _MODE_LABELS.get(view.mode, view.mode)
-    action_card = _action_card_html(view)
-
-    unavailable = "".join(
-        f'<div class="kv"><span>{e(STAGE_LABELS.get(stage, stage.value))}</span><span>{e(reason)}</span></div>'
-        for stage, reason in view.unavailable_stages
-    )
-    unavailable_card = (
-        f'<section class="card" aria-labelledby="h-indisp"><h2 id="h-indisp">Indisponível nesta versão</h2>'
-        f'{unavailable}</section>'
-        if unavailable else ""
+def _cost_card_html(view: ExecutionView, partial: bool) -> str:
+    cost = view.cost
+    rows = _cost_rows_html(cost) if cost.calls else ""
+    if not cost.calls:
+        first = "Sem registro de uso de IA para este vídeo."
+    elif partial or cost.unknown_calls:
+        first = "Etapas sem custo medido não são somadas como zero."
+    else:
+        first = "Custo registrado pelo uso real do vídeo."
+    return (
+        '<section class="card" aria-labelledby="h-custo-exec"><h3 id="h-custo-exec">Custo do vídeo</h3>'
+        f'<p style="font-size:22px;font-weight:760;margin:6px 0">{e(_cost_headline(cost))}</p>'
+        f'{rows}<p class="sample" style="margin-top:8px">{e(first)}</p>'
+        '<p class="sample" style="margin-top:6px">O total é o custo registrado do vídeo: não há atribuição '
+        'de custo por execução. Real e estimado nunca são somados num número só; ausência de custo '
+        'não é zero.</p></section>'
     )
 
-    from . import shell_v3
 
-    js_code = f"""
-    document.querySelectorAll('[data-run-action]').forEach((btn) => {{
-      btn.addEventListener('click', async () => {{
+def _unavailable_card_html(view: ExecutionView) -> str:
+    if not view.unavailable_stages:
+        return ""
+    rows = _label_rows([(STAGE_LABELS.get(stage, stage.value), reason)
+                        for stage, reason in view.unavailable_stages])
+    return (f'<section class="card" aria-labelledby="h-indisp"><h3 id="h-indisp">Indisponível nesta versão</h3>'
+            f'<div style="margin-top:6px">{rows}</div></section>')
+
+
+def _version_dialog(detail) -> str:
+    if detail is not None and detail.stage in (Stage.AWAITING_APPROVAL, Stage.APPROVED, Stage.COMPLETED):
+        body = ('<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)">'
+                '<b>Versão atual</b><span class="sub">renderizada · as versões anteriores não são '
+                "registradas nesta tela</span></div>")
+    else:
+        body = '<p class="sub">Nenhuma versão renderizada.</p>'
+    return (
+        '<dialog id="dlg-versoes" class="modal" aria-labelledby="t-versoes">'
+        '<div class="modal-header"><h2 id="t-versoes">Histórico de versões</h2>'
+        '<button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>'
+        f'<div class="dialogo-corpo"><div style="margin:10px 0">{body}</div>'
+        '<button class="btn small" type="button" data-fechar-dialogo>Fechar</button></div></dialog>'
+    )
+
+
+def _header_html(view: ExecutionView, video_channel: str) -> str:
+    """Cabeçalho de `pgVideo` (igual ao do workspace): voltar + caminho, eyebrow, h1, pills, ações."""
+    detail = view.detail
+    video = getattr(detail, "video", None)
+    video_id = view.run.video_id
+    title = getattr(video, "title", None) or view.topic
+    mode = getattr(video, "production_mode", None)
+    mode_value = getattr(mode, "value", mode)
+    if mode_value == "diretor":
+        eyebrow = "🎬 Modo Diretor"
+    elif mode_value:
+        eyebrow = "⚡ Criado no piloto automático"
+    else:
+        eyebrow = "Execução da produção"
+    pills = []
+    if detail is not None:
+        label, tone = _ESTADO.get(detail.stage, (detail.stage.value, ""))
+        pills.append(f'<span class="pill {tone}">{e(label)}</span>')
+    run_label = _RUN_LABEL.get(view.run.state, "Estado desconhecido")
+    run_tone = _RUN_PILL.get(view.run.state, "")
+    pills.append(f'<span class="pill {run_tone}">Execução: {e(run_label)}</span>')
+    fmt = getattr(getattr(video, "format", None), "value", getattr(video, "format", None))
+    if fmt:
+        pills.append(f'<span class="pill">{"Short 9:16" if fmt == "short" else "Vídeo 16:9"}</span>')
+    pills.append(f'<span class="pill">{e(_MODE_LABELS.get(view.mode, view.mode))}</span>')
+    editar = ""
+    if detail is not None and mode_value != "diretor" and detail.stage != Stage.PENDING:
+        editar = f'<a class="btn small" href="{area_href(video_id, "cenas")}">Editar no Modo Diretor</a>'
+    caminho = f"{e(video_channel)} / {e(title)}" if video_channel else e(title)
+    started = f"Execução iniciada {elapsed_text(view.run.created_at, view.now)}"
+    return f"""        <p class="sub" style="margin-bottom:8px"><a class="btn ghost small" href="/studio/panel/videos">← Vídeos</a> &nbsp; {caminho}</p>
+        <div class="head"><div><p class="eyebrow">{eyebrow}</p><h1 id="t-video">{e(title)}</h1>
+          <div class="row" style="margin-top:6px">{"".join(pills)}</div>
+          <p class="sub" style="margin-top:6px">{e(started)}</p></div>
+          <div class="row">{editar}<button class="btn small" type="button" id="btn-versoes">Histórico de versões</button></div>
+          <a class="btn ghost small" href="{area_href(video_id, "producao")}">Ver progresso / Diagnóstico</a></div>
+        {_version_dialog(detail)}"""
+
+
+_ACTION_JS = """
+    document.querySelectorAll('[data-run-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
         const action = btn.getAttribute('data-run-action');
         const videoId = btn.getAttribute('data-video-id');
         const runId = btn.getAttribute('data-run-id');
@@ -682,91 +857,199 @@ def render_execution(view: ExecutionView, *, video_channel: str = "",
         btn.classList.add('carregando');
         if (window.StudioLoading) window.StudioLoading.start();
         if (feedback) feedback.textContent = 'Aplicando...';
-        try {{
-          const res = await fetch(url, {{
+        try {
+          const res = await fetch(url, {
             method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify({{}})
-          }});
-          const data = await res.json().catch(() => ({{}}));
-          if (res.ok) {{
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
             if (feedback) feedback.textContent = 'Feito. Atualizando...';
             location.reload();
-          }} else {{
+          } else {
             btn.disabled = false;
             btn.classList.remove('carregando');
             if (window.StudioLoading) window.StudioLoading.done();
             if (feedback) feedback.textContent = 'Não foi possível: ' +
               (typeof data.detail === 'string' ? data.detail : 'o estado atual não permite esta ação');
-          }}
-        }} catch (err) {{
+          }
+        } catch (err) {
           btn.disabled = false;
           btn.classList.remove('carregando');
           if (window.StudioLoading) window.StudioLoading.done();
           if (feedback) feedback.textContent = 'Falha de rede: ' + err.message;
-        }}
-      }});
-    }});
-    """
+        }
+      });
+    });
+    (function () {
+      var dlg = document.getElementById('dlg-versoes');
+      var btn = document.getElementById('btn-versoes');
+      if (!dlg || !btn) return;
+      btn.addEventListener('click', function () {
+        if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+      });
+      dlg.addEventListener('click', function (ev) {
+        if (ev.target === dlg || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlg.close();
+      });
+    })();
+"""
 
-    body_html = f"""      <section class="pagina" id="pagina-execucao" aria-labelledby="exec-heading">
-        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos">← Vídeos</a> /
-          <span>Execução da produção</span></p>
-        <div class="cab-video">
-          <div>
-            <p class="eyebrow">PRODUÇÃO DO VÍDEO</p>
-            <h1 class="h1" id="exec-heading">{e(view.topic)}</h1>
-            <p class="lead" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <span>Execução iniciada {e(elapsed_text(view.run.created_at, view.now))} · {e(mode_label)}</span>
-              {run_badge(view.run.state)}
-            </p>
-          </div>
-        </div>
+# Polling leve do estado real da execução. Atualiza etapas/contagem sem recarregar a página;
+# qualquer mudança do estado da execução (terminal ou não) recarrega uma única vez, porque as
+# ações válidas dependem dele. Pausa com a aba oculta e nunca dispara uma operação (só GET).
+_POLL_JS = """
+    (function () {
+      var card = document.getElementById('prod-card');
+      if (!card) return;
+      var CFG = __CONFIG__;
+      var url = card.getAttribute('data-poll-url');
+      var initial = card.getAttribute('data-run-state');
+      var timer = null, busy = false, stopped = false;
 
-        <div class="grade-video">
-          <div>
-            <div class="card">
-              <h2>Etapas da produção</h2>
-              <p class="muted" style="margin:0 0 14px">Acompanhe o andamento de cada etapa do pipeline.</p>
-              {steps_html}
-              <p class="fine" style="margin-top:14px">{position}Etapa atual: <b>{e(current_label)}</b>. Próxima ação: <b>{e(next_line)}</b>.
-              Não há barra de progresso nem percentual: o trabalho não é linear e etapas podem ser refeitas.</p>
-            </div>
+      function fill(node, parts) {
+        while (node.firstChild) node.removeChild(node.firstChild);
+        parts.forEach(function (p) {
+          if (p.b) { var b = document.createElement('b'); b.textContent = p.b; node.appendChild(b); }
+          else node.appendChild(document.createTextNode(p));
+        });
+      }
+      function nextText(data) {
+        if (!data.next_action) return CFG.terminal;
+        var t = CFG.next[data.next_action] || data.next_action;
+        if (data.next_action === 'run' && data.next_stage) t += ' (' + (CFG.labels[data.next_stage] || data.next_stage) + ')';
+        return t;
+      }
+      function apply(data) {
+        var stages = data.stages || [];
+        var done = 0, current = -1;
+        stages.forEach(function (s, i) {
+          if (s.state === 'SUCCEEDED') done++;
+          if (current < 0 && (s.state === 'RUNNING' || s.state === 'WAITING_HUMAN' || s.state === 'FAILED')) current = i;
+        });
+        if (current < 0) current = stages.findIndex(function (s) { return s.state === 'PENDING'; });
+        stages.forEach(function (s, i) {
+          var v = CFG.steps[s.state] || CFG.steps.PENDING;
+          var row = document.querySelector('[data-step="' + s.stage + '"]');
+          if (row) {
+            var ic = row.querySelector('.ic');
+            ic.className = 'ic' + (v[0] ? ' ' + v[0] : '');
+            ic.textContent = v[1];
+            row.querySelector('[data-step-text]').textContent = v[2];
+            var err = row.querySelector('[data-step-err]');
+            if (s.state === 'FAILED' && s.error) {
+              if (!err) {
+                err = document.createElement('p');
+                err.setAttribute('data-step-err', '');
+                err.setAttribute('style', CFG.errStyle);
+                row.querySelector('b').insertAdjacentElement('afterend', err);
+              }
+              err.textContent = s.error;
+            } else if (err) err.remove();
+            if (i === current) row.setAttribute('aria-current', 'step'); else row.removeAttribute('aria-current');
+          }
+          var pill = document.querySelector('[data-pill="' + s.stage + '"]');
+          if (pill) {
+            pill.className = 'pill' + (v[3] ? ' ' + v[3] : '');
+            pill.textContent = v[1] + ' ' + (CFG.labels[s.stage] || s.stage);
+          }
+        });
+        var count = document.getElementById('prod-count');
+        if (count) count.textContent = done + '/' + stages.length + ' etapas';
+        var bar = document.getElementById('prod-bar');
+        if (bar) bar.style.width = (stages.length ? Math.round(done / stages.length * 100) : 0) + '%';
+        var pos = document.getElementById('exec-position');
+        if (pos) {
+          var cur = current >= 0 ? stages[current].stage : null;
+          var parts = [];
+          if (current >= 0) parts.push('Etapa ', { b: (current + 1) + ' de ' + stages.length }, '. ');
+          parts.push('Etapa atual: ', { b: cur ? (CFG.labels[cur] || cur) : 'nenhuma' }, '. ',
+                     'Próxima ação: ', { b: nextText(data) }, '.');
+          fill(pos, parts);
+        }
+      }
+      function schedule() {
+        clearTimeout(timer);
+        if (!stopped && !document.hidden) timer = setTimeout(tick, CFG.interval);
+      }
+      async function tick() {
+        if (busy || stopped || document.hidden) return;
+        busy = true;
+        try {
+          var res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+          if (res.ok) {
+            var data = await res.json();
+            if (data.state !== initial) { stopped = true; location.reload(); return; }
+            apply(data);
+          } else if (res.status >= 400 && res.status < 500) { stopped = true; return; }
+        } catch (err) { /* rede instável: tenta de novo no próximo ciclo */ }
+        busy = false;
+        schedule();
+      }
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) clearTimeout(timer); else tick();
+      });
+      schedule();
+    })();
+"""
 
-            {action_card}
 
-            {_advanced_html(view, free_providers)}
-          </div>
+def _poll_js() -> str:
+    config = {
+        "interval": POLL_INTERVAL_MS,
+        "steps": {s.value: [v[0], v[1], v[2], v[3]] for s, v in _STEP_VIEW.items()},
+        "labels": {s.value: label for s, label in STAGE_LABELS.items()},
+        "next": _NEXT_ACTION_LABELS,
+        "terminal": next_action_text(None, None),
+        "errStyle": _STEP_ERR_STYLE,
+    }
+    return _POLL_JS.replace("__CONFIG__", json.dumps(config, ensure_ascii=False))
 
-          <div>
+
+def render_execution(view: ExecutionView, *, video_channel: str = "",
+                     free_providers: frozenset[str] = frozenset()) -> tuple[str, dict[str, str]]:
+    from . import shell_v3
+
+    nonce = secrets.token_urlsafe(16)
+    video_id = view.run.video_id
+    dots = {}
+    if view.detail is not None and view.detail.stage == Stage.AWAITING_APPROVAL:
+        dots["qualidade"] = "Aguardando você"
+    steps_card, partial = _steps_card_html(view, free_providers)
+
+    body_html = f"""      <section class="pagina" id="pagina-execucao" aria-labelledby="t-video">
+{_header_html(view, video_channel)}
+        {video_area_nav(video_id, "", dots)}
+        {_progress_card_html(view)}
+        <div class="two">
+          <div class="stack">
+            {steps_card}
+            {_action_card_html(view)}
             {_rail_actions_html(view)}
-
-            <section class="card" aria-labelledby="h-custo-exec">
-              <h2 id="h-custo-exec">Custo desta execução</h2>
-              {shell.cost_breakdown_rows(view.cost) if view.cost.calls else '<p class="muted">Sem registro de uso de IA para este vídeo.</p>'}
-              <p class="fine" style="margin-top:12px">O total é o custo registrado do vídeo: não há atribuição de custo por execução.
-              Real e estimado nunca são somados num número só; ausência de custo não é zero.</p>
-            </section>
-
-            {unavailable_card}
           </div>
+          <aside class="stack" aria-label="Custo e diagnóstico">
+            {_cost_card_html(view, partial)}
+            {_unavailable_card_html(view)}
+            {_diag_html(view, free_providers)}
+          </aside>
         </div>
       </section>"""
 
+    page_js = _ACTION_JS + (_poll_js() if view.run.state in ACTIVE_RUN_STATES else "")
     page = shell_v3.render_document(
         title=f"Faceless Studio — Execução: {view.topic}",
         active="videos",
-        crumb="Vídeos / Execução da produção",
+        crumb=f"{video_channel} / {view.topic}" if video_channel else f"Vídeos / {view.topic}",
         body_html=body_html,
         nonce=nonce,
         projects=[],
         project_id="",
         cost_note="",
-        page_js=js_code,
-        extra_css=PRODUCTION_CSS,
+        page_js=page_js,
         video_channel=video_channel,
     )
     return page, shell._headers(nonce)
+
 
 def render_production_page(view) -> tuple[str, dict[str, str]]:
     """Produção (FS31-A3): quadro de execução na **casca V3**, só com dado real.

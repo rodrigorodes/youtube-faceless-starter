@@ -344,6 +344,18 @@ class SceneMediaOut(BaseModel):
     reason: str = ""
 
 
+class SceneBrollIn(BaseModel):
+    enabled: bool
+    note: str | None = Field(default=None, max_length=200)
+
+
+class SceneBrollOut(BaseModel):
+    scene_id: str
+    enabled: bool
+    note: str | None
+    changed: bool
+
+
 def _candidate_out(candidate: MediaCandidate) -> MediaCandidateOut:
     return MediaCandidateOut(
         license=candidate.license, source_url=candidate.source_url, url=candidate.url,
@@ -1567,6 +1579,28 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         result = run(go)
         return SceneMediaOut(scene_id=result.scene_id, asset=result.asset, changed=result.changed, reason=result.reason)
 
+    @router.post("/videos/{video_id}/scenes/{scene_id}/broll", response_model=SceneBrollOut)
+    def set_scene_broll(video_id: str, scene_id: str, body: SceneBrollIn):
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.broll is None:
+                raise HTTPException(503, "scene broll unavailable")
+            return uc.media.broll.execute(check_id(video_id), check_id(scene_id), enabled=body.enabled, note=body.note)
+
+        result = run(go)
+        return SceneBrollOut(scene_id=result.scene_id, enabled=result.enabled, note=result.note, changed=result.changed)
+
+    @router.get("/videos/{video_id}/scenes/{scene_id}/asset")
+    def scene_asset_file(video_id: str, scene_id: str):
+        """Preview da mídia real de uma cena (o storyboard mostra o asset vinculado, nunca um desenho)."""
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.asset_file is None:
+                raise HTTPException(503, "scene asset unavailable")
+            return uc.media.asset_file.execute(check_id(video_id), check_id(scene_id))
+        path = run(go)
+        if path is None:
+            raise HTTPException(404, "scene media not available")
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
+
     def rendering(uc: UseCases):
         if uc.rendering is None:
             raise HTTPException(503, "render services unavailable")
@@ -1913,12 +1947,34 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                         script, scenes = found[0], list(found[1])
                 except Exception:
                     scenes = None
+            # VE-08: o storyboard mostra o asset real de cada cena (tag e preview); só as áreas que o usam leem.
+            scene_assets = None
+            if area in ("cenas", "composicao") and scenes and uc.media is not None:
+                try:
+                    scene_assets = {x.idx: x.asset for x in uc.media.list_assets.execute(check_id(video_id))
+                                    if x.asset is not None}
+                except Exception:
+                    scene_assets = None
+            # VE-08.6: a execução viva alimenta o cartão de progresso com as etapas reais (não com um chute).
+            run_stages = None
+            live = detail.latest_run
+            if (area in ("cenas", "composicao") and live is not None
+                    and live.state in ("CREATED", "RUNNING", "WAITING_HUMAN", "PAUSED")
+                    and uc.production is not None):
+                try:
+                    projection = production_service(uc).coordinator.get(check_id(live.run_id))
+                    if projection is not None and projection.run.video_id == check_id(video_id):
+                        run_stages = [(st.stage_id.value, st.state.value) for st in projection.stages]
+                except Exception:
+                    run_stages = None
             return render_video_workspace(detail, area, style_view=style_view,
                                           script_view=script_view,
                                           composition_view=composition_view,
                                           preview=preview,
                                           scenes=scenes,
                                           script=script,
+                                          scene_assets=scene_assets,
+                                          run_stages=run_stages,
                                           projects=_topbar(uc, detail.video.project_id)[0],
                                           project_id=detail.video.project_id,
                                           channel_voice=_channel_voice(uc, detail.video.project_id),
@@ -2427,6 +2483,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 cost=cost_breakdown(usage_rows, uc.panel.free_providers),
                 usage=tuple(detail.usage),
                 events=tuple(production_service(uc).coordinator.events(check_id(run_id))),
+                detail=detail,
             )
             return render_execution(view, video_channel=_channel_name(uc, detail.video.project_id),
                                     free_providers=uc.panel.free_providers)

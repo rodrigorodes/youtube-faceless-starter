@@ -1,0 +1,41 @@
+{"screen": "composition", "viewport": "1440", "text_similarity": 57.5, "text_diffs": 16, "field_similarity": 10.3, "field_diffs": 3, "style_diffs": 3, "pixel_diff_pct": 7.93, "height_ref": 1212, "height_app": 1369, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', 'Nenhum canal cadastrado', '＋ Novo canal', '🎨 Padrão do canal · 🎙 Voz vinculada']
+[replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0'] | APP=['Canal Teste / A cidade subterrânea de Derinkuyu', '⚡ Criado no piloto automático']
+[replace] REF=['Rascunho (Diretor)'] | APP=['Rascunho']
+[replace] REF=['🎙 Rodrigo Faber', '🎨 Documentário Realista'] | APP=['🎙 Voz Aria']
+[delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
+[replace] REF=['🏜️', 'Sob os', 'campos', 'da Capadócia existe', 'Prévia ilustrativa — a renderização real usa a mesma configuração.'] | APP=['🎞️', 'Sob os campos da Capadócia existe', 'Prévia aproximada das legendas — não é o vídeo renderizado.']
+[replace] REF=['Cena 1 (Stock) → Cena 2 (sem mídia) → Cena 3 (sem mídia)'] | APP=['Cena 1 (Imagem stock) → Cena 2 (sem mídia) → Cena 3 (sem mídia)']
+[replace] REF=['Narração contínua · Rodrigo Faber · ~0:19'] | APP=['Narração contínua · Voz Aria · ~0:19']
+[replace] REF=['Documental · Tensão leve · 18% · reduz sob a voz'] | APP=['bpm 122 · seed 7']
+[replace] REF=['Inter · Destaque por palavra · baixo'] | APP=['DejaVu Sans · Caixa discreta · base', 'Ver detalhes técnicos da composição', 'Plano de composição', 'Sem plano de composição ainda. O plano aparece aqui depois que o render compila a primeira revisão; até lá não há timeline ilustrativa.', 'Composição do vídeo', 'Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de composição não estão disponíveis.']
+[replace] REF=['Música de fundo', 'Volume da música:', '18%'] | APP=['Distância da base (px)', 'Andamento da música (BPM)', 'Semente da música (seed)', 'Volume da música', 'Em breve']
+[insert] REF=[] | APP=['Em breve']
+[insert] REF=[] | APP=['Cores da legenda', 'Cor do texto da legenda', 'Cor da caixa da legenda', 'Cor de destaque (accent)']
+[insert] REF=[] | APP=['Salvar composição']
+[replace] REF=['~0:19 · estimativa US$ 0,26'] | APP=['~0:19 · estimativa de custo não disponível']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['a:＋ Novo canal', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'summary:Ver detalhes técnicos da composição']
+[replace] REF=['select[select-one]:1080p 720p', 'select[select-one]:24 30 60', 'select[select-one]:Fade suave Corte seco Deslizar'] | APP=['select[select-one]:Fixa no motor', 'select[select-one]:25 fps (vigente)', 'select[select-one]:Fade suave Corte seco Deslizar (em breve']
+[replace] REF=['select[select-one]:Cinemática Sombria (canal) Documentário ', 'button[submit]:🎬 Gerar o que falta e renderizar', 'button[submit]:🧭 Roteiro da demo'] | APP=['summary:Cores da legenda', 'input[text]:palette.caption_text', 'input[text]:palette.caption_box', 'input[text]:palette.accent', 'select[select-one]:Nenhum estilo resolvido', 'button[submit]:Salvar composição']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'Abaixar a música quando houver voz' ref<span.> app<label.tog>
+    display: ref=block | app=flex
+    gap: ref=normal | app=8px
+'Transição' ref<label.> app<span.>
+    fontSize: ref=12px | app=12.5px
+    fontWeight: ref=600 | app=400
+    lineHeight: ref=18px | app=18.75px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'Movimento' ref<label.> app<span.>
+    fontSize: ref=12px | app=12.5px
+    fontWeight: ref=600 | app=400
+    lineHeight: ref=18px | app=18.75px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)

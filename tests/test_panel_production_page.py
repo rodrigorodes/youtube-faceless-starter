@@ -21,6 +21,7 @@ from app.studio.api.routes import make_router  # noqa: E402
 from app.studio.composition import Settings, Studio  # noqa: E402
 from app.studio.domain.contracts import VideoFormat  # noqa: E402
 
+from test_panel import _visible_text  # noqa: E402
 from test_ux_contract import assert_ux_contract  # noqa: E402
 
 AUTH_HEADER = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-browser-password").decode()}
@@ -111,7 +112,8 @@ def test_execution_page_renders_real_run_with_stepper_and_contract(env):
 
     assert "Tema real do operador" in r.text
     assert "Etapa <b>1 de 8</b>" in r.text
-    assert "Não há barra de progresso nem percentual" in r.text
+    assert "⚡ Produção em andamento" in r.text and re.search(r"\d/8 etapas", r.text)
+    assert "grade-video" not in r.text and "cab-video" not in r.text
     for label in ("Roteiro", "Fact-check", "Cenas", "Render", "QA", "Aprovação", "Publicação"):
         assert label in r.text
 
@@ -121,7 +123,7 @@ def test_execution_page_keeps_the_run_id_only_in_the_closed_advanced_section(env
     video, run = _start_run(env)
     r = client.get(f"/studio/panel/videos/{video.id}/production-runs/{run.run_id}", headers=AUTH_HEADER)
     main_area, advanced = r.text.split('id="advanced-diagnostics"', 1)
-    assert run.run_id not in main_area
+    assert run.run_id not in _visible_text(main_area)
     assert run.run_id in advanced
     assert "<details open" not in r.text
 

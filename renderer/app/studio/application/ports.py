@@ -415,6 +415,8 @@ class AssetRepository(Protocol):
     def swap_scene_asset(self, video_id: str, scene_id: str, asset_id: str,
                          expected_asset_id: str | None) -> bool:
         """Troca o asset de UMA cena por id estável, com CAS no vínculo lido; False se o vínculo mudou."""
+    def set_scene_broll(self, video_id: str, scene_id: str, enabled: bool, note: str | None) -> bool:
+        """Grava só `broll_enabled`/`broll_note` de UMA cena (sem nova versão, sem tocar na mídia); False se a cena não existe."""
 
 
 class AssetStore(Protocol):

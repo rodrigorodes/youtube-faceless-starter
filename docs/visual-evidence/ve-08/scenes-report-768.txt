@@ -1,0 +1,20 @@
+{"screen": "scenes", "viewport": "768", "text_similarity": 60.5, "text_diffs": 10, "field_similarity": 26.3, "field_diffs": 3, "style_diffs": 0, "pixel_diff_pct": 15.42, "height_ref": 1589, "height_app": 2866, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[replace] REF=['Mockup · dados ilustrativos'] | APP=['Nenhum canal cadastrado', '＋ Novo canal']
+[replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0'] | APP=['Canal Teste / A cidade subterrânea de Derinkuyu', '⚡ Criado no piloto automático']
+[replace] REF=['Rascunho (Diretor)'] | APP=['Rascunho']
+[replace] REF=['🎙 Rodrigo Faber', '🎨 Documentário Realista'] | APP=['🎙 Voz Aria']
+[replace] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.', 'Conte sua história, cena por cena', 'Selecione uma cena para editar. As demais ficam preservadas.'] | APP=['Storyboard integrado', 'Texto, mídia, B-roll e narração de cada cena na mesma bancada. Edite sem trocar de tela.']
+[replace] REF=['1 · Gancho', '2 · Contexto', '3 · Revelação', '🏜️', 'Vídeo stock'] | APP=['Imagem stock']
+[replace] REF=['Rodrigo Faber'] | APP=['Voz Aria']
+[replace] REF=['Simulação visual, sem áudio real.'] | APP=['Áudio real da cena: gerado pelo estúdio, não simulado.', '↑', '↓', 'Excluir', 'Sem mídia ainda', 'Gere ou escolha uma imagem']
+[replace] REF=['~0:19 · estimativa US$ 0,26'] | APP=['~0:19 · estimativa de custo não disponível']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['a:＋ Novo canal', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'button[button]:↶ Desfazer']
+[replace] REF=['button[submit]:Histórico da voz', 'button[submit]:Gerar tudo o que falta'] | APP=['button[submit]:Escolher mídia', 'button[submit]:+ B-roll', 'textarea[textarea]:', 'input[text]:', 'button[submit]:▶ Ouvir trecho', 'button[submit]:Gerar áudio da cena']
+[replace] REF=['button[submit]:🎬 Gerar o que falta e renderizar', 'button[submit]:🧭 Roteiro da demo'] | APP=['button[button]:🎬 Gerar o que falta e renderizar']
+
+## ESTILOS COMPUTADOS (mesmo texto)

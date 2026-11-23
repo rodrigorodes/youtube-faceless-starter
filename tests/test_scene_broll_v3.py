@@ -11,25 +11,33 @@ from app.studio.api.panel_video_workspace import render_video_workspace
 from app.studio.domain.contracts import Scene, Video, VideoFormat, VideoStatus
 
 
-def test_storyboard_renders_broll_controls_for_focused_scene():
-    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+class _Script:
+    version = 2
+    scenes = ()
+
+
+def _video():
+    return Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+
+
+def test_storyboard_renders_broll_controls_in_every_scene_card():
     scenes = [
-        {
-            "scene_id": "sc1",
-            "narration": "Texto da cena com b-roll ativo.",
-            "broll_enabled": True,
-            "broll_note": "Corte para tela do app",
-        }
+        {"id": "s1", "narration": "Texto da cena com b-roll ativo.", "image_prompt": "Prompt visual 1",
+         "broll_enabled": True, "broll_note": "Corte para tela do app"},
+        {"id": "s2", "narration": "Cena dois sem b-roll nenhum.", "image_prompt": "Prompt visual 2"},
     ]
-    html = render_video_workspace(video, active_area="cenas", script=None, scenes=scenes, sources=[])
-    assert 'id="cena-broll-enabled"' in html or 'name="broll_enabled"' in html
-    assert 'id="cena-broll-note"' in html or 'name="broll_note"' in html
-    assert 'id="cena-broll-note-wrap"' in html
-    assert "Corte para tela do app" in html
+    html, _ = render_video_workspace(_video(), active_area="cenas", script=_Script(), scenes=scenes, sources=[])
+    cards = html.split('<div class="scene" data-sid="')[1:]
+    # `sceneCard` do protótipo: cada cena traz o seu botão e, ativo, a descrição do B-roll
+    assert len(cards) >= 2
+    assert 'data-a="broll" data-sid="s1"' in html and 'data-a="broll" data-sid="s2"' in html
+    assert "B-roll ativo" in cards[0] and 'aria-pressed="true"' in cards[0]
+    assert 'data-a="brollnote" data-sid="s1"' in cards[0] and 'value="Corte para tela do app"' in cards[0]
+    assert "+ B-roll" in cards[1] and 'data-a="brollnote"' not in cards[1]
 
 
 def test_scene_model_and_storyboard_defaults_without_broll():
-    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    video = _video()
     scene = Scene(
         id="s1",
         video_id=video.id,
@@ -42,46 +50,22 @@ def test_scene_model_and_storyboard_defaults_without_broll():
     assert scene.broll_enabled is False
     assert scene.broll_note is None
 
-    html, _ = render_video_workspace(video, active_area="cenas", scenes=[scene])
-    assert 'id="cena-broll-enabled"' in html
-    assert 'id="cena-broll-note"' in html
+    html, _ = render_video_workspace(video, active_area="cenas", script=_Script(), scenes=[scene])
+    assert "+ B-roll" in html and 'aria-pressed="false"' in html
 
-    # Parse scenesData from script tag
-    start_tag = '<script type="application/json" id="storyboard-scenes-data">'
+    start_tag = '<script type="application/json" id="storyboard-data">'
     assert start_tag in html
-    data_str = html.split(start_tag, 1)[1].split("</script>", 1)[0]
-    scenes_data = json.loads(data_str)
-    assert len(scenes_data) == 1
-    assert scenes_data[0]["broll_enabled"] is False
-    assert scenes_data[0]["broll_note"] is None
+    data = json.loads(html.split(start_tag, 1)[1].split("</script>", 1)[0])
+    assert len(data["scenes"]) == 1
+    assert data["scenes"][0]["broll_enabled"] is False
+    assert data["scenes"][0]["broll_note"] is None
 
 
-def test_storyboard_page_js_syncs_and_updates_broll_in_scenes_data():
-    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
-    scenes = [
-        {
-            "id": "s1",
-            "narration": "Cena 1 com broll",
-            "image_prompt": "Prompt visual 1",
-            "broll_enabled": True,
-            "broll_note": "Nota da cena 1",
-        },
-        {
-            "id": "s2",
-            "narration": "Cena 2 sem broll",
-            "image_prompt": "Prompt visual 2",
-            "broll_enabled": False,
-            "broll_note": None,
-        },
-    ]
-    html, _ = render_video_workspace(video, active_area="cenas", scenes=scenes)
-
-    # JS listeners and synchronization in PAGE_JS
-    assert "cena-broll-enabled" in html
-    assert "cena-broll-note" in html
-    assert "broll_enabled" in html
-    assert "broll_note" in html
-    assert "renderActiveScene" in html
+def test_storyboard_page_js_persists_broll_through_the_scene_endpoint():
+    html, _ = render_video_workspace(_video(), active_area="cenas", script=_Script(), scenes=[
+        {"id": "s1", "narration": "Cena 1 com broll", "image_prompt": "Prompt visual 1", "broll_enabled": True,
+         "broll_note": "Nota da cena 1"}])
+    assert "/broll'" in html and "broll_enabled" in html and "broll_note" in html
 
 
 def test_repo_scene_from_row_reads_broll_metadata():
