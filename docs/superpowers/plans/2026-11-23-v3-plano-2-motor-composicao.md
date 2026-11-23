@@ -135,38 +135,11 @@ git commit -m "feat(studio): promover transicao fade para APPLIED_GROUPS e aplic
   - Campos `broll_enabled: bool` e `broll_note: str | None` no modelo de cena e métodos de leitura/escrita do repositório.
   - Aba `cenas` do workspace: exibe checkbox `B-roll ativo` e campo de nota textual `Nota de B-roll` na cena em foco.
 
-- [ ] **Step 1: Write failing test in `tests/test_scene_broll_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_workspace import render_video_workspace
-from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
-
-def test_storyboard_renders_broll_controls_for_focused_scene():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
-    scenes = [{"scene_id": "sc1", "narration": "Texto", "broll_enabled": True, "broll_note": "Corte para tela do app"}]
-    html = render_video_workspace(video, active_area="cenas", script=None, scenes=scenes, sources=[])
-    assert 'id="cena-broll-enabled"' in html or 'name="broll_enabled"' in html
-    assert 'id="cena-broll-note"' in html or 'name="broll_note"' in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_scene_broll_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Create migration 0048 and update schema, models and workspace**
-
-Criar migração 0048 com colunas `broll_enabled` e `broll_note`. Atualizar mapeamento de cenas em `repo.py` e renderização de B-roll na cena em foco em `panel_video_workspace.py`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_scene_broll_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_scene_broll_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Create migration 0048 and update schema, models and workspace**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/adapters/postgres/migrations/0048_scene_broll.sql renderer/app/studio/adapters/postgres/repo.py renderer/app/studio/domain/contracts.py renderer/app/studio/api/panel_video_workspace.py tests/test_scene_broll_v3.py
