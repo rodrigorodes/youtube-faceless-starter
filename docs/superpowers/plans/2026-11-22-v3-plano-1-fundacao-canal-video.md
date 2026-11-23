@@ -230,38 +230,11 @@ git commit -m "feat(api): endpoint /channels/transactional e suporte a productio
 - Consumes: `view.channel_profile.default_mode`, `view.channel_profile.default_format`
 - Produces: HTML do formulário de novo vídeo renderizando o modo (`piloto` vs `diretor`) e formato com base nas preferências do canal ativo, enviando `production_mode` no payload JSON do `fetch`.
 
-- [ ] **Step 1: Write test for channel preset inheritance in `tests/test_new_video_v3.py`**
-
-```python
-def test_new_video_inherits_channel_mode_and_format_defaults():
-    from app.studio.api.panel_new_video import render_new_video_v3
-    from app.studio.domain.contracts import ProductionMode, VideoFormat
-
-    profile = _channel_profile(default_mode=ProductionMode.diretor, default_format=VideoFormat.long)
-    html, _ = render_new_video_v3(_view(channel_profile=profile))
-
-    # O formato "long" deve vir checked por padrão
-    assert re.search(r'name="formato-novo"[^>]*value="long"[^>]*checked', html)
-    # Deve conter seletor de modo com diretor selecionado
-    assert re.search(r'name="modo-producao"[^>]*value="diretor"[^>]*checked', html)
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_new_video_v3.py -k test_new_video_inherits_channel_mode_and_format_defaults -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update `renderer/app/studio/api/panel_new_video.py`**
-
-Adicionar as opções de modo de produção no formulário (`name="modo-producao"`, valores `piloto` e `diretor`), respeitando `channel_profile.default_mode` para a seleção inicial.
-No script inline que envia a requisição POST para `/studio/projects/{id}/videos`, incluir `production_mode` no corpo JSON.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_new_video_v3.py -v`
-Expected: PASS (todos os 19 testes passando)
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write test for channel preset inheritance in `tests/test_new_video_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update `renderer/app/studio/api/panel_new_video.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_new_video.py tests/test_new_video_v3.py
