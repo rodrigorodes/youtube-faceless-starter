@@ -212,38 +212,11 @@ git commit -m "feat(studio): aba de publicacao com agendamento no fuso de Brasil
   - Aba `composicao` com controles ativos suportados pelo motor atual (`caption.font_size`, `caption.bottom`, `palette`, `motion`, `music.bpm/seed`)
   - Controles visuais do protótipo V3 destinados ao Plano 2 (posição topo/meio, fonte customizada, transição fade, FPS) claramente rotulados como "Em breve no Plano 2" ou desabilitados, garantindo honestidade
 
-- [ ] **Step 1: Write failing test in `tests/test_video_composition_v3.py`**
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-from app.studio.api.panel_video_workspace import render_video_workspace
-from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
-
-def test_v3_composition_tab_labels_unsupported_controls_honestly():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
-    html = render_video_workspace(video, active_area="composicao", script=None, scenes=[], sources=[])
-    assert "Tamanho da legenda" in html
-    assert "Distância da base" in html
-    assert "Em breve" in html or "Plano 2" in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update composition tab in `panel_video_workspace.py`**
-
-Refatorar a aba de composição para exibir os controles vigentes de legenda, paleta e movimento, rotulando os controles de evolução futura como "Em breve no Plano 2".
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_composition_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update composition tab in `panel_video_workspace.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_composition_v3.py
