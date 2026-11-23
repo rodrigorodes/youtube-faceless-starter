@@ -28,8 +28,9 @@ _FONTE_ILEGIVEL = ("Não foi possível ler a fonte pela URL. Cole o texto da pá
 _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I), f) for p, f in (
     (r"no sources with checkable claims|add sources first",
      Falha("O roteiro só é escrito a partir de fatos das fontes, e este vídeo ainda não tem nenhuma fonte com "
-           "afirmações que possam ser conferidas. Adicione uma fonte (a URL com o texto colado) e só então tente de novo "
-           "— repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
+           "afirmações que possam ser conferidas. Adicione uma fonte com texto colado: frases de 40 a 400 caracteres "
+           "com número, data ou nome próprio. Uma URL sozinha, ou um texto curto, não conta. Só então tente de "
+           "novo — repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
     (r"url host is not in the allowlist",
      Falha("O endereço da fonte não está na lista de domínios permitidos. Cole o texto da página no campo "
            "«Texto da fonte»: o texto colado vale como fonte mesmo sem a URL liberada.", "fontes", "Abrir fontes")),

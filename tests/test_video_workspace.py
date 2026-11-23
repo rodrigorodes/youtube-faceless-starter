@@ -508,3 +508,12 @@ def test_qualidade_approves_the_script_version_inline_without_leaving_for_the_ol
     assert "/script/approve" in html  # o clique chama a API existente
     approved = _content(_render("qualidade", script_view=_script_view(approved=True)))
     assert 'id="btn-approve-script"' not in approved and "aprovada" in approved
+
+
+def test_fontes_flags_a_source_too_short_to_yield_any_claim():
+    html = _render("fontes", view=_view(sources=[SourceInfo("s1", "https://exemplo.test/curta", 4),
+                                                    SourceInfo("s2", "https://exemplo.test/longa", 900)]))
+    content = _content(html)
+    assert content.count("Texto curto demais para o roteiro") == 1
+    assert content.index("Texto curto demais") < content.index("exemplo.test/longa")
+    assert 'id="source-text-rule"' in content and "40 a 400 caracteres" in content

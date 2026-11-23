@@ -206,6 +206,10 @@ def _area_visao_geral(view, *, style_view=None, script_view=None, video_id: str,
     )
 
 
+# `extract_claims` descarta frases com menos de 40 caracteres: abaixo disso a fonte nunca rende afirmação.
+_MIN_CHARS_AFIRMACAO = 40
+
+
 def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
     """`tabSources` do protótipo: título, nota de atenção, cartões `.card.flat` e "+ Adicionar fonte".
 
@@ -224,7 +228,11 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
         cards = "".join(
             '<div class="card flat between"><div>'
             f'<b>{e(src.url)}</b><p class="sample">{e(src.url)} · {src.chars} caractere{"" if src.chars == 1 else "s"}</p></div>'
-            '<div class="row"><span class="pill warn">Registrada, não verificada</span></div></div>'
+            '<div class="row"><span class="pill warn">Registrada, não verificada</span>'
+            + ('<span class="pill bad" title="O roteiro só usa frases de 40 a 400 caracteres com número ou nome '
+               'próprio. Com menos de 40 caracteres, esta fonte não gera nenhuma afirmação.">'
+               'Texto curto demais para o roteiro</span>' if src.chars < _MIN_CHARS_AFIRMACAO else "")
+            + '</div></div>'
             for src in sources)
         listing = f'<div class="stack" style="gap:10px" aria-label="Fontes registradas">{cards}</div>'
     else:
@@ -256,7 +264,9 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
           </div>
           <div class="field">
             <label for="source-text">Texto da fonte <span class="sample">(opcional)</span></label>
-            <textarea id="source-text" name="text" rows="4" placeholder="Cole o conteúdo da página quando o site bloquear a leitura"></textarea>
+            <textarea id="source-text" name="text" rows="4" aria-describedby="source-text-rule" placeholder="Cole o conteúdo da página quando o site bloquear a leitura"></textarea>
+            <p class="sample" id="source-text-rule">Para o roteiro, cole frases completas (40 a 400 caracteres) com
+              números, datas ou nomes próprios. Uma URL sozinha, ou um texto muito curto, não gera afirmações.</p>
           </div>
           <div class="modal-footer">
             <div id="video-sources-feedback" class="feedback form-feedback" role="status" aria-live="polite" style="margin-right:auto"></div>
