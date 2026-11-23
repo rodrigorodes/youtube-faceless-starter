@@ -114,13 +114,13 @@ def render_approval_decision(p: Preview, *, base: str | None = None, bare: bool 
     frame_close = "" if bare else "</div>"
     return (f"{frame_open}<form id=\"review\" data-base=\"{e(base)}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
             f'<div class="campo"><label for="title">Título <span class="micro">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
-            f'<input id="title" class="campo" maxlength="100" value="{e(p.default_title)}"></div>'
+            f'<input id="title" type="text" maxlength="100" value="{e(p.default_title)}"></div>'
             f'<div class="campo"><label for="description">Descrição <span class="micro">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'
-            f'<textarea id="description" class="campo" rows="4" maxlength="4000">{e(p.default_description)}</textarea></div>'
-            f'<div class="campo"><label for="tags">Tags <span class="micro">(separadas por vírgula, até 15)</span></label><input id="tags" class="campo" value="{e(", ".join(v.tags))}"></div>'
+            f'<textarea id="description" rows="4" maxlength="4000">{e(p.default_description)}</textarea></div>'
+            f'<div class="campo"><label for="tags">Tags <span class="micro">(separadas por vírgula, até 15)</span></label><input id="tags" type="text" value="{e(", ".join(v.tags))}"></div>'
             f'<div class="campo"><label for="publish_at">Agendar publicação <span class="micro">(opcional; o vídeo sobe privado e o YouTube publica no horário; '
-            f'mínimo 15 minutos à frente)</span></label><input id="publish_at" class="campo" type="datetime-local"></div>'
-            f'{override}<div class="acoes" style="margin-top: 14px;"><button type="button" id="approve" class="btn btn-primario btn-primary">Aprovar Vídeo</button></div>'
-            f'<div class="campo" style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px;"><label for="reject_reason">Motivo da rejeição <span class="micro">(opcional)</span></label><textarea id="reject_reason" class="campo" rows="2" maxlength="500" placeholder="Informe o motivo caso rejeite"></textarea></div>'
-            f'<div class="acoes" style="margin-top: 10px;"><button type="button" id="reject" class="btn btn-perigo btn-danger">Rejeitar</button></div><output id="result" role="status" aria-live="polite" class="feedback"></output></form>'
+            f'mínimo 15 minutos à frente)</span></label><input id="publish_at" type="datetime-local"></div>'
+            f'{override}<div class="acoes"><button type="button" id="approve" class="btn btn-primario btn-primary">Aprovar Vídeo</button></div>'
+            f'<div class="campo campo-rejeicao"><label for="reject_reason">Motivo da rejeição <span class="micro">(opcional)</span></label><textarea id="reject_reason" rows="2" maxlength="500" placeholder="Informe o motivo caso rejeite"></textarea></div>'
+            f'<div class="acoes"><button type="button" id="reject" class="btn btn-danger">Rejeitar</button></div><output id="result" role="status" aria-live="polite" class="feedback"></output></form>'
             f'{frame_close}')

@@ -1266,7 +1266,7 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     else:
         decision = ""
         reviewable = view.stage in _PREVIEW_STAGES
-    heading = ('<div class="note" id="publicacao-intencao"><b>A confirmação de publicação vive aqui.</b> '
+    heading = ('<div class="note" id="publicacao-intencao" style="margin:14px 0"><b>A confirmação de publicação vive aqui.</b> '
                "Trocar o destino do YouTube ou título/descrição/tags/visibilidade depois de aprovar "
                "invalida a intenção anterior: será preciso confirmar de novo (A19).</div>")
 

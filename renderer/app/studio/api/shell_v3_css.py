@@ -205,6 +205,10 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
 }
 .btn.primary:hover, .btn-primary:hover, .btn-primario:hover { filter: brightness(1.08); }
 .btn.ok { background: var(--okbg); border-color: var(--okbg); color: #fff; font-weight: 740; }
+.btn.danger, .btn-danger { background: transparent; border-color: rgba(240, 138, 138, 0.45); color: var(--bad); font-weight: 650; }
+.btn.danger:hover, .btn-danger:hover { background: rgba(240, 138, 138, 0.12); border-color: var(--bad); }
+.acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 2px 0 14px; }
+.campo-rejeicao { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
 .btn.ghost, .btn-ghost { background: transparent; border-color: var(--line); }
 .btn.ghost:hover, .btn-ghost:hover { background: var(--panel3); }
 .btn.small, .btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 7px; }
