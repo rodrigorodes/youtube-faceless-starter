@@ -222,8 +222,8 @@ def test_preview_page_is_escaped_locked_down_and_complete(migrated, dsn, tmp_pat
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and "<script>alert(1)" not in page and "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     nonce = csp.split("script-src 'nonce-")[1].split("'")[0]
     assert f'<script nonce="{nonce}">' in page and "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and r.headers["cache-control"] == "no-store"
-    assert f'src="/studio/videos/{vid}/file?output_asset_id={output_id(client, vid)}"' in page and 'kind="captions"' in page and "AWAITING_APPROVAL" in page
-    for marker in ('id="approve"', 'for="title"', 'role="status"', "QA Aprovado"):  # um por vez: a falha aponta qual faltou
+    assert f'src="/studio/videos/{vid}/file?output_asset_id={output_id(client, vid)}"' in page and 'kind="captions"' in page and "Aguardando aprovação" in page
+    for marker in ('id="approve"', 'for="title"', 'role="status"', "QA aprovado"):  # um por vez: a falha aponta qual faltou
         assert marker in page, f"a prévia não contém {marker!r}"
     assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid)}).status_code == 422  # o título padrão tem "<"
     assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid), "title": "Título limpo"}).status_code == 200
@@ -258,3 +258,40 @@ def test_publication_tab_renders_the_approval_form_with_csp(migrated, dsn, tmp_p
     assert f'<script nonce="{nonce}">' in page and "getElementById('review')" in page
     assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_pedir_ajustes_reopens_a_rendered_video_and_unlocks_the_storyboard(migrated, dsn, tmp_path):
+    """"Pedir ajustes" não só navega: devolve a versão à edição (antes o storyboard continuava bloqueado)."""
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    assert status(client, vid) == "AWAITING_APPROVAL"
+    assert 'id="storyboard-bloqueado"' in client.get(f"/studio/panel/videos/{vid}/cenas").text
+    assert 'data-reopen' in client.get(f"/studio/panel/videos/{vid}/qualidade").text
+
+    response = client.post(f"/studio/videos/{vid}/reopen")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "SCRIPTED" and response.json()["previous_status"] == "AWAITING_APPROVAL"
+    assert status(client, vid) == "SCRIPTED"
+    page = client.get(f"/studio/panel/videos/{vid}/cenas").text
+    assert 'id="storyboard-bloqueado"' not in page
+    # a versão antiga não pode ser aprovada depois de reaberta
+    assert client.post(f"/studio/videos/{vid}/approve").status_code in (409, 422)
+
+
+def test_pedir_ajustes_reopens_an_approved_unpublished_video(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path)
+    vid = rendered(client)
+    assert client.post(f"/studio/videos/{vid}/approve", json={"output_asset_id": output_id(client, vid),
+                                                              "override_reason": "revisado"}).status_code == 200
+    assert client.post(f"/studio/videos/{vid}/reopen").status_code == 200
+    assert status(client, vid) == "SCRIPTED"
+    assert migrated.execute("SELECT count(*) FROM studio.approvals WHERE video_id=%s", (vid,)).fetchone() == (0,)
+    assert migrated.execute("SELECT count(*) FROM studio.approval_history WHERE video_id=%s", (vid,)).fetchone() == (1,)
+
+
+def test_reopen_is_refused_for_a_video_that_cannot_be_reviewed(migrated, dsn, tmp_path):
+    client, _ = make_client(dsn, tmp_path)
+    pid = client.post("/studio/projects", json={"name": "ajustes"}).json()["id"]
+    idea = client.post("/studio/videos", json={"project_id": pid, "topic": "ADE 2026", "format": "short"}).json()["id"]
+    assert client.post(f"/studio/videos/{idea}/reopen").status_code == 409
+    assert client.post(f"/studio/videos/{'0' * 32}/reopen").status_code == 404

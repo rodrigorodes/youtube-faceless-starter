@@ -326,6 +326,10 @@ def _lease(row: dict) -> PublicationLease:
     )
 
 
+# "Pedir ajustes": reabre a edição de uma versão já aprovada ou ainda em revisão (renderizada).
+_REOPENABLE = frozenset({VideoStatus.APPROVED, VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED})
+
+
 class PostgresReopenRepository(_Base):
     """Reabre um vídeo APROVADO e não publicado numa transação única (ADR-002 / P-04).
 
@@ -357,7 +361,7 @@ class PostgresReopenRepository(_Base):
             previous = VideoStatus(video["status"])
             if previous is VideoStatus.PUBLISHED:
                 return ReopenOutcome(video_id=video_id, previous_status=previous, refusal=ReopenRefusal.PUBLISHED)
-            if previous is not VideoStatus.APPROVED:
+            if previous not in _REOPENABLE:
                 return ReopenOutcome(video_id=video_id, previous_status=previous, conflict=True)
 
             cur.execute(f"SELECT {self._LEASE} FROM studio.publications "
@@ -378,7 +382,9 @@ class PostgresReopenRepository(_Base):
                         "FROM studio.publication_intents WHERE video_id = %s FOR UPDATE", (video_id,))
             intent = cur.fetchone()
             qa = video["qa_report"]
-            archived = approval is not None or intent is not None or qa is not None
+            # `approval_history` só aceita APPROVED/PUBLISHED: antes da aprovação não há decisão nem intenção a
+            # arquivar (o QA da versão descartada é recalculado no próximo render).
+            archived = previous is VideoStatus.APPROVED and (approval is not None or intent is not None or qa is not None)
             if archived:
                 cur.execute(
                     "INSERT INTO studio.approval_history(id, video_id, previous_status, decision, reason, qa_override, "
@@ -414,7 +420,7 @@ class PostgresReopenRepository(_Base):
 
             cur.execute("UPDATE studio.videos SET status = %s, qa_report = NULL, updated_at = now() "
                         "WHERE id = %s AND status = %s",
-                        (VideoStatus.SCRIPTED.value, video_id, VideoStatus.APPROVED.value))
+                        (VideoStatus.SCRIPTED.value, video_id, previous.value))
             if cur.rowcount != 1:
                 conn.rollback()
                 return ReopenOutcome(video_id=video_id, previous_status=previous, conflict=True)

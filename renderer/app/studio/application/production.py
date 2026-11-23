@@ -318,6 +318,14 @@ class ScriptHandler(_AvailableHandler):
 
     def execute(self, context: StageContext) -> StageOutcome:
         video = self.videos.get_video(context.run.video_id) if self.videos is not None else None
+        if video is not None and video.status is VideoStatus.SCRIPTED:
+            # Roteiro já escrito (Diretor, ou vídeo reaberto por "Pedir ajustes"): produzir de novo NÃO o reescreve,
+            # senão as edições do operador seriam descartadas. Reescrever é a ação explícita "Gerar roteiro".
+            found = self.editorial.get_script.execute(context.run.video_id)
+            if found is not None:
+                return StageOutcome(checkpoint=Checkpoint(
+                    {"stage": self.stage.value, "script_version": found[0].version, "reused": True},
+                    context.checkpoint_version))
         if video is not None and video.format is VideoFormat.long and self.editorial.long_generate is not None:
             script = self.editorial.long_generate.execute(context.run.video_id)  # F4: duas passagens
         else:

@@ -3,11 +3,12 @@
 O host é montado a partir de um código de idioma validado (`<lang>.wikipedia.org`, só https, sem redirect),
 então não há URL controlada pelo usuário e o risco de SSRF não existe. O texto devolvido é o texto simples do
 artigo (CC BY-SA): a URL do artigo é a proveniência registrada em "Fontes". A relevância não é garantida
-(a busca é por palavras do tema) — o humano revisa o roteiro na aprovação, e o fact-check exige que cada cena
+(a busca é aproximada; `is_relevant` descarta o artigo que não cita o tema) — o humano revisa o roteiro na aprovação, e o fact-check exige que cada cena
 cite afirmações do texto lido.
 """
 import re
 import time
+import unicodedata
 from collections.abc import Callable
 from urllib.parse import quote
 
@@ -26,6 +27,28 @@ _TAIL = re.compile(r"^\s*(See also|References|External links|Further reading|Not
                    re.IGNORECASE | re.MULTILINE)
 _DISTINCTIVE = re.compile(r"\b(?:[A-Z]{2,}[A-Za-z0-9]*|[A-Za-z]*\d[A-Za-z0-9]*)\b")
 _PUNCT = re.compile(r"[^\w\s'-]", re.UNICODE)
+
+
+_STOPWORDS = frozenset({"and", "the", "for", "with", "how", "why", "what", "que", "para", "com", "uma", "dos", "das",
+                        "como", "por", "sobre", "the", "you", "your", "from", "this", "that", "vs"})
+
+
+def _fold(value: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", value.lower()) if not unicodedata.combining(c))
+
+
+def _tokens(value: str) -> set[str]:
+    return set(re.findall(r"\w+", _fold(value)))
+
+
+def is_relevant(topic: str, title: str, text: str) -> bool:
+    """A busca da Wikipédia é aproximada (um erro de digitação devolve outro assunto): só vale o artigo cujo título
+    cita uma palavra do tema, ou cujo texto cita uma sigla/número do tema (ex.: "GTA 6" → "Grand Theft Auto VI")."""
+    significant = {t for t in _tokens(topic) if len(t) >= 3 and t not in _STOPWORDS}
+    if significant & _tokens(title):
+        return True
+    distinctive = {_fold(t) for t in _DISTINCTIVE.findall(topic)}
+    return bool(distinctive & _tokens(text))
 
 
 def wiki_language(language: str | None) -> str:
@@ -106,7 +129,8 @@ class WikipediaResearch:
         with httpx.Client(transport=self.transport, timeout=self.timeout, follow_redirects=False,
                           headers={"User-Agent": USER_AGENT, "Accept": "application/json"}) as client:
             for code in languages:
-                docs = [d for t in self._titles(client, code, topic) if (d := self._document(client, code, t))]
+                docs = [d for t in self._titles(client, code, topic)
+                        if (d := self._document(client, code, t)) and is_relevant(topic, d.title, d.text)]
                 if docs:
                     return docs
         return []

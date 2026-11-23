@@ -22,7 +22,7 @@ from app.studio.application.production import (COORDINATOR_DAG_WITH_RESEARCH, Pr
 from app.studio.application.research import AutoResearch  # noqa: E402
 from app.studio.domain.contracts import SourceSnapshot  # noqa: E402
 
-FACT = ("Grand Theft Auto VI is an action-adventure game developed by Rockstar Games and set in 2026 "
+FACT = ("Grand Theft Auto VI (GTA VI) is an action-adventure game developed by Rockstar Games and set in 2026 "
         "in the state of Leonida, a fictional Florida.")
 ARTICLE = (FACT + "\n" + "\n".join([f"Rockstar Games announced in {2020 + i} that the studio kept working on the project." for i in range(6)])
            + "\nSee also\nNot a fact worth keeping, Rockstar 2026 list.")
@@ -197,3 +197,25 @@ def test_handler_checkpoint_carries_the_provenance():
 def test_pipeline_with_research_runs_research_before_script():
     order = COORDINATOR_DAG_WITH_RESEARCH.topological_order()
     assert order[0] is ProductionStage.RESEARCH and order.index(ProductionStage.SCRIPT) == 1
+
+
+# ---- relevância: a busca da Wikipédia é aproximada e não pode trazer outro assunto como se fosse o tema ----
+
+EUFONIO = ("O eufônio é um instrumento de metal de formato cônico. " + " ".join(
+    f"O bombardino aparece em bandas desde {1850 + i}, quando as válvulas se espalharam." for i in range(40)))
+
+
+def test_typo_in_the_topic_does_not_bring_an_unrelated_article():
+    """Bug: 'Drum and Basss' (3 s) fez a busca aproximada devolver 'Eufônio', e o vídeo falou de outro assunto."""
+    wiki = _wiki(hits=[{"title": "Eufônio", "wordcount": 5592}], extract=EUFONIO)
+    assert wiki.search("Drum and Basss", "pt-BR") == []
+
+
+def test_an_article_whose_title_names_the_topic_is_kept():
+    wiki = _wiki(hits=[{"title": "Drum and bass", "wordcount": 2555}], extract=EUFONIO)
+    assert [d.title for d in wiki.search("Drum and Bass", "pt-BR")] == ["Drum and bass"]
+
+
+def test_acronym_in_the_topic_is_matched_in_the_text_when_the_title_is_the_long_name():
+    wiki = _wiki(hits=[{"title": "Grand Theft Auto VI", "wordcount": 22000}])
+    assert wiki.search("GTA 6", "en")  # o título não tem "GTA", o texto do artigo sim

@@ -70,6 +70,29 @@ def test_script_handler_delegates_and_records_the_version():
     assert outcome.checkpoint.version == 2  # monotônica pela tentativa
 
 
+def test_script_handler_does_not_rewrite_a_script_that_already_exists():
+    """Vídeo reaberto por "Pedir ajustes" (ou Diretor): produzir de novo não descarta as edições do roteiro."""
+    from app.studio.domain.contracts import VideoStatus
+    generate = _Call(result=type("S", (), {"version": 9})())
+    get_script = _Call(result=(type("S", (), {"version": 4})(), []))
+    editorial = type("E", (), {"generate": generate, "get_script": get_script})()
+    videos = type("V", (), {"get_video": lambda self, vid: type("Vd", (), {"status": VideoStatus.SCRIPTED,
+                                                                          "format": None})()})()
+    outcome = ScriptHandler(editorial, videos).execute(context(ProductionStage.SCRIPT))
+    assert generate.calls == [] and outcome.checkpoint.payload == {"stage": "script", "script_version": 4, "reused": True}
+
+
+def test_script_handler_writes_the_script_when_the_video_has_none_yet():
+    from app.studio.domain.contracts import VideoFormat, VideoStatus
+    generate = _Call(result=type("S", (), {"version": 1})())
+    editorial = type("E", (), {"generate": generate, "get_script": _Call(result=None)})()
+    for status in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
+        videos = type("V", (), {"get_video": lambda self, vid, st=status: type("Vd", (), {"status": st, "format": VideoFormat.short})()})()
+        generate.calls.clear()
+        ScriptHandler(editorial, videos).execute(context(ProductionStage.SCRIPT))
+        assert len(generate.calls) == 1
+
+
 def test_factcheck_handler_fails_closed_when_the_report_does_not_pass():
     flagged = type("F", (), {"idx": 3})()
     editorial = type("E", (), {"fact_check": _Call(result=_FactReport(False, [flagged]))})()

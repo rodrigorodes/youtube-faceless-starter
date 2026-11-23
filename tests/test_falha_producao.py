@@ -52,3 +52,11 @@ def test_polling_script_translates_with_the_same_rules_as_the_server():
               "window.StudioFalha.explicar('kaboom'), window.StudioFalha.explicar('')]));")
     out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
     assert out[0] == explicar_falha(SEM_FONTE).texto and out[1] == "kaboom" and out[2] == ""
+
+
+def test_research_that_found_nothing_and_settled_script_have_their_own_explanation():
+    nada = explicar_falha("SourceRefused: automatic research (wikipedia) found no source with checkable claims "
+                          "for this topic: add a source manually")
+    assert nada is not None and "grafia" in nada.texto and nada.destino == "fontes"
+    pago = explicar_falha("OperationSettled: paid operation 806a905a99ff was already confirmed")
+    assert pago is not None and "mesmas fontes" in pago.texto and pago.destino == "cenas"

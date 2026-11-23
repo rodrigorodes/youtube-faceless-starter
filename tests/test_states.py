@@ -61,3 +61,12 @@ def test_assert_transition_raises():
 def test_mermaid_mentions_every_status_and_is_deterministic():
     text = to_mermaid()
     assert all(s.value in text for s in VideoStatus) and text == to_mermaid()
+
+
+def test_pedir_ajustes_reopens_a_rendered_or_awaiting_version_but_nothing_else():
+    """"Pedir ajustes" (Qualidade): só versões renderizadas, em revisão ou aprovadas voltam à edição."""
+    reopenable = {s for s in VideoStatus if can_transition(s, VideoStatus.SCRIPTED) and s not in
+                  (VideoStatus.IDEA, VideoStatus.FAILED)}
+    assert reopenable == {VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED}
+    assert not can_transition(VideoStatus.PUBLISHED, VideoStatus.SCRIPTED)
+    assert not can_transition(VideoStatus.REJECTED, VideoStatus.SCRIPTED)

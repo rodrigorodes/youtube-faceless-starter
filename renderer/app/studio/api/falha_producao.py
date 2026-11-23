@@ -31,6 +31,13 @@ _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I),
            "afirmações que possam ser conferidas. Adicione uma fonte com texto colado: frases de 40 a 400 caracteres "
            "com número, data ou nome próprio. Uma URL sozinha, ou um texto curto, não conta. Só então tente de "
            "novo — repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
+    (r"automatic research .* found no source",
+     Falha("A pesquisa automática não achou na Wikipédia um artigo sobre este tema (confira a grafia do tema). "
+           "Corrija o tema ou adicione uma fonte com texto colado e tente de novo.", "fontes", "Adicionar fonte")),
+    (r"paid operation .* was already confirmed",
+     Falha("Este roteiro já foi gerado com as mesmas fontes e o mesmo tema, e o estúdio não cobra a mesma geração "
+           "duas vezes. Para um roteiro diferente, mude as fontes ou o tema; para aproveitar o atual, edite as cenas.",
+           "cenas", "Abrir cenas")),
     (r"url host is not in the allowlist",
      Falha("O endereço da fonte não está na lista de domínios permitidos. Cole o texto da página no campo "
            "«Texto da fonte»: o texto colado vale como fonte mesmo sem a URL liberada.", "fontes", "Abrir fontes")),
@@ -38,7 +45,8 @@ _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I),
      Falha(_FONTE_ILEGIVEL, "fontes", "Abrir fontes")),
     (r"fact-check did not pass",
      Falha("O fact-check reprovou cenas: há afirmações sem apoio nas fontes. Revise as cenas sinalizadas ou "
-           "acrescente fontes que as sustentem.", "cenas", "Revisar cenas")),
+           "acrescente fontes que as sustentem. Se o texto das cenas estiver bloqueado (roteiro curto, sem plano de "
+           "capítulos), corrija as fontes ou o tema e gere o roteiro de novo.", "cenas", "Revisar cenas")),
     (r"render did not finish",
      Falha("A renderização não terminou com sucesso. Abra a execução para ver o motivo e tente novamente.")),
     (r"qa gate refused|qa failed|no successful render to verify|no qa report|render and a qa report",

@@ -450,6 +450,20 @@ def _scene_editable(view, script=None) -> bool:
     return status in (VideoStatus.IDEA, VideoStatus.SCRIPTED) and bool(_script_version(script))
 
 
+# "Pedir ajustes": versões renderizadas, em revisão ou aprovadas (e não publicadas) voltam à edição (POST /reopen).
+_REOPENABLE = (VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED)
+
+
+def _reopen_button(view, video_id: str, *, cls: str = "btn ghost long small",
+                   label: str = "Pedir ajustes (reabre a edição)") -> str:
+    status = getattr(getattr(view, "video", None), "status", None)
+    if status not in _REOPENABLE:
+        return ""
+    return (f'<button type="button" class="{cls}" data-reopen data-video-id="{e(video_id)}" '
+            f'data-status="{status.value}">{e(label)}</button>'
+            '<span id="reopen-feedback" class="feedback" role="status" aria-live="polite"></span>')
+
+
 _LOCKED_TITLE = "O roteiro só pode ser editado enquanto o vídeo está em Ideia ou Roteirizado."
 _NO_PLAN_TITLE = "Este roteiro não tem plano de capítulos: texto e ordem das cenas não podem ser gravados."
 
@@ -649,6 +663,16 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
                         'bloqueados.</b> Este roteiro não tem plano de capítulos, e o Studio só grava edição de texto, '
                         'inclusão, exclusão e ordem em roteiros com plano. Mídia, B-roll e voz de cada cena continuam '
                         'editáveis aqui.</p>')
+    locked_note = ""
+    if items and not editable and version and getattr(view.video, "status", None) in _REOPENABLE:
+        approved = view.video.status is VideoStatus.APPROVED
+        locked_note = (
+            '<div class="note" id="storyboard-bloqueado" style="margin-bottom:14px"><b>Esta versão está bloqueada para '
+            f'edição</b> porque já foi renderizada e está {"aprovada" if approved else "em revisão"}. '
+            'Para mudar texto, mídia ou voz, peça ajustes: a '
+            f'{"aprovação, o " if approved else ""}render e o QA atuais ficam obsoletos e será preciso produzir e '
+            'aprovar de novo.<div class="row" style="margin-top:10px">'
+            f'{_reopen_button(view, video_id, cls="btn small", label="Pedir ajustes")}</div></div>')
     return (
         '<div id="storyboard" data-video-id="' + e(video_id) + '">'
         '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
@@ -658,7 +682,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<button type="button" class="btn small" id="btn-undo-cenas" data-a="undo-v3" disabled>↶ Desfazer</button>'
         '<button type="button" class="btn small" id="btn-redo-cenas" data-a="redo-v3" disabled>↷ Refazer</button>'
         f'{_nova_cena_btn(video_id, script, editable, structure)}</div></div>'
-        f'{no_plan_note}'
+        f'{locked_note}{no_plan_note}'
         f'<div class="stack" id="storyboard-cards">{cards}</div>'
         f'{empty}'
         '<div class="row" style="margin-top:12px">'
@@ -1095,7 +1119,7 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
         actions = (
             '<div class="note okn" style="margin-bottom:12px">✓ Versão aprovada.</div>'
             f'<div class="stack" style="gap:8px"><a class="btn primary long" href="{area_href(video_id, "publicacao")}">'
-            "Ir para publicação →</a></div>"
+            f"Ir para publicação →</a>{_reopen_button(view, video_id)}</div>"
         )
     else:
         disabled = "" if rendered else " disabled"
@@ -1103,8 +1127,9 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             '<div class="stack" style="gap:8px">'
             f'<button type="button" class="btn ok long" data-a="approve" data-video-id="{e(video_id)}" '
             f'id="btn-approve-video"{disabled}>✓ Aprovar e preparar publicação →</button>'
-            f'<a class="btn ghost long small" href="{area_href(video_id, "cenas")}">Pedir ajustes (volta ao storyboard)</a>'
-            '<span id="approve-feedback" class="feedback" role="status" aria-live="polite"></span></div>'
+            + (_reopen_button(view, video_id) or
+               f'<a class="btn ghost long small" href="{area_href(video_id, "cenas")}">Pedir ajustes (volta ao storyboard)</a>')
+            + '<span id="approve-feedback" class="feedback" role="status" aria-live="polite"></span></div>'
         )
     aside = (
         '<aside class="card" style="position:sticky;top:80px"><h3>Aprovação desta versão</h3>'
@@ -2051,6 +2076,33 @@ PAGE_JS = """
       }
     });
   }
+
+  // "Pedir ajustes": reabre a edição (aprovação, render e QA atuais ficam obsoletos) e volta ao storyboard.
+  document.querySelectorAll('[data-reopen]').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var videoId = btn.getAttribute('data-video-id') || '';
+      var approved = btn.getAttribute('data-status') === 'APPROVED';
+      var out = document.getElementById('reopen-feedback');
+      if (!window.confirm('Pedir ajustes reabre este vídeo para edição. ' + (approved ? 'A aprovação, o ' : 'O ')
+        + 'render e o QA atuais ficam obsoletos e será preciso produzir e aprovar de novo. Continuar?')) return;
+      btn.disabled = true; btn.classList.add('carregando');
+      if (out) out.textContent = 'Reabrindo para edição...';
+      try {
+        var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/reopen', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        var data = await response.json().catch(function () { return {}; });
+        if (response.ok) {
+          try { sessionStorage.setItem('flash-' + videoId, 'Vídeo reaberto para ajustes. Edite e use "Gerar tudo o que falta" para produzir de novo; a aprovação anterior não vale mais.'); } catch (e) {}
+          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+          return;
+        }
+        if (out) out.textContent = 'Não foi possível reabrir: ' + window.StudioErro.texto(data, 'tente novamente.', response.status);
+      } catch (err) {
+        if (out) out.textContent = 'Falha de rede ao reabrir. Tente novamente.';
+      }
+      btn.disabled = false; btn.classList.remove('carregando');
+    });
+  });
 })();
 """
 

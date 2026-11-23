@@ -316,3 +316,4 @@ class Publishing:
     publish: object | None = None      # F8: executor nativo (RunPublication), sem acoplar o núcleo ao adaptador
     reconcile: object | None = None    # F8: reconciliação de resultado ambíguo
     rearm: object | None = None        # recoloca na fila a publicação bloqueada antes de qualquer envio
+    reopen: object | None = None       # "Pedir ajustes": devolve a versão renderizada/aprovada à edição (ADR-002)

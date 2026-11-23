@@ -238,3 +238,24 @@ def test_intent_remembers_the_metadata_and_reopen_archives_it(env):
     archived = env["conn"].execute(
         "SELECT metadata_fingerprint FROM studio.approval_history WHERE video_id=%s", (vid,)).fetchone()[0]
     assert archived == stored[0]
+
+
+# -- "Pedir ajustes": versão renderizada/em revisão volta à edição (sem aprovação a arquivar) --------------------
+
+@pytest.mark.parametrize("origin", ["AWAITING_APPROVAL", "RENDERED"])
+def test_pedir_ajustes_reopens_a_version_that_was_never_approved(env, origin):
+    vid = env["make"](origin, qa=qa_report())
+    outcome = ReopenForEditing(env["reopen"]).execute(vid)
+    assert outcome.reopened is True and outcome.previous_status is S[origin]
+    assert status(env, vid) == S.SCRIPTED.value
+    assert env["conn"].execute("SELECT qa_report FROM studio.videos WHERE id=%s", (vid,)).fetchone()[0] is None
+    # não houve decisão nem intenção: nada vai para o histórico de aprovações
+    assert env["conn"].execute("SELECT count(*) FROM studio.approval_history WHERE video_id=%s", (vid,)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("origin", ["IDEA", "SCRIPTED", "STORYBOARDED", "PUBLISHED", "REJECTED"])
+def test_pedir_ajustes_is_refused_outside_the_reviewable_states(env, origin):
+    vid = env["make"](origin)
+    with pytest.raises((ReopenConflict, PublicationAlreadyCompleted)):
+        ReopenForEditing(env["reopen"]).execute(vid)
+    assert status(env, vid) == origin

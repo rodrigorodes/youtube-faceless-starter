@@ -6,7 +6,9 @@ _PRE_APPROVAL = frozenset(_LINEAR[:-1])  # etapas que podem falhar e ser retomad
 
 VIDEO_TRANSITIONS: dict[S, frozenset[S]] = {
     **{cur: frozenset({nxt, S.FAILED}) for cur, nxt in zip(_LINEAR, _LINEAR[1:])},
-    S.AWAITING_APPROVAL: frozenset({S.APPROVED, S.REJECTED}),
+    S.RENDERED: frozenset({S.AWAITING_APPROVAL, S.FAILED, S.SCRIPTED}),  # SCRIPTED: pedir ajustes antes da revisão
+    # "Pedir ajustes": a versão renderizada (ainda não aprovada) volta a ser editável, como na reabertura de APPROVED.
+    S.AWAITING_APPROVAL: frozenset({S.APPROVED, S.REJECTED, S.SCRIPTED}),
     S.APPROVED: frozenset({S.PUBLISHED, S.SCRIPTED}),  # reabrir: a guarda de publicação fica no caso de uso (ADR-002)
     S.PUBLISHED: frozenset(),
     S.REJECTED: frozenset(),

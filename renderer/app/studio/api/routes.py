@@ -2226,6 +2226,30 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return rearm.execute(check_id(video_id))
         return run(go)
 
+    @router.post("/videos/{video_id}/reopen")
+    def reopen_video(video_id: str):
+        """"Pedir ajustes": devolve a versão renderizada ou aprovada (e não publicada) à edição.
+
+        Invalida aprovação, intenção, render/QA anteriores (ADR-002) e cancela a produção que só aguardava o
+        operador. Produção em execução, publicação concluída ou upload em andamento recusam com 409.
+        """
+        def go(uc):
+            reopen = publishing(uc).reopen
+            if reopen is None:
+                raise HTTPException(503, "reopen unavailable")
+            vid = check_id(video_id)
+            live = uc.panel.detail(vid).latest_run if uc.panel is not None else None
+            if live is not None and live.state in ("CREATED", "RUNNING"):
+                raise HTTPException(409, "a produção deste vídeo está em execução; aguarde terminar ou cancele antes de pedir ajustes")
+            outcome = reopen.execute(vid)
+            cancelled = None
+            if live is not None and live.state in ("WAITING_HUMAN", "PAUSED") and uc.production is not None:
+                transition = production_service(uc).coordinator.cancel(check_id(live.run_id), "ajustes pedidos pelo operador")
+                cancelled = live.run_id if transition.result is RunTransitionResult.APPLIED else None
+            return {"video_id": vid, "status": "SCRIPTED", "previous_status": outcome.previous_status.value,
+                    "cancelled_run_id": cancelled}
+        return run(go)
+
     @router.post("/publications/execute", response_model=PublicationRunOut,
                  response_model_exclude={"publication": {"upload_uri"}})
     def execute_publication(body: PublishIn | None = None):

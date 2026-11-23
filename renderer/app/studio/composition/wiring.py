@@ -25,7 +25,7 @@ from ..adapters.image_stock import PexelsImage
 from ..adapters.image_veo import VeoImage
 from ..adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
 from ..adapters.postgres.publish_repo import (PostgresApprovalRepository, PostgresPublicationIntentRepository,
-                                             PostgresPublicationRepository)
+                                             PostgresPublicationRepository, PostgresReopenRepository)
 from ..adapters.postgres.analytics_repo import PostgresAnalyticsRepository
 from ..adapters.postgres.panel_repo import PostgresPanelRepository
 from ..adapters.postgres.saas_repo import PostgresSaasRepository
@@ -117,6 +117,7 @@ from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditSc
                                    RestoreScriptRevision)
 from ..application.script_view import BuildScriptView
 from ..application.budget import PaidOperationGuard
+from ..application.reopen import ReopenForEditing
 from ..application.research import AutoResearch
 from ..adapters.wikipedia_research import WikipediaResearch
 from ..application.production import (COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
@@ -638,7 +639,8 @@ class Studio:
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
             preview=GetPreview(repo, scripts, assets, jobs, snaps, approvals, pubs, files),
-            publish=publish, reconcile=reconcile, rearm=RearmPublication(repo, pubs))
+            publish=publish, reconcile=reconcile, rearm=RearmPublication(repo, pubs),
+            reopen=ReopenForEditing(PostgresReopenRepository(connect)))
         trend_repo = PostgresTrendRepository(connect)
         ingest_trends = IngestTrends(trend_repo, repo, s.trend_hosts)
         category_repo = PostgresCategoryRepository(connect)

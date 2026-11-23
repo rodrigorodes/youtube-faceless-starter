@@ -205,3 +205,61 @@ def test_every_area_keeps_the_progress_card_following_the_run():
     for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
         html = render_video_workspace(_com_run_viva(), area, run_stages=NOVE)[0]
         assert 'id="progress-slot"' in html and "function poll(runId)" in html, area  # o JS que acompanha a execução
+
+
+# ---- "Pedir ajustes": reabre a edição de verdade em vez de só navegar para um storyboard bloqueado ----
+
+def _em(status):
+    import dataclasses
+
+    from app.studio.application.panel import Stage
+    from app.studio.domain.contracts import VideoStatus
+    stage = {VideoStatus.AWAITING_APPROVAL: Stage.AWAITING_APPROVAL, VideoStatus.APPROVED: Stage.APPROVED,
+             VideoStatus.RENDERED: Stage.AWAITING_APPROVAL, VideoStatus.PUBLISHED: Stage.COMPLETED,
+             VideoStatus.SCRIPTED: Stage.PENDING}[status]
+    view = _view(status=status, stage=stage)
+    return view
+
+
+def _botao_ajustes(html: str):
+    return re.search(r'<button[^>]*data-reopen[^>]*>', html)
+
+
+def test_pedir_ajustes_on_quality_is_a_real_action_when_the_version_is_reviewable():
+    from app.studio.domain.contracts import VideoStatus
+    for status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED):
+        html = _render("qualidade", view=_em(status))
+        tag = _botao_ajustes(html)
+        assert tag is not None, status
+        assert 'data-video-id="' in tag.group(0) and "Pedir ajustes" in _texto(html)
+    assert "/reopen" in _render("qualidade", view=_em(VideoStatus.AWAITING_APPROVAL))  # POST /videos/{id}/reopen
+
+
+def test_locked_storyboard_explains_why_and_offers_to_reopen():
+    from app.studio.domain.contracts import VideoStatus
+    html = _render("cenas", view=_em(VideoStatus.AWAITING_APPROVAL), script_view=None)
+    content = _content(html)
+    assert 'id="storyboard-bloqueado"' not in content  # sem roteiro versionado não há o que reabrir
+    from test_video_workspace import _script_view  # noqa: F401
+    import dataclasses
+
+    from app.studio.api.panel_video_workspace import render_video_workspace
+    html = render_video_workspace(_em(VideoStatus.AWAITING_APPROVAL), "cenas",
+                                  script=type("S", (), {"version": 2})(),
+                                  scenes=[type("Sc", (), {"idx": 0, "narration": "Texto da cena com fato.",
+                                                          "caption": "", "label": "FATO", "image_prompt": "x",
+                                                          "id": "a" * 32, "asset_id": None})()])[0]
+    content = _content(html)
+    assert 'id="storyboard-bloqueado"' in content and _botao_ajustes(content)
+    assert "Pedir ajustes" in _texto(content)
+
+
+def test_published_video_cannot_be_reopened_from_the_ui():
+    from app.studio.domain.contracts import VideoStatus
+    assert _botao_ajustes(_render("qualidade", view=_em(VideoStatus.PUBLISHED))) is None
+
+
+def test_reopen_script_posts_and_returns_to_the_storyboard_with_a_notice():
+    from app.studio.api.panel_video_workspace import PAGE_JS
+    assert "[data-reopen]" in PAGE_JS and "/reopen'" in PAGE_JS
+    assert "flash-" in PAGE_JS and "/cenas" in PAGE_JS
