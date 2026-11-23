@@ -150,89 +150,11 @@ git commit -m "feat(domain): adicionar ProductionMode e preferencias default no 
   - `PostgresChannelProfileRepository.create` e `.update` gravando e lendo `default_mode` e `default_format`
   - `PostgresVideoRepository.create_video` aceitando `production_mode: ProductionMode = ProductionMode.piloto` e persistindo na coluna `production_mode`
 
-- [ ] **Step 1: Write failing repository test in `tests/test_channel_preferences_repo.py`**
-
-```python
-import sys
-from pathlib import Path
-import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
-
-psycopg = pytest.importorskip("psycopg")
-from app.studio.adapters.postgres.channel_repo import PostgresChannelProfileRepository
-from app.studio.adapters.postgres.repo import PostgresVideoRepository
-from app.studio.adapters.postgres.db import migrate
-from app.studio.domain.contracts import ProductionMode, VideoFormat
-
-@pytest.fixture()
-def repo_env(conn, dsn):
-    migrate(conn)
-    conn.commit()
-    connect = lambda: psycopg.connect(dsn)
-    videos = PostgresVideoRepository(connect)
-    channels = PostgresChannelProfileRepository(connect)
-    project = videos.create_project("Canal Prefs", niche="Tecnologia", language="pt-BR")
-    return {"videos": videos, "channels": channels, "project_id": project.id}
-
-def test_channel_profile_repo_persists_preferences(repo_env):
-    channels = repo_env["channels"]
-    pid = repo_env["project_id"]
-
-    created = channels.create(
-        pid,
-        "Canal Prefs",
-        default_mode=ProductionMode.diretor,
-        default_format=VideoFormat.long,
-    )
-    assert created.default_mode is ProductionMode.diretor
-    assert created.default_format is VideoFormat.long
-
-    fetched = channels.get(created.id)
-    assert fetched.default_mode is ProductionMode.diretor
-    assert fetched.default_format is VideoFormat.long
-
-    # Update
-    updated = channels.update(created.id, 1, {"default_mode": "piloto"})
-    assert updated.default_mode is ProductionMode.piloto
-
-def test_video_repo_persists_production_mode(repo_env):
-    videos = repo_env["videos"]
-    pid = repo_env["project_id"]
-
-    video = videos.create_video(
-        pid,
-        "Tema Diretor",
-        VideoFormat.short,
-        production_mode=ProductionMode.diretor,
-    )
-    assert video.production_mode is ProductionMode.diretor
-
-    fetched = videos.get_video(video.id)
-    assert fetched.production_mode is ProductionMode.diretor
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_repo.py -v`
-Expected: FAIL (`_COLS` ou `INSERT` sem as novas colunas)
-
-- [ ] **Step 3: Implement repository updates**
-
-1. Em `renderer/app/studio/adapters/postgres/channel_repo.py`:
-   - Atualizar `_COLS` para incluir `default_mode` e `default_format`.
-   - Atualizar `_insert` para incluir as colunas na lista de colunas e parâmetros.
-   - Atualizar `_profile(row)` para converter strings para `ProductionMode` e `VideoFormat`.
-2. Em `renderer/app/studio/adapters/postgres/repo.py`:
-   - Atualizar `create_video` com parâmetro `production_mode: ProductionMode = ProductionMode.piloto`.
-   - Atualizar o `INSERT INTO studio.videos(...)` e o `SELECT ...` do `get_video` e `_video(row)` para mapear `production_mode`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channel_preferences_repo.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing repository test in `tests/test_channel_preferences_repo.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement repository updates**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/adapters/postgres/channel_repo.py renderer/app/studio/adapters/postgres/repo.py tests/test_channel_preferences_repo.py
