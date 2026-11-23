@@ -63,8 +63,9 @@ from ..domain.qa_report import (
     blocking_evidence,
 )
 from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
-from .editorial import Editorial, StateConflict
+from .editorial import Editorial, SourceRefused, SourceUnavailable, StateConflict
 from .media import Media
+from .research import AutoResearch
 from .publication_execution import PublicationResult, RunPublication
 from .ports import (
     ApprovalRepository,
@@ -285,6 +286,30 @@ class UnavailableStageHandler:
         raise StageCapabilityUnavailable(self.stage, self.reason)
 
 
+class ResearchHandler(_AvailableHandler):
+    """Pesquisa automática do tema (F3 mínimo). Fontes já registradas pelo humano são respeitadas."""
+
+    stage = ProductionStage.RESEARCH
+
+    def __init__(self, research: AutoResearch):
+        self.research = research
+
+    def execute(self, context: StageContext) -> StageOutcome:
+        try:
+            result = self.research.execute(context.run.video_id)
+        except SourceUnavailable as exc:
+            raise StageExecutionFailed(
+                "a pesquisa automática não conseguiu acessar a fonte de referência agora; tente de novo "
+                f"ou adicione uma fonte manualmente ({exc})") from exc
+        except SourceRefused as exc:
+            raise StageExecutionFailed(
+                "a pesquisa automática não achou uma fonte com fatos verificáveis para este tema; "
+                "adicione uma fonte manualmente em Fontes e inicie de novo") from exc
+        return StageOutcome(checkpoint=Checkpoint(
+            {"stage": self.stage.value, "sources": len(result.snapshots), "reused": result.reused,
+             "urls": [snap.url for snap in result.snapshots]}, context.checkpoint_version))
+
+
 class ScriptHandler(_AvailableHandler):
     stage = ProductionStage.SCRIPT
 
@@ -461,7 +486,7 @@ def _require_video(videos: VideoRepository, video_id: str) -> Video:
     return video
 
 
-RESEARCH_REASON = "research automático não existe (F3 pendente); adicione fontes ao vídeo antes de produzir"
+RESEARCH_REASON = "research automático não está configurado; adicione fontes ao vídeo antes de produzir"
 PUBLISH_REASON = "publication executor is not configured (F8); nothing is uploaded and success is never simulated"
 
 
@@ -492,7 +517,8 @@ class PublishHandler(_AvailableHandler):
 
 def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: StartRender, run_render: RunRender,
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
-                         approvals: ApprovalRepository, publish: RunPublication | None = None
+                         approvals: ApprovalRepository, publish: RunPublication | None = None,
+                         research: AutoResearch | None = None
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     handlers: dict[ProductionStage, StageHandler] = {
@@ -504,16 +530,31 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
         ProductionStage.QA: QaHandler(videos, jobs),
         ProductionStage.APPROVAL: ApprovalHandler(videos, approvals, RenderQaGate(videos, jobs, assets)),
     }
-    handlers[ProductionStage.RESEARCH] = UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON)
+    handlers[ProductionStage.RESEARCH] = (ResearchHandler(research) if research is not None
+                                          else UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON))
     handlers[ProductionStage.PUBLISH] = (PublishHandler(publish) if publish is not None
                                          else UnavailableStageHandler(ProductionStage.PUBLISH, PUBLISH_REASON))
     return handlers
 
 
-# Pipeline do coordenador: começa no roteiro (a pesquisa é pré-condição, não etapa automática).
+# Pipeline do coordenador: a pesquisa só entra na execução quando há provedor (handler disponível).
 # F8: a publicação passa a ser a última etapa executável — somente depois da aprovação humana/QA.
 COORDINATOR_DAG = StageDag({
     ProductionStage.SCRIPT: (),
+    ProductionStage.FACTCHECK: (ProductionStage.SCRIPT,),
+    ProductionStage.STORYBOARD: (ProductionStage.FACTCHECK,),
+    ProductionStage.ASSETS: (ProductionStage.STORYBOARD,),
+    ProductionStage.RENDER: (ProductionStage.ASSETS,),
+    ProductionStage.QA: (ProductionStage.RENDER,),
+    ProductionStage.APPROVAL: (ProductionStage.QA,),
+    ProductionStage.PUBLISH: (ProductionStage.APPROVAL,),
+})
+
+
+# Com pesquisa automática configurada, a pesquisa é a primeira etapa e o roteiro depende dela.
+COORDINATOR_DAG_WITH_RESEARCH = StageDag({
+    ProductionStage.RESEARCH: (),
+    ProductionStage.SCRIPT: (ProductionStage.RESEARCH,),
     ProductionStage.FACTCHECK: (ProductionStage.SCRIPT,),
     ProductionStage.STORYBOARD: (ProductionStage.FACTCHECK,),
     ProductionStage.ASSETS: (ProductionStage.STORYBOARD,),

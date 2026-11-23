@@ -64,6 +64,9 @@ class Settings:
     # F06.T02: habilita o roteamento de provider em modo produção (exclui demo/placeholder).
     # Desligado no padrão preserva o painel/dev; só uma instalação real deve ligar (STUDIO_PROVIDER_PRODUCTION=1).
     provider_production: bool = False
+    # Pesquisa automática do tema (Wikipédia) como 1ª etapa da produção. Desligar (STUDIO_AUTO_RESEARCH=0)
+    # volta ao comportamento em que o humano adiciona a fonte antes de produzir.
+    auto_research: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -83,7 +86,8 @@ class Settings:
                    env.get("STUDIO_GOOGLE_OAUTH_REDIRECT_URI") or "http://localhost:8000/studio/oauth/callback",
                    _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")),
                    _flag(env.get("STUDIO_PUBLICATION_ENABLED", "1")),
-                   _flag(env.get("STUDIO_PROVIDER_PRODUCTION")))
+                   _flag(env.get("STUDIO_PROVIDER_PRODUCTION")),
+                   _flag(env.get("STUDIO_AUTO_RESEARCH", "1")))
 
 
 RETRY_SECONDS = 5.0

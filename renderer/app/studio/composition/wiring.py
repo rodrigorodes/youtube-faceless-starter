@@ -117,7 +117,9 @@ from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditSc
                                    RestoreScriptRevision)
 from ..application.script_view import BuildScriptView
 from ..application.budget import PaidOperationGuard
-from ..application.production import (COORDINATOR_DAG, BudgetProjection, Production, ProductionMode, ProductionWorker,
+from ..application.research import AutoResearch
+from ..adapters.wikipedia_research import WikipediaResearch
+from ..application.production import (COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
 from ..application.advanced_page import BuildAdvancedView
 from ..application.use_cases import ServiceUnavailable, UseCases
@@ -279,11 +281,12 @@ def _voice_for_config(video, config, fallback, build_provider):
 class Studio:
     """Inicializa o banco sob demanda. Sem banco, o app segue de pé em modo degradado."""
 
-    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None, youtube_popular_fetcher=None, quality_evaluator=None):
+    def __init__(self, settings: Settings, environ: Mapping[str, str] | None = None, fetcher=None, executor=None, analyzer=None, youtube_fetcher=None, youtube_popular_fetcher=None, quality_evaluator=None, research=None):
         self.settings = settings
         self.environ = os.environ if environ is None else environ
         self._fetcher = fetcher or HttpxFetcher(settings.source_allowlist)
         self._youtube_fetcher = youtube_fetcher
+        self._research_provider = research if research is not None else (WikipediaResearch() if settings.auto_research else None)
         self._youtube_popular_fetcher = youtube_popular_fetcher
         self.bridge_alerts = BridgeAlerts()
         register("text", "opencode", lambda model: OpenCodeText(model, settings.bridge_token, settings.bridge_url))
@@ -524,7 +527,10 @@ class Studio:
         # F03.T02/T03: o repositório do run é a leitura do snapshot congelado (e a escrita da
         # criação). Ele é construído aqui porque o `RunRender` precisa da MESMA porta: job de run
         # existente lê o snapshot, nunca re-resolve canal/estilo.
-        run_repo = build_postgres_production_run_repository(connect, dag=COORDINATOR_DAG)
+        auto_research = (AutoResearch(self._research_provider, snaps, repo)
+                         if self._research_provider is not None else None)
+        pipeline_dag = COORDINATOR_DAG_WITH_RESEARCH if auto_research is not None else COORDINATOR_DAG
+        run_repo = build_postgres_production_run_repository(connect, dag=pipeline_dag)
         # W4.3: duração real por cena e WAV durável para pré-escuta. Opcionais no RunRender, mas
         # fiados aqui para que o render passe a gravar a medida e o áudio de cada cena.
         scene_durations = PostgresSceneDurationRepository(connect)
@@ -652,14 +658,14 @@ class Studio:
         coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
-                                        publish=publish)
+                                        publish=publish, research=auto_research)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
         # pode dispensar a pausa intermediária.
         # F01.T03: piso medido no ESCOPO DO CANAL (não no gasto global) e com o teto das settings
         # como limite superior. O guard hard recebe os dois escopos via `channel_guard_limits`.
         budget = ChannelBudgetFloor(usage_repo, repo, budget_repo,
                                     default_ceiling_usd=Decimal(str(s.max_cost_month))) if s.budget_guard else None
-        coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget,
+        coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget, pipeline=pipeline_dag,
                                             videos=repo, config_store=run_repo)
         worker = ProductionWorker(coordinator)
         # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma

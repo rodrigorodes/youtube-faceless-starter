@@ -47,7 +47,7 @@ NEW_VIDEO_JS = """
           : 'Voc\\u00ea cai no storyboard. As cenas nascem das fontes: adicione uma fonte e gere o roteiro. M\\u00eddia e voz s\\u00f3 s\\u00e3o geradas quando voc\\u00ea pedir.')
         : (comRoteiro
           ? 'A produ\\u00e7\\u00e3o come\\u00e7a assim que o v\\u00eddeo \\u00e9 criado. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.'
-          : 'O v\\u00eddeo abre em Fontes: o Studio ainda n\\u00e3o pesquisa sozinho. Ao adicionar uma fonte, a produ\\u00e7\\u00e3o come\\u00e7a sozinha. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.');
+          : 'O Studio pesquisa o tema na Wikip\\u00e9dia, escreve o roteiro s\\u00f3 com os fatos encontrados e produz at\\u00e9 a sua aprova\\u00e7\\u00e3o. Se n\\u00e3o achar fonte, avisa e voc\\u00ea adiciona uma. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.');
     }
     $('#campo-roteiro').hidden = !useScript.checked;
     $('#estrutura-roteiro').hidden = useScript.checked;
@@ -188,7 +188,8 @@ NEW_VIDEO_JS = """
         function falhou(prefixo, res) {
           flash = prefixo + ' ' + window.StudioErro.texto(res.data, 'tente novamente.', res.status);
         }
-        var etapa = Promise.resolve(false);  // sem fonte não há de onde escrever o roteiro: nada a iniciar
+        // Piloto sem roteiro colado: a produção pesquisa o tema sozinha (1ª etapa); Diretor sem fonte para no storyboard.
+        var etapa = Promise.resolve(!scriptText && payload.production_mode !== 'diretor');
         if (scriptText) {
           // O roteiro colado entra como fonte: é dele que o roteiro em cenas é escrito.
           if (fb) fb.textContent = 'Registrando o roteiro como fonte\u2026';
@@ -213,9 +214,7 @@ NEW_VIDEO_JS = """
         }).then(function () {
           if (flash) { try { sessionStorage.setItem('flash-' + videoId, flash); } catch (e) {} }
           if (fb) fb.textContent = 'V\u00eddeo criado. Abrindo\u2026';
-          // Piloto sem fonte: o passo seguinte é a fonte (a produção começa sozinha ao registrá-la).
-          var semFonte = !scriptText && payload.production_mode !== 'diretor';
-          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + (semFonte ? '/fontes' : '/cenas');
+          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
         });
       }).catch(function (err) {
         btnCriar.disabled = false;

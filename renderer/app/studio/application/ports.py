@@ -242,6 +242,23 @@ class FetchedPage:
 
 
 @dataclass(frozen=True)
+class ResearchDocument:
+    """Texto de uma fonte de referência achada pela pesquisa automática (com a URL de onde veio)."""
+
+    url: str
+    title: str
+    text: str
+
+
+class ResearchProvider(Protocol):
+    """Pesquisa um tema em uma fonte de referência fixa. Falha de rede levanta `SourceUnavailable`."""
+
+    name: str
+
+    def search(self, topic: str, language: str) -> list[ResearchDocument]: ...
+
+
+@dataclass(frozen=True)
 class SceneDraft:
     narration: str
     caption: str

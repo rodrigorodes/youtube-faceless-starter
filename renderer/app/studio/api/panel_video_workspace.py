@@ -287,16 +287,19 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
     wait_note = ""
     if autostart:
         wait_note = (
-            '<div class="note info" id="piloto-aguarda-fonte" role="status" style="margin-bottom:16px">'
-            '<b>Piloto automático aguardando a fonte.</b> O Studio ainda não pesquisa sozinho (a pesquisa '
-            'automática não existe), e o roteiro só é escrito a partir de fatos de uma fonte. '
-            'Adicione uma fonte e a produção começa sozinha: roteiro, voz, mídia e composição, '
-            'parando na sua aprovação.</div>')
+            f'<div class="note info" id="piloto-aguarda-fonte" role="status" style="margin-bottom:16px">'
+            '<b>Piloto automático pronto para pesquisar.</b> O Studio pesquisa o tema na Wikipédia, escreve o '
+            'roteiro só com os fatos desse texto e produz até a sua aprovação (roteiro, voz, mídia e composição). '
+            'Se não achar uma fonte com fatos verificáveis, avisa e você adiciona uma. Nada aqui é fact-checkado '
+            'por fora: a fonte registrada em Fontes é o que sustenta o roteiro.<div style="margin-top:10px">'
+            f'<button type="button" class="btn primary small" id="btn-piloto-pesquisar" data-video-id="{e(video_id)}">'
+            'Pesquisar e produzir</button> <span id="piloto-pesquisar-feedback" class="sample" role="status" '
+            'aria-live="polite"></span></div></div>')
     return (
         '<div id="video-fontes">'
         '<div class="between" style="margin-bottom:14px"><div><h2>Fontes e evidências</h2>'
         '<p class="sub">Referências que sustentam o roteiro deste vídeo.</p></div>'
-        '<button type="button" class="btn {"primary " if autostart else ""}small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
+        f'<button type="button" class="btn small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
         f"{wait_note}{note}{listing}{dialog}</div>"
     )
 
@@ -1557,6 +1560,31 @@ PAGE_JS = """
         retryBtn.disabled = false;
         retryBtn.classList.remove('carregando');
         if (window.StudioLoading) window.StudioLoading.done();
+      }
+    });
+  }
+
+  var btnPesquisar = document.getElementById('btn-piloto-pesquisar');
+  if (btnPesquisar) {
+    btnPesquisar.addEventListener('click', async function () {
+      var videoId = btnPesquisar.getAttribute('data-video-id') || '';
+      var fb = document.getElementById('piloto-pesquisar-feedback');
+      btnPesquisar.disabled = true; btnPesquisar.classList.add('carregando');
+      if (fb) fb.textContent = 'Iniciando a produção...';
+      var chave = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+      try {
+        var run = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/production-runs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': chave }, body: '{}' });
+        var data = await run.json().catch(function () { return {}; });
+        if (!run.ok) {
+          if (fb) fb.textContent = 'A produção não pôde iniciar: ' + window.StudioErro.texto(data, 'tente novamente.', run.status);
+          btnPesquisar.disabled = false; btnPesquisar.classList.remove('carregando');
+          return;
+        }
+        location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+      } catch (e) {
+        if (fb) fb.textContent = 'Falha de rede ao iniciar a produção. Tente novamente.';
+        btnPesquisar.disabled = false; btnPesquisar.classList.remove('carregando');
       }
     });
   }

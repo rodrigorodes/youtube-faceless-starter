@@ -66,7 +66,7 @@ def test_pasted_script_asks_for_a_real_http_reference_instead_of_the_rejected_lo
     assert "local://roteiro-inicial" not in NEW_VIDEO_JS
     assert "post('/sources', { url: scriptUrl" in NEW_VIDEO_JS
     assert "linkHttp(scriptUrl)" in NEW_VIDEO_JS  # valida antes de criar, com erro visível
-    assert "Promise.resolve(false)" in NEW_VIDEO_JS  # sem fonte: não inicia produção nem gera roteiro
+    assert "var etapa = Promise.resolve(" in NEW_VIDEO_JS  # só o Piloto sem roteiro segue sem fonte (pesquisa automática)
 
 
 def test_new_video_page_has_the_reference_link_field_and_explains_where_it_shows_up():
@@ -140,11 +140,14 @@ def _piloto(*, sources=(), run=None):
     return dataclasses.replace(view, video=dataclasses.replace(view.video, production_mode="piloto"))
 
 
-def test_pilot_without_sources_explains_it_waits_for_a_source_and_arms_autostart():
+def test_pilot_without_sources_offers_to_research_and_arms_autostart_for_a_manual_source():
     html = _render("fontes", view=_piloto())
     content = _content(html)
     assert 'id="piloto-aguarda-fonte"' in content
-    assert "começa sozinha" in _texto(content)
+    assert "ainda não pesquisa" not in _texto(content)  # a pesquisa automática existe
+    assert re.search(r'<button[^>]*id="btn-piloto-pesquisar"[^>]*data-video-id="', content)
+    assert "Wikipédia" in _texto(content)
+    assert 'class="btn small" id="btn-abrir-fonte"' in content  # sem `{...}` literal na classe
     assert re.search(r'<form[^>]*id="video-sources-form"[^>]*data-autostart="1"', content)
 
 
@@ -159,5 +162,6 @@ def test_source_form_script_starts_the_production_when_autostart_is_armed():
     assert "data-autostart" in html and "/production-runs" in html and "Idempotency-Key" in html
 
 
-def test_new_video_pilot_without_script_opens_sources_not_an_empty_storyboard():
-    assert "'/fontes'" in NEW_VIDEO_JS or '"/fontes"' in NEW_VIDEO_JS
+def test_new_video_pilot_without_script_starts_the_production_without_asking_for_a_source():
+    assert "'/fontes'" not in NEW_VIDEO_JS and "ainda n\\u00e3o pesquisa" not in NEW_VIDEO_JS
+    assert "Promise.resolve(!scriptText && payload.production_mode !== 'diretor')" in NEW_VIDEO_JS
