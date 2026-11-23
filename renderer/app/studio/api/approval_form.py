@@ -62,7 +62,7 @@ APPROVAL_JS = """
 """
 
 
-def render_decision_summary(p: Preview) -> str:
+def render_decision_summary(p: Preview, *, bare: bool = False) -> str:
     """Resumo da decisão já registrada (ou a ausência explícita de revisão)."""
     who = ""
     if p.approval:
@@ -76,10 +76,12 @@ def render_decision_summary(p: Preview) -> str:
         who += (f"<p>Publicação: <span class=\"selo\">{e(p.publication.status.value)}</span>{link}"
                 f"{(' — ' + e(p.publication.error)) if p.publication.error else ''}</p>")
     fallback = '<p class="muted">Este vídeo não está em revisão.</p>'
+    if bare:  # dentro do cartão "Dados de publicação" do workspace: sem moldura própria
+        return f"<div class='card flat' style='margin-top: 14px;'><h3>Decisão</h3>{who or fallback}</div>"
     return f"<div class='card painel' style='margin-top: 18px;'><h3>Decisão</h3>{who or fallback}</div>"
 
 
-def render_approval_decision(p: Preview, *, base: str | None = None) -> str:
+def render_approval_decision(p: Preview, *, base: str | None = None, bare: bool = False) -> str:
     """Formulário de aprovação quando o vídeo está em revisão; senão, o resumo da decisão.
 
     O formulário é idêntico ao da prévia. `base` é o prefixo das rotas de aprovação/rejeição
@@ -88,14 +90,16 @@ def render_approval_decision(p: Preview, *, base: str | None = None) -> str:
     v = p.video
     base = base or f"/studio/videos/{v.id}"
     if v.status not in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED):
-        return render_decision_summary(p)
+        return render_decision_summary(p, bare=bare)
 
     qa_failed = p.qa is not None and not p.qa.is_publishable
     override = ""
     if qa_failed:
         override = ('<div class="campo"><label for="override_reason">O QA reprovou. Para aprovar mesmo assim, explique o motivo '
                     '<span class="micro">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea></div>')
-    return (f"<div class='card painel' style='margin-top: 18px;'><h3>Decisão de Aprovação</h3><form id=\"review\" data-base=\"{e(base)}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
+    frame_open = "" if bare else "<div class='card painel' style='margin-top: 18px;'><h3>Decisão de Aprovação</h3>"
+    frame_close = "" if bare else "</div>"
+    return (f"{frame_open}<form id=\"review\" data-base=\"{e(base)}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
             f'<div class="campo"><label for="title">Título <span class="micro">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
             f'<input id="title" class="campo" maxlength="100" value="{e(p.default_title)}"></div>'
             f'<div class="campo"><label for="description">Descrição <span class="micro">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'
@@ -106,4 +110,4 @@ def render_approval_decision(p: Preview, *, base: str | None = None) -> str:
             f'{override}<div class="acoes" style="margin-top: 14px;"><button type="button" id="approve" class="btn btn-primario btn-primary">Aprovar Vídeo</button></div>'
             f'<div class="campo" style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px;"><label for="reject_reason">Motivo da rejeição <span class="micro">(opcional)</span></label><textarea id="reject_reason" class="campo" rows="2" maxlength="500" placeholder="Informe o motivo caso rejeite"></textarea></div>'
             f'<div class="acoes" style="margin-top: 10px;"><button type="button" id="reject" class="btn btn-perigo btn-danger">Rejeitar</button></div><output id="result" role="status" aria-live="polite" class="feedback"></output></form>'
-            f'</div>')
+            f'{frame_close}')

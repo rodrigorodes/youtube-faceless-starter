@@ -30,6 +30,17 @@ NEW_VIDEO_JS = """
     var format = $('input[name="formato-novo"]:checked');
     $('#resumo-modo').textContent = mode && mode.value === 'diretor' ? 'Modo Diretor' : 'Piloto automático';
     $('#resumo-formato').textContent = format && format.value === 'long' ? 'Vídeo 16:9' : 'Short 9:16';
+    var diretor = mode && mode.value === 'diretor';
+    var rotulo = $('#btn-criar-abrir');
+    if (rotulo && !rotulo.classList.contains('carregando')) {
+      rotulo.textContent = diretor ? '\\uD83C\\uDFAC Criar e abrir storyboard \\u2192' : '\\u26A1 Criar e abrir v\\u00eddeo \\u2192';
+    }
+    var dica = $('#resumo-dica');
+    if (dica) {
+      dica.textContent = diretor
+        ? 'Voc\\u00ea cai no storyboard para editar as cenas. Nada \\u00e9 gerado em m\\u00eddia e voz at\\u00e9 voc\\u00ea pedir.'
+        : 'Cria o rascunho e abre o v\\u00eddeo; a produ\\u00e7\\u00e3o s\\u00f3 come\\u00e7a quando voc\\u00ea pedir. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.';
+    }
     $('#campo-roteiro').hidden = !useScript.checked;
     $('#estrutura-roteiro').hidden = useScript.checked;
   }
@@ -194,8 +205,20 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
         disabled = " disabled"
 
     style_options = _style_options(view, disabled)
-    idioma = e(_language_label(view.channel_language)) if view.has_profile else "nenhum idioma definido (canal sem perfil)"
-    nota_canal = ("O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo."
+    providers_rows = "".join(
+        '<div class="between sub" style="padding:2px 0">'
+        f'<span>{e(stage.label)}</span>'
+        + ('<span style="color:var(--ok)">✓ Disponível</span>' if stage.available
+           else f'<span style="color:var(--bad)">✕ {e(stage.reason or "Indisponível")}</span>')
+        + "</div>"
+        for stage in view.pipeline) or '<p class="sample">Disponibilidade não informada.</p>'
+    missing = [stage for stage in view.pipeline if not stage.available]
+    providers_note = (
+        f'<div class="note" style="margin:8px 0">{e(missing[0].reason or missing[0].label + " indisponível")} '
+        '<a class="btn small" href="/studio/panel/conexoes">Resolver em Configurações</a></div>'
+        if missing else "")
+    providers_summary = "✓ Pronto para produzir" if not missing else "Configuração precisa de atenção"
+    nota_canal = ("O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo; para mudar o padrão, use Biblioteca ou Configurações."
                   if view.has_profile else "Canal sem perfil: valem os padrões do estúdio para voz e estilo.")
     voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
     estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
@@ -312,37 +335,26 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
             </div>
 
             <aside class="stack" style="position:sticky;top:80px">
-              <aside class="painel" aria-labelledby="t-preset">
+              <div class="card" id="resumo-card" role="group" aria-labelledby="t-preset">
                 <h3 id="t-preset">Resumo</h3>
                 <p class="sub" style="margin:4px 0 12px">{e(current_channel_name)}</p>
-                <div class="between sub"><span>Modo</span><b id="resumo-modo"></b></div>
-                <div class="between sub"><span>Formato</span><b id="resumo-formato"></b></div>
-                <div class="between sub"><span>Idioma</span><b>{idioma}</b></div>
-                <div class="between sub"><span>Voz</span><b>{voz}</b></div>
-                <div class="between sub"><span>Estilo</span><b>{estilo}</b></div>
-                <div class="between sub"><span>Estimativa de custo</span><b>Não disponível</b></div>
+                <div class="between sub"><span>Modo</span><b id="resumo-modo" style="color:var(--text)"></b></div>
+                <div class="between sub"><span>Formato</span><b id="resumo-formato" style="color:var(--text)"></b></div>
+                <div class="between sub"><span>Voz</span><b style="color:var(--text)">{voz}</b></div>
+                <div class="between sub"><span>Estilo</span><b style="color:var(--text)">{estilo}</b></div>
+                <div class="between sub"><span>Estimativa de custo</span><b style="color:var(--text)">Não disponível</b></div>
                 <div class="hr"></div>
-                <details class="diag"><summary>Disponibilidade de produção</summary>
-                  {''.join(f'<p class="sample">{e(stage.label)} · {e("Disponível" if stage.available else (stage.reason or "Indisponível"))}</p>' for stage in view.pipeline) or '<p class="sample">Disponibilidade não informada.</p>'}
-                  <a href="/studio/panel/conexoes">Configurar providers</a>
+                <details class="diag" data-keep="providers-summary" id="providers-resumo">
+                  <summary>{providers_summary}</summary>
+                  <p class="lbl" style="margin-bottom:6px">Providers do canal</p>
+                  {providers_rows}
+                  {providers_note}
+                  <div class="hr"></div>
                 </details>
-                <p class="sample" style="margin-bottom:10px">Criar o rascunho prepara as cenas e fontes sem iniciar cobrança.</p>
+                <p class="sample" id="resumo-dica" style="margin-bottom:10px">Criar o rascunho prepara as cenas e fontes sem iniciar cobrança.</p>
                 <button class="btn primary long" type="submit" id="btn-criar-abrir"{disabled}>Criar e abrir vídeo →</button>
                 <p class="feedback" id="feedback-criar" role="status" style="margin-top:8px"></p>
-              </aside>
-
-              <details class="diag" aria-labelledby="t-caminho">
-                <summary id="t-caminho">Seu caminho até publicar</summary>
-                <p class="sub" style="font-size:13px;line-height:1.6;margin:0 0 10px">
-                  1. Adicione fontes e revise o roteiro.<br>
-                  2. Gere narração e monte as cenas.<br>
-                  3. Ajuste composição e confira a qualidade.<br>
-                  4. Aprove a versão e prepare a publicação.
-                </p>
-                <p class="sample" style="margin:0">
-                  Etapas reunidas dentro do vídeo. Você pode voltar para ajustar qualquer parte.
-                </p>
-              </details>
+              </div>
 
               <div class="note info">{nota_canal}</div>
             </aside>

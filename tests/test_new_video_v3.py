@@ -206,16 +206,23 @@ def test_new_video_payload_carries_the_chosen_style():
     assert "estilo-novo" in html
 
 
+def _resumo(html: str) -> str:
+    return re.search(r'<div class="card" id="resumo-card"[^>]*>(.*?)</div>\s*<div class="note info"', html, re.S).group(1)
+
+
 def test_channel_preset_shows_what_the_channel_really_defines():
-    """F02.T04: idioma/voz saem do perfil do canal; nada de "Português (BR)" fixo."""
+    """F02.T04: a voz sai do perfil do canal; nada de "Português (BR)" fixo.
+
+    O Resumo do protótipo (`pgNew`) não tem linha de idioma: Modo, Formato, Voz, Estilo e custo.
+    """
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(has_profile=True, channel_language="en-US",
                                         channel_voice="piper:pt_BR-faber-medium"))
-    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
-    assert "Inglês (EUA)" in aside
+    aside = _resumo(html)
     assert "piper:pt_BR-faber-medium" in aside
     assert "Português (BR)" not in aside
+    assert "Idioma" not in aside
     # as linhas fictícias (legendas/música) saíram
     assert "Legendas" not in aside and "Música" not in aside
 
@@ -224,8 +231,8 @@ def test_channel_preset_without_a_profile_says_so_instead_of_inventing():
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(has_profile=False))
-    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
-    assert "canal sem perfil" in aside
+    assert "Canal sem perfil" in html
+    aside = _resumo(html)
     assert "padrão do estúdio" in aside
     assert "Português (BR)" not in aside
 
@@ -244,15 +251,22 @@ def test_new_video_has_prototype_usability_fields():
     assert "Criar e abrir vídeo" in html
 
 
-def test_new_video_has_educational_path_to_publish_card():
+def test_new_video_summary_follows_the_prototype_structure():
+    """`pgNew`: Resumo (Modo/Formato/Voz/Estilo/custo), "Providers do canal" e a nota do canal.
+
+    O cartão "Seu caminho até publicar" não existe no protótipo e saiu.
+    """
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view())
-    assert "Seu caminho até publicar" in html
-    assert "Adicione fontes e revise o roteiro" in html
-    assert "Gere narração e monte as cenas" in html
-    assert "Ajuste composição e confira a qualidade" in html
-    assert "Aprove a versão e prepare a publicação" in html
+    assert "Seu caminho até publicar" not in html
+    resumo = _resumo(html)
+    for label in ("Modo", "Formato", "Voz", "Estilo", "Estimativa de custo", "Providers do canal"):
+        assert label in resumo, label
+    # com perfil de canal, a nota do protótipo; sem perfil, a nota diz que valem os padrões do estúdio
+    com_perfil, _ = render_new_video_v3(_view(has_profile=True, channel_voice="piper:pt_BR-faber-medium"))
+    assert "Mudar aqui vale só para este vídeo; para mudar o padrão, use Biblioteca ou Configurações." in com_perfil
+    assert "Canal sem perfil: valem os padrões do estúdio" in html
 
 
 def test_new_video_inherits_channel_mode_and_format_defaults():

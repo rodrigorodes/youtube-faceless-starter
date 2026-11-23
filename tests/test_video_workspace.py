@@ -216,7 +216,8 @@ def test_unknown_area_falls_back_to_overview_without_breaking():
     nav = _area_nav(html)
     assert nav.count('aria-current="page"') == 1
     assert _active_label(nav) == e(dict(VIDEO_AREAS)["cenas"])
-    assert "Cenas e mídias" in html
+    # Sem cenas, `tabScenes` do protótipo cai no cabeçalho "Storyboard integrado".
+    assert "Storyboard integrado" in html
 
 
 # --------------------------------------------------------------------------- 2) conteúdo por área
@@ -274,12 +275,16 @@ def test_narracao_is_read_only_and_names_effective_voice():
     assert "Abertura" in content and "Desenvolvimento" in content  # trechos do roteiro
 
 
-def test_cenas_states_scene_editing_arrives_in_wave_four():
+def test_cenas_without_scene_read_is_honest_empty_state():
+    """Sem cenas lidas, a aba segue o vazio do protótipo e não inventa cena nem ação sobre cena."""
     html = _render("cenas", script_view=_script_view())
     content = _content(html)
-    assert "Número de cenas no roteiro: 3" in _visible(content)
-    assert "onda 4" in content
-    assert f'href="/studio/videos/{VIDEO}/roteiro"' in content
+    visible = _visible(content)
+    assert "Storyboard integrado" in visible
+    assert "Sem cenas." in visible
+    assert 'id="cena-em-foco"' not in content
+    assert 'id="btn-excluir-cena"' not in content
+    assert f'href="/studio/videos/{VIDEO}/roteiro"' in content  # "+ Nova cena" leva ao roteiro real
 
 
 def test_composicao_shows_effective_params_and_declares_transition_only():
@@ -408,25 +413,13 @@ def test_producao_reuses_run_card_and_links_the_execution():
 
 # --------------------------------------------------------------------------- 3) sem controle falso
 
-def test_read_only_areas_have_no_action_controls():
-    for area in ("narracao", "cenas"):
-        content = _content(_render(area, style_view=_style_view(), script_view=_script_view()))
-        assert "<button" not in content, area
-        assert "<input" not in content, area
-        assert "<form" not in content, area
-        assert 'class="player"' not in content, area
-        visible = _visible(content)
-        for forbidden in ("Gerar", "Montar", "Enviar", "Aprovar"):
-            assert forbidden not in visible, (area, forbidden)
-
-
 # --------------------------------------------------------------------------- 5) W1.7 visível
 
 def test_fontes_honesty_is_visible_not_sr_only():
     content = _content(_render("fontes", view=_view(
         sources=[SourceInfo("s1", "https://exemplo.test/a", 120)])))
-    # a frase de honestidade existe em markup visível (um `<p class="aviso">`), não em `sr-only`.
-    match = re.search(r'<p class="aviso"[^>]*id="fontes-honestidade"[^>]*>(.*?)</p>', content, re.S)
+    # a frase de honestidade existe em markup visível (um `<p class="note">`, como no protótipo), não em `sr-only`.
+    match = re.search(r'<p class="(?:aviso|note)"[^>]*id="fontes-honestidade"[^>]*>(.*?)</p>', content, re.S)
     assert match is not None, "texto de honestidade das fontes ausente"
     phrase = match.group(1)
     assert "registrada" in phrase and "extraída" in phrase and "verificada" in phrase

@@ -106,7 +106,7 @@ def test_render_video_workspace_renders_diagnostico_link_in_header():
     assert f'href="{diag_href}"' in html
     assert "Ver progresso / Diagnóstico" in html
 
-    # O link de diagnóstico está no cabeçalho .cab-video e usa estilo Studio btn btn-ghost btn-sm
+    # O link de diagnóstico está no `.head` e usa o estilo do protótipo: `btn ghost small`
     match = re.search(
         r'<a[^>]*href="' + re.escape(diag_href) + r'"[^>]*>([^<]+)</a>',
         html,
@@ -115,5 +115,5 @@ def test_render_video_workspace_renders_diagnostico_link_in_header():
     assert "Ver progresso / Diagnóstico" in match.group(1)
     tag = match.group(0)
     assert "btn" in tag
-    assert "btn-ghost" in tag
-    assert "btn-sm" in tag
+    assert "ghost" in tag
+    assert "small" in tag

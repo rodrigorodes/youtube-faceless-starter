@@ -530,6 +530,15 @@ dialog::backdrop { background: rgba(5, 5, 8, 0.72); backdrop-filter: blur(4px); 
 .sr, .sr-only { position: absolute; left: -9999px; }
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
 .sample { font-size: 11.5px; color: var(--muted); }
+.prog.run b { animation: fill var(--d, 4s) linear forwards; }
+@keyframes fill { to { width: 100%; } }
+.step { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.step:last-child { border: 0; }
+.ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; flex: none; background: var(--panel3); border: 1px solid var(--line); color: var(--muted); }
+.ic.ok { background: var(--okbg); border-color: var(--okbg); color: #fff; }
+.ic.run { border-color: var(--accent); color: var(--accent2); animation: pulse 1s infinite; }
+.ic.fail { background: #6b1d1d; border-color: #6b1d1d; color: #fff; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(143, 110, 247, 0.25); } }
 details.diag { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 details.diag summary { cursor: pointer; font-weight: 650; color: var(--muted); }
 

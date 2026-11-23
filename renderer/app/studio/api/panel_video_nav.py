@@ -41,13 +41,18 @@ def normalize_area(area: str | None) -> str:
     return area if area in AREA_IDS else DEFAULT_AREA
 
 
-def video_area_nav(video_id: str, active: str) -> str:
-    """Navegação por área: links de servidor, um único `aria-current="page"` na ativa."""
+def video_area_nav(video_id: str, active: str, dots: dict[str, str] | None = None) -> str:
+    """Navegação por área: links de servidor, um único `aria-current="page"` na ativa.
+
+    `dots` mapeia área → título do ponto de atenção (`<span class="dot">`), como no protótipo:
+    ponto em Qualidade quando aguarda aprovação.
+    """
     items = []
     for area_id, label in VIDEO_AREAS:
         current = ' aria-current="page"' if area_id == active else ""
         cls = "tab ativa aba" if area_id == active else "tab aba"
+        dot = f'<span class="dot" title="{e(dots[area_id])}"></span>' if dots and area_id in dots else ""
         items.append(
-            f'<a class="{cls}" href="{area_href(video_id, area_id)}"{current}>{e(label)}</a>'
+            f'<a class="{cls}" href="{area_href(video_id, area_id)}"{current}>{e(label)}{dot}</a>'
         )
     return f'<nav class="abas-video" aria-label="Áreas do vídeo">{"".join(items)}</nav>'

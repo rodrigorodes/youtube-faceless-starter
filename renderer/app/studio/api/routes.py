@@ -1919,6 +1919,9 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                                           preview=preview,
                                           scenes=scenes,
                                           script=script,
+                                          projects=_topbar(uc, detail.video.project_id)[0],
+                                          project_id=detail.video.project_id,
+                                          channel_voice=_channel_voice(uc, detail.video.project_id),
                                           channel_name=_channel_name(uc, detail.video.project_id))
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
@@ -2480,6 +2483,13 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if pid == project_id:
                 return name
         return ""
+
+    def _channel_voice(uc, project_id: str | None) -> str | None:
+        """Voz do perfil do canal dono do vídeo (leitura); sem perfil, None — nunca inventa."""
+        if not project_id or getattr(uc, "get_channel_profile", None) is None:
+            return None
+        profile = uc.get_channel_profile.execute(project_id)
+        return getattr(profile, "voice", None) or None
 
     def _video_channel_name(uc, video_id: str) -> str:
         """Canal dono do vídeo a partir do próprio vídeo (sem depender da página já ter o projeto)."""

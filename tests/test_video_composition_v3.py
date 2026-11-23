@@ -96,20 +96,20 @@ def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
     assert 'name="comp-posicao" value="bottom"' in html
     assert 'id="composicao-caption-font"' in html
     assert 'name="comp-fonte"' in html
-    assert 'name="comp-estilo" value="box"' in html
-    assert 'name="comp-estilo" value="simple"' in html
-    assert 'name="comp-transicao" value="fade"' in html
-    assert 'name="comp-transicao" value="none"' in html
+    # Como no protótipo, estilo da legenda e transição são <select>; a posição é um grupo `.seg`.
+    for select_name, values in (("comp-estilo", ("box", "simple")), ("comp-transicao", ("fade", "none"))):
+        select = re.search(r'<select[^>]*name="' + select_name + r'"[^>]*>(.*?)</select>', html, re.S)
+        assert select is not None, select_name
+        assert "disabled" not in re.search(r'<select[^>]*>', select.group(0)).group(0)
+        for value in values:
+            option = re.search(r'<option value="' + value + r'"[^>]*>', select.group(1))
+            assert option is not None and "disabled" not in option.group(0), (select_name, value)
 
-    # Nenhum dos acima deve conter disabled em sua tag de input / select
+    # Nenhum dos acima deve conter disabled em sua tag de input
     for enabled_input in [
         'name="comp-posicao" value="top"',
         'name="comp-posicao" value="middle"',
         'name="comp-posicao" value="bottom"',
-        'name="comp-estilo" value="box"',
-        'name="comp-estilo" value="simple"',
-        'name="comp-transicao" value="fade"',
-        'name="comp-transicao" value="none"',
     ]:
         match = re.search(r'<input[^>]*' + re.escape(enabled_input) + r'[^>]*>', html)
         assert match is not None, f"Input tag for {enabled_input} not found"
@@ -123,14 +123,16 @@ def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
         assert f'value="{font_opt}"' in html
 
     # Controles ainda sem suporte permanecem disabled com badge
-    deslizar_match = re.search(r'<input[^>]*value="deslizar"[^>]*>', html)
+    deslizar_match = re.search(r'<option[^>]*value="deslizar"[^>]*>', html)
     assert deslizar_match is not None
     assert "disabled" in deslizar_match.group(0)
 
-    for fps_val in ("24", "30", "60"):
-        fps_match = re.search(r'<input[^>]*value="' + fps_val + r'"[^>]*>', html)
+    # Resolução e FPS são fixos no motor: os selects do protótipo existem, desabilitados.
+    for select_id in ("comp-res", "comp-fps"):
+        fps_match = re.search(r'<select[^>]*id="' + select_id + r'"[^>]*>', html)
         assert fps_match is not None
         assert "disabled" in fps_match.group(0)
+    assert "25 fps (vigente)" in html
 
     assert '<span class="pill pill-espera">Em breve</span>' in html
 
@@ -162,7 +164,7 @@ def test_v3_composition_tab_renders_active_controls():
     assert 'value="96"' in html
 
     # Paleta de cores
-    assert "Paleta de cores" in html
+    assert "Cores da legenda" in html
     assert "texto da legenda" in html.lower() or "caption_text" in html
     assert "caixa da legenda" in html.lower() or "caption_box" in html
     assert "destaque" in html.lower() or "accent" in html
@@ -192,21 +194,22 @@ def test_v3_composition_tab_labels_unsupported_controls_honestly():
     # Controles ainda sem suporte permanecem desabilitados e rotulados como 'Em breve'
     # 1. Transição 'deslizar'
     assert 'value="deslizar"' in html
-    deslizar_match = re.search(r'<input[^>]*value="deslizar"[^>]*>', html)
+    deslizar_match = re.search(r'<option[^>]*value="deslizar"[^>]*>', html)
     assert deslizar_match is not None
     assert "disabled" in deslizar_match.group(0)
 
     # 2. Destaque por palavra
-    destaque_match = re.search(r'<input[^>]*value="destaque"[^>]*>', html)
-    if destaque_match is not None:
-        assert "disabled" in destaque_match.group(0)
+    destaque_match = re.search(r'<option[^>]*value="destaque"[^>]*>', html)
+    assert destaque_match is not None
+    assert "disabled" in destaque_match.group(0)
 
-    # 3. Taxa de quadros / FPS: 25 fps vigente, 24/30/60 marcadas como 'Em breve', disabled
-    assert "Taxa de quadros" in html or "FPS" in html
-    for fps in ("24", "30", "60"):
-        fps_match = re.search(r'<input[^>]*value="' + fps + r'"[^>]*>', html)
+    # 3. Resolução / quadros por segundo: fixos no motor (25 fps vigente), selects desabilitados
+    assert "Quadros/s" in html
+    for select_id in ("comp-res", "comp-fps"):
+        fps_match = re.search(r'<select[^>]*id="' + select_id + r'"[^>]*>', html)
         assert fps_match is not None
         assert "disabled" in fps_match.group(0)
+    assert "25 fps (vigente)" in html
 
     # Badge visual padrão pill
     assert '<span class="pill pill-espera">Em breve</span>' in html

@@ -120,7 +120,9 @@ def test_v3_qa_tab_review_card_displays_readiness_and_actionable_issues():
     )
     html_issues = render_video_workspace(view_issues, active_area="qualidade")
     assert "Loudness excede -14 LUFS" in html_issues
-    assert "Pendências" in html_issues or "Atenção" in html_issues or "bloqueante" in html_issues
+    # `tabQA` do protótipo: aside com "N bloqueio(s) · M aviso(s)" e o achado como linha do cartão
+    assert "Pontos para revisar" in html_issues
+    assert "1 bloqueio(s) · 0 aviso(s)" in html_issues
 
 
 def test_v3_qa_tab_approval_button_and_redirection_contract():
@@ -141,4 +143,7 @@ def test_v3_qa_tab_explicit_disclaimer():
     html = render_video_workspace(video, active_area="qualidade")
 
     assert "QA técnico não verifica fatos do roteiro" in html or "QA técnico não verifica fatos" in html
-    assert "Verificações ilustrativas/técnicas" in html or "Verificações ilustrativas" in html
+    # O texto do protótipo diz "ilustrativas" porque lá o QA é simulado; aqui o QA é real, então
+    # o aviso diz "técnicas" e mantém a ressalva sobre veracidade factual.
+    assert "Avaliação semântica não verificada" in html
+    assert "veracidade factual" in html

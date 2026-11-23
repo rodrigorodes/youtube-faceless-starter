@@ -28,6 +28,7 @@ from ..domain.panel import Stage, classify
 from . import approval_form
 from . import panel as legacy
 from . import shell_v3
+from .panel_videos import _ESTADO
 
 # Ordem e rótulos do protótipo (`VIDEO_TABS`). A fonte única é `panel_video_nav` (a página legada
 # do vídeo também usa a nav, sem import circular). Os nomes seguem reexportados daqui.
@@ -178,14 +179,13 @@ def _area_visao_geral(view, *, style_view=None, script_view=None, video_id: str,
         "</div>"
     )
 
-    stage_label = legacy.STAGE_LABELS.get(view.stage, view.stage.value)
     run_line = ""
     if view.latest_run is not None:
         run_state = legacy._RUN_STATE_LABELS.get(view.latest_run.state, view.latest_run.state)
         run_line = f'<p class="micro">Execução mais recente: {e(run_state)}.</p>'
     production_card = (
         '<div class="card"><h3>Produção</h3>'
-        f"<p>{e(stage_label)}</p>{run_line}"
+        f"<p>{e(legacy.STAGE_LABELS.get(view.stage, view.stage.value))}</p>{run_line}"
         f'<p><a class="btn" href="{area_href(video_id, "producao")}">Ver etapas e controles</a></p>'
         "</div>"
     )
@@ -205,20 +205,74 @@ def _area_visao_geral(view, *, style_view=None, script_view=None, video_id: str,
 
 
 def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
-    # W1.7: a honestidade é texto **visível** (não `sr-only`) e vem antes do cartão reutilizado,
-    # para o operador não confundir "registrado" com "extraído" nem com "verificado".
-    honesty = (
-        '<p class="aviso" id="fontes-honestidade">'
-        "<strong>URL registrada não é fonte extraída nem verificada.</strong> "
-        "A URL sozinha é só uma referência; o texto só passa a valer quando você cola o conteúdo, "
-        "e nada aqui é fact-checkado automaticamente."
-        "</p>"
+    """`tabSources` do protótipo: título, nota de atenção, cartões `.card.flat` e "+ Adicionar fonte".
+
+    A honestidade é texto **visível** e vem antes da lista, para o operador não confundir
+    "registrado" com "extraído" nem com "verificado". O formulário real (mesmos ids e endpoint
+    `/sources`) abre num diálogo, como o modal `addsrc` do protótipo.
+    """
+    sources = list(getattr(view, "sources", None) or [])
+    note = (
+        '<p class="note" id="fontes-honestidade" style="margin-bottom:16px"><b>Atenção:</b> '
+        "uma URL registrada é apenas uma referência — não é fonte extraída nem verificada. "
+        "O Studio não verifica nem extrai o conteúdo automaticamente; só o texto colado entra no roteiro, "
+        "e nada aqui é fact-checkado.</p>"
     )
-    roteiro_link = (
-        f'<p><a class="btn" href="/studio/videos/{e(video_id)}/roteiro">'
-        "Abrir roteiro e estrutura</a></p>"
+    if sources:
+        cards = "".join(
+            '<div class="card flat between"><div>'
+            f'<b>{e(src.url)}</b><p class="sample">{e(src.url)} · {src.chars} caractere{"" if src.chars == 1 else "s"}</p></div>'
+            '<div class="row"><span class="pill warn">Registrada, não verificada</span></div></div>'
+            for src in sources)
+        listing = f'<div class="stack" style="gap:10px" aria-label="Fontes registradas">{cards}</div>'
+    else:
+        listing = ('<div class="card"><p class="sub">Nenhuma fonte ainda. Adicione uma URL de referência '
+                   "ou cole um texto de apoio.</p></div>")
+    base_url = getattr(view, "base_video_url", None)
+    base_html = ""
+    url_value = ""
+    if base_url:
+        url_value = f' value="{e(base_url)}"'
+        origin = f" · {e(view.base_video_source_name)}" if getattr(view, "base_video_source_name", None) else ""
+        base_html = (f'<p class="sample" style="margin-bottom:10px">vídeo base: <a href="{e(base_url)}" '
+                     f'target="_blank" rel="noopener noreferrer">{e(base_url)}</a>{origin}</p>')
+    dialog = f"""<dialog id="dlg-fonte" class="modal" aria-labelledby="t-dlg-fonte">
+      <div class="modal-header"><h2 id="t-dlg-fonte">Adicionar fonte</h2>
+        <button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>
+      <div class="dialogo-corpo">
+        <p class="sub" style="margin-bottom:12px">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
+        {base_html}
+        <form id="video-sources-form" data-video-id="{e(video_id)}" novalidate>
+          <div class="field">
+            <label for="source-url">URL da fonte <span aria-hidden="true">*</span></label>
+            <input type="url" id="source-url" name="url" required data-error="source-url-error"
+                   placeholder="https://youtube.com/watch?v=..." aria-describedby="source-rule"{url_value}>
+            <p class="sample" id="source-rule">Com texto: o texto colado é a fonte e a URL é só referência.
+              Sem texto: o servidor busca a URL, que precisa estar na lista permitida (STUDIO_SOURCE_ALLOWLIST);
+              se a busca for recusada, a mensagem do servidor aparece aqui.</p>
+            <p class="campo-erro error-msg" id="source-url-error"><span role="img" aria-label="Erro">&#9888;</span> Informe a URL da fonte.</p>
+          </div>
+          <div class="field">
+            <label for="source-text">Texto da fonte <span class="sample">(opcional)</span></label>
+            <textarea id="source-text" name="text" rows="4" placeholder="Cole o conteúdo da página quando o site bloquear a leitura"></textarea>
+          </div>
+          <div class="modal-footer">
+            <div id="video-sources-feedback" class="feedback form-feedback" role="status" aria-live="polite" style="margin-right:auto"></div>
+            <button class="btn ghost small" type="button" data-fechar-dialogo>Fechar</button>
+            <button class="btn primary small" type="submit" id="btn-add-source">Adicionar fonte</button>
+          </div>
+        </form>
+      </div>
+    </dialog>"""
+    roteiro_link = (f'<p style="margin-top:14px"><a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">'
+                    "Abrir roteiro e estrutura</a></p>")
+    return (
+        '<div id="video-fontes">'
+        '<div class="between" style="margin-bottom:14px"><div><h2>Fontes e evidências</h2>'
+        '<p class="sub">Referências que sustentam o roteiro deste vídeo.</p></div>'
+        '<button type="button" class="btn small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
+        f"{note}{listing}{roteiro_link}{dialog}</div>"
     )
-    return honesty + legacy._video_sources_card(view) + roteiro_link
 
 
 def _area_narracao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
@@ -274,25 +328,35 @@ class WorkspaceResult(tuple):
         return self[0]
 
 
-def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
-                scenes=None, script=None) -> str:
-    if scenes is None and script is None:
-        count_text = "não disponível"
-        if script_view is not None and script_view.has_script:
-            count_text = str(script_view.scene_count)
-        return (
-            '<div class="card"><h3>Cenas e mídias</h3>'
-            f'<p class="muted">Número de cenas no roteiro: {e(count_text)}.</p>'
-            '<p class="vazio">A leitura de cenas por mídia (texto, legenda e asset de cada cena) '
-            "ainda não está disponível nesta tela.</p>"
-            '<p class="micro">A edição por cena — trocar a mídia, ajustar a legenda — entra na onda 4. '
-            "Até lá, o roteiro é a fonte de verdade.</p>"
-            f'<p><a class="btn" href="/studio/videos/{e(video_id)}/roteiro">'
-            "Abrir roteiro e estrutura</a></p>"
-            "</div>"
-        )
+_AUDIO_BADGE = {
+    "ok": ("ok", "✓ Áudio atual"),
+    "stale": ("warn", "Áudio desatualizado"),
+    "none": ("bad", "Sem áudio ainda"),
+}
 
-    # Modo Storyboard V3 (com cenas fornecidas ou lista explícita)
+
+def _words(text: str) -> int:
+    return len((text or "").split())
+
+
+def _secs(text: str) -> int:
+    """Estimativa de `secs` do protótipo: ~2,6 palavras por segundo, mínimo de 2 s."""
+    return max(2, round(_words(text) / 2.6))
+
+
+def _fmt_t(total: int) -> str:
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _scene_count_text(scene: dict) -> str:
+    """"N palavras · ~Ns": a duração medida, quando existe, manda sobre a estimativa por palavras."""
+    dur = scene.get("duration_s")
+    secs = f"{dur:.1f}s" if dur else f"~{_secs(scene['narration'])}s"
+    return f"{_words(scene['narration'])} palavras · {secs}"
+
+
+def _normalize_scenes(scenes, script) -> list[dict]:
+    """Cenas do roteiro em dicts simples (aceita `Scene`, objetos e dicts)."""
     raw_scenes = scenes
     if raw_scenes is None and script is not None:
         raw_scenes = getattr(script, "scenes", None)
@@ -342,153 +406,139 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             "broll_note": str(s_broll_note) if s_broll_note is not None else None,
         })
 
+    return normalized_scenes
+
+
+def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
+                scenes=None, script=None, channel_voice: str | None = None) -> str:
+    if not scenes and (script is None or not getattr(script, "scenes", None)):
+        # `prior.scenes` do protótipo (sem cenas): cabeçalho "Storyboard integrado" + cartão vazio.
+        # Nada de cena inventada: criar cenas é no roteiro; gerar o que falta é na produção.
+        return (
+            '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
+            '<p class="sub">Texto, mídia, B-roll e narração de cada cena na mesma bancada. '
+            "Edite sem trocar de tela.</p></div>"
+            f'<div class="row"><a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">+ Nova cena</a>'
+            f'<a class="btn small" href="{area_href(video_id, "producao")}">Gerar tudo o que falta</a></div></div>'
+            '<div class="stack"></div>'
+            '<div class="card"><p class="sub">Sem cenas. Adicione a primeira cena no roteiro.</p></div>'
+        )
+
+    normalized_scenes = _normalize_scenes(scenes, script)
+
     pills_html = []
     for s in normalized_scenes:
         i = s["idx"]
         label = s["label"] or f"Cena {i + 1}"
         is_first = (i == 0)
         pressed = "true" if is_first else "false"
-        cls = "btn btn-sm btn-cena-pill active btn-primario" if is_first else "btn btn-sm btn-cena-pill btn-ghost"
+        cls = "btn small primary btn-cena-pill active" if is_first else "btn small btn-cena-pill"
         pills_html.append(
             f'<button type="button" class="{cls}" data-scene-idx="{i}" aria-pressed="{pressed}">'
-            f'{i + 1} · {e(label)}'
+            f'{i + 1} · {e(label)}{" · atualizar voz" if s["audio_state"] == "stale" else ""}'
             f'</button>'
         )
-    if not pills_html:
-        pills_html.append('<span class="pill">Nenhuma cena registrada</span>')
 
     header_card = (
-        '<div class="card" id="storyboard-v3-header" style="margin-bottom:16px;">'
-        '<div class="spread" style="align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">'
-        '<div>'
-        '<h2 style="margin:0;">Cenas e mídias · Storyboard</h2>'
-        '<p class="micro" style="margin:2px 0 0 0;">Edite cada cena individualmente, troque mídia e acompanhe a narração.</p>'
-        '</div>'
-        '<div class="row" style="display:flex;gap:8px;align-items:center;">'
-        '<button type="button" class="btn btn-ghost btn-sm" id="btn-undo-cenas" title="Desfazer alteração" disabled>↶ Desfazer</button>'
-        '<button type="button" class="btn btn-ghost btn-sm" id="btn-redo-cenas" title="Refazer alteração" disabled>↷ Refazer</button>'
-        '</div>'
-        '</div>'
-        f'<div class="seletor-cenas" id="seletor-cenas" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        '<div id="storyboard-v3-header">'
+        '<div class="between" style="margin-bottom:16px"><div><h2>Conte sua história, cena por cena</h2>'
+        '<p class="sub">Selecione uma cena para editar. As demais ficam preservadas.</p></div>'
+        '<div class="row">'
+        '<button type="button" class="btn small" id="btn-undo-cenas" title="Desfazer alteração" disabled>↶ Desfazer</button>'
+        '<button type="button" class="btn small" id="btn-redo-cenas" title="Refazer alteração" disabled>↷ Refazer</button>'
+        f'<a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">+ Nova cena</a>'
+        '</div></div>'
+        '<div class="row seletor-cenas" id="seletor-cenas" style="margin-bottom:16px">'
         + "".join(pills_html)
         + '</div></div>'
     )
 
-    if normalized_scenes:
-        foco = normalized_scenes[0]
-        total = len(normalized_scenes)
-        f_idx = foco["idx"]
-        f_label = foco["label"] or f"Cena {f_idx + 1}"
-        f_dur = f"{foco['duration_s']:.1f} s" if foco["duration_s"] is not None else "sem duração medida"
-        f_audio = foco["audio_state"]
-        f_audio_badge = f'<span class="pill pill-{e(f_audio)} badge-audio" id="foco-audio-badge">Áudio: {e(f_audio)}</span>'
-        f_asset_id = foco["asset_id"]
-        has_img = "block" if f_asset_id else "none"
-        no_img = "none" if f_asset_id else "flex"
+    foco = normalized_scenes[0]
+    f_idx = foco["idx"]
+    f_label = foco["label"] or f"Cena {f_idx + 1}"
+    f_asset_id = foco["asset_id"]
+    audio_cls, audio_txt = _AUDIO_BADGE.get(foco["audio_state"], _AUDIO_BADGE["none"])
+    voice_name = channel_voice or "Voz padrão do estúdio"
+    broll_on = bool(foco.get("broll_enabled"))
+    first_scene_id = foco["id"]
+    script_version = getattr(script, "version", None) or (script.get("version") if isinstance(script, dict) else None) or 0
+    focused_card = (
+        f'<div class="scene cena-em-foco" id="cena-em-foco" data-active-idx="{f_idx}" data-video-id="{e(video_id)}" '
+        f'data-script-version="{int(script_version)}">'
+        '<div>'
+        f'<div class="thumb" id="foco-midia-preview" style="height:132px;background:var(--panel3);'
+        f'{"" if f_asset_id else "border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px"}">'
+        f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" '
+        f'alt="Mídia da cena {f_idx + 1}" style="width:100%;height:100%;object-fit:cover;'
+        f'display:{"block" if f_asset_id else "none"};">'
+        f'<span class="tag" id="foco-midia-tag" style="display:{"block" if f_asset_id else "none"}">Cena {f_idx + 1}</span>'
+        f'<div id="foco-midia-placeholder" style="display:{"none" if f_asset_id else "block"}">'
+        'Sem mídia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>'
+        '</div>'
+        '<div class="row" style="margin-top:8px">'
+        f'<button type="button" class="btn small" id="btn-trocar-midia" data-action="trocar-midia" style="flex:1">'
+        f'{"Trocar mídia" if f_asset_id else "Escolher mídia"}</button>'
+        f'<label class="btn small {"" if broll_on else "ghost"}" id="lbl-broll" style="cursor:pointer;'
+        f'{"border-color:var(--accent);color:var(--accent2)" if broll_on else ""}">'
+        f'<input type="checkbox" id="cena-broll-enabled" name="broll_enabled"{" checked" if broll_on else ""} class="sr-only">'
+        f'<span id="lbl-broll-txt">{"B-roll ativo" if broll_on else "+ B-roll"}</span>'
+        '</label>'
+        '</div>'
+        f'<div id="cena-broll-note-wrap" style="margin-top:6px;display:{"block" if broll_on else "none"}">'
+        f'<input class="sample" type="text" id="cena-broll-note" name="broll_note" aria-label="Descrição do B-roll" '
+        f'style="font-size:12px;width:100%" placeholder="O que mostrar no B-roll?" value="{e(foco.get("broll_note") or "")}">'
+        '</div>'
+        '</div>'
+        '<div>'
+        '<div class="between" style="margin-bottom:6px">'
+        f'<span class="num" id="foco-titulo">CENA {f_idx + 1} · {e(f_label.upper())}</span>'
+        f'<span class="sample" id="foco-duracao">{e(_scene_count_text(foco))}</span>'
+        '</div>'
+        '<label class="sr" for="cena-narration">Texto da cena</label>'
+        f'<textarea id="cena-narration" rows="4" placeholder="Texto narrado da cena...">{e(foco["narration"])}</textarea>'
+        '<div class="field" style="margin:8px 0 0">'
+        '<label for="cena-prompt">Prompt da imagem</label>'
+        f'<input type="text" id="cena-prompt" value="{e(foco["image_prompt"])}">'
+        '</div>'
+        '</div>'
+        '<div class="player">'
+        '<div class="between">'
+        '<span class="lbl">NARRAÇÃO</span>'
+        f'<span class="pill {audio_cls} badge-audio" id="foco-audio-badge">{audio_txt}</span>'
+        '</div>'
+        f'<p class="sample" id="foco-voz-nome">{e(voice_name)}</p>'
+        '<div class="prog" id="foco-prog"><b></b></div>'
+        '<div class="row">'
+        f'<button type="button" class="btn small primary" id="btn-ouvir-trecho" data-scene-id="{e(first_scene_id)}" '
+        f'style="flex:1"{" disabled" if foco["audio_state"] == "none" else ""}>▶ Ouvir trecho</button>'
+        '</div>'
+        '<button type="button" class="btn small ghost long" id="btn-regenerar-voz" data-action="regenerar-voz" '
+        f'style="margin-top:6px">{"Gerar áudio da cena" if foco["audio_state"] == "none" else "Regenerar áudio da cena"}</button>'
+        '<div class="row" style="margin-top:8px;justify-content:space-between">'
+        '<span>'
+        '<button type="button" class="btn ghost small" id="btn-mover-cima" aria-label="Mover cena para cima">↑</button>'
+        '<button type="button" class="btn ghost small" id="btn-mover-baixo" aria-label="Mover cena para baixo">↓</button>'
+        '</span>'
+        '<button type="button" class="btn ghost small" id="btn-excluir-cena" style="color:var(--bad)">Excluir</button>'
+        '</div>'
+        '</div>'
+        '</div>'
+        '<div class="row" style="margin-top:12px">'
+        '<button type="button" class="btn small" id="btn-historico-voz" data-action="historico-voz">Histórico da voz</button>'
+        f'<a class="btn ghost small" href="{area_href(video_id, "producao")}">Gerar tudo o que falta</a>'
+        '</div>'
+        '<p class="sample" id="storyboard-feedback" role="status" style="margin-top:8px"></p>'
+    )
 
-        focused_card = (
-            f'<div class="scene cena-em-foco" id="cena-em-foco" data-active-idx="{f_idx}" data-video-id="{e(video_id)}">'
-            '<div>'
-            f'<div class="thumb" id="foco-midia-preview" style="height:132px;background:var(--panel3);margin-bottom:8px">'
-            f'<span class="tag">Cena {f_idx + 1}</span>'
-            f'<img id="foco-midia-img" src="/studio/videos/{e(video_id)}/scenes/{f_idx}/asset" alt="Preview da cena {f_idx + 1}" style="width:100%;height:100%;object-fit:cover;display:{has_img};">'
-            f'<div id="foco-midia-placeholder" style="display:{no_img};align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:12px;text-align:center;">'
-            '<span style="font-size:32px;" aria-hidden="true">🎞️</span>'
-            '<span class="sample" style="font-size:11px;">Mídia gerada ou stock</span>'
-            '</div>'
-            '</div>'
-            '<div class="row" style="margin-top:8px">'
-            '<button type="button" class="btn small" id="btn-trocar-midia" data-action="trocar-midia" style="flex:1">Trocar mídia</button>'
-            f'<label class="btn small {"" if foco.get("broll_enabled") else "ghost"}" id="lbl-broll" style="cursor:pointer;{"border-color:var(--accent);color:var(--accent2)" if foco.get("broll_enabled") else ""}">'
-            f'<input type="checkbox" id="cena-broll-enabled" name="broll_enabled"{" checked" if foco.get("broll_enabled") else ""} class="sr-only"> B-roll'
-            '</label>'
-            '</div>'
-            f'<div id="cena-broll-note-wrap" style="margin-top:6px;display:{"block" if foco.get("broll_enabled") else "none"}">'
-            f'<input class="sample" type="text" id="cena-broll-note" name="broll_note" style="font-size:12px;width:100%" placeholder="O que mostrar no B-roll?" value="{e(foco.get("broll_note") or "")}">'
-            '</div>'
-            '</div>'
-            '<div>'
-            '<div class="between" style="margin-bottom:6px">'
-            f'<span class="num" id="foco-titulo">CENA {f_idx + 1} · {e(f_label.upper())}</span>'
-            f'<span class="sample" id="foco-duracao">{e(f_dur)}</span>'
-            '</div>'
-            '<label class="sr" for="cena-narration">Texto da cena</label>'
-            f'<textarea id="cena-narration" rows="4" placeholder="Texto narrado da cena...">{e(foco["narration"])}</textarea>'
-            '<div class="field" style="margin:8px 0 0">'
-            '<label for="cena-prompt">Prompt da imagem</label>'
-            f'<input type="text" id="cena-prompt" value="{e(foco["image_prompt"])}">'
-            '</div>'
-            '</div>'
-            '<div class="player">'
-            '<div class="between">'
-            '<span class="lbl">NARRAÇÃO</span>'
-            f'{f_audio_badge}'
-            '</div>'
-            '<p class="sample" id="foco-voz-nome">Voz padrão do canal</p>'
-            '<div class="prog" id="foco-prog"><b></b></div>'
-            '<div class="row" style="margin-top:8px">'
-            '<button type="button" class="btn small primary" id="btn-regenerar-voz" data-action="regenerar-voz" style="flex:1">Regenerar voz</button>'
-            '</div>'
-            '<button type="button" class="btn small ghost long" id="btn-historico-voz" data-action="historico-voz" style="margin-top:6px">Histórico da voz</button>'
-            '<div class="row" style="margin-top:8px;justify-content:space-between">'
-            '<span>'
-            '<button type="button" class="btn ghost small" id="btn-mover-cima" aria-label="Mover cena para cima">↑</button> '
-            '<button type="button" class="btn ghost small" id="btn-mover-baixo" aria-label="Mover cena para baixo">↓</button>'
-            '</span>'
-            '<button type="button" class="btn ghost small" id="btn-excluir-cena" style="color:var(--bad)">Excluir</button>'
-            '</div>'
-            '</div>'
-            '</div>'
-        )
-    else:
-        focused_card = (
-            f'<div class="card cena-em-foco" id="cena-em-foco" data-active-idx="0" data-video-id="{e(video_id)}">'
-            '<div class="spread" style="align-items:center;margin-bottom:14px;border-bottom:1px solid var(--linha);padding-bottom:10px;">'
-            '<div>'
-            '<h3 id="foco-titulo" style="margin:0;">Nenhuma cena no roteiro</h3>'
-            '<span class="micro" id="foco-duracao">0.0 s</span>'
-            '</div>'
-            '<div class="row" style="display:flex;gap:8px;align-items:center;">'
-            '<span class="pill pill-none badge-audio" id="foco-audio-badge">Áudio: none</span>'
-            '</div>'
-            '</div>'
-            '<p class="vazio">Gere ou adicione cenas no roteiro para editar narração e mídia.</p>'
-            '<div style="margin-top:12px;">'
-            '<label class="campo-inline"><input type="checkbox" id="cena-broll-enabled" name="broll_enabled" disabled> B-roll nesta cena</label>'
-            '<div id="cena-broll-note-wrap" style="margin-top:0.4rem"><input class="input input-sm" type="text" id="cena-broll-note" name="broll_note" placeholder="Nota de B-roll (ex: corte para gráficos, tela do app, reação...)" disabled></div>'
-            '</div>'
-            '<div class="row" style="display:flex;gap:8px;margin-top:12px;">'
-            '<button type="button" class="btn btn-sm" id="btn-trocar-midia" disabled>Trocar mídia</button>'
-            '<button type="button" class="btn btn-sm btn-primario" id="btn-regenerar-voz" disabled>Regenerar voz</button>'
-            '<button type="button" class="btn btn-sm btn-ghost" id="btn-historico-voz" disabled>Histórico da voz</button>'
-            '</div>'
-            '</div>'
-        )
-
-    script_items = []
-    for s in normalized_scenes:
-        i = s["idx"]
-        label = s["label"] or f"Cena {i + 1}"
-        dur_str = f" · {s['duration_s']:.1f} s" if s["duration_s"] is not None else ""
-        script_items.append(
-            f'<li style="padding:8px 0;border-bottom:1px solid var(--linha);">'
-            f'<p style="margin:0 0 4px 0;"><strong>{i + 1}. {e(label)}</strong><span class="micro">{e(dur_str)}</span></p>'
-            f'<p style="margin:0 0 4px 0;">{e(s["narration"])}</p>'
-            f'<p class="micro muted" style="margin:0;">Prompt: {e(s["image_prompt"])}</p>'
-            f'</li>'
-        )
-
-    if not script_items:
-        script_content = '<p class="vazio">Nenhuma cena registrada no roteiro.</p>'
-    else:
-        script_content = f'<ul class="pilha" style="gap:8px;list-style:none;padding:0;margin:0;">{"".join(script_items)}</ul>'
+    script_content = "".join(
+        f'<p style="margin-top:12px"><b>{sc["idx"] + 1}. {e(sc["label"] or "Cena " + str(sc["idx"] + 1))}</b>'
+        f'<br>{e(sc["narration"])}</p>'
+        for sc in normalized_scenes)
 
     full_script_details = (
-        f'<details class="diag" id="detalhes-roteiro-completo" style="margin-top:16px;">'
+        f'<details class="diag" id="detalhes-roteiro-completo" style="margin-top:18px">'
         f'<summary>Ver roteiro completo · {len(normalized_scenes)} cenas</summary>'
-        f'<div class="roteiro-completo-conteudo" style="padding-top:12px;">'
         f'{script_content}'
-        f'</div>'
         f'</details>'
     )
 
@@ -499,7 +549,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<dialog class="modal" id="dialog-audio-history" aria-labelledby="t-audio-history">'
         '<div class="modal-card">'
         '<div class="spread" style="align-items:center;margin-bottom:10px;">'
-        '<h3 id="t-audio-history" style="margin:0;">Histórico da voz — Cena <span id="modal-audio-scene-num">1</span></h3>'
+        '<h3 id="t-audio-history" style="margin:0;">Versões da voz desta cena · Cena <span id="modal-audio-scene-num">1</span></h3>'
         '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
         '</div>'
         '<p class="micro">Versões anteriores geradas para a narração desta cena. Você pode ouvir e restaurar qualquer versão.</p>'
@@ -515,7 +565,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<dialog class="modal" id="dialog-trocar-midia" aria-labelledby="t-trocar-midia">'
         '<div class="modal-card">'
         '<div class="spread" style="align-items:center;margin-bottom:10px;">'
-        '<h3 id="t-trocar-midia" style="margin:0;">Trocar mídia — Cena <span id="modal-media-scene-num">1</span></h3>'
+        '<h3 id="t-trocar-midia" style="margin:0;">Mídia para esta cena · Cena <span id="modal-media-scene-num">1</span></h3>'
         '<button type="button" class="btn btn-ghost btn-sm modal-close" aria-label="Fechar">&times;</button>'
         '</div>'
         '<p class="micro">Selecione uma imagem de banco ou edite o prompt para gerar uma nova arte.</p>'
@@ -531,17 +581,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '</dialog>'
     )
 
-    dur_total = sum(s["duration_s"] for s in normalized_scenes if s["duration_s"])
-    dur_text = f"{dur_total:.1f} s" if dur_total else "estimativa a medir"
-    cost_text = getattr(view, "cost_text", "US$ 0,00")
-    dock_html = (
-        f'<div class="dock">'
-        f'<div class="row"><b>{len(normalized_scenes)} cenas</b><span class="sub">~{e(dur_text)} · estimativa {e(cost_text)}</span></div>'
-        f'<div class="row"><a class="btn primary" href="{area_href(video_id, "producao")}">🎬 Gerar o que falta e renderizar</a></div>'
-        f'</div>'
-    )
-
-    return header_card + focused_card + full_script_details + dialogs + script_data_tag + dock_html
+    return header_card + focused_card + full_script_details + dialogs + script_data_tag
 
 
 _TRACK_KIND_LABELS = {"visual": "visual", "narration": "narração", "subtitle": "legenda"}
@@ -626,7 +666,8 @@ def _composition_plan_card(composition_view) -> str:
     )
 
 
-def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
+def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
+                     scenes=None, script=None) -> str:
     style = _effective_style(style_view)
     if style is None:
         head = ('<p class="aviso">Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de '
@@ -708,141 +749,157 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
     music_seed = music.get("seed", 7)
     is_static_motion = isinstance(motion, (list, tuple)) and len(motion) == 0
 
-    controls_card = (
-        '<div class="card" id="card-controles-composicao">'
-        '<h2>Ajustes de composição e legendas V3</h2>'
+    def _opt(value: str, label: str, selected: bool, disabled: bool = False) -> str:
+        return (f'<option value="{value}"{" selected" if selected else ""}{" disabled" if disabled else ""}>'
+                f"{e(label)}</option>")
+
+    def _seg_radio(name: str, value: str, label: str, checked: bool) -> str:
+        return (f'<label class="seg-btn"><input type="radio" class="sr-only" name="{name}" value="{value}"'
+                f'{" checked" if checked else ""}>{e(label)}</label>')
+
+    soon = '<span class="pill pill-espera">Em breve</span>'
+    first_scene = next(iter(_normalize_scenes(scenes, script)), None)
+    sample_text = " ".join((first_scene["narration"] if first_scene else "").split()[:6]) or "Legenda de exemplo"
+    short = getattr(getattr(raw_video, "format", None), "value", getattr(raw_video, "format", "short")) == "short"
+    cap_scale = 0.5 if short else 0.42
+    cap_pos_css = {"top": "top:12%", "middle": "top:46%"}.get(caption_pos, f"bottom:12%")
+    cap_box_css = "" if caption_style == "simple" else "background:rgba(0,0,0,.65);"
+    cap_font_css = {"dejavu": "DejaVu Sans", "roboto": "Roboto", "georgia": "Georgia", "inter": "Inter"}.get(
+        caption_font, "Inter")
+    try:
+        cap_px = round(float(font_size_val) * cap_scale)
+    except (TypeError, ValueError):
+        cap_px = round(42 * cap_scale)
+    preview_card = (
+        '<div class="card"><h3 style="margin-bottom:12px">Prévia da composição</h3>'
+        f'<div class="frame {"r916" if short else "r169"}" id="frame"><div class="bg" style="background:var(--panel3)"></div>'
+        '<span style="font-size:60px;position:relative">🎞️</span>'
+        f'<div class="cap" id="cap" style="{cap_pos_css};font-size:{cap_px}px;{cap_box_css}'
+        f'font-family:{e(cap_font_css)},sans-serif">{e(sample_text)}</div></div>'
+        '<p class="sample" style="margin-top:8px;text-align:center">Prévia aproximada das legendas — '
+        "não é o vídeo renderizado.</p></div>"
+    )
+    scene_items = _normalize_scenes(scenes, script)
+    base_track = " → ".join(
+        f'Cena {i + 1} ({"com mídia" if sc["asset_id"] else "sem mídia"})' for i, sc in enumerate(scene_items)
+    ) or "sem cenas"
+    total_secs = sum(_secs(sc["narration"]) for sc in scene_items)
+    pos_label = {"top": "topo", "middle": "meio", "bottom": "base"}[caption_pos]
+    if scene_items:
+        broll_on = [sc for sc in scene_items if sc["broll_enabled"]]
+        broll_text = (" · ".join(f'{e(sc["label"] or "Cena " + str(sc["idx"] + 1))}: {e(sc["broll_note"] or "inserto")}'
+                                 for sc in broll_on)
+                      or '<span style="color:var(--muted)">Nenhum B-roll ativo</span>')
+        timeline_card = (
+            '<div class="card"><h3 style="margin-bottom:12px">Linha do tempo</h3>'
+            f'<div class="track"><span>Mídia base</span><div style="background:var(--accentbg);border-color:var(--line2);'
+            f'color:var(--accent2)">{e(base_track)}</div></div>'
+            f'<div class="track"><span>B-roll</span><div style="color:var(--warn)">{broll_text}</div></div>'
+            f'<div class="track"><span>Narração</span><div style="color:var(--ok)">Narração contínua · ~{_fmt_t(total_secs)}</div></div>'
+            f'<div class="track"><span>Música</span><div>bpm {e(str(music_bpm))} · seed {e(str(music_seed))}</div></div>'
+            f'<div class="track"><span>Legendas</span><div>{e(cap_font_css)} · '
+            f'{"Texto simples" if caption_style == "simple" else "Caixa discreta"} · {pos_label}</div></div></div>'
+        )
+    else:
+        timeline_card = (
+            '<div class="card"><h3 style="margin-bottom:12px">Linha do tempo</h3>'
+            '<p class="sub">Sem cenas no roteiro: a linha do tempo aparece quando houver cenas.</p></div>'
+        )
+    style_name = _style_name(style_view) or (style.name if style is not None else None)
+    parametros = (
+        '<aside class="card" style="position:sticky;top:80px"><h3 style="margin-bottom:6px">Parâmetros</h3>'
+        '<p class="sample" style="margin-bottom:14px">Herdados do estilo e do canal. Mudar aqui vale só para este vídeo.</p>'
         f'<form id="form-composicao" data-video-id="{e(video_id)}" data-endpoint="/studio/videos/{e(video_id)}/style-patch">'
         f'<input type="hidden" id="comp-patch-revision" value="{style_patch_revision}">'
-        '<div class="grid-2">'
-        '  <div>'
-        '    <h3>Legenda (Controles ativos)</h3>'
-        '    <div class="campo">'
-        '      <label for="composicao-font-size">Tamanho da legenda (font_size)</label>'
-        f'      <input type="number" id="composicao-font-size" name="caption.font_size" class="input campo" value="{e(str(font_size_val))}" min="16" max="96">'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label for="composicao-bottom">Distância da base (bottom, px)</label>'
-        f'      <input type="number" id="composicao-bottom" name="caption.bottom" class="input campo" value="{e(str(bottom_val))}" min="0" max="400"{" disabled" if caption_pos != "bottom" else ""}>'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label>Posição da legenda</label>'
-        '      <div style="display:flex;gap:1.5rem;margin-top:0.35rem">'
-        f'        <label><input type="radio" name="comp-posicao" value="top"{" checked" if caption_pos == "top" else ""}> Topo</label>'
-        f'        <label><input type="radio" name="comp-posicao" value="middle"{" checked" if caption_pos == "middle" else ""}> Meio</label>'
-        f'        <label><input type="radio" name="comp-posicao" value="bottom"{" checked" if caption_pos == "bottom" else ""}> Base</label>'
-        '      </div>'
-        '    </div>'
-        '    <div class="grid-2" style="margin-top:1rem">'
-        '      <div class="campo">'
-        '        <label for="composicao-caption-font">Fonte da legenda</label>'
-        '        <select id="composicao-caption-font" name="comp-fonte" class="input campo">'
-        f'          <option value="dejavu"{" selected" if caption_font == "dejavu" else ""}>DejaVu (padrão)</option>'
-        f'          <option value="roboto"{" selected" if caption_font == "roboto" else ""}>Roboto</option>'
-        f'          <option value="georgia"{" selected" if caption_font == "georgia" else ""}>Georgia</option>'
-        f'          <option value="inter"{" selected" if caption_font == "inter" else ""}>Inter</option>'
-        '        </select>'
-        '      </div>'
-        '      <div class="campo">'
-        '        <label>Estilo da legenda</label>'
-        '        <div style="display:flex;gap:0.75rem;margin-top:0.35rem;flex-wrap:wrap">'
-        f'          <label><input type="radio" name="comp-estilo" value="box"{" checked" if caption_style == "box" else ""}> Caixa</label>'
-        f'          <label><input type="radio" name="comp-estilo" value="simple"{" checked" if caption_style == "simple" else ""}> Simples</label>'
-        '          <label><input type="radio" name="comp-estilo" value="destaque" disabled> Destaque por palavra <span class="pill pill-espera">Em breve</span></label>'
-        '        </div>'
-        '      </div>'
-        '    </div>'
-        '  </div>'
-        '  <div>'
-        '    <h3>Paleta de cores (Controles ativos)</h3>'
-        '    <div class="campo">'
-        '      <label for="composicao-color-text">Cor do texto da legenda</label>'
-        f'      <input type="text" id="composicao-color-text" name="palette.caption_text" class="input campo" value="{e(str(color_text_val))}">'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label for="composicao-color-box">Cor da caixa da legenda</label>'
-        f'      <input type="text" id="composicao-color-box" name="palette.caption_box" class="input campo" value="{e(str(color_box_val))}">'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label for="composicao-color-accent">Cor de destaque (accent)</label>'
-        f'      <input type="text" id="composicao-color-accent" name="palette.accent" class="input campo" value="{e(str(color_accent_val))}">'
-        '    </div>'
-        '  </div>'
-        '</div>'
-        '<div class="grid-2" style="margin-top:1rem">'
-        '  <div class="campo">'
-        '    <label for="composicao-motion">Movimento de câmera</label>'
-        '    <select id="composicao-motion" name="motion" class="input campo">'
-        f'      <option value="zoom_lento"{" selected" if not is_static_motion else ""}>Zoom lento (Ken Burns padrão: zoom_in, pan_left)</option>'
-        f'      <option value="estatico"{" selected" if is_static_motion else ""}>Estático (sem movimento)</option>'
-        '    </select>'
-        '  </div>'
-        '  <div class="grid-2">'
-        '    <div class="campo">'
-        '      <label for="composicao-music-bpm">Andamento da música (BPM)</label>'
-        f'      <input type="number" id="composicao-music-bpm" name="music.bpm" class="input campo" value="{e(str(music_bpm))}" min="20" max="300">'
-        '    </div>'
-        '    <div class="campo">'
-        '      <label for="composicao-music-seed">Semente da música (seed)</label>'
-        f'      <input type="number" id="composicao-music-seed" name="music.seed" class="input campo" value="{e(str(music_seed))}" min="0">'
-        '    </div>'
-        '  </div>'
-        '</div>'
-        '<div class="grid-2" style="margin-top:1rem">'
-        '  <div class="campo">'
-        '    <label>Transição entre cenas</label>'
-        '    <div style="display:flex;gap:1rem;margin-top:0.35rem">'
-        f'      <label><input type="radio" name="comp-transicao" value="fade"{" checked" if trans_kind == "fade" else ""}> Fade (suave)</label>'
-        f'      <label><input type="radio" name="comp-transicao" value="none"{" checked" if trans_kind == "none" else ""}> Corte seco</label>'
-        '      <label><input type="radio" name="comp-transicao" value="deslizar" disabled> Deslizar <span class="pill pill-espera">Em breve</span></label>'
-        '    </div>'
-        '  </div>'
-        '  <div class="campo">'
-        '    <label>Taxa de quadros / FPS</label>'
-        '    <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.35rem;flex-wrap:wrap">'
-        '      <span class="pill pill-ok">25 fps (vigente)</span>'
-        '      <label><input type="radio" name="fps_opt" value="24" disabled> 24 fps <span class="pill pill-espera">Em breve</span></label>'
-        '      <label><input type="radio" name="fps_opt" value="30" disabled> 30 fps <span class="pill pill-espera">Em breve</span></label>'
-        '      <label><input type="radio" name="fps_opt" value="60" disabled> 60 fps <span class="pill pill-espera">Em breve</span></label>'
-        '    </div>'
-        '  </div>'
-        '</div>'
-        '<div style="margin-top:1.5rem;display:flex;align-items:center;gap:1rem">'
-        '  <button type="submit" class="btn btn-primary" id="btn-salvar-composicao">Salvar composição</button>'
-        '  <p id="composicao-feedback" class="dica" role="status" aria-live="polite" style="margin:0"></p>'
-        '</div>'
-        '</form>'
-        '</div>'
+        '<div class="field"><label for="composicao-caption-font">Fonte da legenda</label>'
+        '<select id="composicao-caption-font" name="comp-fonte">'
+        + _opt("dejavu", "DejaVu (padrão)", caption_font == "dejavu")
+        + _opt("roboto", "Roboto", caption_font == "roboto")
+        + _opt("georgia", "Georgia", caption_font == "georgia")
+        + _opt("inter", "Inter", caption_font == "inter")
+        + "</select></div>"
+        '<div class="field"><label for="composicao-caption-style">Estilo da legenda</label>'
+        '<select id="composicao-caption-style" name="comp-estilo">'
+        + _opt("box", "Caixa discreta", caption_style == "box")
+        + _opt("simple", "Texto simples", caption_style == "simple")
+        + _opt("destaque", "Destaque por palavra (em breve)", False, disabled=True)
+        + "</select></div>"
+        '<div class="field"><span class="lbl">Posição</span><div class="seg" role="group">'
+        + _seg_radio("comp-posicao", "top", "Topo", caption_pos == "top")
+        + _seg_radio("comp-posicao", "middle", "Meio", caption_pos == "middle")
+        + _seg_radio("comp-posicao", "bottom", "Base", caption_pos == "bottom")
+        + "</div></div>"
+        f'<div class="field"><label for="composicao-font-size">Tamanho da legenda: <b id="composicao-font-size-v">{e(str(font_size_val))}</b></label>'
+        f'<input type="range" id="composicao-font-size" name="caption.font_size" min="16" max="96" value="{e(str(font_size_val))}"></div>'
+        '<div class="field"><label for="composicao-bottom">Distância da base (px)</label>'
+        f'<input type="number" id="composicao-bottom" name="caption.bottom" value="{e(str(bottom_val))}" min="0" max="400"'
+        f'{" disabled" if caption_pos != "bottom" else ""}></div>'
+        '<div class="grid2"><div class="field"><label for="composicao-music-bpm">Andamento da música (BPM)</label>'
+        f'<input type="number" id="composicao-music-bpm" name="music.bpm" value="{e(str(music_bpm))}" min="20" max="300"></div>'
+        '<div class="field"><label for="composicao-music-seed">Semente da música (seed)</label>'
+        f'<input type="number" id="composicao-music-seed" name="music.seed" value="{e(str(music_seed))}" min="0"></div></div>'
+        f'<div class="field"><label for="comp-music-vol">Volume da música {soon}</label>'
+        '<input type="range" id="comp-music-vol" min="0" max="60" value="20" disabled></div>'
+        f'<div class="field"><label class="tog"><input type="checkbox" id="comp-ducking" disabled><i></i>'
+        f"Abaixar a música quando houver voz {soon}</label></div>"
+        '<div class="grid2"><div class="field"><label for="comp-res">Resolução</label>'
+        '<select id="comp-res" disabled><option>Fixa no motor</option></select></div>'
+        '<div class="field"><label for="comp-fps">Quadros/s</label>'
+        '<select id="comp-fps" disabled><option>25 fps (vigente)</option></select></div></div>'
+        '<div class="grid2"><div class="field"><label for="composicao-transition">Transição</label>'
+        '<select id="composicao-transition" name="comp-transicao">'
+        + _opt("fade", "Fade suave", trans_kind == "fade")
+        + _opt("none", "Corte seco", trans_kind == "none")
+        + _opt("deslizar", "Deslizar (em breve)", False, disabled=True)
+        + "</select></div>"
+        '<div class="field"><label for="composicao-motion">Movimento</label>'
+        '<select id="composicao-motion" name="motion">'
+        + _opt("zoom_lento", "Zoom lento", not is_static_motion)
+        + _opt("estatico", "Estático", is_static_motion)
+        + "</select></div></div>"
+        '<details class="diag" style="margin-bottom:14px"><summary>Cores da legenda</summary>'
+        '<div class="field" style="margin-top:10px"><label for="composicao-color-text">Cor do texto da legenda</label>'
+        f'<input type="text" id="composicao-color-text" name="palette.caption_text" value="{e(str(color_text_val))}"></div>'
+        '<div class="field"><label for="composicao-color-box">Cor da caixa da legenda</label>'
+        f'<input type="text" id="composicao-color-box" name="palette.caption_box" value="{e(str(color_box_val))}"></div>'
+        '<div class="field"><label for="composicao-color-accent">Cor de destaque (accent)</label>'
+        f'<input type="text" id="composicao-color-accent" name="palette.accent" value="{e(str(color_accent_val))}"></div>'
+        "</details>"
+        '<div class="field"><label for="comp-vstyle">Estilo visual do vídeo</label>'
+        f'<select id="comp-vstyle" disabled><option>{e(style_name or "Nenhum estilo resolvido")}</option></select></div>'
+        '<button type="submit" class="btn primary small long" id="btn-salvar-composicao">Salvar composição</button>'
+        '<p id="composicao-feedback" class="sample" role="status" aria-live="polite" style="margin-top:8px"></p>'
+        "</form></aside>"
     )
-
-    return (
-        plan_card
-        + controls_card
-        + f'<div class="card"><h2>Composição do vídeo</h2>{head}{rows}</div>'
-        + notes
+    tecnico = (
+        '<details class="diag"><summary>Ver detalhes técnicos da composição</summary>'
+        f'<div style="margin-top:12px">{plan_card}'
+        f'<div class="card"><h2>Composição do vídeo</h2>{head}{rows}</div>{notes}</div></details>'
     )
+    return f'<div class="two"><div class="stack">{preview_card}{timeline_card}{tecnico}</div>{parametros}</div>'
 
 
 def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
-    # 1. Prévia em destaque centralizada no topo
+    # 1. Prévia da versão (`tabQA`: cartão com `.frame`; sem versão renderizada, só o aviso)
+    short = getattr(getattr(view.video, "format", None), "value", getattr(view.video, "format", "short")) == "short"
     if view.stage in _PREVIEW_STAGES:
         output_asset_param = f"?output_asset_id={e(preview.output_asset_id)}" if (preview and getattr(preview, "output_asset_id", None)) else ""
         preview_card = (
-            '<div class="card card-preview-destaque" style="text-align:center;margin-bottom:1.5rem">'
-            f'<div class="player" style="max-width:720px;margin:0 auto;overflow:hidden;background:#000;border-radius:var(--raio, 8px)">'
+            '<div class="card card-preview-destaque"><h3 style="margin-bottom:10px">Prévia da versão</h3>'
+            f'<div class="frame {"r916" if short else "r169"}" style="max-width:{"230px" if short else "560px"}">'
             f'<video controls preload="metadata" poster="/studio/videos/{e(video_id)}/thumbnail" '
-            f'src="/studio/videos/{e(video_id)}/file{output_asset_param}" style="width:100%;max-height:480px;display:block">'
+            f'src="/studio/videos/{e(video_id)}/file{output_asset_param}" '
+            'style="width:100%;height:100%;object-fit:contain;display:block;background:#000">'
             f'<track kind="captions" srclang="pt-BR" label="Português" src="/studio/videos/{e(video_id)}/subtitles.vtt" default>'
-            '</video>'
-            '</div>'
-            f'<p style="margin-top:0.75rem"><a class="btn btn-ghost btn-sm" href="/studio/videos/{e(video_id)}/preview">Abrir prévia completa</a></p>'
+            '</video></div>'
+            f'<p style="text-align:center;margin-top:8px"><a class="btn ghost small" href="/studio/videos/{e(video_id)}/preview">Abrir prévia completa</a></p>'
             '</div>'
         )
     else:
         preview_card = (
-            '<div class="card card-preview-destaque" style="text-align:center;margin-bottom:1.5rem">'
-            '<p class="aviso">Prévia e aprovação ficam disponíveis após a renderização. '
-            'A decisão de aprovação vive na página de prévia (com CSP própria).</p>'
-            '</div>'
+            '<div class="card card-preview-destaque"><h3 style="margin-bottom:10px">Prévia da versão</h3>'
+            '<p class="sub">Ainda não há versão renderizada. Prévia e aprovação ficam disponíveis '
+            "após a renderização.</p></div>"
         )
 
     # 2. Resumo de revisão e ação de aprovação
@@ -880,116 +937,99 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
         approval_rows += _kv("Aprovação do roteiro",
                              "aprovada" if script_view.approved else "não registrada")
 
-    if has_blocking and actionable_issues:
-        readiness_badge = '<span class="pill pill-err">Atenção: pendências identificadas</span>'
-        readiness_html = (
-            f'<div class="readiness-box" style="margin:1rem 0;">'
-            f'<p><strong>Situação:</strong> {readiness_badge}</p>'
-            '<p class="aviso"><strong>Pendências técnicas para resolução:</strong></p>'
-            '<ul class="lista-pendencias" style="margin:0.5rem 0 0 1.25rem;color:var(--err);">'
-            + "".join(
-                f'<li><strong>[{e(sev)}]</strong> {e(ev)}' + (f' <span class="hint">({e(cid)})</span>' if cid else '') + '</li>'
-                for sev, ev, cid in actionable_issues
-            )
-            + '</ul></div>'
-        )
-    elif view.stage not in _PREVIEW_STAGES:
-        readiness_badge = '<span class="pill pill-espera">Aguardando renderização</span>'
-        readiness_html = (
-            f'<div class="readiness-box" style="margin:1rem 0;">'
-            f'<p><strong>Situação:</strong> {readiness_badge} — Aguardando renderização do vídeo para revisão.</p>'
-            '</div>'
-        )
+    blocks = sum(1 for sev, _ev, _cid in actionable_issues if sev == "blocking")
+    warns = len(actionable_issues) - blocks
+    rendered = view.stage in _PREVIEW_STAGES
+    if actionable_issues or (qa is not None and not publishable):
+        issues_title = "Pontos para revisar"
     else:
-        readiness_badge = '<span class="pill pill-good">Pronto para sua revisão</span>'
-        readiness_html = (
-            f'<div class="readiness-box" style="margin:1rem 0;">'
-            f'<p><strong>Situação:</strong> {readiness_badge} — Pronto para sua revisão.</p>'
-            '</div>'
-        )
-
-    if view.stage in _PREVIEW_STAGES and view.stage not in (Stage.APPROVED, Stage.COMPLETED):
-        action_button = (
-            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-            f'<button type="button" class="btn btn-primario" data-a="approve" data-video-id="{e(video_id)}" id="btn-approve-video">'
-            '✓ Aprovar e preparar publicação →'
-            '</button>'
-            '<span id="approve-feedback" class="feedback" role="status" aria-live="polite"></span>'
-            '</div>'
-        )
-    elif view.stage in (Stage.APPROVED, Stage.COMPLETED):
-        action_button = (
-            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-            f'<a class="btn btn-primario" href="/studio/panel/videos/{e(video_id)}/publicacao">'
-            '✓ Avançar para publicação →'
-            '</a>'
-            '</div>'
-        )
-    else:
-        action_button = (
-            '<div class="acoes" style="margin-top:1.25rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-            f'<button type="button" class="btn btn-primario" data-a="approve" data-video-id="{e(video_id)}" id="btn-approve-video" disabled>'
-            '✓ Aprovar e preparar publicação →'
-            '</button>'
-            '<span class="micro muted">Aprovação disponível após a renderização</span>'
-            '</div>'
-        )
-
-    review_card = (
-        '<div class="card card-revisao">'
-        '<h3>Revisão e Aprovação da Versão</h3>'
-        f'{approval_rows}'
-        f'{readiness_html}'
-        f'{action_button}'
-        '</div>'
+        issues_title = "Pronto para sua revisão"
+    issue_lines = "".join(
+        f'<p class="sub" style="margin-top:8px">{e(cid or "QA")} · {e(ev)}</p>'
+        for _sev, ev, cid in actionable_issues)
+    if not rendered:
+        issue_lines = ('<p class="sub" style="margin-top:8px"><span class="pill pill-espera">Aguardando renderização</span>'
+                       " Aguardando renderização do vídeo para revisão.</p>")
+        issues_title = "Pontos para revisar"
+    review_btn = (f'<a class="btn small" href="{area_href(video_id, "cenas")}">Revisar cenas</a>'
+                  if actionable_issues else "")
+    issues_card = (
+        f'<div class="card card-revisao"><h3>{issues_title}</h3>{issue_lines}{review_btn}'
+        '<p class="sample"><strong>Avaliação semântica não verificada:</strong> verificações técnicas. '
+        "QA técnico não verifica fatos do roteiro (veracidade factual) nem a correspondência entre "
+        "roteiro e imagem (depende de provider real e não é verificada aqui).</p></div>"
     )
 
-    # 3. Verificações técnicas em detalhes expansíveis
+    # 3. Verificações técnicas em detalhes expansíveis (`<details class="diag">` do protótipo)
     if qa is not None:
         qa_html = (
-            '<div class="card" style="margin-top:0.75rem"><h4>Relatório de QA do render</h4>'
+            '<div class="card"><h3>Relatório de QA do render</h3>'
+            '<p class="sub" style="margin:2px 0 14px">Verificações automatizadas do renderizador: integridade '
+            "do contêiner, taxa de quadros, loudness de áudio e conformidade de legenda.</p>"
             + _kv("Publicável", "sim" if publishable else "não")
             + _kv("Cobertura", e(coverage_status))
             + _kv("Achados", str(len(findings)))
         )
         if findings:
             findings_items = "".join(
-                f'<li><strong>{e(getattr(f, "check_id", "CHECK"))}</strong> ({e(getattr(f, "severity", "info"))}): '
-                f'{e(getattr(f, "evidence", str(f)))}</li>'
+                f'<div class="gate"><div><b style="font-size:13px">{e(getattr(f, "check_id", "CHECK"))}</b>'
+                f'<small>{e(getattr(f, "evidence", str(f)))}</small></div>'
+                f'<span class="pill {"bad" if getattr(f, "severity", "info") == "blocking" else "warn"}">'
+                f'{"✕ Bloqueia" if getattr(f, "severity", "info") == "blocking" else "! Atenção"}</span></div>'
                 for f in findings
             )
-            qa_html += f'<div style="margin-top:0.75rem"><p class="micro"><strong>Detalhamento dos achados:</strong></p><ul class="cenas">{findings_items}</ul></div>'
-        qa_html += '</div>'
+            qa_html += f'<div class="stack" style="gap:8px;margin-top:12px">{findings_items}</div>'
+        qa_html += "</div>"
     else:
         qa_html = (
-            '<div class="card" style="margin-top:0.75rem"><h4>Relatório de QA do render</h4>'
-            '<p class="aviso">Relatório de QA do render não disponível nesta leitura.</p>'
-            '</div>'
+            '<div class="card"><h3>Relatório de QA do render</h3>'
+            '<p class="aviso">Relatório de QA do render não disponível nesta leitura.</p></div>'
         )
-
     technical_details = (
-        '<details class="diag">'
-        '<summary>Ver todas as verificações técnicas</summary>'
-        '<div style="margin-top:1rem">'
-        '<p class="muted micro">Verificações automatizadas do renderizador: integridade do contêiner, taxa de quadros, loudness de áudio e conformidade de legenda.</p>'
-        f'{qa_html}'
-        '</div>'
-        '</details>'
+        '<details class="diag"><summary>Ver todas as verificações técnicas</summary>'
+        f'<div style="margin-top:12px">{qa_html}</div></details>'
     )
 
-    # 4. Disclaimer explícito
-    disclaimer = (
-        '<p class="aviso" style="margin-top:1.5rem">'
-        '<strong>Avaliação semântica não verificada:</strong> '
-        'Verificações ilustrativas/técnicas. QA técnico não verifica fatos do roteiro '
-        '(veracidade factual) nem a correspondência entre roteiro e imagem (depende de provider real e não é verificada aqui).'
-        '</p>'
+    # 4. Aside "Aprovação" (`tabQA`): nota de bloqueios/avisos + ação de aprovação
+    if blocks:
+        note_cls, note_msg = "note", "Resolva os bloqueios no storyboard antes de aprovar."
+    elif not rendered:
+        note_cls, note_msg = "note", "Aprovação disponível após a renderização."
+    else:
+        note_cls, note_msg = "note okn", "Elegível para aprovação."
+    note = (f'<div class="{note_cls}" style="margin-bottom:14px"><b>{blocks} bloqueio(s) · {warns} aviso(s)</b>'
+            f"<br>{note_msg}</div>")
+    if view.stage in (Stage.APPROVED, Stage.COMPLETED):
+        actions = (
+            '<div class="note okn" style="margin-bottom:12px">✓ Versão aprovada.</div>'
+            f'<div class="stack" style="gap:8px"><a class="btn primary long" href="{area_href(video_id, "publicacao")}">'
+            "Ir para publicação →</a></div>"
+        )
+    else:
+        disabled = "" if rendered else " disabled"
+        actions = (
+            '<div class="stack" style="gap:8px">'
+            f'<button type="button" class="btn ok long" data-a="approve" data-video-id="{e(video_id)}" '
+            f'id="btn-approve-video"{disabled}>✓ Aprovar e preparar publicação →</button>'
+            f'<a class="btn ghost long small" href="{area_href(video_id, "cenas")}">Pedir ajustes (volta ao storyboard)</a>'
+            '<span id="approve-feedback" class="feedback" role="status" aria-live="polite"></span></div>'
+        )
+    aside = (
+        '<aside class="card" style="position:sticky;top:80px"><h3>Aprovação desta versão</h3>'
+        '<p class="sub" style="margin:4px 0 12px">Aprovar marca esta versão como a oficial. '
+        "Publicar é um passo separado.</p>"
+        f'{note}<p class="sub" style="margin-bottom:10px">{e(approval_text)}</p>{actions}</aside>'
     )
+    script_line = ""
+    if script_view is not None and script_view.has_script:
+        script_line = (f'<p class="sub" style="margin:-4px 0 12px">Aprovação do roteiro: '
+                       f'{"aprovada" if script_view.approved else "não registrada"}.</p>')
+    aside = aside.replace("</aside>", f"{script_line}</aside>") if script_line else aside
+    return f'<div class="two"><div class="stack">{preview_card}{issues_card}{technical_details}</div>{aside}</div>'
 
-    return preview_card + review_card + technical_details + disclaimer
 
-
-def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
+def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None,
+                     channel_name: str = "") -> str:
     video = getattr(view, "video", view)
     pub = getattr(view, "publication", None)
 
@@ -1051,7 +1091,7 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
                 rows += _kv("Erro registrado", e(pub.error))
         else:
             rows = _kv("Situação", '<span class="pill pill-good">Publicado</span>')
-        summary = f'<div class="card"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
+        summary = f'<div class="card flat"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
     elif is_scheduled:
         if pub is not None:
             status_value = getattr(pub.status, "value", str(pub.status))
@@ -1066,15 +1106,15 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
             rows = _kv("Situação", '<span class="pill pill-info">Agendado</span>')
             if data_str:
                 rows += _kv("Agendamento", f"Agendado para {e(data_str)} (Horário de Brasília)")
-        summary = f'<div class="card"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
+        summary = f'<div class="card flat"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
     elif pub is not None:
         status_value = getattr(pub.status, "value", str(pub.status))
         rows = _kv("Situação", e(status_value)) + _kv("Tentativa", str(pub.attempt))
         if pub.error:
             rows += _kv("Erro registrado", e(pub.error))
-        summary = f'<div class="card"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
+        summary = f'<div class="card flat"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
     else:
-        summary = ('<div class="card"><h3>Publicação</h3>'
+        summary = ('<div class="card flat"><h3>Publicação</h3>'
                    '<p class="muted">Nenhuma publicação registrada para este vídeo.</p></div>')
 
     # Opções de publicação V3 (imediato vs agendado)
@@ -1097,31 +1137,19 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     sched_style = '' if is_scheduled else ' style="display:none"'
 
     options_card = (
-        '<div class="card" id="card-opcoes-publicacao" style="margin-top:1.25rem">'
-        '<h3>Opções de Publicação</h3>'
+        '<div id="card-opcoes-publicacao" style="margin-top:14px">'
         f'{dirty_html}'
         f'{scheduled_note}'
-        '<div class="campo">'
-        '<label class="rotulo"><strong>Modalidade de publicação:</strong></label>'
-        '<div class="grupo-radios" style="display:flex;gap:1.5rem;margin:0.5rem 0;flex-wrap:wrap">'
-        '<label class="radio-opcao" style="display:flex;align-items:center;gap:6px;cursor:pointer">'
-        f'<input type="radio" name="tipo-publicacao" id="publicar-agora" value="imediato"{checked_now}>'
-        '<span>Publicar agora (Publicar imediatamente)</span>'
-        '</label>'
-        '<label class="radio-opcao" style="display:flex;align-items:center;gap:6px;cursor:pointer">'
-        f'<input type="radio" name="tipo-publicacao" id="agendar-publicacao" value="agendado"{checked_sched}>'
-        '<span>Agendar publicação (Agendar para depois)</span>'
-        '</label>'
-        '</div>'
-        '</div>'
-        f'<div class="campo campo-agendamento" id="bloco-agendamento"{sched_style}>'
-        '<label for="agendamento-data"><strong>Data e horário de publicação</strong></label>'
-        f'<input type="datetime-local" id="agendamento-data" name="agendamento-data" class="campo" value="{e(sched_input_val)}">'
-        '<p class="dica">Horário de Brasília · UTC−03:00. Agendar não publica agora.</p>'
+        '<div class="field"><span class="lbl">Modalidade de publicação</span>'
+        '<div class="seg" role="group">'
+        f'<label class="seg-btn"><input type="radio" class="sr-only" name="tipo-publicacao" id="publicar-agora" value="imediato"{checked_now}>Publicar agora</label>'
+        f'<label class="seg-btn"><input type="radio" class="sr-only" name="tipo-publicacao" id="agendar-publicacao" value="agendado"{checked_sched}>Agendar publicação</label>'
+        '</div></div>'
+        f'<div class="field campo-agendamento" id="bloco-agendamento"{sched_style}>'
+        '<label for="agendamento-data">Data e horário de publicação</label>'
+        f'<input type="datetime-local" id="agendamento-data" name="agendamento-data" value="{e(sched_input_val)}">'
+        '<p class="sample">Horário de Brasília · UTC−03:00. Agendar não publica agora.</p>'
         '<span id="agendamento-feedback" class="feedback" role="status" aria-live="polite"></span>'
-        '</div>'
-        '<div class="acoes" style="margin-top:1.25rem">'
-        f'<button type="button" class="btn btn-primario" id="btn-publicar-acao" data-video-id="{e(video_id)}">{action_btn_text}</button>'
         '</div>'
         '</div>'
     )
@@ -1131,33 +1159,101 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     # continua acessível pelo link. Mudar destino/metadados torna a intenção obsoleta no servidor
     # (A19/A37) e exige uma confirmação nova.
     if preview is not None:
-        decision = approval_form.render_approval_decision(preview)
+        decision = approval_form.render_approval_decision(preview, bare=True)
         reviewable = preview.video.status in (VideoStatus.AWAITING_APPROVAL, VideoStatus.RENDERED)
     else:
         decision = ""
         reviewable = view.stage in _PREVIEW_STAGES
-    heading = ('<p class="aviso" id="publicacao-intencao"><strong>A confirmação de publicação vive aqui.</strong> '
+    heading = ('<div class="note" id="publicacao-intencao"><b>A confirmação de publicação vive aqui.</b> '
                "Trocar o destino do YouTube ou título/descrição/tags/visibilidade depois de aprovar "
-               "invalida a intenção anterior: será preciso confirmar de novo (A19).</p>")
+               "invalida a intenção anterior: será preciso confirmar de novo (A19).</div>")
+
+    approved = view.stage in (Stage.APPROVED, Stage.COMPLETED) or is_published
+    gate_note = ""
+    if not approved and not reviewable:
+        gate_note = ('<div class="note" style="margin-bottom:14px">Aprove uma versão na aba Qualidade para liberar '
+                     f'a publicação. <a class="btn small" href="{area_href(video_id, "qualidade")}">Ir para Qualidade</a></div>')
 
     if reviewable:
-        preview_html = (f'<p><a class="btn" href="/studio/videos/{e(video_id)}/preview">'
+        preview_html = (f'<p style="margin-top:12px"><a class="btn small" href="/studio/videos/{e(video_id)}/preview">'
                         "Abrir prévia completa</a></p>")
     else:
-        preview_html = ('<p class="aviso">A prévia fica disponível após a renderização.</p>')
+        preview_html = '<p class="sample" style="margin-top:12px">A prévia fica disponível após a renderização.</p>'
 
-    destination = (
-        '<p class="aviso"><strong>Sem destino YouTube conectado, a publicação é recusada.</strong> '
-        "O canal precisa de um destino e de uma autorização vigente — o gate falha fechado "
-        "(renderer/app/studio/domain/channel.py). Conecte o canal em Canais → Conexão antes de "
-        "publicar.</p>"
+    left = (
+        '<div class="card"><h3 style="margin-bottom:12px">Dados de publicação no YouTube</h3>'
+        f"{gate_note}{summary}{heading}{decision}{options_card}{preview_html}</div>"
     )
-    return summary + heading + options_card + decision + preview_html + destination
+    destino = (e(channel_name) if channel_name else "Canal do vídeo")
+    if is_published:
+        action = '<div class="note okn">✓ Publicado.</div>'
+    else:
+        action = (f'<button type="button" class="btn ok long" id="btn-publicar-acao" data-video-id="{e(video_id)}">'
+                  f"{action_btn_text}</button>"
+                  '<div style="margin-top:8px"><a class="btn small long" href="/studio/panel/conexoes">Abrir Conexões</a></div>'
+                  '<p class="sample" style="margin-top:10px">Nada é enviado sem este clique.</p>')
+    aside = (
+        '<aside class="card" style="position:sticky;top:80px"><div class="between"><h3>Canal de destino</h3></div>'
+        f'<div class="card flat" style="margin:12px 0"><b>{destino}</b>'
+        '<p class="sample">Sem destino YouTube conectado e autorização vigente, a publicação é recusada '
+        "(o gate falha fechado — renderer/app/studio/domain/channel.py). Conecte o canal em "
+        "Configurações → Conexões antes de publicar.</p></div>"
+        f"{action}</aside>"
+    )
+    return f'<div class="two">{left}{aside}</div>'
+
+
+_STEP_ICON = {"SUCCEEDED": ("ok", "✓"), "RUNNING": ("run", "…"), "FAILED": ("fail", "✕")}
+_STEP_TEXT = {"SUCCEEDED": "Concluída", "RUNNING": "Em andamento", "FAILED": "Falhou"}
+
+
+def _usd(value: float | None) -> str:
+    return "não medido" if value is None else "US$ " + f"{value:.2f}".replace(".", ",")
 
 
 def _area_producao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
-    # O cartão real de produção já traz iniciar/retomar e o link "Abrir execução" quando há run.
-    return legacy._video_run_card(view)
+    """`tabProd` do protótipo: "Etapas da produção" + aside "Custo do vídeo" e "Diagnóstico técnico".
+
+    As etapas e o custo por etapa vêm do que foi registrado (`view.steps`, `view.usage`); etapa sem
+    uso medido mostra "não medido" e nunca entra como zero. O cartão real de produção
+    (iniciar/retomar/nova produção, com o motivo do servidor) fica logo abaixo.
+    """
+    steps = list(getattr(view, "steps", None) or [])
+    usage = list(getattr(view, "usage", None) or [])
+    cost_by_step: dict[str, float] = {}
+    for u in usage:
+        cost_by_step[u.step] = cost_by_step.get(u.step, 0.0) + float(u.cost_usd)
+    rows = []
+    for st in steps:
+        icon_cls, icon = _STEP_ICON.get(st.status, ("", "○"))
+        err = (f'<p style="color:var(--bad);font-size:12.5px">{e(st.error_message or st.error_class)}</p>'
+               if st.status == "FAILED" and (st.error_message or st.error_class) else "")
+        label = legacy._PRODUCTION_STAGE_LABELS.get(st.step, st.step)
+        rows.append(
+            f'<div class="step"><span class="ic {icon_cls}">{icon}</span><div style="flex:1"><b>{e(label)}</b>{err}'
+            f'<p class="sample">{_STEP_TEXT.get(st.status, "Aguardando")}</p></div>'
+            f'<span class="sample">{_usd(cost_by_step.get(st.step))}</span></div>')
+    steps_html = "".join(rows) or '<p class="sub" style="margin-top:8px">Nenhuma etapa executada ainda.</p>'
+    steps_card = (f'<div class="card"><div class="between"><h3>Etapas da produção</h3></div>'
+                  f'<div style="margin-top:8px">{steps_html}</div></div>')
+    measured = sum(cost_by_step.values())
+    partial = bool(steps) and any(st.step not in cost_by_step for st in steps)
+    cost_card = (
+        '<div class="card"><h3>Custo do vídeo</h3>'
+        f'<p style="font-size:22px;font-weight:760;margin:6px 0">{e(view.cost_text)}</p>'
+        f'<p class="sample">{"Etapas sem custo medido não são somadas como zero." if partial else "Custo registrado pelo uso real do vídeo."}'
+        f'{" Soma medida: " + _usd(measured) + "." if usage else ""}</p></div>'
+    )
+    run = getattr(view, "latest_run", None)
+    mode = getattr(getattr(view.video, "production_mode", None), "value", getattr(view.video, "production_mode", ""))
+    diag = (
+        '<details class="diag"><summary>Diagnóstico técnico</summary>'
+        f'<p class="mono" style="margin-top:8px">video_id={e(video_id)}<br>modo={e(mode)}'
+        f'<br>estado={e(view.stage.value)}'
+        f'{"<br>execução=" + e(run.run_id) + " (" + e(run.state) + ")" if run is not None else ""}</p></details>'
+    )
+    return (f'<div class="two"><div class="stack">{steps_card}{legacy._video_run_card(view)}</div>'
+            f'<aside class="stack">{cost_card}{diag}</aside></div>')
 
 
 _AREA_RENDERERS = {
@@ -1172,18 +1268,43 @@ _AREA_RENDERERS = {
 }
 
 
+def _dock(view, video_id: str, scenes, script) -> str:
+    """`dock(v)` do protótipo: resumo fixo no rodapé, nas abas Cenas e Composição."""
+    items = _normalize_scenes(scenes, script)
+    if view.stage == Stage.COMPLETED:
+        return ('<div class="dock"><span class="sub">Publicado.</span>'
+                f'<a class="btn small" href="{area_href(video_id, "publicacao")}">Ver publicação</a></div>')
+    total = sum(_secs(sc["narration"]) for sc in items)
+    missing = sum(1 for sc in items if not sc["asset_id"] or sc["audio_state"] != "ok")
+    needs = view.stage in (Stage.PENDING, Stage.FAILED)
+    aviso = (f'<span class="pill warn">{missing} cena(s) sem mídia ou áudio atual</span>'
+             if needs and missing else "")
+    if needs:
+        acao = f'<a class="btn primary" href="{area_href(video_id, "producao")}">🎬 Gerar o que falta e renderizar</a>'
+    else:
+        acao = f'<a class="btn ok" href="{area_href(video_id, "qualidade")}">Ir para aprovação →</a>'
+    return (f'<div class="dock"><div class="row"><b>{len(items)} cenas</b>'
+            f'<span class="sub">~{_fmt_t(total)} · estimativa de custo não disponível</span>{aviso}</div>'
+            f'<div class="row">{acao}</div></div>')
+
+
 def _content(view, area: str, *, style_view, script_view, video_id, composition_view=None, preview=None,
-             scenes=None, script=None) -> str:
+             scenes=None, script=None, channel_voice: str | None = None, channel_name: str = "") -> str:
     if area == "publicacao":
         return _area_publicacao(view, style_view=style_view, script_view=script_view,
-                                video_id=video_id, preview=preview)
+                                video_id=video_id, preview=preview, channel_name=channel_name)
     if area == "qualidade":
         return _area_qualidade(view, style_view=style_view, script_view=script_view,
                                video_id=video_id, composition_view=composition_view,
                                preview=preview)
     if area == "cenas":
         return _area_cenas(view, style_view=style_view, script_view=script_view, video_id=video_id,
-                           composition_view=composition_view, scenes=scenes, script=script)
+                           composition_view=composition_view, scenes=scenes, script=script,
+                           channel_voice=channel_voice) + _dock(view, video_id, scenes, script)
+    if area == "composicao":
+        return _area_composicao(view, style_view=style_view, script_view=script_view, video_id=video_id,
+                                composition_view=composition_view, scenes=scenes,
+                                script=script) + _dock(view, video_id, scenes, script)
     return _AREA_RENDERERS[area](
         view, style_view=style_view, script_view=script_view, video_id=video_id,
         composition_view=composition_view,
@@ -1193,6 +1314,27 @@ def _content(view, area: str, *, style_view, script_view, video_id, composition_
 PAGE_JS = """
 (function () {
   var runFeedback = document.getElementById('video-run-feedback');
+  var dlgFonte = document.getElementById('dlg-fonte');
+  var btnFonte = document.getElementById('btn-abrir-fonte');
+  if (dlgFonte && btnFonte) {
+    btnFonte.addEventListener('click', function () {
+      if (typeof dlgFonte.showModal === 'function') dlgFonte.showModal(); else dlgFonte.setAttribute('open', '');
+      var u = document.getElementById('source-url'); if (u) u.focus();
+    });
+    dlgFonte.addEventListener('click', function (ev) {
+      if (ev.target === dlgFonte || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlgFonte.close();
+    });
+  }
+  var dlgVersoes = document.getElementById('dlg-versoes');
+  var btnVersoes = document.getElementById('btn-versoes');
+  if (dlgVersoes && btnVersoes) {
+    btnVersoes.addEventListener('click', function () {
+      if (typeof dlgVersoes.showModal === 'function') dlgVersoes.showModal(); else dlgVersoes.setAttribute('open', '');
+    });
+    dlgVersoes.addEventListener('click', function (ev) {
+      if (ev.target === dlgVersoes || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlgVersoes.close();
+    });
+  }
 
   function wireStart(button) {
     button.addEventListener('click', async function () {
@@ -1379,6 +1521,33 @@ PAGE_JS = """
   var redoStack = [];
   var MAX_SNAPSHOTS = 30;
 
+  var AUDIO_BADGE = {
+    ok: ['ok', '\u2713 \u00c1udio atual'],
+    stale: ['warn', '\u00c1udio desatualizado'],
+    none: ['bad', 'Sem \u00e1udio ainda']
+  };
+  function setBadge(badge, state) {
+    var b = AUDIO_BADGE[state] || AUDIO_BADGE.none;
+    badge.textContent = b[1];
+    badge.className = 'pill ' + b[0] + ' badge-audio';
+  }
+  function countText(s) {
+    var words = ((s.narration || '').trim().match(/\\S+/g) || []).length;
+    var secs = (typeof s.duration_s === 'number' && s.duration_s) ? (s.duration_s.toFixed(1) + 's')
+      : ('~' + Math.max(2, Math.round(words / 2.6)) + 's');
+    return words + ' palavras \u00b7 ' + secs;
+  }
+  function syncBroll() {
+    var chk = document.getElementById('cena-broll-enabled');
+    var lbl = document.getElementById('lbl-broll');
+    var txt = document.getElementById('lbl-broll-txt');
+    if (!chk || !lbl) return;
+    lbl.classList.toggle('ghost', !chk.checked);
+    lbl.style.borderColor = chk.checked ? 'var(--accent)' : '';
+    lbl.style.color = chk.checked ? 'var(--accent2)' : '';
+    if (txt) txt.textContent = chk.checked ? 'B-roll ativo' : '+ B-roll';
+  }
+
   function getStoryboardSnapshot() {
     var narEl = document.getElementById('cena-narration');
     var prmEl = document.getElementById('cena-prompt');
@@ -1414,11 +1583,9 @@ PAGE_JS = """
       var isAct = (pIdx === idx);
       pill.setAttribute('aria-pressed', isAct ? 'true' : 'false');
       if (isAct) {
-        pill.classList.add('active', 'btn-primario');
-        pill.classList.remove('btn-ghost');
+        pill.classList.add('active', 'primary');
       } else {
-        pill.classList.remove('active', 'btn-primario');
-        pill.classList.add('btn-ghost');
+        pill.classList.remove('active', 'primary');
       }
     });
 
@@ -1426,15 +1593,14 @@ PAGE_JS = """
     if (card) card.setAttribute('data-active-idx', String(idx));
 
     var titulo = document.getElementById('foco-titulo');
-    if (titulo) titulo.textContent = 'Cena ' + (idx + 1) + ' de ' + scenesData.length + ' · ' + (s.label || ('Cena ' + (idx + 1)));
+    if (titulo) titulo.textContent = 'CENA ' + (idx + 1) + ' · ' + (s.label || ('Cena ' + (idx + 1))).toUpperCase();
 
     var duracao = document.getElementById('foco-duracao');
-    if (duracao) duracao.textContent = (typeof s.duration_s === 'number') ? (s.duration_s.toFixed(1) + ' s') : 'sem duração medida';
+    if (duracao) duracao.textContent = countText(s);
 
     var badge = document.getElementById('foco-audio-badge');
     if (badge) {
-      badge.textContent = 'Áudio: ' + (s.audio_state || 'none');
-      badge.className = 'pill pill-' + (s.audio_state || 'none') + ' badge-audio';
+      setBadge(badge, s.audio_state);
     }
 
     var nar = document.getElementById('cena-narration');
@@ -1445,6 +1611,7 @@ PAGE_JS = """
 
     var brollChk = document.getElementById('cena-broll-enabled');
     if (brollChk) brollChk.checked = Boolean(s.broll_enabled);
+    syncBroll();
 
     var brollNote = document.getElementById('cena-broll-note');
     if (brollNote) brollNote.value = s.broll_note || '';
@@ -1462,8 +1629,14 @@ PAGE_JS = """
         placeholder.style.display = 'none';
       } else {
         img.style.display = 'none';
-        placeholder.style.display = 'flex';
+        placeholder.style.display = 'block';
       }
+      var prev = document.getElementById('foco-midia-preview');
+      if (prev) prev.style.borderStyle = s.asset_id ? '' : 'dashed';
+      var tag = document.getElementById('foco-midia-tag');
+      if (tag) { tag.textContent = 'Cena ' + (idx + 1); tag.style.display = s.asset_id ? 'block' : 'none'; }
+      var tb = document.getElementById('btn-trocar-midia');
+      if (tb) tb.textContent = s.asset_id ? 'Trocar m\u00eddia' : 'Escolher m\u00eddia';
     }
 
     var numAudio = document.getElementById('modal-audio-scene-num');
@@ -1484,7 +1657,11 @@ PAGE_JS = """
     mediaImg.addEventListener('error', function () {
       mediaImg.style.display = 'none';
       var placeholder = document.getElementById('foco-midia-placeholder');
-      if (placeholder) placeholder.style.display = 'flex';
+      if (placeholder) placeholder.style.display = 'block';
+      var tagErr = document.getElementById('foco-midia-tag');
+      if (tagErr) tagErr.style.display = 'none';
+      var prevErr = document.getElementById('foco-midia-preview');
+      if (prevErr) prevErr.style.borderStyle = 'dashed';
     });
   }
 
@@ -1536,8 +1713,7 @@ PAGE_JS = """
         if (isIdentical) {
           s.audio_state = 'ok';
           if (badge) {
-            badge.textContent = 'Áudio: pronto (ok)';
-            badge.className = 'pill pill-ok badge-audio';
+            setBadge(badge, 'ok');
           }
           if (pill) {
             var label = s.label || ('Cena ' + (currentActiveIdx + 1));
@@ -1546,8 +1722,7 @@ PAGE_JS = """
         } else {
           s.audio_state = 'stale';
           if (badge) {
-            badge.textContent = 'Áudio: desatualizado (stale)';
-            badge.className = 'pill pill-stale badge-audio';
+            setBadge(badge, 'stale');
           }
           if (pill) {
             var label = s.label || ('Cena ' + (currentActiveIdx + 1));
@@ -1591,6 +1766,8 @@ PAGE_JS = """
       }
       if (scenesData[currentActiveIdx]) {
         scenesData[currentActiveIdx].narration = narEl.value;
+        var cnt = document.getElementById('foco-duracao');
+        if (cnt) cnt.textContent = countText(scenesData[currentActiveIdx]);
       }
     });
     narEl.addEventListener('blur', function () {
@@ -1636,6 +1813,7 @@ PAGE_JS = """
       }
       var wrap = document.getElementById('cena-broll-note-wrap');
       if (wrap) wrap.style.display = enabled ? 'block' : 'none';
+      syncBroll();
     });
   }
 
@@ -1709,6 +1887,118 @@ PAGE_JS = """
       updateUndoRedoButtons();
     });
   }
+
+  // ---- ações reais da cena em foco: ouvir, regenerar voz, mover e excluir ----
+  var sbCard = document.getElementById('cena-em-foco');
+  var sbVideoId = sbCard ? (sbCard.getAttribute('data-video-id') || '') : '';
+  var sbVersion = sbCard ? Number(sbCard.getAttribute('data-script-version') || 0) : 0;
+  var sbFeedback = document.getElementById('storyboard-feedback');
+
+  function sbSay(text) { if (sbFeedback) sbFeedback.textContent = text; }
+  function sbCall(method, url, body) {
+    var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+    var payload = body ? Object.assign({ idempotency_key: key }, body) : null;
+    return fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: payload ? JSON.stringify(payload) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, data: d }; });
+    });
+  }
+  function sbDetail(d, fallback) { return (d && typeof d.detail === 'string') ? d.detail : fallback; }
+  function sbSyncMove() {
+    var up = document.getElementById('btn-mover-cima');
+    var down = document.getElementById('btn-mover-baixo');
+    if (up) up.disabled = currentActiveIdx <= 0 || !sbVersion;
+    if (down) down.disabled = currentActiveIdx >= scenesData.length - 1 || !sbVersion;
+  }
+  var sbFocus = focusScene;
+  focusScene = function (idx) { sbFocus(idx); sbSyncMove(); syncPlayer(); };
+
+  var sbAudio = null;
+  function syncPlayer() {
+    var s = scenesData[currentActiveIdx];
+    var play = document.getElementById('btn-ouvir-trecho');
+    var regen = document.getElementById('btn-regenerar-voz');
+    if (sbAudio) { sbAudio.pause(); sbAudio = null; }
+    var prog = document.getElementById('foco-prog');
+    if (prog) prog.classList.remove('run');
+    if (play) { play.textContent = '\u25b6 Ouvir trecho'; play.disabled = !s || s.audio_state === 'none'; }
+    if (regen && s) regen.textContent = s.audio_state === 'none' ? 'Gerar \u00e1udio da cena' : 'Regenerar \u00e1udio da cena';
+  }
+  var playBtn = document.getElementById('btn-ouvir-trecho');
+  if (playBtn) {
+    playBtn.addEventListener('click', function () {
+      var s = scenesData[currentActiveIdx];
+      if (!s) return;
+      var prog = document.getElementById('foco-prog');
+      if (sbAudio) { syncPlayer(); return; }
+      sbAudio = new Audio('/studio/videos/' + encodeURIComponent(sbVideoId) + '/scenes/' +
+                          encodeURIComponent(s.id) + '/narration.wav?t=' + Date.now());
+      sbAudio.addEventListener('ended', syncPlayer);
+      sbAudio.addEventListener('error', function () { syncPlayer(); sbSay('N\u00e3o foi poss\u00edvel carregar o \u00e1udio desta cena.'); });
+      sbAudio.play().then(function () {
+        playBtn.textContent = '\u25a0 Parar';
+        if (prog) { prog.style.setProperty('--d', (s.duration_s || 3) + 's'); prog.classList.add('run'); }
+      }).catch(function () { syncPlayer(); sbSay('N\u00e3o foi poss\u00edvel tocar o \u00e1udio desta cena.'); });
+    });
+  }
+  var regenBtn = document.getElementById('btn-regenerar-voz');
+  if (regenBtn) {
+    regenBtn.addEventListener('click', function () {
+      var s = scenesData[currentActiveIdx];
+      if (!s) return;
+      regenBtn.disabled = true;
+      sbSay('Gerando o \u00e1udio da cena\u2026');
+      sbCall('POST', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/scenes/' +
+             encodeURIComponent(s.id) + '/narration/regenerate').then(function (res) {
+        regenBtn.disabled = false;
+        if (res.ok) {
+          s.audio_state = 'ok';
+          if (typeof res.data.duration_s === 'number') s.duration_s = res.data.duration_s;
+          var badge = document.getElementById('foco-audio-badge');
+          if (badge) setBadge(badge, 'ok');
+          var dur = document.getElementById('foco-duracao');
+          if (dur) dur.textContent = countText(s);
+          syncPlayer();
+          sbSay('\u00c1udio da cena atualizado.');
+        } else {
+          sbSay('N\u00e3o foi poss\u00edvel gerar o \u00e1udio: ' + sbDetail(res.data, 'tente novamente.'));
+        }
+      }).catch(function () { regenBtn.disabled = false; sbSay('Falha de rede ao gerar o \u00e1udio.'); });
+    });
+  }
+  function sbMove(delta) {
+    var from = currentActiveIdx, to = from + delta;
+    if (!sbVersion || to < 0 || to >= scenesData.length) return;
+    var order = scenesData.map(function (_s, i) { return i; });
+    order[from] = to; order[to] = from;
+    sbSay('Reordenando\u2026');
+    sbCall('POST', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/script/scenes/reorder',
+           { expected_version: sbVersion, order: order }).then(function (res) {
+      if (res.ok) { location.reload(); }
+      else { sbSay('N\u00e3o foi poss\u00edvel reordenar: ' + sbDetail(res.data, 'tente novamente.')); }
+    }).catch(function () { sbSay('Falha de rede ao reordenar.'); });
+  }
+  var upBtn = document.getElementById('btn-mover-cima');
+  var downBtn = document.getElementById('btn-mover-baixo');
+  if (upBtn) upBtn.addEventListener('click', function () { sbMove(-1); });
+  if (downBtn) downBtn.addEventListener('click', function () { sbMove(1); });
+  var delBtn = document.getElementById('btn-excluir-cena');
+  if (delBtn) {
+    delBtn.addEventListener('click', function () {
+      if (!sbVersion) return;
+      if (!window.confirm('Excluir a cena ' + (currentActiveIdx + 1) + '? Esta a\u00e7\u00e3o cria uma nova vers\u00e3o do roteiro.')) return;
+      sbSay('Excluindo\u2026');
+      sbCall('DELETE', '/studio/videos/' + encodeURIComponent(sbVideoId) + '/script/scenes/' + currentActiveIdx,
+             { expected_version: sbVersion }).then(function (res) {
+        if (res.ok) { location.reload(); }
+        else { sbSay('N\u00e3o foi poss\u00edvel excluir: ' + sbDetail(res.data, 'tente novamente.')); }
+      }).catch(function () { sbSay('Falha de rede ao excluir.'); });
+    });
+  }
+  sbSyncMove();
 
   function wireModal(triggerId, dialogId) {
     var trigger = document.getElementById(triggerId);
@@ -1871,6 +2161,9 @@ PAGE_JS = """
   if (compForm) {
     var compBottomInput = document.getElementById('composicao-bottom');
     var compPosRadios = compForm.querySelectorAll('input[name="comp-posicao"]');
+    var fsRange = document.getElementById('composicao-font-size');
+    var fsOut = document.getElementById('composicao-font-size-v');
+    if (fsRange && fsOut) fsRange.addEventListener('input', function () { fsOut.textContent = fsRange.value; });
     function syncBottomInputState() {
       var checkedPos = compForm.querySelector('input[name="comp-posicao"]:checked');
       if (compBottomInput && checkedPos) {
@@ -1900,8 +2193,8 @@ PAGE_JS = """
 
       var posRadio = compForm.querySelector('input[name="comp-posicao"]:checked');
       var fontSelect = document.getElementById('composicao-caption-font');
-      var estiloRadio = compForm.querySelector('input[name="comp-estilo"]:checked');
-      var transRadio = compForm.querySelector('input[name="comp-transicao"]:checked');
+      var estiloRadio = compForm.querySelector('[name="comp-estilo"]');
+      var transRadio = compForm.querySelector('[name="comp-transicao"]');
 
       var captionPos = posRadio ? posRadio.value : 'bottom';
       var captionFont = fontSelect ? fontSelect.value : 'dejavu';
@@ -1973,30 +2266,91 @@ PAGE_JS = """
 """
 
 
-def _workspace_header(view, video_id: str, title: str, stage_label: str) -> str:
-    """Cabeçalho do workspace com título, badge de estado, custo e link de diagnóstico."""
-    diag_href = area_href(video_id, "producao")
-    return f"""        <div class="cab-video">
-          <div>
-            <p class="eyebrow">ESPAÇO DO VÍDEO</p>
-            <h1 class="h1" id="t-video">{e(title)}</h1>
-            <p class="lead" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              {legacy._state_badge(view.stage)}
-              <span class="pill pill-{e(view.stage.value)}">{e(stage_label)}</span>
-              <span class="micro">Custo do vídeo: {legacy._cost_html(view.cost_text)}</span>
-            </p>
-          </div>
-          <div class="cab-acoes" style="display:flex;gap:8px;align-items:center">
-            <a class="btn btn-ghost btn-sm" href="{diag_href}">Ver progresso / Diagnóstico</a>
-          </div>
-        </div>"""
+def _style_name(style_view) -> str | None:
+    """Nome do estilo efetivo do vídeo (override ou herdado do canal); None se não houver."""
+    if style_view is None:
+        return None
+    override = getattr(style_view, "override_style_id", None)
+    if override:
+        for style in getattr(style_view, "styles", ()) or ():
+            if getattr(style, "id", None) == override:
+                return style.name
+        return None
+    return getattr(style_view, "inherited_style_name", None) or None
+
+
+def _version_dialog(view) -> str:
+    """Histórico de versões do protótipo, só com o que existe: a versão renderizada, se houver."""
+    if view.stage in _PREVIEW_STAGES:
+        body = ('<div class="between" style="padding:8px 0;border-bottom:1px solid var(--line)">'
+                '<b>Versão atual</b><span class="sub">renderizada · as versões anteriores não são '
+                "registradas nesta tela</span></div>")
+    else:
+        body = '<p class="sub">Nenhuma versão renderizada.</p>'
+    return (
+        '<dialog id="dlg-versoes" class="modal" aria-labelledby="t-versoes">'
+        '<div class="modal-header"><h2 id="t-versoes">Histórico de versões</h2>'
+        '<button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button></div>'
+        f'<div class="dialogo-corpo"><div style="margin:10px 0">{body}</div>'
+        '<button class="btn small" type="button" data-fechar-dialogo>Fechar</button></div></dialog>'
+    )
+
+
+def _workspace_header(view, video_id: str, title: str, *, channel_name: str = "", style_view=None,
+                      channel_voice: str | None = None) -> str:
+    """Cabeçalho de `pgVideo`: voltar + caminho, eyebrow de modo, h1, pills e ações."""
+    mode = getattr(view.video, "production_mode", None)
+    mode_value = getattr(mode, "value", mode)
+    eyebrow = "🎬 Modo Diretor" if mode_value == "diretor" else "⚡ Criado no piloto automático"
+    label, tone = _ESTADO.get(view.stage, (view.stage.value, ""))
+    fmt = getattr(getattr(view.video, "format", None), "value", getattr(view.video, "format", None))
+    pills = [f'<span class="pill {tone}">{e(label)}</span>',
+             f'<span class="pill">{"Short 9:16" if fmt == "short" else "Vídeo 16:9"}</span>']
+    if channel_voice:
+        pills.append(f'<span class="pill">🎙 {e(channel_voice)}</span>')
+    style_name = _style_name(style_view)
+    if style_name:
+        pills.append(f'<span class="pill">🎨 {e(style_name)}</span>')
+    editar = ""
+    if mode_value != "diretor" and view.stage != Stage.PENDING:
+        editar = f'<a class="btn small" href="{area_href(video_id, "cenas")}">Editar no Modo Diretor</a>'
+    caminho = f"{e(channel_name)} / {e(title)}" if channel_name else e(title)
+    return f"""        <p class="sub" style="margin-bottom:8px"><a class="btn ghost small" href="/studio/panel/videos">← Vídeos</a> &nbsp; {caminho}</p>
+        <div class="head"><div><p class="eyebrow">{eyebrow}</p><h1 id="t-video">{e(title)}</h1>
+          <div class="row" style="margin-top:6px">{"".join(pills)}</div></div>
+          <div class="row">{editar}<button class="btn small" type="button" id="btn-versoes">Histórico de versões</button></div>
+          <a class="btn ghost small" href="{area_href(video_id, "producao")}">Ver progresso / Diagnóstico</a></div>
+        {_version_dialog(view)}"""
+
+
+def _progress_card(view) -> str:
+    """Cartão de `progressCard` — só quando há produção em andamento, com as etapas registradas."""
+    if view.stage != Stage.IN_PRODUCTION:
+        return ""
+    steps = list(view.steps or [])
+    done = sum(1 for s in steps if s.status == "SUCCEEDED")
+    total = len(steps)
+    pct = round(done / total * 100) if total else 0
+    pills = "".join(
+        f'<span class="pill {"ok" if s.status == "SUCCEEDED" else "accent" if s.status == "RUNNING" else "bad" if s.status == "FAILED" else ""}">'
+        f'{"✓" if s.status == "SUCCEEDED" else "…" if s.status == "RUNNING" else "✕" if s.status == "FAILED" else "○"} '
+        f'{e(legacy._PRODUCTION_STAGE_LABELS.get(s.step, s.step))}</span>'
+        for s in steps)
+    return (
+        '<div class="card" style="border-color:var(--accent);margin-bottom:18px"><div class="between"><div>'
+        "<h3>⚡ Produção em andamento</h3>"
+        '<p class="sub">Roteiro → voz → mídia → composição → qualidade. Ao terminar, abre na aprovação.</p></div>'
+        f'<span class="pill accent">{done}/{total} etapas</span></div>'
+        f'<div class="prog" style="height:8px;margin-top:12px"><b style="width:{pct}%;transition:width .5s"></b></div>'
+        f'<div class="row" style="margin-top:8px">{pills}</div></div>'
+    )
 
 
 def render_video_workspace(view, area: str = "cenas", *, active_area: str | None = None,
                            style_view=None, script_view=None,
                            composition_view=None, preview=None, projects=(), project_id: str = "",
                            channel_name: str = "", script=None, scenes=None,
-                           sources=None) -> WorkspaceResult:
+                           sources=None, channel_voice: str | None = None) -> WorkspaceResult:
     """Workspace do vídeo: uma área por rota, reusando os blocos reais do detalhe.
 
     O que a rota precisa passar:
@@ -2048,17 +2402,19 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
     active_area = _normalize_area(area)
     video_id = getattr(view.video, "id", "")
     title = getattr(view.video, "title", None) or getattr(view.video, "topic", "Vídeo")
-    stage_label = legacy.STAGE_LABELS.get(view.stage, view.stage.value)
 
-    channel_crumb = f" / {e(channel_name)}" if channel_name else ""
+    dots = {}
+    if view.stage == Stage.AWAITING_APPROVAL:
+        dots["qualidade"] = "Aguardando você"
     body_html = f"""      <section class="pagina" id="pagina-video-workspace" aria-labelledby="t-video">
-        <p class="crumb"><a href="/studio/panel/videos">← Vídeos</a>{channel_crumb}</p>
-{_workspace_header(view, video_id, title, stage_label)}
-        {_video_area_nav(video_id, active_area)}
+{_workspace_header(view, video_id, title, channel_name=channel_name, style_view=style_view,
+                   channel_voice=channel_voice)}
+        {_video_area_nav(video_id, active_area, dots)}
+        {_progress_card(view)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,
                   preview=preview if active_area in ("publicacao", "qualidade") else None,
-                  scenes=scenes, script=script)}
+                  scenes=scenes, script=script, channel_voice=channel_voice, channel_name=channel_name)}
       </section>"""
 
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"

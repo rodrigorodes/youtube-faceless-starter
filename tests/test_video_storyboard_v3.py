@@ -14,9 +14,13 @@ def test_v3_storyboard_renders_scene_selector_and_full_script_details():
     video = Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
     # Render da área 'cenas'
     html = render_video_workspace(video, active_area="cenas", script=None, scenes=[], sources=[])
-    assert 'id="seletor-cenas"' in html or 'class="seletor-cenas"' in html
-    assert "Ver roteiro completo" in html
-    assert "Desfazer" in html or "btn-undo" in html
+    # Sem cenas reais o protótipo (`prior.scenes`) mostra o cabeçalho "Storyboard integrado" e um
+    # cartão vazio: nada de seletor, de undo/redo nem de roteiro completo sobre cenas que não existem.
+    assert "Storyboard integrado" in html
+    assert "Sem cenas." in html
+    assert "+ Nova cena" in html
+    assert 'id="seletor-cenas"' not in html
+    assert 'id="cena-em-foco"' not in html
 
 
 def test_v3_storyboard_renders_focused_scene_and_action_buttons():
@@ -73,7 +77,7 @@ def test_v3_storyboard_renders_focused_scene_and_action_buttons():
     assert "btn-redo-cenas" in html
     assert "Desfazer" in html
     assert "Refazer" in html
-    assert "Regenerar voz" in html
+    assert "Regenerar áudio da cena" in html
     assert "Histórico da voz" in html
     assert "Trocar mídia" in html
 
@@ -166,8 +170,8 @@ def test_v3_storyboard_audio_history_dynamic_and_restore_stale_logic():
     # Lógica de restauração com marcação de stale/ok e indicação na pill no JS
     assert "renderAudioHistory" in html
     assert "btn-restaurar-audio" in html
-    assert "Áudio: desatualizado (stale)" in html
-    assert "Áudio: pronto (ok)" in html
+    assert "Áudio desatualizado" in html
+    assert "✓ Áudio atual" in html
     assert "· atualizar voz" in html
     assert "audio_history" in html
 
