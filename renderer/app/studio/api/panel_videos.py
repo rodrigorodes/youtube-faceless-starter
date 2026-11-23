@@ -12,6 +12,7 @@ from ..application.panel import PanelView, Stage, VideoItem
 from . import panel as legacy
 from . import panel_home
 from . import shell_v3
+from .panel_video_nav import area_href, default_area
 
 VIDEOS_JS = """
 (function () {
@@ -107,7 +108,7 @@ def _estado(video: VideoItem) -> tuple[str, str]:
 
 def _aba(video: VideoItem) -> str:
     """`data-tab` do protótipo: aprovação abre Qualidade, falha abre Produção, o resto abre Cenas."""
-    return {Stage.AWAITING_APPROVAL: "qualidade", Stage.FAILED: "producao"}.get(video.stage, "cenas")
+    return default_area(video.stage)
 
 
 def video_row(video: VideoItem) -> str:

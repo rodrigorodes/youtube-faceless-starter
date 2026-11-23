@@ -12,6 +12,7 @@ from html import escape as e
 
 from ..application.panel import PanelView, Stage, TrendItemView, VideoItem
 from . import shell_v3
+from .panel_video_nav import area_href, default_area
 
 # Situação mostrada no cartão: (texto, classe do ponto, descrição da etapa). Sem estimativa de progresso.
 _SITUACAO = {
@@ -57,7 +58,7 @@ def video_card(video: VideoItem) -> str:
     """Cartão `.card` do protótipo: pill de estado, título, uma linha, uma ação."""
     pill, label, step, action, primary = _NEEDS_CARD[video.stage]
     title = video.title or video.topic
-    href = f"/studio/panel/videos/{e(video.id, quote=True)}"
+    href = area_href(video.id, default_area(video.stage))
     return (f'<div class="card cartao-projeto"><div><span class="pill {pill}">{e(label)}</span></div>'
             f'<h3 style="margin:8px 0 2px">{e(title)}</h3><p class="sub">{e(step)}</p>'
             f'<div style="margin-top:12px"><a class="btn {"primary " if primary else ""}small" href="{href}" '

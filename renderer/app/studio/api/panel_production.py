@@ -30,7 +30,7 @@ from ..domain.production_run import (
 )
 from ..domain.panel import Stage
 from . import panel as shell
-from .panel_video_nav import area_href, video_area_nav
+from .panel_video_nav import area_href, default_area, video_area_nav
 from .panel_videos import _ESTADO
 
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
@@ -665,7 +665,7 @@ def _act_card(title: str, what: str, detail_html: str, buttons: Sequence[str], *
 
 def _revisar_link(view: ExecutionView, *, primary: bool = False) -> str:
     css = "btn primary" if primary else "btn"
-    return f'<a class="{css}" href="/studio/panel/videos/{e(view.run.video_id)}">Revisar</a>'
+    return f'<a class="{css}" href="{area_href(view.run.video_id, "qualidade")}">Revisar</a>'
 
 
 def _action_card_html(view: ExecutionView) -> str:
@@ -1107,7 +1107,7 @@ def _production_card(video, panel_home) -> str:
     label, css, step = panel_home._SITUACAO.get(video.stage, (video.stage.value, "parado", ""))
     title = video.title or video.topic
     return f"""<article class="cartao-projeto" data-situacao="{e(css)}">
-            <a href="/studio/panel/videos/{e(video.id)}" aria-label="Abrir o vídeo {e(title)}">
+            <a href="{area_href(video.id, default_area(video.stage))}" aria-label="Abrir o vídeo {e(title)}">
               <div class="miniatura"><b>{e(panel_home._format_label(video))}</b></div>
               <div class="cartao-corpo">
                 <h3>{e(title)}</h3>

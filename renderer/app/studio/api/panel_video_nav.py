@@ -29,6 +29,13 @@ def area_href(video_id: str, area: str) -> str:
     return f"/studio/panel/videos/{e(video_id)}/{area}"
 
 
+def default_area(stage) -> str:
+    """Área em que o vídeo abre (`data-tab` do protótipo): aprovação abre Qualidade, falha abre Produção,
+    o resto abre Cenas. É o destino de todo link que "abre o vídeo" — nenhum deles vai à página legada."""
+    value = getattr(stage, "value", stage)
+    return {"awaiting_approval": "qualidade", "failed": "producao"}.get(str(value).lower(), DEFAULT_AREA)
+
+
 def normalize_area(area: str | None) -> str:
     """Área desconhecida (ou legada) cai em `cenas` (DEFAULT_AREA).
 

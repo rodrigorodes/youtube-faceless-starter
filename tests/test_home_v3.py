@@ -97,7 +97,7 @@ def test_home_shows_only_videos_that_need_you_and_first_steps_when_empty():
     grid = html[html.index('class="grade"'):html.index('id="tendencias"')]
     text = _visible_text(grid)
     # "Precisa de você": aprovar antes de retomar falha; o que não depende do usuário não aparece
-    assert 'href="/studio/panel/videos/v-wait"' in grid and 'href="/studio/panel/videos/v-fail"' in grid
+    assert 'href="/studio/panel/videos/v-wait/qualidade"' in grid and 'href="/studio/panel/videos/v-fail/producao"' in grid
     assert "v-old" not in grid
     assert grid.index("v-wait") < grid.index("v-fail")
     assert "Aguardando aprovação" in text and "Revisar e aprovar" in text

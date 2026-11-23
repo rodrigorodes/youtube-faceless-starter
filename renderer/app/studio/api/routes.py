@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import os
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -2006,14 +2006,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         return HTMLResponse(page, headers=headers)
 
     @router.get("/oauth/callback", response_class=HTMLResponse)
-    def oauth_callback_page(state: str = "", error: str = ""):
+    def oauth_callback_page(state: str = "", error: str = "", code: str = ""):
         """Retorno do Google: o `state` carrega o projeto; a página conclui o consentimento.
 
+        O fluxo de Conexões emite um `state` sem projeto: esse retorno segue para a tela de
+        Conexões (303), que conclui o consentimento pela API. Só o `state` por projeto fica aqui.
+
         O `code` chega na query string e é lido pelo browser na própria página; o servidor não o
-        precisa para renderizar e não o grava em lugar nenhum. Sem `state` reconhecido, a página
-        explica que a conexão precisa ser refeita — não é um beco sem saída.
+        precisa para renderizar e não o grava em lugar nenhum.
         """
         project_id = consent_project_id(state) if state else None
+        if project_id is None:
+            forwarded = {k: v for k, v in (("code", code), ("state", state), ("error", error)) if v}
+            query = f"?{urlencode(forwarded)}" if forwarded else ""
+            return RedirectResponse(url=f"/studio/panel/conexoes{query}", status_code=303)
         page, headers = render_oauth_callback(project_id, provider_error=error or None)
         return HTMLResponse(page, headers=headers)
 

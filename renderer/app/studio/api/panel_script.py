@@ -4,6 +4,7 @@ import secrets
 from ..application.script_view import ScriptPageView
 
 from .panel_shell import _duration_text, _headers, e
+from .panel_video_nav import area_href
 
 
 def _fact_check_text(fact_check) -> str:
@@ -122,7 +123,7 @@ def render_script(view: ScriptPageView, *, video_channel: str = "") -> tuple[str
     from . import shell_v3
 
     content_page = f"""      <section class="pagina" id="pagina-roteiro" aria-labelledby="roteiro-heading">
-        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos/{e(view.video_id)}">← Voltar ao vídeo</a> /
+        <p class="crumb" style="margin:0 0 10px"><a href="{area_href(view.video_id, "cenas")}">← Voltar ao vídeo</a> /
           <span>Roteiro</span></p>
         <div class="cab-video">
           <div>

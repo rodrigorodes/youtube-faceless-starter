@@ -10,6 +10,7 @@ from urllib.parse import quote
 from ..application.panel import PanelView
 from ..domain.contracts import VideoFormat
 from ..domain.panel import Stage
+from .panel_video_nav import area_href
 
 from .panel_shell import (
     ACTION_STAGES,
@@ -333,7 +334,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
                 if "preview" in v.actions:
                     actions_html.append(f'<a class="btn btn-primary btn-compact" href="/studio/videos/{e(v.id)}/preview">Ver Prévia</a>')
                 if "progress" in v.actions:
-                    actions_html.append(f'<a class="btn btn-compact" href="/studio/panel/videos/{e(v.id)}">Ver Progresso</a>')
+                    actions_html.append(f'<a class="btn btn-compact" href="{area_href(v.id, "producao")}">Ver Progresso</a>')
 
                 fmt_label = "Short" if getattr(v, "format", VideoFormat.short) == VideoFormat.short else "Long"
                 date_str = v.updated_at.strftime("%d/%m %H:%M")
@@ -599,7 +600,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
                 progress_label = "Ver correção" if item.stage in (Stage.FAILED, Stage.REJECTED) else "Ver Progresso"
                 button_class = "btn btn-ghost" if "preview" in item.actions else "btn btn-primary"
                 buttons.append(
-                    f'<a class="{button_class}" href="/studio/panel/videos/{e(item.id)}">{progress_label}</a>'
+                    f'<a class="{button_class}" href="{area_href(item.id, "producao")}">{progress_label}</a>'
                 )
             if not buttons:
                 buttons.append('<span class="dim">Sem ação disponível nesta versão.</span>')
@@ -645,7 +646,7 @@ def _render_panel_page(view: PanelView, *, mode: str = "inicio",
           <p><strong>Falha registrada no vídeo «{e(latest_failure.topic)}».</strong></p>
           <p class="muted">O que fazer: abra o vídeo para ver o passo de correção. O botão de nova tentativa aparece no detalhe quando o estado permite.</p>
           <p class="dim">Detalhe técnico disponível em Avançado — diagnóstico.</p>
-          <a class="btn btn-primary" style="width: 100%;" href="/studio/panel/videos/{e(latest_failure.id)}">Ver correção</a>
+          <a class="btn btn-primary" style="width: 100%;" href="{area_href(latest_failure.id, "producao")}">Ver correção</a>
         """
 
     rail_cost_html = cost_breakdown_rows(view.month.breakdown)

@@ -168,7 +168,7 @@ NEW_VIDEO_JS = """
         }
       }).then(function (videoId) {
         if (fb) fb.textContent = 'Vídeo criado. Abrindo…';
-        location.href = '/studio/panel/videos/' + encodeURIComponent(videoId);
+        location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
       }).catch(function (err) {
         btnCriar.disabled = false;
         btnCriar.classList.remove('carregando');

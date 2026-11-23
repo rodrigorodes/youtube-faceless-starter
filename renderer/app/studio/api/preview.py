@@ -9,6 +9,7 @@ import secrets
 from . import approval_form
 from . import panel as shell
 from . import shell_v3
+from .panel_video_nav import area_href
 from ..application.publishing import Preview
 
 e = lambda value: html.escape(str(value), quote=True)  # noqa: E731
@@ -45,7 +46,7 @@ def render_preview(p: Preview, *, video_channel: str = "") -> tuple[str, dict[st
     review = approval_form.render_approval_decision(p, base=base)
 
     body_html = f"""      <section class="pagina" id="pagina-previa" aria-labelledby="previa-heading">
-        <p class="crumb" style="margin:0 0 10px"><a href="/studio/panel/videos/{e(v.id)}">← Voltar ao vídeo</a> /
+        <p class="crumb" style="margin:0 0 10px"><a href="{area_href(v.id, "qualidade")}">← Voltar ao vídeo</a> /
           <span>Prévia do corte final</span></p>
         <div class="cab-video">
           <div>
