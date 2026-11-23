@@ -653,9 +653,116 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         "carregada no estilo, sem fingir suporte.</p>"
     )
     plan_card = _composition_plan_card(composition_view)
-    return (plan_card
-            + f'<div class="card"><h2>Composição do vídeo</h2>{head}{rows}</div>'
-            + notes)
+
+    # Controles ativos suportados e controles de evolução (Plano 2) com honestidade visual
+    font_size_val = caption.get("font_size", 42)
+    bottom_val = caption.get("bottom", 96)
+    color_text_val = palette.get("caption_text", "#ffffff")
+    color_box_val = palette.get("caption_box", "#00000099")
+    color_accent_val = palette.get("accent", "#a78bfa")
+    is_static_motion = isinstance(motion, (list, tuple)) and len(motion) == 0
+
+    controls_card = (
+        '<div class="card" id="card-controles-composicao">'
+        '<h2>Ajustes de composição e legendas V3</h2>'
+        f'<form id="form-composicao" data-video-id="{e(video_id)}" data-endpoint="/studio/videos/{e(video_id)}/style">'
+        '<div class="grid-2">'
+        '  <div>'
+        '    <h3>Legenda (Controles ativos)</h3>'
+        '    <div class="campo">'
+        '      <label for="composicao-font-size">Tamanho da legenda (font_size)</label>'
+        f'      <input type="number" id="composicao-font-size" name="caption.font_size" class="input campo" value="{e(str(font_size_val))}" min="16" max="96">'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label for="composicao-bottom">Distância da base (bottom, px)</label>'
+        f'      <input type="number" id="composicao-bottom" name="caption.bottom" class="input campo" value="{e(str(bottom_val))}" min="0" max="400">'
+        '    </div>'
+        '  </div>'
+        '  <div>'
+        '    <h3>Paleta de cores (Controles ativos)</h3>'
+        '    <div class="campo">'
+        '      <label for="composicao-color-text">Cor do texto da legenda</label>'
+        f'      <input type="text" id="composicao-color-text" name="palette.caption_text" class="input campo" value="{e(str(color_text_val))}">'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label for="composicao-color-box">Cor da caixa da legenda</label>'
+        f'      <input type="text" id="composicao-color-box" name="palette.caption_box" class="input campo" value="{e(str(color_box_val))}">'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label for="composicao-color-accent">Cor de destaque (accent)</label>'
+        f'      <input type="text" id="composicao-color-accent" name="palette.accent" class="input campo" value="{e(str(color_accent_val))}">'
+        '    </div>'
+        '  </div>'
+        '</div>'
+        '<div class="campo" style="margin-top:1rem">'
+        '  <label for="composicao-motion">Movimento de câmera</label>'
+        '  <select id="composicao-motion" name="motion" class="input campo">'
+        f'    <option value="zoom_lento"{" selected" if not is_static_motion else ""}>Zoom lento (Ken Burns padrão: zoom_in, pan_left)</option>'
+        f'    <option value="estatico"{" selected" if is_static_motion else ""}>Estático (sem movimento)</option>'
+        '  </select>'
+        '</div>'
+        '<div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--line, #e3e0ea)">'
+        '  <h3>Evolução de Composição</h3>'
+        '  <div class="campo">'
+        '    <label>Posição da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '    <div style="display:flex;gap:1.5rem;margin-top:0.35rem">'
+        '      <label><input type="radio" name="caption_pos" value="topo" disabled> Topo</label>'
+        '      <label><input type="radio" name="caption_pos" value="meio" disabled> Meio</label>'
+        '      <label><input type="radio" name="caption_pos" value="base" checked disabled> Base (vigente)</label>'
+        '    </div>'
+        '  </div>'
+        '  <div class="grid-2" style="margin-top:1rem">'
+        '    <div class="campo">'
+        '      <label for="composicao-fonte-fam">Fonte da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '      <select id="composicao-fonte-fam" class="input campo" disabled>'
+        '        <option value="inter" selected disabled>Inter</option>'
+        '        <option value="roboto" disabled>Roboto</option>'
+        '        <option value="georgia" disabled>Georgia</option>'
+        '      </select>'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label>Estilo da legenda <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '      <div style="display:flex;gap:1rem;margin-top:0.35rem;flex-wrap:wrap">'
+        '        <label><input type="radio" name="caption_style" value="destaque" disabled> Destaque por palavra</label>'
+        '        <label><input type="radio" name="caption_style" value="caixa" checked disabled> Caixa (vigente)</label>'
+        '        <label><input type="radio" name="caption_style" value="simples" disabled> Simples</label>'
+        '      </div>'
+        '    </div>'
+        '  </div>'
+        '  <div class="grid-2" style="margin-top:1rem">'
+        '    <div class="campo">'
+        '      <label>Transição entre cenas <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '      <div style="display:flex;gap:1rem;margin-top:0.35rem">'
+        '        <label><input type="radio" name="transicao_tipo" value="fade" checked disabled> Fade</label>'
+        '        <label><input type="radio" name="transicao_tipo" value="corte" disabled> Corte seco</label>'
+        '        <label><input type="radio" name="transicao_tipo" value="deslizar" disabled> Deslizar</label>'
+        '      </div>'
+        '    </div>'
+        '    <div class="campo">'
+        '      <label>Taxa de quadros / FPS</label>'
+        '      <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.35rem;flex-wrap:wrap">'
+        '        <span class="pill pill-ok">25 fps (vigente)</span>'
+        '        <label><input type="radio" name="fps_opt" value="24" disabled> 24 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '        <label><input type="radio" name="fps_opt" value="30" disabled> 30 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '        <label><input type="radio" name="fps_opt" value="60" disabled> 60 fps <span class="pill pill-espera">Em breve no Plano 2</span></label>'
+        '      </div>'
+        '    </div>'
+        '  </div>'
+        '</div>'
+        '<div style="margin-top:1.5rem;display:flex;align-items:center;gap:1rem">'
+        '  <button type="submit" class="btn btn-primary" id="btn-salvar-composicao">Salvar composição</button>'
+        '  <p id="composicao-feedback" class="dica" role="status" aria-live="polite" style="margin:0"></p>'
+        '</div>'
+        '</form>'
+        '</div>'
+    )
+
+    return (
+        plan_card
+        + controls_card
+        + f'<div class="card"><h2>Composição do vídeo</h2>{head}{rows}</div>'
+        + notes
+    )
 
 
 def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
@@ -1598,11 +1705,22 @@ PAGE_JS = """
     return true;
   }
 
+  function syncPublishAt() {
+    var pAt = document.getElementById('publish_at');
+    if (!pAt) return;
+    if (nowRadio && nowRadio.checked) {
+      pAt.value = '';
+    } else if (scheduleInput && scheduleInput.value) {
+      pAt.value = scheduleInput.value;
+    }
+  }
+
   if (scheduleRadio && nowRadio && scheduleBlock) {
     scheduleRadio.addEventListener('change', function () {
       if (scheduleRadio.checked) {
         scheduleBlock.style.display = 'block';
         validateBrasiliaSchedule();
+        syncPublishAt();
       }
     });
     nowRadio.addEventListener('change', function () {
@@ -1612,13 +1730,20 @@ PAGE_JS = """
           scheduleFeedback.textContent = '';
           scheduleFeedback.classList.remove('erro');
         }
+        syncPublishAt();
       }
     });
   }
 
   if (scheduleInput) {
-    scheduleInput.addEventListener('input', validateBrasiliaSchedule);
-    scheduleInput.addEventListener('change', validateBrasiliaSchedule);
+    scheduleInput.addEventListener('input', function () {
+      validateBrasiliaSchedule();
+      syncPublishAt();
+    });
+    scheduleInput.addEventListener('change', function () {
+      validateBrasiliaSchedule();
+      syncPublishAt();
+    });
   }
 
   if (btnPublishAction) {
@@ -1628,6 +1753,62 @@ PAGE_JS = """
           e.preventDefault();
           return false;
         }
+      }
+    });
+  }
+
+  // Composição V3: submissão de alterações de estilo (PATCH /studio/videos/{id}/style)
+  var compForm = document.getElementById('form-composicao');
+  if (compForm) {
+    compForm.addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var videoId = compForm.getAttribute('data-video-id') || '';
+      var feedback = document.getElementById('composicao-feedback');
+      var button = document.getElementById('btn-salvar-composicao');
+      var fontSizeInput = document.getElementById('composicao-font-size');
+      var bottomInput = document.getElementById('composicao-bottom');
+      var colorTextInput = document.getElementById('composicao-color-text');
+      var colorBoxInput = document.getElementById('composicao-color-box');
+      var colorAccentInput = document.getElementById('composicao-color-accent');
+      var motionInput = document.getElementById('composicao-motion');
+
+      var payload = {
+        caption: {
+          font_size: fontSizeInput ? Number(fontSizeInput.value) || 42 : 42,
+          bottom: bottomInput ? Number(bottomInput.value) || 96 : 96
+        },
+        palette: {
+          caption_text: colorTextInput ? colorTextInput.value.trim() : '#ffffff',
+          caption_box: colorBoxInput ? colorBoxInput.value.trim() : '#00000099',
+          accent: colorAccentInput ? colorAccentInput.value.trim() : '#a78bfa'
+        },
+        motion: (motionInput && motionInput.value === 'estatico') ? [] : ['zoom_in', 'pan_left']
+      };
+
+      if (button) { button.disabled = true; button.classList.add('carregando'); }
+      if (window.StudioLoading) window.StudioLoading.start();
+      if (feedback) feedback.textContent = 'Salvando composição...';
+
+      try {
+        var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/style', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await response.json().catch(function () { return {}; });
+        if (response.ok) {
+          if (feedback) feedback.textContent = 'Composição salva com sucesso. Atualizando...';
+          setTimeout(function () { location.reload(); }, 500);
+        } else {
+          if (feedback) feedback.textContent = 'Não foi possível salvar: '
+            + (typeof data.detail === 'string' ? data.detail : 'verifique os parâmetros e tente novamente.');
+          if (button) { button.disabled = false; button.classList.remove('carregando'); }
+          if (window.StudioLoading) window.StudioLoading.done();
+        }
+      } catch (err) {
+        if (feedback) feedback.textContent = 'Falha de rede ao salvar a composição. Tente novamente.';
+        if (button) { button.disabled = false; button.classList.remove('carregando'); }
+        if (window.StudioLoading) window.StudioLoading.done();
       }
     });
   }

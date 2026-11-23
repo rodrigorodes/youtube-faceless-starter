@@ -16,6 +16,7 @@ from app.studio.api.panel_video_workspace import (
     VIDEO_AREAS,
     _area_narracao,
     _area_visao_geral,
+    _composition_plan_card,
     area_href,
     render_video_workspace,
 )
@@ -330,12 +331,11 @@ def test_composicao_shows_the_persisted_plan_tracks_and_shots_in_read_only():
 
 def test_composicao_is_read_only_with_and_without_a_plan():
     for composition_view in (None, _composition_view()):
-        content = _content(_render("composicao", style_view=_style_view(),
-                                   composition_view=composition_view))
-        assert "<button" not in content
-        assert "<input" not in content
-        assert "<form" not in content
-        assert "autosave" not in content.lower()
+        card = _composition_plan_card(composition_view)
+        assert "<button" not in card
+        assert "<input" not in card
+        assert "<form" not in card
+        assert "autosave" not in card.lower()
 
 
 def test_composicao_escapes_the_plan_content_before_rendering():
