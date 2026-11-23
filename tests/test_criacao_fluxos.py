@@ -130,3 +130,34 @@ def _chapters():
 def test_stale_script_error_is_translated():
     from app.studio.api.erro_js import ERRO_JS
     assert "not the latest script version" in ERRO_JS
+
+
+# ---- Piloto sem fonte: a única entrada manual é a fonte; ao registrá-la a produção começa sozinha ----
+
+def _piloto(*, sources=(), run=None):
+    import dataclasses
+    view = _view(sources=sources, latest_run=run)
+    return dataclasses.replace(view, video=dataclasses.replace(view.video, production_mode="piloto"))
+
+
+def test_pilot_without_sources_explains_it_waits_for_a_source_and_arms_autostart():
+    html = _render("fontes", view=_piloto())
+    content = _content(html)
+    assert 'id="piloto-aguarda-fonte"' in content
+    assert "começa sozinha" in _texto(content)
+    assert re.search(r'<form[^>]*id="video-sources-form"[^>]*data-autostart="1"', content)
+
+
+def test_autostart_is_off_for_director_or_when_sources_already_exist():
+    assert 'data-autostart' not in _content(_render("fontes", view=_view()))
+    content = _content(_render("fontes", view=_piloto(sources=[FONTE])))
+    assert 'id="piloto-aguarda-fonte"' not in content and "data-autostart" not in content
+
+
+def test_source_form_script_starts_the_production_when_autostart_is_armed():
+    html = _render("fontes", view=_piloto())
+    assert "data-autostart" in html and "/production-runs" in html and "Idempotency-Key" in html
+
+
+def test_new_video_pilot_without_script_opens_sources_not_an_empty_storyboard():
+    assert "'/fontes'" in NEW_VIDEO_JS or '"/fontes"' in NEW_VIDEO_JS

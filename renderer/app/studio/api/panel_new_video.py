@@ -47,7 +47,7 @@ NEW_VIDEO_JS = """
           : 'Voc\\u00ea cai no storyboard. As cenas nascem das fontes: adicione uma fonte e gere o roteiro. M\\u00eddia e voz s\\u00f3 s\\u00e3o geradas quando voc\\u00ea pedir.')
         : (comRoteiro
           ? 'A produ\\u00e7\\u00e3o come\\u00e7a assim que o v\\u00eddeo \\u00e9 criado. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.'
-          : 'O v\\u00eddeo abre para voc\\u00ea adicionar uma fonte; a produ\\u00e7\\u00e3o come\\u00e7a quando houver de onde escrever o roteiro. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.');
+          : 'O v\\u00eddeo abre em Fontes: o Studio ainda n\\u00e3o pesquisa sozinho. Ao adicionar uma fonte, a produ\\u00e7\\u00e3o come\\u00e7a sozinha. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.');
     }
     $('#campo-roteiro').hidden = !useScript.checked;
     $('#estrutura-roteiro').hidden = useScript.checked;
@@ -213,7 +213,9 @@ NEW_VIDEO_JS = """
         }).then(function () {
           if (flash) { try { sessionStorage.setItem('flash-' + videoId, flash); } catch (e) {} }
           if (fb) fb.textContent = 'V\u00eddeo criado. Abrindo\u2026';
-          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+          // Piloto sem fonte: o passo seguinte é a fonte (a produção começa sozinha ao registrá-la).
+          var semFonte = !scriptText && payload.production_mode !== 'diretor';
+          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + (semFonte ? '/fontes' : '/cenas');
         });
       }).catch(function (err) {
         btnCriar.disabled = false;

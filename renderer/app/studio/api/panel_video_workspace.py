@@ -243,6 +243,9 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
     else:
         listing = ('<div class="card"><p class="sub">Nenhuma fonte ainda. Adicione uma URL de referência '
                    "ou cole um texto de apoio.</p></div>")
+    mode = getattr(view.video, "production_mode", None)
+    mode = str(getattr(mode, "value", mode) or "").lower()
+    autostart = (mode == "piloto" and not sources and view.stage == Stage.PENDING and not _run_is_live(view))
     base_url = getattr(view, "base_video_url", None)
     base_html = ""
     url_value = ""
@@ -257,7 +260,7 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
       <div class="dialogo-corpo">
         <p class="sub" style="margin-bottom:12px">O roteiro só é escrito a partir de fatos das fontes. Sem fonte aproveitável, a produção para no primeiro passo.</p>
         {base_html}
-        <form id="video-sources-form" data-video-id="{e(video_id)}" novalidate>
+        <form id="video-sources-form" data-video-id="{e(video_id)}"{' data-autostart="1"' if autostart else ""} novalidate>
           <div class="field">
             <label for="source-url">URL da fonte <span aria-hidden="true">*</span></label>
             <input type="url" id="source-url" name="url" required data-error="source-url-error"
@@ -281,12 +284,20 @@ def _area_fontes(view, *, style_view=None, script_view=None, video_id: str, comp
         </form>
       </div>
     </dialog>"""
+    wait_note = ""
+    if autostart:
+        wait_note = (
+            '<div class="note info" id="piloto-aguarda-fonte" role="status" style="margin-bottom:16px">'
+            '<b>Piloto automático aguardando a fonte.</b> O Studio ainda não pesquisa sozinho (a pesquisa '
+            'automática não existe), e o roteiro só é escrito a partir de fatos de uma fonte. '
+            'Adicione uma fonte e a produção começa sozinha: roteiro, voz, mídia e composição, '
+            'parando na sua aprovação.</div>')
     return (
         '<div id="video-fontes">'
         '<div class="between" style="margin-bottom:14px"><div><h2>Fontes e evidências</h2>'
         '<p class="sub">Referências que sustentam o roteiro deste vídeo.</p></div>'
-        '<button type="button" class="btn small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
-        f"{note}{listing}{dialog}</div>"
+        '<button type="button" class="btn {"primary " if autostart else ""}small" id="btn-abrir-fonte">+ Adicionar fonte</button></div>'
+        f"{wait_note}{note}{listing}{dialog}</div>"
     )
 
 
@@ -1575,6 +1586,20 @@ PAGE_JS = """
         });
         var data = await response.json().catch(function () { return {}; });
         if (response.ok) {
+          if (sourcesForm.hasAttribute('data-autostart')) {
+            // Piloto automático: a fonte era o único dado que faltava; a produção começa sozinha.
+            if (feedback) feedback.textContent = 'Fonte registrada. Iniciando a produção...';
+            var chave = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+            var run = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/production-runs', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': chave }, body: '{}' });
+            var runData = await run.json().catch(function () { return {}; });
+            if (!run.ok) {
+              try { sessionStorage.setItem('flash-' + videoId, 'A produção não pôde iniciar: '
+                + window.StudioErro.texto(runData, 'tente novamente.', run.status)); } catch (e) {}
+            }
+            location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+            return;
+          }
           if (feedback) feedback.textContent = 'Fonte registrada. Atualizando...';
           setTimeout(function () { location.reload(); }, 600);
         } else {
