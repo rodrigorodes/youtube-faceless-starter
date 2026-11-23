@@ -2193,9 +2193,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/videos/{video_id}/preview", response_class=HTMLResponse)
     def preview(video_id: str):
+        prev = run(lambda uc: publishing(uc).preview.execute(check_id(video_id)))
+        projects, active_project = run(lambda uc: _topbar(uc, prev.video.project_id))
         page, headers = render_preview(
-            run(lambda uc: publishing(uc).preview.execute(check_id(video_id))),
-            video_channel=run(lambda uc: _video_channel_name(uc, video_id)))
+            prev, video_channel=run(lambda uc: _video_channel_name(uc, video_id)),
+            projects=projects, project_id=active_project or "")
         return HTMLResponse(page, headers=headers)
 
     @router.get("/videos/{video_id}/thumbnail")

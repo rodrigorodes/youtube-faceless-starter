@@ -416,10 +416,10 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     html_doc, _ = render_preview(preview)
 
     # Estrutura da casca compartilhada (`api.shell_v3.render_document`).
-    assert '<aside class="side">' in html_doc
+    assert '<aside class="side" aria-label="Menu principal">' in html_doc
     assert '<div class="app">' in html_doc
     assert '<main class="main">' in html_doc
-    assert "Faceless Studio" in html_doc and "ESTÚDIO DO CANAL" in html_doc
+    assert "Faceless Studio" in html_doc
 
     # Navegação renderizada: mesmos itens das outras telas do painel.
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", html_doc, flags=re.S)
@@ -438,14 +438,16 @@ def test_preview_page_renders_sidebar_navigation(tmp_path):
     assert 'aria-current="page"' in videos_item
 
     # Conteúdo da página intacto.
-    assert "Prévia do corte final" in html_doc
-    assert "Voltar ao vídeo" in html_doc
+    # Padrão do workspace do vídeo: cabeçalho, abas de área e cartões .card.
+    assert "Prévia da versão" in html_doc and "Decisão de aprovação" in html_doc
+    assert "Voltar à Qualidade" in html_doc and 'class="card' in html_doc
+    assert 'aria-label="Áreas do vídeo"' in html_doc or "Cenas &amp; Storyboard" in html_doc
 
     # A casca antiga e a paleta duplicada saíram desta página.
     for stale in ("FACELESS STUDIO", "Pipeline de Vídeos", "Temas em Alta", "+ Novo Vídeo",
                   "--bg: #0f0f0f", "--surface: #181818"):
         assert stale not in html_doc, f"prévia ainda traz o template antigo: {stale!r}"
-    assert "--accentfill-l:#6b4cd6" in html_doc  # paleta única da casca
+    assert "--accentfill: #8f6ef7" in html_doc  # paleta única da casca (v3)
 
 
 
