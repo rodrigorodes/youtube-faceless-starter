@@ -84,7 +84,6 @@ CONNECTIONS_CSS = """
 .conn-status[data-kind="ok"] { border-color: var(--success); color: var(--text); background: var(--success-surface); }
 .conn-status:empty { display: none; }
 .conn-scopes { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
-.conn-scopes code { color: var(--text); }
 dialog.confirm-dialog {
   border: 1px solid var(--border); border-radius: 14px; padding: 0; max-width: 30rem; width: calc(100% - 2rem);
   background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
@@ -430,7 +429,7 @@ def _account_card(account: dict, profiles: list[ChannelProfile],
 
 def _scopes_card() -> str:
     rows = "".join(
-        f"<li><code>{e(scope)}</code> — {e(purpose)}</li>" for scope, purpose in _SCOPES_EXPLAINED
+        f"<li><code class=\"mono\">{e(scope)}</code> — {e(purpose)}</li>" for scope, purpose in _SCOPES_EXPLAINED
     )
     return f"""
       <div class="card">

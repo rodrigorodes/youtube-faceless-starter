@@ -185,3 +185,19 @@ def test_v3_storyboard_undo_redo_saves_snapshot_on_focusin_before_mutation():
     assert "isEditingNarration" in html
     assert "btnUndo.addEventListener('click'" in html
     assert "btnRedo.addEventListener('click'" in html
+
+
+def test_nova_cena_is_an_in_place_action_with_the_script_version():
+    video = Video(id="v" * 32, project_id="p" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    scenes = [Scene(id="s1", video_id=video.id, idx=0, narration="Como a luz do sol vira eletricidade.",
+                    caption="Energia", label="Introdução", image_prompt="Painel solar sob o sol azul.", duration_s=6.5)]
+
+    class _Script:
+        version = 3
+        scenes = ()
+
+    html = render_video_workspace(video, active_area="cenas", script=_Script(), scenes=scenes, sources=[])
+    assert 'id="btn-nova-cena"' in html and 'data-script-version="3"' in html
+    assert f'href="/studio/videos/{video.id}/roteiro">+ Nova cena' not in html
+    # o texto-padrão da cena nova é o do protótipo (`mkScene('Nova cena', ...)`)
+    assert "Escreva aqui o texto da narra" in html and "descreva a imagem desejada" in html

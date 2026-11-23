@@ -105,6 +105,13 @@ NEW_VIDEO_JS = """
     }
   } catch (e) {}
   updateSummary();
+  document.querySelectorAll('input[name="estilo-novo"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      document.querySelectorAll('[data-estilo-choice]').forEach(function (c) {
+        c.setAttribute('aria-pressed', String(c.querySelector('input').checked));
+      });
+    });
+  });
 
   if (form && temaCampo && btnCriar) {
     form.addEventListener('submit', function (ev) {
@@ -187,34 +194,28 @@ def _language_label(code: str | None) -> str:
     return _LANGUAGES.get(code, code)
 
 
-def _style_options(view: NewVideoView, disabled: str) -> str:
-    """Opções reais de estilo (F02.T02/G15).
+_THUMB = "linear-gradient(135deg,#2b2540,#15171c)"
 
-    "Herdar do canal" é a escolha de não criar override — e mostra o nome real que será herdado.
-    Sem nenhum estilo na biblioteca, não há opção fictícia: só a herança (que é o padrão real do
-    estúdio) e o link para a biblioteca.
+
+def _style_choice(value: str, name: str, checked: bool, disabled: str) -> str:
+    """`.choice` do protótipo (`nstyle`): miniatura + nome; o rádio fica oculto e dirige o formulário."""
+    return (f'<label class="choice" data-estilo-choice aria-pressed="{"true" if checked else "false"}">'
+            f'<input type="radio" name="estilo-novo" value="{e(value, quote=True)}"{" checked" if checked else ""}{disabled} class="sr-only">'
+            f'<div class="thumb" style="height:54px;background:{_THUMB};margin-bottom:8px"><span style="font-size:22px">🎨</span></div>'
+            f'<b style="font-size:12.5px">{e(name)}</b></label>')
+
+
+def _style_options(view: NewVideoView, disabled: str) -> str:
+    """Estilos reais da biblioteca como grade de `.choice` (`grid3`).
+
+    A primeira opção é a herança do canal (sem override, valor vazio) com o nome real que será
+    herdado; sem estilo no canal, é o padrão do estúdio. Nenhum estilo fictício é criado.
     """
-    if view.inherited_style_name:
-        inherit = f"Herdar do canal — {e(view.inherited_style_name)}"
-        inherit_sample = "HERDAR DO CANAL"
-    else:
-        inherit = "Padrão do estúdio (canal sem estilo)"
-        inherit_sample = "PADRÃO DO ESTÚDIO"
-    if not view.styles:
-        return (f'<label class="pill"><input type="radio" name="estilo-novo" value="" checked{disabled}>'
-                f' {inherit}</label>')
-    cards = [
-        f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{inherit_sample}</span>'
-        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" value="" checked{disabled} class="sr-only">'
-        f'{inherit}</span></label>'
-    ]
-    cards.extend(
-        f'<label class="cartao-estilo"><span class="amostra" aria-hidden="true">{e(name.upper())}</span>'
-        f'<span class="cartao-rodape"><input type="radio" name="estilo-novo" '
-        f'value="{e(style_id, quote=True)}"{disabled} class="sr-only">{e(name)}</span></label>'
-        for style_id, name in view.styles
-    )
-    return f'<div class="galeria" style="width:100%">{"".join(cards)}</div>'
+    inherit = view.inherited_style_name or "Padrão do estúdio (canal sem estilo)"
+    cards = [_style_choice("", inherit, True, disabled)]
+    cards.extend(_style_choice(style_id, name, False, disabled)
+                 for style_id, name in view.styles if name != view.inherited_style_name)
+    return f'<div class="grid3">{"".join(cards)}</div>'
 
 
 def _cost_note(view: NewVideoView) -> str:
@@ -358,13 +359,7 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   <span class="sample">A voz vem do canal; a troca por vídeo ainda não está disponível.</span>
                 </div>
                 <p class="lbl" style="margin-bottom:6px">Estilo visual{estilo_vinculo}</p>
-                <fieldset class="pills" style="margin:0;border:0;padding:0;display:block;width:100%">
-                  <legend class="sr-only">Estilo visual</legend>
-                  {style_options}
-                </fieldset>
-                <p class="sample" style="margin-top:10px">
-                  <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a>
-                </p>
+                <div role="radiogroup" aria-label="Estilo visual">{style_options}</div>
               </div>
               </details>
             </div>

@@ -17,7 +17,7 @@ def select(key, label, options):
             + '</select></div>')
 
 
-_PERFIS = (("FRUGAL", "⚡ Econômico", "Prioriza custo conhecido. Rápido e simples.", "Econômico"),
+_PERFIS = (("ECONOMY", "⚡ Econômico", "Prioriza custo conhecido. Rápido e simples.", "Econômico"),
            ("BALANCED", "⚖ Equilibrado", "Equilibra custo e qualidade elegível.", "Equilibrado"),
            ("PREMIUM", "💎 Premium", "Prioriza qualidade. Exige providers de alta qualidade.", "Premium"))
 
@@ -26,8 +26,8 @@ _WIZARD_JS = """
   var form = document.getElementById('new-channel-form');
   if (!form) return;
   var hid = function (id) { return document.getElementById(id); };
-  var estado = { estilo: '', formato: 'short', modo: 'piloto', perfil: 'FRUGAL' };
-  var ROT = { piloto: 'Piloto automático', diretor: 'Modo Diretor', FRUGAL: 'Econômico', BALANCED: 'Equilibrado', PREMIUM: 'Premium' };
+  var estado = { estilo: '', formato: 'short', modo: 'piloto', perfil: 'ECONOMY' };
+  var ROT = { piloto: 'Piloto automático', diretor: 'Modo Diretor', ECONOMY: 'Econômico', BALANCED: 'Equilibrado', PREMIUM: 'Premium' };
   function marcar(grupo, valor) {
     estado[grupo] = valor;
     form.querySelectorAll('[data-wset="' + grupo + '"]').forEach(function (el) {
@@ -92,7 +92,7 @@ def render_channel_create(view):
         f'<div class="thumb" style="height:60px;background:linear-gradient(135deg,#2b2540,#15171c);margin-bottom:8px"><span style="font-size:24px">🎨</span></div>'
         f'<b style="font-size:12.5px">{e(nome)}</b></button>' for sid, nome, _ in styles)
     perfis = "".join(
-        f'<button type="button" class="choice" aria-pressed="{"true" if v == "FRUGAL" else "false"}" data-wset="perfil" data-v="{v}">'
+        f'<button type="button" class="choice" aria-pressed="{"true" if v == "ECONOMY" else "false"}" data-wset="perfil" data-v="{v}">'
         f'<b>{t}</b><p class="sub">{d}</p></button>' for v, t, d, _ in _PERFIS)
     body = f"""
     <section id="pagina-criar-canal">
@@ -100,7 +100,7 @@ def render_channel_create(view):
         <p class="sub">Comece com o essencial. Todos os ajustes continuam disponíveis quando precisar.</p>
       </div><a class="btn ghost small" href="/studio/configuracoes/canais">Cancelar</a></div>
       <form id="new-channel-form">
-        {_hidden("estilo", "")}{_hidden("formato", "short")}{_hidden("modo", "piloto")}{_hidden("perfil-economico", "FRUGAL")}
+        {_hidden("estilo", "")}{_hidden("formato", "short")}{_hidden("modo", "piloto")}{_hidden("perfil-economico", "ECONOMY")}
         <div class="grid2">
           <div class="card"><h3 style="margin-bottom:12px">Quem é este canal?</h3>
             {field("nome", "Nome do canal *", extra='required maxlength="120" placeholder="Ex.: Curiosidades Históricas"')}

@@ -1,4 +1,4 @@
-{"screen": "settings-conexoes", "viewport": "768", "text_similarity": 37.3, "text_diffs": 20, "field_similarity": 4.5, "field_diffs": 2, "style_diffs": 3, "pixel_diff_pct": 8.21, "height_ref": 2647, "height_app": 1903, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-conexoes", "viewport": "768", "text_similarity": 37.3, "text_diffs": 20, "field_similarity": 4.5, "field_diffs": 2, "style_diffs": 2, "pixel_diff_pct": 7.78, "height_ref": 2647, "height_app": 1907, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
@@ -27,17 +27,7 @@
 [delete] REF=['button[submit]:🧭 Roteiro da demo'] | APP=[]
 
 ## ESTILOS COMPUTADOS (mesmo texto)
-'youtube.upload' ref<code.mono> app<code.>
-    fontFamily: ref=ui-monospace, Menlo, monospace | app=monospace
-    fontSize: ref=12px | app=11.48px
-    lineHeight: ref=18px | app=18.368px
-    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-'youtube.readonly' ref<code.mono> app<code.>
-    fontFamily: ref=ui-monospace, Menlo, monospace | app=monospace
-    fontSize: ref=12px | app=11.48px
-    lineHeight: ref=18px | app=18.368px
-    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
-'Avançado e diagnóstico' ref<summary.> app<summary.>
-    fontWeight: ref=650 | app=600
+'youtube.upload' ref<code.mono> app<code.mono>
+    lineHeight: ref=18px | app=19.2px
+'youtube.readonly' ref<code.mono> app<code.mono>
+    lineHeight: ref=18px | app=19.2px

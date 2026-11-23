@@ -109,22 +109,21 @@ def test_new_video_satisfies_ux_contract():
     assert not re.search(r"\son[a-z]+=", html)
 
 
+def _bloco_estilo(html):
+    return html.split('aria-label="Estilo visual">', 1)[1].split("</details>", 1)[0]
+
+
 def test_new_video_style_options_are_the_real_library():
-    """G15/F02.T02: as opções de estilo são a biblioteca real — nunca nomes fictícios."""
+    """`nstyle` do protótipo: `.choice` em `grid3`; as opções são a biblioteca real, sem nomes fictícios."""
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno"), ("s2", "Clean Tech")],
                                         inherited_style_name="Cinema Noturno"))
-    opcoes = re.search(r'<fieldset class="pills"[^>]*>(.*?)</fieldset>', html, re.S)
-    assert opcoes, "o campo de estilo precisa existir"
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
-    assert 'name="estilo-novo"' in bloco
-    assert 'value="s1"' in bloco and "Cinema Noturno" in bloco
+    bloco = _bloco_estilo(html)
+    assert '<div class="grid3">' in bloco
     assert 'value="s2"' in bloco and "Clean Tech" in bloco
-    assert re.search(r'name="estilo-novo"[^>]*value=""[^>]*checked', bloco), "herdar vem marcado"
-    assert "Herdar do canal" in bloco
-    # nenhum resíduo fictício
+    assert re.search(r'value=""[^>]*checked', bloco), "herdar (estilo do canal) vem marcado"
+    assert bloco.count('class="choice"') == 2  # herdado (= s1, sem duplicar) + s2
     for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
         assert ficticio not in bloco
 
@@ -142,58 +141,27 @@ def test_format_is_a_segmented_control_short_first_like_the_prototype():
     assert "Voz do narrador" in html and "3 · Formato, voz e estilo" in html
 
 
-def test_style_options_are_cards_with_the_real_name_when_the_library_has_styles():
-    """Protótipo: estilo vira cartão com amostra. A amostra é o nome real do estilo."""
+def test_style_options_are_choice_cards_with_thumb_and_real_name():
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno"), ("s2", "Clean Tech")]))
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
-    # herdar do canal + um cartão por estilo real
-    assert bloco.count('class="cartao-estilo"') == 3
-    assert bloco.count('class="amostra"') == 3
+    bloco = _bloco_estilo(html)
+    assert bloco.count('class="choice"') == 3  # padrão do estúdio + um por estilo real
+    assert bloco.count('class="thumb"') == 3
     for nome in ("Cinema Noturno", "Clean Tech"):
-        # amostra em caixa alta, como no protótipo
-        assert f'<span class="amostra" aria-hidden="true">{nome.upper()}</span>' in bloco
-    # herdar continua sendo a escolha marcada (e agora também é um cartão, como as demais)
-    assert re.search(r'name="estilo-novo"[^>]*value=""[^>]*checked', bloco)
-    assert 'class="galeria"' in bloco
+        assert f'<b style="font-size:12.5px">{nome}</b>' in bloco
+    assert re.search(r'aria-pressed="true"><input type="radio" name="estilo-novo" value=""', bloco)
 
 
-def test_style_gallery_is_absent_when_the_library_is_empty():
-    from app.studio.api.panel_new_video import render_new_video_v3
-
-    html, _ = render_new_video_v3(_view(styles=()))
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
-    assert 'class="galeria"' not in bloco and 'cartao-estilo' not in bloco
-
-
-def test_new_video_style_inherit_shows_the_channel_style_name():
-    from app.studio.api.panel_new_video import render_new_video_v3
-
-    html, _ = render_new_video_v3(_view(styles=[("s1", "Cinema Noturno")],
-                                        inherited_style_name="Cinema Noturno"))
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
-    assert "Herdar do canal" in bloco
-    assert "Cinema Noturno" in bloco
-    assert "nenhum estilo" not in bloco.lower()
-
-
-def test_new_video_without_styles_sends_to_the_library_and_does_not_fake_options():
+def test_without_styles_only_the_channel_default_is_offered_and_nothing_is_faked():
     from app.studio.api.panel_new_video import render_new_video_v3
 
     html, _ = render_new_video_v3(_view(styles=(), inherited_style_name="Cinema Noturno"))
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
-    # sem biblioteca: herdar continua sendo uma escolha real; sem rádios inventados
-    assert 'name="estilo-novo"' in bloco
-    assert 'value=""' in bloco and 'checked' in bloco
-    assert "Cinema Noturno" in bloco  # o canal tem estilo: herdar aponta o nome real
-    assert re.search(r'href="/studio/panel/estilos(?:\?project_id=[^"]+)?"', html)
+    bloco = _bloco_estilo(html)
+    assert bloco.count('class="choice"') == 1 and "Cinema Noturno" in bloco
     for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
         assert ficticio not in html
+    assert "Gerenciar estilos" not in html  # o protótipo não tem esse link; a Biblioteca está no menu
 
 
 def test_new_video_payload_carries_the_chosen_style():

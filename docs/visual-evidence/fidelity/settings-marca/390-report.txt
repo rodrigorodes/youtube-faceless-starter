@@ -1,18 +1,17 @@
-{"screen": "settings-marca", "viewport": "390", "text_similarity": 85.7, "text_diffs": 8, "field_similarity": 52.0, "field_diffs": 3, "style_diffs": 0, "pixel_diff_pct": 11.29, "height_ref": 2182, "height_app": 2007, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-marca", "viewport": "390", "text_similarity": 88.6, "text_diffs": 7, "field_similarity": 60.4, "field_diffs": 3, "style_diffs": 0, "pixel_diff_pct": 11.37, "height_ref": 2182, "height_app": 2298, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [delete] REF=['Mockup · dados ilustrativos'] | APP=[]
 [replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Canal: Musica']
 [insert] REF=[] | APP=['Este canal ainda não tem perfil editorial. Preencha e salve para criar a versão 1.']
 [delete] REF=['Explicar mistérios históricos com contexto e fontes verificáveis.'] | APP=[]
-[delete] REF=['Cor da marca'] | APP=[]
 [replace] REF=['45 s'] | APP=['60 s']
-[delete] REF=['Fonte da legenda', 'Estilo da legenda'] | APP=[]
+[insert] REF=[] | APP=['Cor da marca e legenda: em breve (a legenda segue o estilo visual vinculado; ainda sem ajuste por canal aqui).']
 [replace] REF=['🧭 Roteiro da demo'] | APP=['Criar perfil do canal']
 
 ## CAMPOS/BOTOES (ref -> app)
 [replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo']
-[delete] REF=['input[color]:'] | APP=[]
-[replace] REF=['select[select-one]:Rodrigo Faber — Grave · documental Marin', 'select[select-one]:Cinemática Sombria Documentário Realista', 'select[select-one]:Inter Roboto Georgia', 'select[select-one]:Destaque por palavra Caixa discreta Text', 'button[submit]:🧭 Roteiro da demo'] | APP=['input[text]:provedor:modelo', 'select[select-one]:Padrão do estúdio', 'button[submit]:Criar perfil do canal']
+[replace] REF=['select[select-one]:Rodrigo Faber — Grave · documental Marin', 'select[select-one]:Cinemática Sombria Documentário Realista'] | APP=['input[text]:provedor:modelo', 'select[select-one]:Padrão do estúdio']
+[replace] REF=['button[submit]:🧭 Roteiro da demo'] | APP=['button[submit]:Criar perfil do canal']
 
 ## ESTILOS COMPUTADOS (mesmo texto)

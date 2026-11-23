@@ -36,7 +36,7 @@ SECTIONS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "producao": (
         "Produção e orçamento",
         "Perfil econômico, tetos de gasto, preferências de produção e providers por tarefa.",
-        ("orcamento", "providers", "preferencias"),
+        ("producao",),
     ),
 }
 
@@ -46,7 +46,117 @@ _CARDS = {
     "orcamento": panel_channels._budget_card,
     "providers": panel_channels._providers_card,
     "preferencias": panel_channels._prefs_card,
+    "producao": lambda view: _producao_cards(view),
 }
+
+
+_PERFIS = (("ECONOMY", "⚡ Econômico", "Prioriza custo conhecido. Rápido e simples."),
+           ("BALANCED", "⚖ Equilibrado", "Equilibra custo e qualidade elegível."),
+           ("PREMIUM", "💎 Premium", "Prioriza qualidade. Exige providers de alta qualidade."))
+_PERFIL_ROTULO = {valor: rotulo.split(" ", 1)[1] for valor, rotulo, _ in _PERFIS}
+_ROTAS = (("TEXT", "Roteiro (texto)"), ("VOICE", "Narração (voz)"), ("IMAGE", "Imagens por IA"),
+          ("SEARCH", "Banco de mídia (stock)"), ("RENDERER", "Montagem de vídeo"))
+
+_PRODUCAO_JS = """
+(function () {
+  var form = document.getElementById('budget-form');
+  if (!form) return;
+  form.querySelectorAll('input[name="economic_profile"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      form.querySelectorAll('[data-perfil-choice]').forEach(function (c) {
+        c.setAttribute('aria-pressed', String(c.querySelector('input').checked));
+      });
+    });
+  });
+  form.querySelectorAll('input[type=range][data-out]').forEach(function (r) {
+    var saida = document.getElementById(r.getAttribute('data-out'));
+    r.addEventListener('input', function () {
+      if (saida) saida.textContent = 'US$ ' + Number(r.value).toFixed(r.step && r.step.indexOf('.') >= 0 ? 2 : 0).replace('.', ',');
+    });
+  });
+})();
+"""
+
+
+def _producao_cards(view: ChannelsPageView) -> str:
+    """`pgSettings` → Produção & Orçamento: perfil, orçamento e saída, roteamento de providers.
+
+    Perfil, tetos e roteamento são dado real. Resolução, quadros/s, preferência de mídia, falha de
+    provider e B-roll não têm configuração por canal no produto: aparecem desabilitados, "Em breve".
+    """
+    budget = view.budget
+    if budget is None:
+        return '<div class="card"><p class="sub">Sem canal selecionado: não há orçamento de canal para exibir.</p></div>'
+    limits = budget.limits
+    atual = limits.economic_profile.value
+    amount = panel_channels._input_amount
+    perfis = "".join(
+        f'<label class="choice" data-perfil-choice aria-pressed="{"true" if v == atual else "false"}">'
+        f'<input type="radio" name="economic_profile" value="{v}"{" checked" if v == atual else ""} class="sr-only">'
+        f'<b>{t}</b><p class="sub">{d}</p></label>' for v, t, d in _PERFIS)
+    hm, hv = float(limits.hard_monthly_usd), float(limits.hard_video_usd)
+    max_m, max_v = max(100, int(hm) + 1), max(5.0, round(hv + 0.1, 1))
+    gasto = float(budget.summary.spent_usd)
+    pct = min(100, round(gasto / hm * 100)) if hm > 0 else 0
+    desconhecidas = budget.summary.unknown_calls
+    nota_desc = (f" {desconhecidas} chamada(s) de custo desconhecido não entram na soma." if desconhecidas else "")
+    origem = ("Limites persistidos neste canal." if budget.configured
+              else "Nenhum limite persistido: valem os tetos padrão do servidor; salvar passa a persistir.")
+
+    def em_breve(i, rotulo, opcoes):
+        ops = "".join(f"<option>{o}</option>" for o in opcoes)
+        return (f'<div class="field"><label for="{i}">{rotulo}</label><select id="{i}" disabled>{ops}</select></div>')
+
+    orcamento = f"""<div class="card"><h3 style="margin-bottom:12px">Orçamento e saída</h3>
+      <div class="field"><label for="limite-hard-mensal">Teto mensal: <b id="p1v">US$ {hm:.0f}</b></label>
+        <input type="range" id="limite-hard-mensal" name="hard_monthly_usd" min="5" max="{max_m}" step="1" value="{hm:.0f}" data-out="p1v"></div>
+      <div class="field"><label for="limite-hard-video">Teto por vídeo: <b id="p2v">US$ {hv:.2f}</b></label>
+        <input type="range" id="limite-hard-video" name="hard_video_usd" min="0.2" max="{max_v}" step="0.1" value="{hv:.1f}" data-out="p2v"></div>
+      <input type="hidden" id="limite-soft-mensal" name="soft_monthly_usd" value="{e(amount(limits.soft_monthly_usd))}">
+      <input type="hidden" id="limite-soft-video" name="soft_video_usd" value="{e(amount(limits.soft_video_usd))}">
+      <div class="grid2">{em_breve("p3", "Resolução", ("1080p", "720p"))}{em_breve("p4", "Quadros/s", ("30", "24", "60"))}</div>
+      {em_breve("p5", "Preferência de mídia", ("Banco de mídia primeiro", "IA primeiro", "Somente meus arquivos"))}
+      {em_breve("p6", "Se um provider falhar", ("Pedir confirmação", "Usar alternativa dentro dos limites"))}
+      <div class="field"><label class="tog"><input type="checkbox" id="p7" checked disabled><i></i><span>B-roll ligado por padrão</span></label></div>
+      <p class="sample">Resolução, quadros/s, mídia, falha de provider e B-roll: em breve (ainda sem configuração por canal).</p>
+      <div class="hr"></div><p class="lbl">Uso no mês</p><div class="bar"><b style="width:{pct}%"></b></div>
+      <p class="sample" style="margin-top:4px">{e(panel_channels._usd(gasto, zero_text="US$ 0 (nenhum gasto registrado)"))} usados (real + estimado).{e(nota_desc)}</p>
+      <div class="row" style="margin-top:14px"><button class="btn primary small" type="submit" id="btn-salvar-orcamento">Salvar limites</button>
+        <span class="sample">{e(origem)}</span></div>
+      <div id="budget-feedback" class="form-feedback" role="status" aria-live="polite"></div></div>"""
+
+    por_tipo = {d.kind.name: d for d in view.routes}
+    falhas = {k.name: r for k, r in view.route_failures}
+    rotulo_perfil = _PERFIL_ROTULO.get(atual, atual)
+    linhas, faltando = [], 0
+    for kind, rotulo in _ROTAS:
+        d = por_tipo.get(kind)
+        if d is not None:
+            pill = f'<span class="pill ok">✓ {e(d.primary.name)}</span>'
+            fb = " → ".join(e(c.name) for c in d.fallbacks)
+            texto = (f'<p class="sample" style="margin-top:4px">Escolha no perfil {e(rotulo_perfil)}'
+                     f'{" · fallback: " + fb if fb else " · sem fallback"}</p>')
+        else:
+            faltando += 1
+            pill = '<span class="pill bad">✕ sem provider</span>'
+            motivo = (panel_channels._route_failure_text(next(k for k, _ in view.route_failures if k.name == kind), limits.economic_profile, falhas[kind])
+                      if kind in falhas else "Nenhuma porta de provider configurada para esta tarefa.")
+            texto = f'<p class="sample" style="color:var(--bad);margin-top:6px">{e(motivo)}</p>'
+        linhas.append(
+            f'<div class="card flat" style="padding:12px 14px"><div class="between"><b>{rotulo}</b>{pill}</div>{texto}'
+            f'<div class="row" style="margin-top:8px"><label class="sr-only" for="rt-{kind}">Provider de {rotulo}</label>'
+            f'<select id="rt-{kind}" disabled style="max-width:300px"><option>Automático (pelo perfil)</option></select></div></div>')
+    pronto = ('<span class="pill ok">✓ Pronto para produzir</span>' if not faltando
+              else f'<span class="pill bad">✕ {faltando} sem provider</span>')
+    roteamento = f"""<div class="card" style="margin-top:16px"><div class="between"><div><h3>Roteamento de providers deste canal</h3>
+      <p class="sub">Escolha automática pelo perfil {e(rotulo_perfil)}, recalculada a cada leitura. Fixar um provider por tarefa ainda não está disponível.</p></div>{pronto}</div>
+      <div class="grid2" style="margin-top:12px">{"".join(linhas)}</div>
+      <p class="sample" style="margin-top:10px">Custo estimado não é preço cobrado e custo desconhecido não é tratado como zero. Sem provider elegível, a tarefa aparece indisponível com o motivo.</p></div>"""
+    return f"""<form id="budget-form" data-project-id="{e(view.project.id)}">
+      <div class="grid2"><div class="card"><h3 style="margin-bottom:12px">Perfil de produção</h3>
+        <div class="stack" style="gap:10px">{perfis}</div>
+        <p class="sample" style="margin-top:8px">O perfil muda o roteamento de providers abaixo e é salvo junto com os limites.</p></div>
+      {orcamento}</div></form>{roteamento}"""
 
 
 _MARCA_JS = """
@@ -113,7 +223,8 @@ def _marca_cards(view: ChannelsPageView) -> str:
           {campo("canal-pilares", "Pilares (separados por vírgula)", pillars, 'maxlength="600"')}
           {campo("canal-narrativa", "Estilo narrativo", profile.narrative if profile else "", 'maxlength="4000"')}
           {campo("canal-cta", "Chamada para ação padrão", profile.cta if profile else "", 'maxlength="500"')}
-          <div class="field"><label for="canal-idioma">Idioma</label><select id="canal-idioma">{idiomas}</select></div>
+          <div class="grid2"><div class="field"><label for="canal-idioma">Idioma</label><select id="canal-idioma">{idiomas}</select></div>
+            <div class="field"><label for="canal-cor">Cor da marca</label><input type="color" id="canal-cor" value="#8f6ef7" disabled title="Ainda não é gravada no perfil do canal." style="width:60px;height:34px;padding:2px"></div></div>
         </div>
         <div class="card"><h3 style="margin-bottom:12px">Padrões para novos vídeos</h3>
           <div class="field"><span class="lbl">Modo padrão</span>{_seg("canal-modo", [("piloto", "⚡ Piloto automático"), ("diretor", "🎬 Modo Diretor")], mode)}</div>
@@ -121,6 +232,9 @@ def _marca_cards(view: ChannelsPageView) -> str:
           <div class="field"><label for="canal-duracao">Duração padrão: <b id="s5v">{dur} s</b></label><input type="range" id="canal-duracao" min="15" max="{max(600, dur)}" step="5" value="{dur}"></div>
           <div class="field"><label for="canal-voz">Voz padrão</label><input type="text" id="canal-voz" maxlength="200" value="{e(profile.voice if profile else "")}" placeholder="provedor:modelo"></div>
           <div class="field"><label for="canal-estilo">Estilo visual vinculado (Biblioteca)</label><select id="canal-estilo">{estilos}</select></div>
+          <div class="grid2"><div class="field"><label for="canal-fonte-legenda">Fonte da legenda</label><select id="canal-fonte-legenda" disabled title="A legenda é definida pelo estilo visual vinculado."><option>Inter</option><option>Roboto</option><option>Georgia</option></select></div>
+            <div class="field"><label for="canal-estilo-legenda">Estilo da legenda</label><select id="canal-estilo-legenda" disabled title="A legenda é definida pelo estilo visual vinculado."><option>Destaque por palavra</option><option>Caixa discreta</option><option>Texto simples</option></select></div></div>
+          <p class="sample" style="margin:-4px 0 12px">Cor da marca e legenda: em breve (a legenda segue o estilo visual vinculado; ainda sem ajuste por canal aqui).</p>
           <div class="note info">O piloto automático sempre para na aprovação. Publicar exige um clique seu.</div>
           <div class="row" style="margin-top:14px"><button class="btn primary small" type="submit" id="btn-salvar-canal">{salvar}</button><span class="sample">{versao}</span></div>
           <div id="channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
@@ -216,7 +330,7 @@ def render_settings_section(section: str, view: ChannelsPageView, *, channel_sty
         projects=list(view.projects),
         project_id=view.project.id,
         cost_note="",
-        page_js=panel_channels._channels_page_js(view.project.id) + CHANNEL_STYLE_JS,
+        page_js=panel_channels._channels_page_js(view.project.id) + CHANNEL_STYLE_JS + (_PRODUCAO_JS if section == "producao" else ""),
         extra_css=panel_channels.CHANNELS_CSS + CHANNEL_STYLE_CSS,
     )
     return html, legacy._headers(nonce)

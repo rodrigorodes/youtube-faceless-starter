@@ -26,6 +26,9 @@ VID = "661b9715244941ee9f9dcceecc44a5e4"
 SCREENS = {
     "home": ("go('#/home')", "/studio/panel"),
     "new": ("go('#/new')", "/studio/panel/novo-video"),
+    "new-open": ("go('#/new')",
+                 "/studio/panel/novo-video", "document.querySelectorAll('details.diag').forEach(d=>d.open=true)",
+                 "document.querySelectorAll('details.diag').forEach(d=>d.open=true)"),
     "videos": ("go('#/videos')", "/studio/panel/videos"),
     "ideas": ("go('#/ideas')", "/studio/panel/tendencias"),
     "analytics": ("go('#/analytics')", "/studio/panel/analytics"),
@@ -129,6 +132,16 @@ def style_diff(ref, app):
     return rows
 
 
+SCROLL_H_JS = """() => {
+  let m = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+  document.querySelectorAll('*').forEach(el => {
+    const cs = getComputedStyle(el);
+    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) m = Math.max(m, el.scrollHeight + (el.getBoundingClientRect().top > 0 ? el.getBoundingClientRect().top : 0));
+  });
+  return m;
+}"""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", default="docs/visual-evidence/fidelity")
@@ -141,7 +154,10 @@ def main():
     summary = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for name, (ref_js, app_route) in SCREENS.items():
+        for name, spec in SCREENS.items():
+            ref_js, app_route = spec[0], spec[1]
+            app_js = spec[2] if len(spec) > 2 else ""
+            ref_js2 = spec[3] if len(spec) > 3 else ""
             if args.only and name not in args.only.split(","):
                 continue
             for vp in args.viewports.split(","):
@@ -153,11 +169,21 @@ def main():
                 ref.goto(REFERENCE.as_uri(), wait_until="networkidle")
                 ref.evaluate(ref_js)
                 ref.wait_for_timeout(350)
+                if ref_js2:
+                    ref.evaluate(ref_js2)
                 app = ctx.new_page()
                 url = args.app_url if args.app_url else APP + app_route
                 app.goto(url, wait_until="networkidle")
+                if app_js:
+                    app.evaluate(app_js)
                 app.wait_for_timeout(250)
                 rp, ap_ = folder / f"{vp}-reference.png", folder / f"{vp}-app.png"
+                # A casca rola num contêiner interno: ajusta a altura da janela ao conteúdo inteiro,
+                # senão a captura mostra só a primeira dobra (e a comparação ignora o resto da tela).
+                for page in (ref, app):
+                    full = page.evaluate(SCROLL_H_JS)
+                    page.set_viewport_size({"width": w, "height": max(h, min(int(full), 9000))})
+                    page.wait_for_timeout(150)
                 ref.screenshot(path=str(rp), full_page=True)
                 app.screenshot(path=str(ap_), full_page=True)
                 trows, tratio = seq_diff(ref.evaluate(TEXT_JS), app.evaluate(TEXT_JS))

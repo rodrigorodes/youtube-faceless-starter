@@ -284,7 +284,8 @@ def test_cenas_without_scene_read_is_honest_empty_state():
     assert "Sem cenas." in visible
     assert 'id="cena-em-foco"' not in content
     assert 'id="btn-excluir-cena"' not in content
-    assert f'href="/studio/videos/{VIDEO}/roteiro"' in content  # "+ Nova cena" leva ao roteiro real
+    # `addscene` do protótipo: "+ Nova cena" é ação na própria bancada, não link para o roteiro
+    assert 'id="btn-nova-cena"' in content and f'href="/studio/videos/{VIDEO}/roteiro"' not in content
 
 
 def test_composicao_shows_effective_params_and_declares_transition_only():

@@ -253,22 +253,6 @@ details.painel-sanfona[open] > summary .sanfona-seta {
 .advanced-body .kv { border-top: 0; }
 .new-channel { margin-top: 0.85rem; }
 .new-channel summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; padding: 0.35rem 0; }
-details.diag {
-  border: 1px solid var(--line);
-  background: var(--panel2);
-  border-radius: 8px;
-  padding: 10px 14px;
-}
-details.diag summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--muted);
-  user-select: none;
-}
-details.diag[open] summary {
-  margin-bottom: 8px;
-  color: var(--txt);
-}
 /* F06.T03: conexão × configuração × credencial lado a lado, sem prometer BYOK. */
 .tres-estados { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .estado-bloco {
@@ -285,7 +269,7 @@ details.diag[open] summary {
 .perfis-escolha { border: 0; padding: 0; margin: 0; }
 .perfis-escolha legend { color: var(--muted); font-size: 0.8rem; padding: 0 0 6px; }
 .perfis-escolha .hint { display: block; margin-top: 8px; }
-.choice {
+.perfis-escolha .choice {
   display: block;
   flex: 1;
   min-width: 190px;
@@ -296,11 +280,11 @@ details.diag[open] summary {
   cursor: pointer;
   font-size: 0.82rem;
 }
-.choice:hover { border-color: var(--accent); }
-.choice.ativo { border-color: var(--accent); background: var(--soft); }
-.choice strong { display: block; margin-bottom: 6px; }
-.choice input[type="radio"] { margin: 0 8px 0 0; }
-.choice .sample { display: block; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
+.perfis-escolha .choice:hover { border-color: var(--accent); }
+.perfis-escolha .choice.ativo { border-color: var(--accent); background: var(--soft); }
+.perfis-escolha .choice strong { display: block; margin-bottom: 6px; }
+.perfis-escolha .choice input[type="radio"] { margin: 0 8px 0 0; }
+.perfis-escolha .choice .sample { display: block; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 @media (max-width: 820px) {
   .grade-providers { grid-template-columns: minmax(0, 1fr); }
   .cartao-provider { min-width: 0; }
@@ -614,7 +598,7 @@ def _new_channel_card(view: ChannelsPageView) -> str:
                   <label for="novo-canal-perfil-economico">Perfil econômico</label>
                   <select class="input" id="novo-canal-perfil-economico" name="economic_profile">
                     <option value="BALANCED" selected>BALANCED — Equilíbrio entre custo e qualidade</option>
-                    <option value="FRUGAL">FRUGAL — Menor custo viável</option>
+                    <option value="ECONOMY">ECONOMY — Menor custo viável</option>
                     <option value="PREMIUM">PREMIUM — Maior qualidade disponível</option>
                   </select>
                 </div>

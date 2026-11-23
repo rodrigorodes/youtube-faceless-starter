@@ -1,11 +1,24 @@
-{"screen": "settings-producao", "viewport": "1440", "text_similarity": 12.7, "text_diffs": 3, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 0, "pixel_diff_pct": 6.65, "height_ref": 1399, "height_app": 3165, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-producao", "viewport": "1440", "text_similarity": 68.8, "text_diffs": 14, "field_similarity": 18.2, "field_diffs": 3, "style_diffs": 0, "pixel_diff_pct": 4.75, "height_ref": 1399, "height_app": 1515, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']
 [replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Canal: Musica']
-[replace] REF=['Perfil de produção', '⚡ Econômico', 'Prioriza custo conhecido. Rápido e simples.', '⚖ Equilibrado', 'Equilibra custo e qualidade elegível.', '💎 Premium'] | APP=['Orçamento do canal', 'Limites por mês e por vídeo. Real, estimado, sem custo e desconhecido nunca são somados num número só.', 'Perfil econômico: ECONOMY', 'Limites do canal persistidos em 23/11/2026 04:31.', 'Perfil econômico do canal', 'ECONOMY — Economia']
+[replace] REF=['O perfil muda o roteamento de providers abaixo.'] | APP=['O perfil muda o roteamento de providers abaixo e é salvo junto com os limites.']
+[replace] REF=['US$ 20'] | APP=['US$ 10']
+[replace] REF=['US$ 1,50'] | APP=['US$ 10.00']
+[insert] REF=[] | APP=['Resolução, quadros/s, mídia, falha de provider e B-roll: em breve (ainda sem configuração por canal).']
+[replace] REF=['US$ 3,20 usados (ilustrativo)'] | APP=['US$ 0 (nenhum gasto registrado) usados (real + estimado).', 'Salvar limites', 'Limites persistidos neste canal.']
+[replace] REF=['Escolha automática pelo perfil Econômico, recalculada a cada leitura. Fixe um provider só se precisar.', '✓ Pronto para produzir'] | APP=['Escolha automática pelo perfil Econômico, recalculada a cada leitura. Fixar um provider por tarefa ainda não está disponível.', '✕ 1 sem provider']
+[replace] REF=['✓ OpenCode · texto'] | APP=['✓ demo']
+[replace] REF=['✓ Piper local'] | APP=['✓ piper']
+[replace] REF=['✓ OpenCode · imagem', 'Escolha no perfil Econômico · sem fallback'] | APP=['✓ placeholder', 'Escolha no perfil Econômico · fallback: opencode']
+[replace] REF=['✓ Pexels (stock)', 'Escolha no perfil Econômico · sem fallback'] | APP=['✕ sem provider', 'Nenhum provider de search atende ao perfil ECONOMY neste momento; o roteador não registrou um motivo categorizado.']
+[replace] REF=['✓ FFmpeg'] | APP=['✓ ffmpeg']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
 
 ## CAMPOS/BOTOES (ref -> app)
-[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'summary:Orçamento do canal Limites por mês e por', 'input[radio]:economic_profile', 'input[radio]:economic_profile', 'input[radio]:economic_profile']
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'input[range]:hard_monthly_usd', 'input[range]:hard_video_usd']
+[replace] REF=['select[select-one]:24 30 60'] | APP=['select[select-one]:30 24 60']
+[replace] REF=['select[select-one]:Automático (pelo perfil) Fixar: OpenCode', 'select[select-one]:Automático (pelo perfil) Fixar: Piper lo', 'select[select-one]:Automático (pelo perfil) Fixar: OpenCode', 'select[select-one]:Automático (pelo perfil) Fixar: Pexels (', 'select[select-one]:Automático (pelo perfil) Fixar: FFmpeg', 'button[submit]:🧭 Roteiro da demo'] | APP=['button[submit]:Salvar limites', 'select[select-one]:Automático (pelo perfil)', 'select[select-one]:Automático (pelo perfil)', 'select[select-one]:Automático (pelo perfil)', 'select[select-one]:Automático (pelo perfil)', 'select[select-one]:Automático (pelo perfil)']
 
 ## ESTILOS COMPUTADOS (mesmo texto)

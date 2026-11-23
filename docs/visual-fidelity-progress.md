@@ -56,3 +56,14 @@ Conexões & Equipe em página única: cartão YouTube + Equipe, Providers extern
 - Não há afirmação de equivalência pixel a pixel; o diff de pixels do gate é maior que zero em todas as telas por causa de dados reais.
 
 Validação: suíte completa 2545 passed, 4 falhas pré-existentes (as mesmas listadas acima); testes que dependem de Postgres são pulados (`STUDIO_TEST_DSN` ausente).
+
+## Rodada: Criar vídeo (estilo), Configurações (todas as abas) e "+ Nova cena"
+- Criar vídeo: estilo visual agora é a grade `.grid3` de `.choice` do protótipo (herança do canal + estilos reais).
+- Configurações → Produção & Orçamento: perfil em `.choice`, "Orçamento e saída" (sliders de teto), roteamento por tarefa;
+  Resolução/Quadros/mídia/falha de provider/B-roll aparecem desabilitados ("em breve"); alertas soft preservados como campos ocultos.
+- Marca & Editorial: adicionados Cor da marca e Fonte/Estilo da legenda (desabilitados, "em breve" — sem campo no perfil real).
+- Conexões: `code.mono` e `details.diag` alinhados ao protótipo (CSS legado removido).
+- CSS legado `.choice` de `panel_channels` restringido a `.perfis-escolha` (sobrescrevia fonte do protótipo).
+- Perfil econômico: `FRUGAL` → `ECONOMY` (valor real do domínio).
+- Workspace do vídeo → "+ Nova cena": ação na própria bancada (POST `/script/scenes`, texto-padrão do protótipo, foco e toast), sem ir ao roteiro.
+- Exceções funcionais: voz/duração por vídeo não enviadas ao backend; catálogos de voz/estilos/música do protótipo ausentes; "+ Nova cena" validada só com rotas mockadas.

@@ -1,4 +1,4 @@
-{"screen": "settings-canais", "viewport": "1440", "text_similarity": 15.8, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 4.55, "height_ref": 1000, "height_app": 1066, "overflow_ref": 0, "overflow_app": 0}
+{"screen": "settings-canais", "viewport": "1440", "text_similarity": 15.8, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 1, "pixel_diff_pct": 4.52, "height_ref": 1000, "height_app": 1066, "overflow_ref": 0, "overflow_app": 0}
 
 ## TEXTO (ref -> app)
 [replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']

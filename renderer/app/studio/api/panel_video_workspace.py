@@ -409,6 +409,22 @@ def _normalize_scenes(scenes, script) -> list[dict]:
     return normalized_scenes
 
 
+def _script_version(script) -> int:
+    value = getattr(script, "version", None) or (script.get("version") if isinstance(script, dict) else None)
+    return int(value or 0)
+
+
+def _nova_cena_btn(video_id: str, script) -> str:
+    """`addscene` do protótipo: adiciona a cena na própria bancada (sem trocar de tela).
+
+    Sem roteiro versionado não há como gravar uma cena; o botão fica desabilitado e diz por quê.
+    """
+    version = _script_version(script)
+    off = "" if version else ' disabled title="Este vídeo ainda não tem roteiro para receber cenas."'
+    return (f'<button type="button" class="btn small" id="btn-nova-cena" data-video-id="{e(video_id)}" '
+            f'data-script-version="{version}"{off}>+ Nova cena</button>')
+
+
 def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
                 scenes=None, script=None, channel_voice: str | None = None) -> str:
     if not scenes and (script is None or not getattr(script, "scenes", None)):
@@ -418,10 +434,11 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
             '<p class="sub">Texto, mídia, B-roll e narração de cada cena na mesma bancada. '
             "Edite sem trocar de tela.</p></div>"
-            f'<div class="row"><a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">+ Nova cena</a>'
+            f'<div class="row">{_nova_cena_btn(video_id, script)}'
             f'<a class="btn small" href="{area_href(video_id, "producao")}">Gerar tudo o que falta</a></div></div>'
             '<div class="stack"></div>'
-            '<div class="card"><p class="sub">Sem cenas. Adicione a primeira cena no roteiro.</p></div>'
+            '<div class="card"><p class="sub">Sem cenas. Use "+ Nova cena" para adicionar a primeira.</p></div>'
+            '<p class="sample" id="storyboard-feedback" role="status" style="margin-top:8px"></p>'
         )
 
     normalized_scenes = _normalize_scenes(scenes, script)
@@ -446,7 +463,7 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<div class="row">'
         '<button type="button" class="btn small" id="btn-undo-cenas" title="Desfazer alteração" disabled>↶ Desfazer</button>'
         '<button type="button" class="btn small" id="btn-redo-cenas" title="Refazer alteração" disabled>↷ Refazer</button>'
-        f'<a class="btn small" href="/studio/videos/{e(video_id)}/roteiro">+ Nova cena</a>'
+        f'{_nova_cena_btn(video_id, script)}'
         '</div></div>'
         '<div class="row seletor-cenas" id="seletor-cenas" style="margin-bottom:16px">'
         + "".join(pills_html)
@@ -2000,6 +2017,46 @@ PAGE_JS = """
     });
   }
   sbSyncMove();
+
+  // "+ Nova cena" (`addscene`): grava a cena no roteiro e volta à bancada, já em foco na cena nova.
+  var novaCena = document.getElementById('btn-nova-cena');
+  if (novaCena) {
+    novaCena.addEventListener('click', function () {
+      var vid = novaCena.getAttribute('data-video-id') || '';
+      var ver = Number(novaCena.getAttribute('data-script-version') || 0);
+      if (!vid || !ver) return;
+      novaCena.disabled = true;
+      sbSay('Adicionando cena\u2026');
+      sbCall('POST', '/studio/videos/' + encodeURIComponent(vid) + '/script/scenes', {
+        expected_version: ver,
+        label: 'Nova cena',
+        narration: 'Escreva aqui o texto da narra\u00e7\u00e3o desta cena.',
+        image_prompt: 'descreva a imagem desejada'
+      }).then(function (res) {
+        if (res.ok) {
+          try {
+            sessionStorage.setItem('sb-after-add-' + vid, String(Array.isArray(res.data.scenes) ? res.data.scenes.length - 1 : 0));
+          } catch (e) {}
+          location.reload();
+        } else {
+          novaCena.disabled = false;
+          sbSay('N\u00e3o foi poss\u00edvel adicionar a cena: ' + sbDetail(res.data, 'tente novamente.'));
+        }
+      }).catch(function () { novaCena.disabled = false; sbSay('Falha de rede ao adicionar a cena.'); });
+    });
+    try {
+      var pend = sessionStorage.getItem('sb-after-add-' + (novaCena.getAttribute('data-video-id') || ''));
+      if (pend !== null) {
+        sessionStorage.removeItem('sb-after-add-' + (novaCena.getAttribute('data-video-id') || ''));
+        var n = Number(pend);
+        if (scenesData[n]) focusScene(n);
+        var t = document.createElement('div');
+        t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = 'Cena adicionada.';
+        document.body.appendChild(t);
+        setTimeout(function () { t.remove(); }, 2400);
+      }
+    } catch (e) {}
+  }
 
   function wireModal(triggerId, dialogId) {
     var trigger = document.getElementById(triggerId);
