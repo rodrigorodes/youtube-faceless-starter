@@ -642,7 +642,7 @@ def _new_channel_card(view: ChannelsPageView) -> str:
             </details>
 
             <div class="field" style="grid-column:1 / -1; justify-content:end; margin-top:10px">
-              <button class="btn btn-primary" type="submit" id="btn-criar-canal">Criar canal</button>
+              <button class="btn primary" type="submit" id="btn-criar-canal">✦ Criar canal</button>
               <div id="new-channel-feedback" class="form-feedback" role="status" aria-live="polite"></div>
             </div>
           </form>

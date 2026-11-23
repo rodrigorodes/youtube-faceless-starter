@@ -117,14 +117,14 @@ PRODUCT_CSS = """
 .pills .pill:has(input:checked) { background: var(--accentbg); border-color: var(--accent); color: var(--accent2); font-weight: 650; }
 """
 
-_SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" '
-        'focusable="false">{}</svg>')
+_SVG = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" '
+        'focusable="false" style="width:16px;height:16px;min-width:16px;min-height:16px;flex-shrink:0">{}</svg>')
 
 _ICONS = {
     "inicio": _SVG.format('<path d="m3 11 9-8 9 8v9H3z"/><path d="M9 20v-7h6v7"/>'),
-    "novo-video": _SVG.format('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
+    "novo-video": _SVG.format('<path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/>'),
     "videos": _SVG.format('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/>'),
-    "tendencias": _SVG.format('<path d="M9 18h6m-5 3h4M8 14c-6-7-1-12 4-12s10 5 4 12l-1 2H9z"/>'),
+    "tendencias": _SVG.format('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'),
     "desempenho": _SVG.format('<path d="M3 20h18M6 16V9m6 7V4m6 12v-5"/>'),
     "configuracoes": _SVG.format(
         '<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>'),
@@ -279,50 +279,48 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
     return f"""<header class="top">
       <div class="l">
         {select}
+        <button class="btn ghost small" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal" style="white-space:nowrap">＋ Canal</button>
         <span class="pill" id="chstyle">🎨 Padrão do canal · 🎙 Voz vinculada</span>
       </div>
       <div class="r">
         <p class="crumb">Estúdio &nbsp;/&nbsp; <b>{e(crumb)}</b></p>
-        <button class="btn ghost small" type="button" id="btn-novo-canal" title="Novo canal" aria-label="Novo canal">＋ Canal</button>
         <button class="icon-btn" type="button" id="btn-tema" aria-pressed="false" hidden
                 title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button>
-        <a class="btn primary small" href="{e(novo_vid_url)}">✦ Criar vídeo</a>
+        <a class="btn primary" href="{e(novo_vid_url)}">✦ Criar vídeo</a>
       </div>
     </header>"""
 
 
 def render_novo_canal_dialog() -> str:
-    return """<dialog id="dlg-canal" aria-labelledby="t-dlg-canal">
-    <div class="dialogo-cab">
+    return """<dialog id="dlg-canal" class="modal" aria-labelledby="t-dlg-canal">
+    <div class="modal-header">
       <h2 id="t-dlg-canal">Novo canal</h2>
-      <button class="icon-btn" type="button" data-fechar-dialogo aria-label="Fechar">✕</button>
+      <button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button>
     </div>
     <div class="dialogo-corpo">
-      <form id="form-canal">
-        <div class="campo">
-          <label for="dlg-canal-nome">Nome do canal</label>
-          <input type="text" id="dlg-canal-nome" name="name" minlength="1" maxlength="120" required
-                 placeholder="Ex.: Curiosidades do Mundo">
+      <form id="form-canal" class="stack" style="gap:14px">
+        <div class="field">
+          <label for="dlg-canal-nome">Nome do canal *</label>
+          <input class="input" type="text" id="dlg-canal-nome" name="name" minlength="1" maxlength="120" required
+                 placeholder="Ex.: Curiosidades Históricas">
         </div>
-        <div class="campo">
-          <label for="dlg-canal-nicho">Nicho editorial <span class="micro">(opcional)</span></label>
-          <input type="text" id="dlg-canal-nicho" name="niche" maxlength="200"
-                 placeholder="Ex.: Música, mistérios, curiosidades">
+        <div class="field">
+          <label for="dlg-canal-nicho">Nicho editorial <span class="sample">(opcional)</span></label>
+          <input class="input" type="text" id="dlg-canal-nicho" name="niche" maxlength="200"
+                 placeholder="Ex.: História, mistérios e ciência">
         </div>
-        <div class="campo">
+        <div class="field">
           <label for="dlg-canal-idioma">Idioma</label>
-          <select id="dlg-canal-idioma" name="language">
-            <option value="pt-BR" selected>Português (pt-BR)</option>
-            <option value="en-US">English (en-US)</option>
-            <option value="es-ES">Español (es-ES)</option>
+          <select class="input" id="dlg-canal-idioma" name="language">
+            <option value="pt-BR" selected>Português (BR)</option>
+            <option value="en-US">English</option>
+            <option value="es-ES">Español</option>
           </select>
         </div>
-        <div class="acoes">
-          <p class="feedback" id="canal-feedback" role="status"></p>
-          <div class="acoes-linha">
-            <button class="btn" type="button" data-fechar-dialogo>Fechar</button>
-            <button class="btn btn-primario" type="submit" id="dlg-btn-salvar-canal">Cadastrar canal</button>
-          </div>
+        <div class="modal-footer">
+          <p class="feedback" id="canal-feedback" role="status" style="margin-right:auto"></p>
+          <button class="btn ghost small" type="button" data-fechar-dialogo>Fechar</button>
+          <button class="btn primary small" type="submit" id="dlg-btn-salvar-canal">✦ Criar canal</button>
         </div>
       </form>
     </div>

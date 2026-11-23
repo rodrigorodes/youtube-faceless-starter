@@ -82,6 +82,25 @@ a:hover { text-decoration: underline; }
   font-weight: 560;
   text-decoration: none;
 }
+.side nav a svg, .side nav button svg {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+.side nav a span[aria-hidden="true"], .side nav button span[aria-hidden="true"] {
+  font-size: 15px;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .side nav a:hover, .side nav button:hover { background: var(--panel3); color: var(--text); text-decoration: none; }
 .side nav a[aria-current=page], .side nav button[aria-current=page] {
   background: var(--accentbg);
@@ -450,17 +469,54 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 }
 
 /* Modais e Diálogos */
-dialog.modal, .modal {
+dialog, dialog.modal, .modal {
   background: var(--panel);
   border: 1px solid var(--line2);
   border-radius: 16px;
-  padding: 22px;
-  width: min(560px, 100%);
+  padding: 24px;
+  width: min(540px, 92%);
   max-height: 88vh;
   overflow: auto;
   color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
 }
 dialog::backdrop { background: rgba(5, 5, 8, 0.72); backdrop-filter: blur(4px); }
+.modal-header, .dialogo-cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.modal-header h2, .modal-header h3, .dialogo-cab h2, .dialogo-cab h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 750;
+  color: var(--txt);
+}
+.modal-close, button[data-fechar-dialogo] {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close:hover, button[data-fechar-dialogo]:hover {
+  background: var(--panel2);
+  color: var(--txt);
+}
+.modal-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
 
 /* Utilitários */
 .hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
