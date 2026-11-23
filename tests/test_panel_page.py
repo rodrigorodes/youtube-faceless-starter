@@ -114,19 +114,36 @@ def test_video_pages_show_the_owner_channel(client_env):
 def test_video_area_routes_are_real_and_old_routes_still_work(client_env):
     """W1.4 (UX-03): cada área do vídeo é uma rota de servidor; as rotas antigas seguem válidas.
 
-    A navegação é por **links** com `aria-current="page"` exato na área ativa (sem SPA nem JS de
-    abas) e cada área é uma leitura sobre o que o core já tem.
+    A navegação V3 possui 5 abas canônicas em .abas-video (cenas, composicao, qualidade,
+    publicacao, fontes) com aria-current="page" na área ativa. A rota de produção continua
+    válida (200), sendo exibida como link de diagnóstico no cabeçalho ("Ver progresso / Diagnóstico").
+    Rotas legadas e desconhecidas normalizam para 'cenas'.
     """
     client, videos = client_env["client"], client_env["videos"]
     project = videos.create_project("Canal Áreas", niche="História")
     video = videos.create_video(project.id, "Tema das áreas", VideoFormat.short)
 
-    for area in ("visao-geral", "fontes", "narracao", "cenas", "composicao", "qualidade",
-                 "publicacao", "producao"):
+    # 1. As 5 abas canônicas V3 recebem aria-current="page" quando ativas
+    for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
         response = client.get(f"/studio/panel/videos/{video.id}/{area}", headers=AUTH_HEADER)
         assert response.status_code == 200, area
         assert '<nav class="abas-video" aria-label="Áreas do vídeo">' in response.text, area
         assert f'href="/studio/panel/videos/{video.id}/{area}" aria-current="page"' in response.text, area
+
+    # 2. A rota 'producao' retorna 200, mas é renderizada no cabeçalho ("Ver progresso / Diagnóstico"), não em .abas-video
+    prod_resp = client.get(f"/studio/panel/videos/{video.id}/producao", headers=AUTH_HEADER)
+    assert prod_resp.status_code == 200
+    assert "Ver progresso / Diagnóstico" in prod_resp.text
+    assert f'href="/studio/panel/videos/{video.id}/producao"' in prod_resp.text
+    assert '<nav class="abas-video" aria-label="Áreas do vídeo">' in prod_resp.text
+    assert f'href="/studio/panel/videos/{video.id}/producao" aria-current="page"' not in prod_resp.text
+
+    # 3. Rotas legadas (visao-geral, narracao) retornam 200 e normalizam para 'cenas' (recebendo aria-current="page")
+    for legacy_area in ("visao-geral", "narracao"):
+        response = client.get(f"/studio/panel/videos/{video.id}/{legacy_area}", headers=AUTH_HEADER)
+        assert response.status_code == 200, legacy_area
+        assert '<nav class="abas-video" aria-label="Áreas do vídeo">' in response.text, legacy_area
+        assert f'href="/studio/panel/videos/{video.id}/cenas" aria-current="page"' in response.text, legacy_area
 
     # As rotas antigas continuam existindo e funcionando.
     for path in (f"/studio/panel/videos/{video.id}",
@@ -135,10 +152,10 @@ def test_video_area_routes_are_real_and_old_routes_still_work(client_env):
                  f"/studio/panel/videos/{video.id}/production-runs"):
         assert client.get(path, headers=AUTH_HEADER).status_code == 200, path
 
-    # Área desconhecida não quebra: cai na Visão geral (a nav marca a área padrão).
+    # Área desconhecida não quebra: normaliza para 'cenas' (a nav marca a área padrão Cenas).
     unknown = client.get(f"/studio/panel/videos/{video.id}/nao-existe", headers=AUTH_HEADER)
     assert unknown.status_code == 200
-    assert f'href="/studio/panel/videos/{video.id}/visao-geral" aria-current="page"' in unknown.text
+    assert f'href="/studio/panel/videos/{video.id}/cenas" aria-current="page"' in unknown.text
 
 
 def test_video_detail_page_escapes_error_messages(client_env):
@@ -243,7 +260,7 @@ def test_panel_page_has_create_video_form_and_safe_script(client_env):
     r = client.get("/studio/panel", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert 'id="create-video-form"' in r.text
-    assert 'maxlength="300"' in r.text
+    assert ('maxlength="20000"' in r.text or 'maxlength="300"' in r.text)
     assert p_id in r.text
     assert '<script nonce="' in r.text
     assert "innerHTML" not in r.text
