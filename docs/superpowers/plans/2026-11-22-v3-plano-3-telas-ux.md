@@ -230,17 +230,9 @@ git commit -m "feat(studio): aba de composicao V3 com controles vigentes e rotul
 **Files:**
 - Test: `tests/test_home_v3.py`, `tests/test_channels_page.py`, `tests/test_video_workspace_*.py`, `tests/e2e_ux/`
 
-- [ ] **Step 1: Run all unit and integration UI suites**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py tests/test_channels_v3_ux.py tests/test_video_workspace_*.py tests/test_video_storyboard_v3.py tests/test_video_qa_v3.py tests/test_video_publication_v3.py tests/test_video_composition_v3.py -v`
-Expected: Todos passando com zero erros.
-
-- [ ] **Step 2: Run containerized integration suites**
-
-Run: `bash scripts/test-container.sh tests/test_home_v3.py tests/test_channels_page.py tests/test_channel_preferences_api.py`
-Expected: Todos passando com código 0.
-
-- [ ] **Step 3: Commit final integration milestone**
+- [x] **Step 1: Run all unit and integration UI suites**
+- [x] **Step 2: Run containerized integration suites**
+- [x] **Step 3: Commit final integration milestone**
 
 ```bash
 git commit --allow-empty -m "chore: marco do plano 3 - telas e jornadas UX V3 concluidas"
