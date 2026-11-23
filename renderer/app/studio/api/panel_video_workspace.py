@@ -313,6 +313,12 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         s_asset = getattr(s, "asset_id", None) or (s.get("asset_id") if isinstance(s, dict) else None)
         s_audio = getattr(s, "audio_state", None) or (s.get("audio_state") if isinstance(s, dict) else ("ok" if s_dur else "none"))
         s_hist = getattr(s, "audio_history", None) or getattr(s, "voice_history", None) or (s.get("audio_history") if isinstance(s, dict) else None) or (s.get("voice_history") if isinstance(s, dict) else [])
+        s_broll_enabled = getattr(s, "broll_enabled", None)
+        if s_broll_enabled is None and isinstance(s, dict):
+            s_broll_enabled = s.get("broll_enabled")
+        s_broll_note = getattr(s, "broll_note", None)
+        if s_broll_note is None and isinstance(s, dict):
+            s_broll_note = s.get("broll_note")
         normalized_hist = []
         for h in (s_hist or []):
             normalized_hist.append({
@@ -332,6 +338,8 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             "asset_id": str(s_asset) if s_asset else None,
             "audio_state": str(s_audio or "none"),
             "audio_history": normalized_hist,
+            "broll_enabled": bool(s_broll_enabled or False),
+            "broll_note": str(s_broll_note) if s_broll_note is not None else None,
         })
 
     pills_html = []
@@ -410,6 +418,10 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             '<label for="cena-prompt"><strong>Prompt visual da cena</strong></label>'
             f'<textarea id="cena-prompt" class="campo" rows="2" style="width:100%;resize:vertical;" placeholder="Descrição visual para geração de imagem...">{e(foco["image_prompt"])}</textarea>'
             '</div>'
+            '<div>'
+            f'<label class="campo-inline"><input type="checkbox" id="cena-broll-enabled" name="broll_enabled"{" checked" if foco.get("broll_enabled") else ""}> B-roll nesta cena</label>'
+            f'<div id="cena-broll-note-wrap" style="margin-top:0.4rem"><input class="input input-sm" type="text" id="cena-broll-note" name="broll_note" placeholder="Nota de B-roll (ex: corte para gráficos, tela do app, reação...)" value="{e(foco.get("broll_note") or "")}"></div>'
+            '</div>'
             '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;">'
             '<button type="button" class="btn btn-sm btn-primario" id="btn-regenerar-voz" data-action="regenerar-voz">Regenerar voz</button>'
             '<button type="button" class="btn btn-sm btn-ghost" id="btn-historico-voz" data-action="historico-voz">Histórico da voz</button>'
@@ -431,6 +443,10 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
             '</div>'
             '</div>'
             '<p class="vazio">Gere ou adicione cenas no roteiro para editar narração e mídia.</p>'
+            '<div style="margin-top:12px;">'
+            '<label class="campo-inline"><input type="checkbox" id="cena-broll-enabled" name="broll_enabled" disabled> B-roll nesta cena</label>'
+            '<div id="cena-broll-note-wrap" style="margin-top:0.4rem"><input class="input input-sm" type="text" id="cena-broll-note" name="broll_note" placeholder="Nota de B-roll (ex: corte para gráficos, tela do app, reação...)" disabled></div>'
+            '</div>'
             '<div class="row" style="display:flex;gap:8px;margin-top:12px;">'
             '<button type="button" class="btn btn-sm" id="btn-trocar-midia" disabled>Trocar mídia</button>'
             '<button type="button" class="btn btn-sm btn-primario" id="btn-regenerar-voz" disabled>Regenerar voz</button>'
@@ -1403,6 +1419,15 @@ PAGE_JS = """
     var prm = document.getElementById('cena-prompt');
     if (prm) prm.value = s.image_prompt || '';
 
+    var brollChk = document.getElementById('cena-broll-enabled');
+    if (brollChk) brollChk.checked = Boolean(s.broll_enabled);
+
+    var brollNote = document.getElementById('cena-broll-note');
+    if (brollNote) brollNote.value = s.broll_note || '';
+
+    var brollWrap = document.getElementById('cena-broll-note-wrap');
+    if (brollWrap) brollWrap.style.display = s.broll_enabled ? 'block' : 'none';
+
     var videoId = card ? (card.getAttribute('data-video-id') || '') : '';
     var img = document.getElementById('foco-midia-img');
     var placeholder = document.getElementById('foco-midia-placeholder');
@@ -1428,6 +1453,7 @@ PAGE_JS = """
 
     renderAudioHistory(idx);
   }
+  var renderActiveScene = focusScene;
 
   var mediaImg = document.getElementById('foco-midia-img');
   if (mediaImg) {
@@ -1567,6 +1593,48 @@ PAGE_JS = """
     });
     prmEl.addEventListener('blur', function () {
       isEditingPrompt = false;
+    });
+  }
+
+  var initBrollChk = document.getElementById('cena-broll-enabled');
+  var initBrollWrap = document.getElementById('cena-broll-note-wrap');
+  if (initBrollChk && initBrollWrap) {
+    initBrollWrap.style.display = initBrollChk.checked ? 'block' : 'none';
+  }
+
+  var brollChkEl = document.getElementById('cena-broll-enabled');
+  if (brollChkEl) {
+    brollChkEl.addEventListener('change', function () {
+      pushSnapshot();
+      var enabled = Boolean(brollChkEl.checked);
+      if (scenesData[currentActiveIdx]) {
+        scenesData[currentActiveIdx].broll_enabled = enabled;
+      }
+      var wrap = document.getElementById('cena-broll-note-wrap');
+      if (wrap) wrap.style.display = enabled ? 'block' : 'none';
+    });
+  }
+
+  var isEditingBrollNote = false;
+  var brollNoteEl = document.getElementById('cena-broll-note');
+  if (brollNoteEl) {
+    brollNoteEl.addEventListener('focusin', function () {
+      if (!isEditingBrollNote) {
+        pushSnapshot();
+        isEditingBrollNote = true;
+      }
+    });
+    brollNoteEl.addEventListener('input', function () {
+      if (!isEditingBrollNote) {
+        pushSnapshot();
+        isEditingBrollNote = true;
+      }
+      if (scenesData[currentActiveIdx]) {
+        scenesData[currentActiveIdx].broll_note = brollNoteEl.value;
+      }
+    });
+    brollNoteEl.addEventListener('blur', function () {
+      isEditingBrollNote = false;
     });
   }
 

@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from ...application.errors import VisualStyleNotFound
 from ...application.use_cases import InvalidInput, ServiceUnavailable
 from ...application.video_style import VideoStylePatch, VideoStylePatchConflict
-from ...domain.contracts import ProductionMode, Project, Video, VideoFormat, VideoStatus
+from ...domain.contracts import ProductionMode, Project, Scene, Video, VideoFormat, VideoStatus
 from ...domain.qa_report import QaCoverage, QaFinding, QaReport
 from ...domain.ids import check_id
 from ...domain.schema import SCHEMA_VERSION
@@ -119,6 +119,76 @@ def _video(row: dict) -> Video:
 
 def _video_style_patch(row: dict) -> VideoStylePatch:
     return VideoStylePatch(revision=row["style_patch_revision"], patch=row["style_patch"])
+
+
+def _scene_from_row(row: dict) -> Scene:
+    """Carrega Scene a partir de um dict row de studio.scenes."""
+    return Scene(
+        id=row["id"],
+        video_id=row["video_id"],
+        idx=row["idx"],
+        narration=row["narration"],
+        caption=row.get("caption", ""),
+        label=row.get("label", ""),
+        image_prompt=row["image_prompt"],
+        claim_ids=row.get("claim_ids") or [],
+        asset_id=row.get("asset_id"),
+        duration_s=row.get("duration_s"),
+        broll_enabled=bool(row.get("broll_enabled", False)),
+        broll_note=row.get("broll_note"),
+    )
+
+
+def _load_scenes(conn, video_id: str) -> list[Scene]:
+    """Carrega cenas de um vídeo a partir de studio.scenes."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id, video_id, idx, narration, caption, label, image_prompt, claim_ids, "
+            "asset_id, duration_s, broll_enabled, broll_note "
+            "FROM studio.scenes WHERE video_id = %s ORDER BY idx",
+            (check_id(video_id),),
+        )
+        return [_scene_from_row(row) for row in cur.fetchall()]
+
+
+def save_scenes(conn, video_id: str, scenes: list[Scene]) -> None:
+    """Persiste cenas em studio.scenes incluindo broll_enabled e broll_note."""
+    vid = check_id(video_id)
+    with conn.cursor() as cur:
+        for s in scenes:
+            cur.execute(
+                "INSERT INTO studio.scenes (id, video_id, idx, narration, caption, label, "
+                "image_prompt, claim_ids, asset_id, duration_s, broll_enabled, broll_note) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (id) DO UPDATE SET "
+                "idx = EXCLUDED.idx, narration = EXCLUDED.narration, caption = EXCLUDED.caption, "
+                "label = EXCLUDED.label, image_prompt = EXCLUDED.image_prompt, "
+                "claim_ids = EXCLUDED.claim_ids, asset_id = EXCLUDED.asset_id, "
+                "duration_s = EXCLUDED.duration_s, broll_enabled = EXCLUDED.broll_enabled, "
+                "broll_note = EXCLUDED.broll_note",
+                (
+                    s.id,
+                    vid,
+                    s.idx,
+                    s.narration,
+                    s.caption,
+                    s.label,
+                    s.image_prompt,
+                    Jsonb(s.claim_ids),
+                    s.asset_id,
+                    s.duration_s,
+                    s.broll_enabled,
+                    s.broll_note,
+                ),
+            )
+
+
+def replace_scenes(conn, video_id: str, scenes: list[Scene]) -> None:
+    """Substitui cenas de um vídeo em studio.scenes."""
+    vid = check_id(video_id)
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM studio.scenes WHERE video_id = %s", (vid,))
+    save_scenes(conn, vid, scenes)
 
 
 class PostgresVideoRepository:
@@ -259,3 +329,15 @@ class PostgresVideoRepository:
                     raise VisualStyleNotFound(f"visual style {style_id!r} does not exist") from exc
                 row = cur.fetchone()
             return _video(row) if row else None
+
+    def load_scenes(self, video_id: str) -> list[Scene]:
+        with _translated(), self._connect() as conn:
+            return _load_scenes(conn, video_id)
+
+    def save_scenes(self, video_id: str, scenes: list[Scene]) -> None:
+        with _translated(), self._connect() as conn:
+            save_scenes(conn, video_id, scenes)
+
+    def replace_scenes(self, video_id: str, scenes: list[Scene]) -> None:
+        with _translated(), self._connect() as conn:
+            replace_scenes(conn, video_id, scenes)

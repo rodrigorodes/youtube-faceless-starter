@@ -110,6 +110,8 @@ class Scene(_Model):
     claim_ids: list[str] = Field(default_factory=list)
     asset_id: str | None = None
     duration_s: float | None = Field(default=None, ge=0)
+    broll_enabled: bool = False
+    broll_note: str | None = None
 
 
 class Asset(_Model):
