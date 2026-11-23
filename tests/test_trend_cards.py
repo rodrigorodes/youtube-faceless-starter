@@ -5,7 +5,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
-from app.studio.domain.trend_cards import SEARCH_SOURCE, build_trend_cards  # noqa: E402
+from app.studio.application.panel import BuildPanel, TrendItemView  # noqa: E402
+from app.studio.application.ports import TrendRecord  # noqa: E402
+from app.studio.domain.trend_cards import SEARCH_SOURCE, TrendCard, build_trend_cards  # noqa: E402
+from app.studio.domain.trend_priority import PriorityBreakdown, SavedTrendSnapshot  # noqa: E402
 
 T0 = datetime(2026, 11, 22, 12, tzinfo=timezone.utc)
 
@@ -72,3 +75,199 @@ def test_other_sources_keep_one_card_per_record():
 
 def test_per_channel_zero_disables_the_cap():
     assert len(build_trend_cards([popular(f"vid{n:08d}", "Mesmo", 10 - n) for n in range(4)], per_channel=0)) == 4
+
+
+def test_trend_cards_contain_velocity_and_priority_score():
+    records = [popular("v1", "Canal 1", 500_000, T0 - timedelta(hours=10))]
+    cards = build_trend_cards(records, now=T0)
+    assert hasattr(cards[0], "priority_score")
+    assert hasattr(cards[0], "velocity_text")
+    assert hasattr(cards[0], "duration_text")
+    assert cards[0].priority_score > 0
+    assert cards[0].velocity_text == "50 mil/h"
+
+
+def test_trend_cards_duration_and_niche_ratio():
+    ev1 = ev("v1", "C1", 100_000)
+    ev1["duration"] = "11:40"
+    ev2 = ev("v2", "C2", 340_000)
+    ev2["duration"] = "05:20"
+    records = [
+        Rec("T1", SEARCH_SOURCE, T0, [ev1], 100_000.0, category_id="cat1"),
+        Rec("T2", SEARCH_SOURCE, T0, [ev2], 340_000.0, category_id="cat1"),
+    ]
+    cards = build_trend_cards(records, now=T0)
+    assert hasattr(cards[0], "niche_ratio_text")
+    assert hasattr(cards[0], "duration_text")
+    assert any(c.duration_text == "11:40" for c in cards)
+    assert any(c.duration_text == "05:20" for c in cards)
+    assert any("▲" in c.niche_ratio_text or "▼" in c.niche_ratio_text for c in cards)
+
+
+class FakeTrendRepo:
+    def __init__(self, records=None, last_collected=None, saved_trends=None):
+        self._records = records or []
+        self._last_collected = last_collected
+        self._saved_trends = saved_trends or []
+
+    def list(self, project_id, since=None):
+        if since is None:
+            return self._records
+        return [r for r in self._records if r.observed_at >= since]
+
+    def last_collected_at(self, project_id):
+        return self._last_collected
+
+    def find_by_topic_key(self, project_id, topic_key):
+        for r in self._records:
+            if getattr(r, "project_id", None) == project_id and getattr(r, "topic_key", None) == topic_key:
+                return r
+        return None
+
+    def list_saved_trends(self, project_id):
+        return [s for s in self._saved_trends if s.project_id == project_id]
+
+    def is_trend_saved(self, project_id, video_id):
+        return any(s.project_id == project_id and s.video_id == video_id for s in self._saved_trends)
+
+
+class FakePanelRepo:
+    def __init__(self, projects_list=None, videos_list=None, month_rows=None):
+        self._projects = projects_list or [("p1", "Canal Principal")]
+        self._videos = videos_list or []
+        self._month_rows = month_rows or []
+
+    def projects(self):
+        return self._projects
+
+    def videos(self, since, project_id, limit):
+        res = self._videos
+        if since:
+            res = [v for v in res if v.updated_at >= since]
+        if project_id:
+            res = [v for v in res if v.project_id == project_id]
+        return res[:limit]
+
+    def month_usage(self):
+        return self._month_rows
+
+    def unattributed_usage(self):
+        return []
+
+
+def test_build_panel_enriches_trend_item_views_with_metrics_and_saved_state():
+    now = T0
+    ev1 = ev("v1", "Canal 1", 500_000)
+    ev1["duration"] = "11:40"
+    ev1["published_at"] = (now - timedelta(hours=10)).isoformat()
+
+    rec = Rec("Tema Tendencia", "YouTube Brasil (Em Alta)", now, [ev1], 500_000.0)
+    saved = SavedTrendSnapshot(
+        project_id="p1",
+        video_id="v1",
+        title="Tema Tendencia",
+        channel_title="Canal 1",
+        thumbnail_url="https://i.ytimg.com/vi/v1/hqdefault.jpg",
+        video_url="https://youtube.com/watch?v=v1",
+        duration="11:40",
+        views=500_000,
+        category_name=None,
+        score=85,
+        created_at=now,
+    )
+    trend_repo = FakeTrendRepo(records=[rec], last_collected=now, saved_trends=[saved])
+    panel_repo = FakePanelRepo()
+
+    view = BuildPanel(panel_repo, 15.0, lambda: now, trends=trend_repo).execute(days=7, project_id="p1")
+    assert len(view.trends) == 1
+    t = view.trends[0]
+
+    assert hasattr(t, "velocity_text")
+    assert hasattr(t, "niche_ratio_text")
+    assert hasattr(t, "duration_text")
+    assert hasattr(t, "priority_score")
+    assert hasattr(t, "priority_summary")
+    assert hasattr(t, "priority_breakdown")
+    assert hasattr(t, "risk_status")
+    assert hasattr(t, "risk_level")
+    assert hasattr(t, "is_saved")
+    assert hasattr(t, "is_evergreen")
+
+    assert t.duration_text == "11:40"
+    assert t.velocity_text == "50 mil/h"
+    assert t.is_saved is True
+    assert t.priority_score > 0
+    assert isinstance(t.priority_breakdown, PriorityBreakdown)
+
+
+def test_build_panel_sorting_options():
+    now = T0
+    # Fast: 200k in 2h = 100k/h
+    ev_fast = ev("v_fast", "Canal A", 200_000)
+    ev_fast["published_at"] = (now - timedelta(hours=2)).isoformat()
+    rec_fast = Rec("Tema Rapido", "YouTube Brasil (Em Alta)", now, [ev_fast], 200_000.0)
+
+    # Slow: 100k in 100h = 1k/h, but observed more recently
+    ev_slow = ev("v_slow", "Canal B", 100_000)
+    ev_slow["published_at"] = (now - timedelta(hours=100)).isoformat()
+    rec_slow = Rec("Tema Lento", "YouTube Brasil (Em Alta)", now + timedelta(minutes=5), [ev_slow], 100_000.0)
+
+    trend_repo = FakeTrendRepo(records=[rec_fast, rec_slow], last_collected=now)
+    panel = BuildPanel(FakePanelRepo(), 15.0, lambda: now, trends=trend_repo)
+
+    # Sort by prioridade
+    view_prio = panel.execute(days=7, sort="prioridade")
+    assert view_prio.sort == "prioridade"
+    assert len(view_prio.trends) == 2
+
+    # Sort by velocidade
+    view_vel = panel.execute(days=7, sort="velocidade")
+    assert view_vel.sort == "velocidade"
+    assert view_vel.trends[0].topic == "Tema Rapido"
+
+    # Sort by recentes
+    view_rec = panel.execute(days=7, sort="recentes")
+    assert view_rec.sort == "recentes"
+    assert view_rec.trends[0].topic == "Tema Lento"
+
+
+def test_build_panel_tipo_filtering_and_saved_trends_outside_7_day_window():
+    now = T0
+    # Current trend
+    ev_now = ev("v_now", "Canal X", 50_000)
+    rec_now = Rec("Tema Atual", "YouTube Brasil (Em Alta)", now, [ev_now], 50_000.0)
+
+    # Saved trend from 30 days ago (outside 7-day window)
+    old_date = now - timedelta(days=30)
+    saved_old = SavedTrendSnapshot(
+        project_id="p1",
+        video_id="v_old",
+        title="Ideia Antiga Guardada",
+        channel_title="Canal Y",
+        thumbnail_url="https://i.ytimg.com/vi/v_old/hqdefault.jpg",
+        video_url="https://youtube.com/watch?v=v_old",
+        duration="15:00",
+        views=300_000,
+        category_name="Geral",
+        score=90,
+        created_at=old_date,
+    )
+
+    trend_repo = FakeTrendRepo(records=[rec_now], last_collected=now, saved_trends=[saved_old])
+    panel = BuildPanel(FakePanelRepo(), 15.0, lambda: now, trends=trend_repo)
+
+    # tipo == "todos" -> only current collected trends
+    view_all = panel.execute(days=7, project_id="p1", tipo="todos")
+    assert len(view_all.trends) == 1
+    assert view_all.trends[0].topic == "Tema Atual"
+
+    # tipo == "guardados" -> loads saved trend even outside 7-day window
+    view_saved = panel.execute(days=7, project_id="p1", tipo="guardados")
+    assert view_saved.tipo == "guardados"
+    assert len(view_saved.trends) == 1
+    assert view_saved.trends[0].video_id == "v_old"
+    assert view_saved.trends[0].is_saved is True
+    assert view_saved.trends[0].duration_text == "15:00"
+    assert view_saved.trends[0].priority_score == 90
+
+

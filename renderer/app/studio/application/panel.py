@@ -11,6 +11,7 @@ from ..domain.categories import ProjectCategory
 from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage, classify, is_known_cost, topic_key
 from ..domain.trend_cards import build_trend_cards
+from ..domain.trend_priority import PriorityBreakdown, SavedTrendSnapshot
 from .editorial import VideoNotFound
 from .errors import InvalidInput
 from .ports import CategoryRepository, LatestRun, PanelRepository, PubInfo, SourceInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
@@ -206,6 +207,17 @@ class TrendItemView:
     channel_title: str | None = None
     published_text: str | None = None
     region: str | None = None
+    velocity_text: str = ""
+    niche_ratio_text: str = ""
+    duration_text: str = ""
+    priority_score: int = 0
+    priority_summary: str = ""
+    priority_breakdown: PriorityBreakdown | None = None
+    risk_status: str = "Sem risco detectado"
+    risk_level: str = "ok"
+    is_saved: bool = False
+    is_evergreen: bool = False
+    views_per_hour: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -222,6 +234,8 @@ class PanelView:
     last_collected_at: datetime | None = None
     categories: list[ProjectCategory] = field(default_factory=list)
     project_id: str | None = None
+    sort: str = "prioridade"
+    tipo: str = "todos"
 
 
 @dataclass(frozen=True)
@@ -272,7 +286,13 @@ class BuildPanel:
             breakdown=m_breakdown,
         )
 
-    def execute(self, days: int = 7, project_id: str | None = None) -> PanelView:
+    def execute(
+        self,
+        days: int = 7,
+        project_id: str | None = None,
+        sort: str = "prioridade",
+        tipo: str = "todos",
+    ) -> PanelView:
         if days not in (7, 14, 30):
             raise InvalidInput("days must be 7, 14 or 30")
 
@@ -347,10 +367,20 @@ class BuildPanel:
         trends_status = "never_collected"
         last_col = None
 
+        recent_channel_titles = [r.title for r in rows if r.title]
         categories: list[ProjectCategory] = []
         target_project_id = project_id or (projects[0][0] if projects else None)
         if self.categories_repo is not None and target_project_id:
             categories = self.categories_repo.list(target_project_id)
+
+        saved_video_ids: set[str] = set()
+        saved_snapshots: list[SavedTrendSnapshot] = []
+        if self.trends is not None and target_project_id and hasattr(self.trends, "list_saved_trends"):
+            try:
+                saved_snapshots = self.trends.list_saved_trends(target_project_id)
+                saved_video_ids = {s.video_id for s in saved_snapshots}
+            except Exception:
+                pass
 
         if self.trends is not None:
             last_col = self.trends.last_collected_at(project_id)
@@ -358,7 +388,7 @@ class BuildPanel:
                 recs = self.trends.list(project_id, since=since)
                 trends_status = "stale" if last_col < since else "ok"
                 # Um cartão por vídeo (coleta mais recente), com no máximo 2 por canal: ver domain/trend_cards.py.
-                for r in build_trend_cards(recs):
+                for r in build_trend_cards(recs, now=now, recent_channel_titles=recent_channel_titles):
                     r_key = topic_key(r.topic)
                     if r_key in grouped_videos:
                         entries = grouped_videos[r_key]
@@ -452,6 +482,8 @@ class BuildPanel:
                         elif isinstance(pub, datetime):
                             published_text = pub.strftime("%d/%m/%Y")
 
+                    is_saved = bool(video_id and video_id in saved_video_ids)
+
                     trend_views.append(TrendItemView(
                         topic=r.topic,
                         key=r_key,
@@ -472,7 +504,82 @@ class BuildPanel:
                         channel_title=channel_title,
                         published_text=published_text,
                         region=region,
+                        velocity_text=r.velocity_text,
+                        niche_ratio_text=r.niche_ratio_text,
+                        duration_text=r.duration_text,
+                        priority_score=r.priority_score,
+                        priority_summary=r.priority_summary,
+                        priority_breakdown=r.priority_breakdown,
+                        risk_status=r.risk_status,
+                        risk_level=r.risk_level,
+                        is_saved=is_saved,
+                        is_evergreen=r.is_evergreen,
+                        views_per_hour=r.views_per_hour,
                     ))
+
+        if tipo == "guardados":
+            existing_video_ids = {t.video_id for t in trend_views if t.video_id}
+            for s in saved_snapshots:
+                if s.video_id not in existing_video_ids:
+                    s_key = topic_key(s.title)
+                    if s_key in grouped_videos:
+                        entries = grouped_videos[s_key]
+                        c_counts = {stage: 0 for stage in Stage}
+                        for _, st, _, _ in entries:
+                            c_counts[st] += 1
+                        t_cost_text = cost_summary_text(sum_breakdowns(c_sum for _, _, c_sum, _ in entries))
+                    else:
+                        c_counts = {stage: 0 for stage in Stage}
+                        t_cost_text = "Nenhum vídeo ainda"
+
+                    metric_text = (
+                        f"{int(s.views):,} visualizações".replace(",", ".")
+                        if s.views else None
+                    )
+                    trend_views.append(TrendItemView(
+                        topic=s.title,
+                        key=s_key,
+                        source_name="Ideias Guardadas",
+                        source_url=s.video_url or "",
+                        observed_at=s.created_at or now,
+                        stale=False,
+                        metric_text=metric_text,
+                        evidence=[{"title": s.title, "url": s.video_url, "channel": s.channel_title, "views": s.views, "duration": s.duration}],
+                        counts=c_counts,
+                        cost_text=t_cost_text,
+                        create_action=len(s.title) <= 300,
+                        category_id=None,
+                        category_name=s.category_name,
+                        video_id=s.video_id,
+                        thumbnail_url=s.thumbnail_url,
+                        video_url=s.video_url,
+                        channel_title=s.channel_title,
+                        published_text=s.created_at.strftime("%d/%m/%Y") if s.created_at else None,
+                        region=None,
+                        velocity_text="",
+                        niche_ratio_text="",
+                        duration_text=s.duration,
+                        priority_score=s.score,
+                        priority_summary="Ideia guardada no canal",
+                        priority_breakdown=None,
+                        risk_status="Sem risco detectado",
+                        risk_level="ok",
+                        is_saved=True,
+                        is_evergreen=False,
+                        views_per_hour=0.0,
+                    ))
+            trend_views = [t for t in trend_views if t.is_saved]
+        elif tipo == "perenes":
+            trend_views = [t for t in trend_views if t.is_evergreen]
+        elif tipo == "sem_risco":
+            trend_views = [t for t in trend_views if t.risk_level == "ok"]
+
+        if sort == "velocidade":
+            trend_views.sort(key=lambda t: (-getattr(t, "views_per_hour", 0.0), -t.priority_score, t.topic))
+        elif sort == "recentes":
+            trend_views.sort(key=lambda t: (-t.observed_at.timestamp(), -t.priority_score, t.topic))
+        else:  # prioridade
+            trend_views.sort(key=lambda t: (-t.priority_score, -getattr(t, "views_per_hour", 0.0), t.topic))
 
         return PanelView(
             generated_at=now,
@@ -487,6 +594,8 @@ class BuildPanel:
             last_collected_at=last_col,
             categories=categories,
             project_id=target_project_id,
+            sort=sort,
+            tipo=tipo,
         )
 
     def detail(self, video_id: str) -> VideoDetailView:
