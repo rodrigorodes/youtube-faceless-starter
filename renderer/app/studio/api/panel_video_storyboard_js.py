@@ -15,7 +15,7 @@ STORYBOARD_JS = r"""
   if (!root || !dataEl || !cardsEl || !tpl) return;
   var D = {};
   try { D = JSON.parse(dataEl.textContent); } catch (err) { return; }
-  var VID = D.video_id, editable = !!D.editable, version = Number(D.version || 0);
+  var VID = D.video_id, editable = !!D.editable, structure = D.structure !== false, version = Number(D.version || 0);
   var fb = document.getElementById('storyboard-feedback');
   var MAX = 30;
 
@@ -111,7 +111,7 @@ STORYBOARD_JS = r"""
     var regen = card.querySelector('[data-a="regen"]');
     regen.textContent = s.audio_state === 'none' ? 'Gerar \u00e1udio da cena' : 'Regenerar \u00e1udio da cena';
     var up = card.querySelector('[data-a="mv"][data-d="-1"]'), down = card.querySelector('[data-a="mv"][data-d="1"]');
-    up.disabled = !editable || i === 0; down.disabled = !editable || i === total - 1;
+    up.disabled = !editable || !structure || i === 0; down.disabled = !editable || !structure || i === total - 1;
   }
 
   function renderAll() {
@@ -133,7 +133,7 @@ STORYBOARD_JS = r"""
     });
     Array.prototype.slice.call(cardsEl.children).forEach(function (c) { if (!keep[c.dataset.cid]) c.remove(); });
     var empty = document.getElementById('storyboard-empty');
-    if (!model.length && !empty) {
+    if (!model.length && !empty && !document.getElementById('storyboard-vazio')) {
       cardsEl.insertAdjacentHTML('afterend', '<div class="card" id="storyboard-empty"><p class="sub">Sem cenas. Adicione a primeira cena.</p></div>');
     } else if (model.length && empty) { empty.remove(); }
     var full = document.getElementById('storyboard-fullscript');
@@ -302,7 +302,7 @@ STORYBOARD_JS = r"""
   function indexOf(m) { return model.indexOf(m); }
 
   function addScene() {
-    if (!editable) return;
+    if (!editable || !structure) return;
     remember();
     var m = { cid: newCid(), id: '', label: 'Nova cena', caption: '', narration: 'Escreva aqui o texto da narra\u00e7\u00e3o desta cena.',
       image_prompt: 'descreva a imagem desejada', duration_s: null, asset_id: null, asset_tag: '', audio_state: 'none',
@@ -314,10 +314,12 @@ STORYBOARD_JS = r"""
     toast('Cena adicionada.'); scheduleSync();
   }
   function delScene(m) {
+    if (!structure) return;
     if (model.length <= 1) { toast('O v\u00eddeo precisa de ao menos uma cena.'); return; }
     remember(); model.splice(indexOf(m), 1); renderAll(); toast('Cena exclu\u00edda.'); scheduleSync();
   }
   function moveScene(m, d) {
+    if (!structure) return;
     var i = indexOf(m), j = i + d;
     if (j < 0 || j >= model.length) return;
     remember(); model[i] = model[j]; model[j] = m; renderAll(); scheduleSync();
@@ -579,6 +581,27 @@ RUN_JS = r"""
   if (btnGen) btnGen.addEventListener('click', function () { askImpact('missing'); });
   var confirm = document.getElementById('btn-confirmar-render');
   if (confirm) confirm.addEventListener('click', function () { dlg.close(); startRun(); });
+
+  // Estado vazio: o roteiro nasce das fontes (POST /script, já existente). Sem isso o Diretor ficava sem saída.
+  var btnRoteiro = document.getElementById('btn-gerar-roteiro');
+  if (btnRoteiro) btnRoteiro.addEventListener('click', async function () {
+    var out = document.getElementById('roteiro-feedback') || fb;
+    btnRoteiro.disabled = true; btnRoteiro.setAttribute('aria-busy', 'true');
+    if (out) out.textContent = 'Gerando o roteiro a partir das fontes\u2026';
+    try {
+      var r = await fetch('/studio/videos/' + encodeURIComponent(video) + '/script', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      var d = await r.json().catch(function () { return {}; });
+      if (r.ok) { if (out) out.textContent = 'Roteiro gerado. Abrindo as cenas\u2026'; location.reload(); return; }
+      if (out) out.textContent = 'N\u00e3o foi poss\u00edvel gerar o roteiro: ' + window.StudioErro.texto(d, 'tente novamente.', r.status);
+    } catch (err) { if (out) out.textContent = 'Falha de rede ao gerar o roteiro. Tente novamente.'; }
+    btnRoteiro.disabled = false; btnRoteiro.removeAttribute('aria-busy');
+  });
+  // Aviso deixado pela tela de criação (ex.: a produção não pôde iniciar), mostrado uma vez.
+  try {
+    var flash = sessionStorage.getItem('flash-' + video);
+    if (flash) { sessionStorage.removeItem('flash-' + video); toast(flash); say(flash); }
+  } catch (e) {}
 
   var live = document.getElementById('progress-card');
   if (live && live.dataset.runId) { starting = true; busyButtons(true); poll(live.dataset.runId); }

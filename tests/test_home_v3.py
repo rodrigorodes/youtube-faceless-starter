@@ -143,8 +143,9 @@ def test_home_v3_quick_creation_has_idea_and_script_toggle():
     assert "⚡ Gerar vídeo completo" in html
     assert "/studio/panel/novo-video" in html
     assert "Personalizar este vídeo" in html
-    assert "local://roteiro-inicial" in html
-    assert "/sources" in html
+    # Texto colado exige link http(s) de referência: segue para a tela completa em vez de criar sem fonte.
+    assert "local://roteiro-inicial" not in html
+    assert "customize.click()" in html
     assert "production_mode" in html
 
 

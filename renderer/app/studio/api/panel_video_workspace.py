@@ -437,9 +437,22 @@ def _scene_editable(view, script=None) -> bool:
 
 
 _LOCKED_TITLE = "O roteiro só pode ser editado enquanto o vídeo está em Ideia ou Roteirizado."
+_NO_PLAN_TITLE = "Este roteiro não tem plano de capítulos: texto e ordem das cenas não podem ser gravados."
 
 
-def _nova_cena_btn(video_id: str, script, editable: bool = True) -> str:
+def _structure_editable(script_view) -> bool:
+    """Texto, ordem, inclusão e exclusão de cena só são gravados em roteiro com plano de capítulos.
+
+    O backend edita cenas sobre o plano (`script_plans`); o roteiro curto gerado pelas fontes não tem
+    plano e toda edição volta 409. Sem leitura do roteiro (`script_view` ausente) não há como afirmar o
+    contrário, então a tela não bloqueia por palpite.
+    """
+    if script_view is None or not getattr(script_view, "has_script", False):
+        return True
+    return bool(getattr(script_view, "chapters", None))
+
+
+def _nova_cena_btn(video_id: str, script, editable: bool = True, structure: bool = True) -> str:
     """`addscene` do protótipo: adiciona a cena na própria bancada (sem trocar de tela).
 
     Sem roteiro versionado não há como gravar uma cena; o botão fica desabilitado e diz por quê.
@@ -450,6 +463,8 @@ def _nova_cena_btn(video_id: str, script, editable: bool = True) -> str:
         off = ' disabled title="Este vídeo ainda não tem roteiro para receber cenas."'
     elif not editable:
         off = f' disabled title="{_LOCKED_TITLE}"'
+    elif not structure:
+        off = f' disabled title="{_NO_PLAN_TITLE}"'
     return (f'<button type="button" class="btn small" id="btn-nova-cena" data-a="addscene" '
             f'data-video-id="{e(video_id)}" data-script-version="{version}"{off}>+ Nova cena</button>')
 
@@ -486,7 +501,8 @@ def _scene_thumb(video_id: str, s: dict, i: int) -> str:
             f'<span class="tag">{e(tag)}</span><span class="time">{_clock(_scene_secs(s))}</span></div>')
 
 
-def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, editable: bool) -> str:
+def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, editable: bool,
+                structure: bool = True) -> str:
     """`sceneCard(v, s, i)` do protótipo, com os dados reais da cena (a mesma estrutura, os mesmos textos)."""
     sid = e(s["id"])
     aud_cls, aud_txt = _AUDIO_BADGE.get(s["audio_state"], _AUDIO_BADGE["none"])
@@ -495,6 +511,11 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
     broll = bool(s.get("broll_enabled"))
     lock = "" if editable else f' disabled title="{_LOCKED_TITLE}"'
     ro = "" if editable else f' readonly title="{_LOCKED_TITLE}"'
+    # Texto/prompt/ordem/exclusão dependem do plano; mídia, B-roll e voz não.
+    fixed = "" if (editable and structure) else (f' title="{_LOCKED_TITLE}"' if not editable else f' title="{_NO_PLAN_TITLE}"')
+    ro_text = f" readonly{fixed}" if fixed else ""
+    lock_text = f" disabled{fixed}" if fixed else ""
+    off_move = lambda cond: " disabled" if (cond or fixed) else ""  # noqa: E731
     broll_btn_style = "border-color:var(--accent);color:var(--accent2)" if broll else ""
     note = (f'<input type="text" class="sample" style="margin-top:6px;font-size:12px" aria-label="Descrição do B-roll" '
             f'data-a="brollnote" data-sid="{sid}" value="{e(s.get("broll_note") or "")}" '
@@ -513,10 +534,10 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
         f'<span class="num">CENA {i + 1} · {e(s["label"].upper())}</span>'
         f'<span class="sample" data-count="{sid}">{e(_scene_count_text(s))}</span></div>'
         f'<label class="sr" for="tx-{sid}">Texto da cena {i + 1}</label>'
-        f'<textarea id="tx-{sid}" rows="4" data-a="text" data-sid="{sid}"{ro}>{e(s["narration"])}</textarea>'
+        f'<textarea id="tx-{sid}" rows="4" data-a="text" data-sid="{sid}"{ro_text}>{e(s["narration"])}</textarea>'
         '<div class="field" style="margin:8px 0 0">'
         f'<label for="pr-{sid}">Prompt da imagem</label>'
-        f'<input type="text" id="pr-{sid}" data-a="prompt" data-sid="{sid}" value="{e(s["image_prompt"])}"{ro}></div></div>'
+        f'<input type="text" id="pr-{sid}" data-a="prompt" data-sid="{sid}" value="{e(s["image_prompt"])}"{ro_text}></div></div>'
         '<div class="player"><div class="between"><span class="lbl">NARRAÇÃO</span>'
         f'<span class="pill {aud_cls}" data-audpill="{sid}">{aud_txt}</span></div>'
         f'<p class="sample">{e(voice_name)}</p>'
@@ -529,10 +550,10 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
         '<p class="sample" style="margin-top:6px" data-f="voicenote">Áudio real da cena: gerado pelo estúdio, não simulado.</p>'
         '<div class="row" style="margin-top:8px;justify-content:space-between"><span>'
         f'<button class="btn ghost small" aria-label="Mover cena para cima" data-a="mv" data-d="-1" data-sid="{sid}"'
-        f'{" disabled" if (i == 0 or not editable) else ""}>↑</button>'
+        f'{off_move(i == 0)}>↑</button>'
         f'<button class="btn ghost small" aria-label="Mover cena para baixo" data-a="mv" data-d="1" data-sid="{sid}"'
-        f'{" disabled" if (i == total - 1 or not editable) else ""}>↓</button></span>'
-        f'<button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="{sid}"{lock}>Excluir</button>'
+        f'{off_move(i == total - 1)}>↓</button></span>'
+        f'<button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="{sid}"{lock_text}>Excluir</button>'
         '</div></div></div>'
     )
 
@@ -561,28 +582,59 @@ def _storyboard_dialogs() -> str:
     )
 
 
+def _empty_storyboard(view, video_id: str) -> str:
+    """Storyboard sem cenas: o roteiro nasce das fontes, então o caminho real é fonte → roteiro.
+
+    Não existe "criar cena do zero" no backend (toda cena é gravada numa versão de roteiro, e a versão
+    nasce da geração a partir das fontes). Por isso o estado vazio diz isso e oferece a próxima ação
+    de verdade, em vez de um "adicione a primeira cena" que não tinha como ser cumprido.
+    """
+    if getattr(view, "sources", None):
+        action = ('<button type="button" class="btn primary" id="btn-gerar-roteiro" '
+                  f'data-video-id="{e(video_id)}">Gerar roteiro e cenas</button>')
+        text = ("As fontes já estão registradas. Gere o roteiro: ele vira as cenas aqui, "
+                "e então você edita texto, mídia e voz de cada uma.")
+    else:
+        action = f'<a class="btn primary" href="{area_href(video_id, "fontes")}">Adicionar fonte</a>'
+        text = ("O roteiro é escrito a partir dos fatos das fontes. Adicione uma fonte "
+                "(URL ou texto colado) para gerar as cenas.")
+    return ('<div class="card" id="storyboard-vazio"><h3>Este vídeo ainda não tem cenas</h3>'
+            f'<p class="sub" style="margin:6px 0 12px">{text}</p>'
+            f'<div class="row">{action}</div>'
+            '<p class="sample" id="roteiro-feedback" role="status" aria-live="polite" style="margin-top:8px"></p></div>')
+
+
 def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
                 scenes=None, script=None, channel_voice: str | None = None, scene_assets=None) -> str:
     """`tabScenes` do protótipo (com Desfazer/Refazer do v3): um `sceneCard` completo por cena, na ordem do roteiro."""
     editable = _scene_editable(view, script)
+    structure = _structure_editable(script_view)
     items = _normalize_scenes(scenes, script, scene_assets)
     voice_name = channel_voice or "Voz padrão do estúdio"
     version = _script_version(script)
-    cards = "".join(_scene_card(video_id, s, i, len(items), voice_name=voice_name, editable=editable)
+    cards = "".join(_scene_card(video_id, s, i, len(items), voice_name=voice_name, editable=editable,
+                                  structure=structure)
                     for i, s in enumerate(items))
     blank = {"id": "__sid__", "label": "", "narration": "", "image_prompt": "", "duration_s": None,
              "asset_id": None, "audio_state": "none", "broll_enabled": False, "broll_note": None}
     template = ('<template id="scene-card-template">'
-                + _scene_card(video_id, blank, 0, 2, voice_name=voice_name, editable=editable) + '</template>')
-    empty = ('<div class="card" id="storyboard-empty"><p class="sub">Sem cenas. Adicione a primeira cena.</p></div>'
-             if not items else "")
-    data = {"video_id": video_id, "version": version, "editable": editable, "voice": voice_name,
+                + _scene_card(video_id, blank, 0, 2, voice_name=voice_name, editable=editable,
+                            structure=structure) + '</template>')
+    empty = _empty_storyboard(view, video_id) if not items else ""
+    gen_off = "" if items else ' disabled title="Sem cenas: gere o roteiro primeiro."'
+    data = {"video_id": video_id, "version": version, "editable": editable, "structure": structure, "voice": voice_name,
             "scenes": [{k: v for k, v in s.items() if k != "audio_history"} | {"audio_history": s["audio_history"]}
                        for s in items]}
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     script_content = "".join(
         f'<p style="margin-top:12px"><b>{i + 1}. {e(sc["label"])}</b><br>{e(sc["narration"])}</p>'
         for i, sc in enumerate(items))
+    no_plan_note = ""
+    if items and editable and not structure:
+        no_plan_note = ('<p class="note" id="storyboard-estrutura" style="margin-bottom:14px"><b>Texto e ordem das cenas estão '
+                        'bloqueados.</b> Este roteiro não tem plano de capítulos, e o Studio só grava edição de texto, '
+                        'inclusão, exclusão e ordem em roteiros com plano. Mídia, B-roll e voz de cada cena continuam '
+                        'editáveis aqui.</p>')
     return (
         '<div id="storyboard" data-video-id="' + e(video_id) + '">'
         '<div class="between" style="margin-bottom:16px"><div><h2>Storyboard integrado</h2>'
@@ -591,13 +643,15 @@ def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, compo
         '<div class="row">'
         '<button type="button" class="btn small" id="btn-undo-cenas" data-a="undo-v3" disabled>↶ Desfazer</button>'
         '<button type="button" class="btn small" id="btn-redo-cenas" data-a="redo-v3" disabled>↷ Refazer</button>'
-        f'{_nova_cena_btn(video_id, script, editable)}</div></div>'
+        f'{_nova_cena_btn(video_id, script, editable, structure)}</div></div>'
+        f'{no_plan_note}'
         f'<div class="stack" id="storyboard-cards">{cards}</div>'
         f'{empty}'
         '<div class="row" style="margin-top:12px">'
         '<button type="button" class="btn small" id="btn-historico-voz" data-a="audio-history">Histórico da voz</button>'
         '<button type="button" class="btn ghost small" id="btn-gerar-faltante" data-a="genmissing" '
-        f'data-video-id="{e(video_id)}">Gerar tudo o que falta</button></div>'
+        f'data-video-id="{e(video_id)}"{gen_off}>'
+        'Gerar tudo o que falta</button></div>'
         '<p class="sample" id="storyboard-feedback" role="status" aria-live="polite" style="margin-top:8px"></p>'
         f'<details class="diag" style="margin-top:18px"><summary>Ver roteiro completo · {len(items)} cenas</summary>'
         f'<div id="storyboard-fullscript">{script_content}</div></details>'
@@ -1359,6 +1413,10 @@ def _dock(view, video_id: str, scenes, script, scene_assets=None) -> str:
     if running:
         acao = ('<button type="button" class="btn primary" id="btn-render" disabled aria-busy="true" '
                 f'data-video-id="{e(video_id)}">⚡ Produção em andamento…</button>')
+    elif needs and not items and not getattr(view, "sources", None):
+        acao = ('<button type="button" class="btn primary" id="btn-render" disabled '
+                'title="Adicione uma fonte primeiro: o roteiro nasce dela.">'
+                '🎬 Gerar o que falta e renderizar</button>')
     elif needs:
         acao = (f'<button type="button" class="btn primary" id="btn-render" data-a="render" '
                 f'data-video-id="{e(video_id)}">🎬 Gerar o que falta e renderizar</button>')

@@ -282,7 +282,7 @@ def test_cenas_without_scene_read_is_honest_empty_state():
     content = _content(html)
     visible = _visible(content)
     assert "Storyboard integrado" in visible
-    assert "Sem cenas." in visible
+    assert "ainda não tem cenas" in visible  # estado vazio honesto: o roteiro nasce das fontes
     assert 'id="cena-em-foco"' not in content
     assert 'id="btn-excluir-cena"' not in content
     # `addscene` do protótipo: "+ Nova cena" é ação na própria bancada, não link para o roteiro

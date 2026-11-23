@@ -25,6 +25,9 @@ NEW_VIDEO_JS = """
   var btnCriar = $('#btn-criar-abrir') || $('#btn-criar');
   var fb = $('#feedback-criar');
   var useScript = $('#usar-roteiro');
+  function linkHttp(texto) {
+    try { var u = new URL(texto); return (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname; } catch (e) { return false; }
+  }
   function updateSummary() {
     var mode = $('input[name="modo-producao"]:checked');
     var format = $('input[name="formato-novo"]:checked');
@@ -37,9 +40,14 @@ NEW_VIDEO_JS = """
     }
     var dica = $('#resumo-dica');
     if (dica) {
+      var comRoteiro = useScript.checked;
       dica.textContent = diretor
-        ? 'Voc\\u00ea cai no storyboard para editar as cenas. Nada \\u00e9 gerado em m\\u00eddia e voz at\\u00e9 voc\\u00ea pedir.'
-        : 'Cria o rascunho e abre o v\\u00eddeo; a produ\\u00e7\\u00e3o s\\u00f3 come\\u00e7a quando voc\\u00ea pedir. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.';
+        ? (comRoteiro
+          ? 'O roteiro colado vira as cenas e voc\\u00ea cai no storyboard para edit\\u00e1-las. M\\u00eddia e voz s\\u00f3 s\\u00e3o geradas quando voc\\u00ea pedir.'
+          : 'Voc\\u00ea cai no storyboard. As cenas nascem das fontes: adicione uma fonte e gere o roteiro. M\\u00eddia e voz s\\u00f3 s\\u00e3o geradas quando voc\\u00ea pedir.')
+        : (comRoteiro
+          ? 'A produ\\u00e7\\u00e3o come\\u00e7a assim que o v\\u00eddeo \\u00e9 criado. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.'
+          : 'O v\\u00eddeo abre para voc\\u00ea adicionar uma fonte; a produ\\u00e7\\u00e3o come\\u00e7a quando houver de onde escrever o roteiro. Nada \\u00e9 publicado sem sua aprova\\u00e7\\u00e3o.');
     }
     $('#campo-roteiro').hidden = !useScript.checked;
     $('#estrutura-roteiro').hidden = useScript.checked;
@@ -132,6 +140,15 @@ NEW_VIDEO_JS = """
       var modo = $('input[name="modo-producao"]:checked');
       var scriptField = $('#roteiro-pronto');
       var scriptText = (useScript.checked && scriptField ? scriptField.value : '').trim();
+      var urlCampo = $('#roteiro-url'), erroUrl = $('#erro-roteiro-url');
+      var scriptUrl = urlCampo ? urlCampo.value.trim() : '';
+      if (erroUrl) erroUrl.style.display = 'none';
+      if (scriptText && !linkHttp(scriptUrl)) {
+        // O backend só aceita texto colado com um link http(s) de referência (ele entra em "Fontes" na descrição).
+        if (erroUrl) erroUrl.style.display = 'block';
+        if (urlCampo) urlCampo.focus();
+        return;
+      }
 
       var payload = {
         project_id: canalSel.value,
@@ -154,21 +171,50 @@ NEW_VIDEO_JS = """
         return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; });
       }).then(function (par) {
         var r = par[0], d = par[1];
-        if (r.ok && d.id) {
-          if (scriptText) {
-            return fetch('/studio/videos/' + encodeURIComponent(d.id) + '/sources', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: 'local://roteiro-inicial', text: scriptText })
-            }).catch(function () {}).then(function () { return d.id; });
-          }
-          return d.id;
-        } else {
-          throw new Error(window.StudioErro.texto(d, 'tente novamente.'));
-        }
+        if (!(r.ok && d.id)) throw new Error(window.StudioErro.texto(d, 'tente novamente.', r.status));
+        return d.id;
       }).then(function (videoId) {
-        if (fb) fb.textContent = 'Vídeo criado. Abrindo…';
-        location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+        // O vídeo já existe: o que falha daqui em diante vira aviso na tela do vídeo, nunca silêncio.
+        var base = '/studio/videos/' + encodeURIComponent(videoId);
+        var flash = '';
+        function post(path, body, headers) {
+          return fetch(base + path, {
+            method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
+            body: JSON.stringify(body || {})
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
+          }).catch(function () { return { ok: false, status: 0, data: {} }; });
+        }
+        function falhou(prefixo, res) {
+          flash = prefixo + ' ' + window.StudioErro.texto(res.data, 'tente novamente.', res.status);
+        }
+        var etapa = Promise.resolve(false);  // sem fonte não há de onde escrever o roteiro: nada a iniciar
+        if (scriptText) {
+          // O roteiro colado entra como fonte: é dele que o roteiro em cenas é escrito.
+          if (fb) fb.textContent = 'Registrando o roteiro como fonte\u2026';
+          etapa = post('/sources', { url: scriptUrl, text: scriptText }).then(function (res) {
+            if (!res.ok) falhou('O roteiro colado n\u00e3o foi registrado como fonte:', res);
+            return res.ok;
+          });
+        }
+        return etapa.then(function (temFonte) {
+          if (!temFonte) return null;
+          if (payload.production_mode === 'diretor') {
+            // Diretor: "cria o roteiro em cenas e para" — as cenas ficam prontas para editar.
+            if (fb) fb.textContent = 'Escrevendo o roteiro em cenas\u2026';
+            return post('/script', {}).then(function (res) { if (!res.ok) falhou('O roteiro n\u00e3o p\u00f4de ser gerado:', res); });
+          }
+          // Piloto: gera de ponta a ponta; a aprova\u00e7\u00e3o final continua sendo sua.
+          if (fb) fb.textContent = 'Iniciando a produ\u00e7\u00e3o\u2026';
+          var chave = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+          return post('/production-runs', {}, { 'Idempotency-Key': chave }).then(function (res) {
+            if (!res.ok) falhou('A produ\u00e7\u00e3o n\u00e3o p\u00f4de iniciar:', res);
+          });
+        }).then(function () {
+          if (flash) { try { sessionStorage.setItem('flash-' + videoId, flash); } catch (e) {} }
+          if (fb) fb.textContent = 'V\u00eddeo criado. Abrindo\u2026';
+          location.href = '/studio/panel/videos/' + encodeURIComponent(videoId) + '/cenas';
+        });
       }).catch(function (err) {
         btnCriar.disabled = false;
         btnCriar.classList.remove('carregando');
@@ -331,6 +377,14 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   <textarea id="roteiro-pronto" name="script" rows="4" maxlength="50000"
                             placeholder="Cole seu roteiro ou escreva depois. Separe as cenas por uma linha em branco."{disabled}></textarea>
                   <p class="sub" style="font-size:11px;margin-top:4px">Seu texto será preservado nas fontes e usado na criação das cenas.</p>
+                </div>
+                <div class="field">
+                  <label for="roteiro-url">Link de referência do texto <span aria-hidden="true">*</span></label>
+                  <input type="url" id="roteiro-url" name="script-url" placeholder="https://..."{disabled}
+                         aria-describedby="roteiro-url-regra">
+                  <p class="sample" id="roteiro-url-regra">De onde vem o texto (artigo, vídeo, documento). O Studio exige um link http(s)
+                    e ele aparece em «Fontes» na descrição do vídeo publicado.</p>
+                  <p class="campo-erro" id="erro-roteiro-url" style="display:none;color:var(--bad)">Informe um link http(s) válido para o texto colado.</p>
                 </div>
                 </div>
                 <div class="field" id="estrutura-roteiro">

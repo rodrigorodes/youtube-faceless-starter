@@ -32,6 +32,7 @@ ERRO_JS = r"""
     [/already exists|duplicate/i, 'Já existe um item com esse nome ou identificação.', true],
     [/version conflict|stale|expected_version/i, 'Outra pessoa alterou isto antes de você. Atualize a página e refaça a mudança.', false],
     [/budget|spend cap|cost cap/i, 'O teto de custo foi atingido. Ajuste o limite em Configurações para continuar.', true],
+    [/not the latest script version/i, 'O roteiro mudou ou não aceita edição de cenas (só roteiros com plano de capítulos). Recarregue a página.', false],
     [/api key/i, 'Falta a chave de acesso deste serviço. Cadastre em Configurações.', false]
   ];
   var PADRAO = {

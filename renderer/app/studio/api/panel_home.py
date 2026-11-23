@@ -162,6 +162,12 @@ HOME_JS = """
 
     var modoEntrada = form.querySelector('input[name="tipo-entrada"]:checked');
     var isScript = modoEntrada && modoEntrada.value === 'script';
+    if (isScript && customize) {
+      // Texto colado exige um link http(s) de referência (ele entra em "Fontes" na descrição publicada):
+      // a tela completa pede esse dado, então o roteiro segue para lá em vez de ser criado sem fonte.
+      customize.click();
+      return;
+    }
 
     var tema = rawText;
     if (isScript) {
@@ -215,26 +221,11 @@ HOME_JS = """
         return;
       }
 
-      if (isScript) {
-        if (fb) fb.textContent = 'Gravando roteiro inicial nas fontes…';
-        return fetch('/studio/videos/' + encodeURIComponent(d.id) + '/sources', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: 'local://roteiro-inicial',
-            text: rawText
-          })
-        }).then(function () {
-          return d;
-        }).catch(function () {
-          return d;
-        });
-      }
       return d;
     }).then(function (d) {
       if (!d || !d.id) return;
       if (fb) fb.textContent = 'Vídeo criado. Redirecionando…';
-      location.href = '/studio/panel/videos/' + encodeURIComponent(d.id);
+      location.href = '/studio/panel/videos/' + encodeURIComponent(d.id) + '/cenas';
     }).catch(function (err) {
       if (fb) {
         fb.setAttribute('data-tipo', 'erro');
