@@ -14,7 +14,7 @@ from .repo import _translated
 
 _RECORD_COLUMNS = (
     "id, project_id, topic, topic_key, source_name, source_url, "
-    "observed_at, window_start, window_end, metric_name, metric_value, evidence"
+    "observed_at, window_start, window_end, metric_name, metric_value, evidence, category_id"
 )
 
 
@@ -32,6 +32,7 @@ def _record(row: dict) -> TrendRecord:
         metric_name=row["metric_name"],
         metric_value=float(row["metric_value"]) if row["metric_value"] is not None else None,
         evidence=row["evidence"] or [],
+        category_id=row.get("category_id"),
     )
 
 
@@ -51,15 +52,16 @@ class PostgresTrendRepository(_Base):
                     """
                     INSERT INTO studio.trend_topics (
                         id, project_id, topic, topic_key, source_name, source_url,
-                        observed_at, window_start, window_end, metric_name, metric_value, evidence
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        observed_at, window_start, window_end, metric_name, metric_value, evidence, category_id
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
                     ON CONFLICT (project_id, topic_key, source_name, window_end) DO UPDATE SET
                         topic = EXCLUDED.topic,
                         observed_at = EXCLUDED.observed_at,
                         window_start = EXCLUDED.window_start,
                         metric_name = EXCLUDED.metric_name,
                         metric_value = EXCLUDED.metric_value,
-                        evidence = EXCLUDED.evidence
+                        evidence = EXCLUDED.evidence,
+                        category_id = EXCLUDED.category_id
                     """,
                     (
                         t_id,
@@ -74,6 +76,7 @@ class PostgresTrendRepository(_Base):
                         item.metric_name,
                         item.metric_value,
                         evidence_json,
+                        item.category_id,
                     ),
                 )
         return len(items)

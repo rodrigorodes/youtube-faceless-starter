@@ -30,11 +30,32 @@ Para enriquecer a esteira sem consumir a cota de 100 unidades do `search.list`, 
 - **Em Alta Brasil:** `videos.list` com `chart=mostPopular` e `regionCode=BR`. Custo: **1 unidade de cota**.
 - **Em Alta Mundo:** `videos.list` com `chart=mostPopular` e `regionCode=US` (global). Custo: **1 unidade de cota**.
 - **Fonte Oficial e Hosts Autorizados:** Os itens coletados via `chart=mostPopular` utilizam `source_name = "YouTube Brasil (Em Alta)"` ou `"YouTube Global (Em Alta)"` e `source_url = "https://www.youtube.com/feed/trending"`. O host `www.youtube.com` faz parte dos hosts permitidos no domínio (`STUDIO_TREND_SOURCES`).
-- O endpoint unificado `POST /studio/projects/{id}/trends/refresh` busca simultaneamente as paradas de Brasil, Mundo e os termos curados de cada pilar de conteúdo com resiliência a falhas parciais.
+- O endpoint unificado `POST /studio/projects/{id}/trends/refresh` busca os termos do canal e o Em Alta (BR e US) **da categoria do pilar**, com resiliência a falhas parciais do Em Alta.
 
-### 3. Teto e Moderação de Uso
-- A combinação de **Em Alta (2 unidades no total)** com as consultas curadas de pilares mantém o consumo diário tipicamente abaixo de **500 unidades**.
-- Isso preserva mais de **9.500 unidades diárias**, garantindo margem segura para múltiplos uploads diários sem esgotar a cota (`quotaExceeded`).
+### 3. Teto e Moderação de Uso (o que o código impõe)
+Cada **termo buscado custa 100 unidades**; cada chamada de Em Alta custa 1. Um "Buscar agora" completo gasta no máximo
+**6 termos x 100 + 3 categorias x 2 regiões x 1 = 606 unidades**. Para não esgotar os 10.000/dia (divididos com o upload, 1.600 por tentativa):
+- `MAX_SEARCH_TERMS_PER_REFRESH = 6`: os termos entram **intercalados entre os pilares** (1º termo de cada pilar antes do 2º de qualquer um).
+- `SEARCH_COOLDOWN = 6 h`: termo buscado há menos de 6 horas **não é buscado de novo** (repetir o clique não repete a conta). Se todos
+  estiverem dentro do intervalo, a coleta devolve `{"stored": 0}` sem gastar cota e a tela diz "Nada novo".
+- O Em Alta cobre no máximo 3 categorias (`MAX_POPULAR_CATEGORIES`).
+- Cada busca pede 10 vídeos (`SEARCH_RESULTS_PER_TERM`): o custo é por chamada, não por vídeo.
+
+### 3.1 Termos do canal e Em Alta por categoria
+- **Termos:** os do pilar. Sem pilar, o **nicho do canal** é o termo. Sem pilar e sem nicho, a coleta é recusada (`NoSearchTerms`, HTTP 422):
+  não se inventa assunto (não há mais termos fixos de música eletrônica).
+- **Em Alta por categoria:** `videos.list?chart=mostPopular` recebe `videoCategoryId` derivado do pilar (`domain/youtube_categories.py`,
+  heurística por palavra-chave: Games 20, Música 10, Esportes 17, Pets 15, Ciência e tecnologia 28, Educação 27 etc.). Pilar sem categoria
+  identificável **não gera Em Alta** (o Em Alta da plataforma inteira não é ideia do nicho). A categoria pode não existir como "mais populares" em
+  alguma região (a API recusa): essa chamada falha sozinha e a coleta segue.
+- O pilar de origem é gravado em `trend_topics.category_id` (termos e Em Alta) e é ele que liga o cartão ao pilar; a correspondência por texto
+  só vale para coletas antigas sem pilar.
+
+### 3.2 O que a tela mostra (`domain/trend_cards.py`)
+- **Um cartão por vídeo.** A linha de busca por termo traz até 10 vídeos e vira um cartão para cada (o termo fica como contexto).
+- **Sem repetição.** A coleta grava linhas novas a cada "Buscar agora"; o mesmo vídeo coletado várias vezes aparece uma vez, com a coleta mais recente.
+- **Variedade.** No máximo **2 cartões por canal** (os mais vistos).
+- Ordenação por visualizações do vídeo (não a soma do termo).
 
 ### 4. Parâmetros das Consultas de Pilares
 - `q`: Termo de busca curado no projeto (ex.: `"ADE lineup"`, `"Amsterdam Dance Event"`).
@@ -91,7 +112,7 @@ As operações de categorias são autenticadas por `STUDIO_WORKER_TOKEN` (Bearer
   - Remove o pilar. No banco de dados, `studio.trend_topics.category_id` possui `ON DELETE SET NULL`, preservando as tendências já salvas.
 - **Atualização sob Demanda de Tendências:**
   - `POST /studio/projects/{project_id}/trends/refresh`
-  - Payload opcional: `{"queries": ["termo customizado"]}`. Se omitido, utiliza as queries agregadas de todos os pilares do projeto.
+  - Payload opcional: `{"queries": ["termo customizado"]}` (sem Em Alta e sem intervalo mínimo). Se omitido, usa os termos dos pilares (ou o nicho), respeitando o teto e o intervalo da seção 3. Sem termos: 422.
   - Consulta a YouTube Data API v3, armazena os tópicos e evidências e retorna a contagem de registros persistidos.
 
 ---

@@ -10,6 +10,7 @@ from enum import Enum
 from ..domain.categories import ProjectCategory
 from ..domain.contracts import PublicationStatus, VideoFormat, VideoStatus
 from ..domain.panel import Stage, classify, is_known_cost, topic_key
+from ..domain.trend_cards import build_trend_cards
 from .editorial import VideoNotFound
 from .errors import InvalidInput
 from .ports import CategoryRepository, LatestRun, PanelRepository, PubInfo, SourceInfo, StepInfo, TrendRepository, UsageInfo, VideoRow
@@ -356,9 +357,11 @@ class BuildPanel:
             if last_col is not None:
                 recs = self.trends.list(project_id, since=since)
                 trends_status = "stale" if last_col < since else "ok"
-                for r in recs:
-                    if r.topic_key in grouped_videos:
-                        entries = grouped_videos[r.topic_key]
+                # Um cartão por vídeo (coleta mais recente), com no máximo 2 por canal: ver domain/trend_cards.py.
+                for r in build_trend_cards(recs):
+                    r_key = topic_key(r.topic)
+                    if r_key in grouped_videos:
+                        entries = grouped_videos[r_key]
                         c_counts = {stage: 0 for stage in Stage}
                         for _, st, _, _ in entries:
                             c_counts[st] += 1
@@ -376,7 +379,7 @@ class BuildPanel:
 
                     matched_cat_id = None
                     matched_cat_name = None
-                    rec_cat_id = getattr(r, "category_id", None)
+                    rec_cat_id = r.category_id
                     if rec_cat_id:
                         for cat in categories:
                             if cat.id == rec_cat_id:
@@ -384,7 +387,7 @@ class BuildPanel:
                                 matched_cat_name = cat.name
                                 break
                     if not matched_cat_id:
-                        topic_lower = r.topic.lower()
+                        topic_lower = f"{r.topic} {r.query or ''}".lower()
                         for cat in categories:
                             found = False
                             for q in cat.queries:
@@ -451,7 +454,7 @@ class BuildPanel:
 
                     trend_views.append(TrendItemView(
                         topic=r.topic,
-                        key=r.topic_key,
+                        key=r_key,
                         source_name=r.source_name,
                         source_url=r.source_url,
                         observed_at=r.observed_at,

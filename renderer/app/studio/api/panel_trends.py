@@ -105,10 +105,22 @@ TRENDS_JS = """
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
-      }).then(function () { location.reload(); })
-        .catch(function () {
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (data) {
+          if (r.ok && data.stored) { location.reload(); return; }
+          // Sem recarregar: a mensagem do motivo precisa ficar visível (sem termos, nada novo, cota, chave).
           btnRefresh.disabled = false;
           btnRefresh.textContent = '↻ Buscar agora';
+          var st = $('#status-refresh');
+          if (st) st.textContent = r.ok
+            ? 'Nada novo: os termos foram buscados há menos de 6 horas. Isso poupa a cota diária da API.'
+            : 'A busca não rodou: ' + window.StudioErro.texto(data, 'tente novamente.', r.status);
+        });
+      }).catch(function () {
+          btnRefresh.disabled = false;
+          btnRefresh.textContent = '↻ Buscar agora';
+          var st = $('#status-refresh');
+          if (st) st.textContent = 'A busca não rodou: falha de rede. Tente novamente.';
         });
     });
   }
@@ -278,13 +290,13 @@ def _dialog_pilares(view: PanelView) -> str:
     if view.categories:
         items = "".join(
             f'<li class="card flat between" style="padding:10px 14px"><div><b>{e(c.name)}</b>'
-            f'<p class="sample">{e(" · ".join(c.queries)) if c.queries else "sem termos — usa os termos padrão"}</p></div>'
+            f'<p class="sample">{e(" · ".join(c.queries)) if c.queries else "sem termos — a busca usa o nicho do canal"}</p></div>'
             f'<button class="btn ghost small" type="button" data-excluir-pilar="{e(c.id)}" style="color:var(--bad)">Excluir</button></li>'
             for c in view.categories
         )
     else:
         items = ('<li class="card flat" style="padding:10px 14px"><b>Nenhum pilar cadastrado</b>'
-                 '<p class="sample">Sem pilar, a coleta usa os termos padrão do canal.</p></li>')
+                 '<p class="sample">Sem pilar, a busca usa o nicho do canal e o Em Alta só aparece quando o nicho casa com uma categoria do YouTube.</p></li>')
 
     return f"""<dialog id="dialog-pilares" class="modal" aria-labelledby="titulo-pilares" aria-describedby="desc-pilares">
     <div class="modal-header">
@@ -377,7 +389,8 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
     body = f"""      <section class="pagina" id="pagina-tendencias" aria-labelledby="t-tendencias">
         <div class="head"><div><p class="eyebrow">Radar</p><h1 id="t-tendencias">Tendências e ideias</h1><p class="sub">Ideias para o nicho do canal. Escolha como produzir.</p></div>
           <div class="row" id="barra-tendencias">{chips_html}
-            <button class="btn ghost small" type="button" id="btn-refresh-trends" title="{e(coleta_info)}">↻ Buscar agora</button>
+            <button class="btn ghost small" type="button" id="btn-refresh-trends" title="{e(coleta_info)} Cada termo buscado custa 100 unidades da cota diária da API do YouTube (10.000 por dia, divididas com o upload de vídeos). Termos buscados há menos de 6 horas não são buscados de novo.">↻ Buscar agora</button>
+            <span class="sample" id="status-refresh" role="status" aria-live="polite"></span>
             <button class="btn ghost small" type="button" id="btn-gerenciar-pilares">Gerenciar pilares ({len(view.categories)})</button>
           </div></div>
         <div class="grid2" id="lista-tendencias">{cards_html}</div>

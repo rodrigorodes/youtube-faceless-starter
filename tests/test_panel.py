@@ -976,22 +976,13 @@ def test_render_panel_format_selector_defaults_to_the_channel_format():
 # ---------- PROD-01/PROD-04: criar→abrir o vídeo, fontes e (nova) produção ----------
 
 
-def test_home_create_form_opens_the_video_page_without_starting_production():
-    """PROD-04 (achado 4): o Início cria o vídeo e abre a página do vídeo, **sem** iniciar run.
-
-    Isto reverte deliberadamente o auto-start do PROD-01. O fluxo aprovado em
-    JORNADA-E-TELAS.md é Produzir vídeo → Pesquisar fontes → Roteiro: a 1ª etapa do DAG
-    (`script`) exige fontes, e a fonte só pode ser adicionada depois que o vídeo existe — então
-    iniciar no ato de criar garantia um run `FAILED` ("SourceRefused: no sources...") na cara
-    do usuário. O vídeo abre onde vivem Fontes e «Iniciar produção».
-    """
+def test_home_create_form_starts_production_for_piloto_only_and_opens_the_video():
+    """Início: cria o vídeo e abre a página do vídeo. Só o piloto inicia a produção (protótipo v4-v3:
+    `runPipeline` no piloto, nada no Diretor). O JS do Início sai antes de produzir quando o modo é Diretor."""
     html = _render_panel_html()
-    # Cria o vídeo pelo mesmo endpoint...
     assert "/studio/videos" in html
-    # ...mas não inicia produção nenhuma: nenhum POST /production-runs sai do Início.
-    assert "/production-runs" not in html
-    # O destino é a página do vídeo (onde a fonte é registrada e a produção começa).
-    assert "location.href = '/studio/panel/videos/' + encodeURIComponent(d.id)" in html
+    assert html.index("if (prodMode === 'diretor')") < html.index("/production-runs")
+    assert "location.href = destino" in html and "/studio/panel/videos/' + encodeURIComponent(d.id)" in html
 
 
 # ---------- PROD-04 (achado 3): a criação carrega o vídeo base da tendência ----------

@@ -31,7 +31,8 @@ class TrendItem(BaseModel):
     window_end: datetime
     metric_name: str | None = Field(default=None, max_length=50)
     metric_value: float | None = Field(default=None, ge=0)
-    evidence: list[Evidence] = Field(default_factory=list, max_length=5)
+    evidence: list[Evidence] = Field(default_factory=list, max_length=10)
+    category_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")  # pilar que originou a coleta (quando há)
 
 
 def validate_trends(items: list[TrendItem], allowed_hosts: tuple[str, ...], clock: Callable[[], datetime] | None = None) -> None:

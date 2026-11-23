@@ -55,7 +55,7 @@ from ..domain.youtube_oauth import (OAuthConfigurationError, OAuthError, OAuthRe
                                     OAuthTransientError)
 from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
-from ..application.categories import MissingApiKey, YouTubeApiError
+from ..application.categories import MissingApiKey, NoSearchTerms, YouTubeApiError
 from .preview import render_preview
 from .panel import render_panel, render_script, render_tendencias, render_video
 from .panel_channels import render_channels
@@ -1167,6 +1167,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(422, str(exc)) from exc
         except MissingApiKey as exc:
             raise HTTPException(400, str(exc)) from exc
+        except NoSearchTerms as exc:
+            raise HTTPException(422, str(exc)) from exc
         except YouTubeApiError as exc:
             raise HTTPException(502, str(exc)) from exc
         except BudgetDenied as exc:

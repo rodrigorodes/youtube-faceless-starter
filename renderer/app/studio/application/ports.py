@@ -763,6 +763,7 @@ class TrendRecord:
     metric_name: str | None
     metric_value: float | None
     evidence: list[dict]
+    category_id: str | None = None  # pilar que originou a coleta; `None` nas coletas sem pilar
 
 
 class TrendRepository(Protocol):

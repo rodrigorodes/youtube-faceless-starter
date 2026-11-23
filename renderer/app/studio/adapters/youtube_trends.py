@@ -11,7 +11,12 @@ from ..application.categories import YouTubeApiError
 from ..domain.trends import Evidence, TrendItem
 
 
-def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = 4) -> list[TrendItem]:
+# `search.list` custa 100 unidades POR CHAMADA, não por vídeo: pedir mais vídeos por termo não encarece e dá
+# variedade de canais (a tela limita cada canal a poucos cartões).
+SEARCH_RESULTS_PER_TERM = 10
+
+
+def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = SEARCH_RESULTS_PER_TERM) -> list[TrendItem]:
     now = datetime.now(timezone.utc)
     past = now - timedelta(days=7)
 
@@ -24,6 +29,8 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = 4) -
             "publishedAfter": past.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "maxResults": max_videos,
             "q": q,
+            "relevanceLanguage": "pt",
+            "regionCode": "BR",
             "key": yt_key,
         })
         url = f"https://www.googleapis.com/youtube/v3/search?{params}"
@@ -90,23 +97,28 @@ def fetch_youtube_trends(yt_key: str, queries: list[str], max_videos: int = 4) -
                     window_end=now,
                     metric_name="views",
                     metric_value=float(total_views),
-                    evidence=evidence[:5],
+                    evidence=sorted(evidence, key=lambda ev: ev.views or 0, reverse=True)[:SEARCH_RESULTS_PER_TERM],
                 )
             )
     return items
 
 
-def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10) -> list[TrendItem]:
+def fetch_popular_trends(yt_key: str, region_code: str, max_results: int = 10,
+                         category_id: str | None = None) -> list[TrendItem]:
+    """Em Alta da região. Com `category_id` (`videoCategoryId`) é o Em Alta DA CATEGORIA: sem ele é a plataforma toda."""
     now = datetime.now(timezone.utc)
     past = now - timedelta(days=7)
 
-    params = urllib.parse.urlencode({
+    query = {
         "part": "snippet,statistics",
         "chart": "mostPopular",
         "regionCode": region_code,
         "maxResults": max_results,
         "key": yt_key,
-    })
+    }
+    if category_id:
+        query["videoCategoryId"] = category_id
+    params = urllib.parse.urlencode(query)
     url = f"https://www.googleapis.com/youtube/v3/videos?{params}"
 
     try:

@@ -38,15 +38,15 @@ def _trends_page(trends=None, categories=None, project_id=None):
     return render_tendencias_v3(view)
 
 
-def _trend(topic="GTA VI: dia 3", region="BR", url="https://www.youtube.com/watch?v=abc123XYZ_0"):
+def _trend(topic="GTA VI: dia 3", region="BR", url="https://www.youtube.com/watch?v=abc123XYZ_0", channel="Canal Gamer", views=840000.0):
     source_name = "YouTube Brasil (Em Alta)" if region == "BR" else "YouTube EUA (Em Alta)"
     return TrendRecord(
         id="t1", project_id="p1", topic=topic, topic_key=topic.lower(),
         source_name=source_name,
         source_url="https://www.googleapis.com/youtube/v3/videos",
         observed_at=NOW, window_start=NOW - timedelta(days=7), window_end=NOW,
-        metric_name="views", metric_value=840000.0,
-        evidence=[{"url": url, "title": topic, "channel": "Canal Gamer", "published_at": "2026-11-18T09:00:00Z"}],
+        metric_name="views", metric_value=views,
+        evidence=[{"url": url, "title": topic, "channel": channel, "published_at": "2026-11-18T09:00:00Z"}],
     )
 
 
@@ -140,7 +140,8 @@ PAGE_SIZE = 24
 
 def _many(n, region="BR"):
     return [_trend(topic=f"Tema {region} {i}", region=region,
-                   url=f"https://www.youtube.com/watch?v={region.lower()}{i:08d}") for i in range(n)]
+                   url=f"https://www.youtube.com/watch?v={region.lower()}{i:08d}",
+                   channel=f"Canal {region}{i}", views=1_000_000.0 - i) for i in range(n)]  # um canal por vídeo, mais vistos primeiro
 
 
 def _view(trends, project_id="1" * 32):
@@ -234,3 +235,31 @@ def test_unknown_filter_shows_an_explicit_empty_state_not_every_trend():
     html = _page_html(_many(3), filtro="pilar:inexistente")
     assert html.count('class="card cartao-tendencia"') == 0
     assert "Nenhuma tendência encontrada para este filtro." in html
+
+
+def _search_row(term, videos):
+    return TrendRecord(
+        id="s-" + term, project_id="p1", topic=term, topic_key=term.lower(), source_name="YouTube Data API",
+        source_url="https://www.googleapis.com/youtube/v3/search", observed_at=NOW,
+        window_start=NOW - timedelta(days=7), window_end=NOW, metric_name="views",
+        metric_value=float(sum(v[2] for v in videos)),
+        evidence=[{"url": f"https://www.youtube.com/watch?v={vid}", "title": title, "channel": channel, "views": views}
+                  for vid, channel, views, title in videos])
+
+
+def test_a_search_row_shows_one_card_per_video_not_one_per_term():
+    row = _search_row("Cane Corso", [("aaaaaaaaaa1", "Canal A", 300, "Cane Corso no quintal"),
+                                     ("aaaaaaaaaa2", "Canal B", 200, "Cane Corso filhote"),
+                                     ("aaaaaaaaaa3", "Canal C", 100, "Cane Corso treino")])
+    html = _page_html([row])
+    assert html.count('class="card cartao-tendencia"') == 3
+    for title in ("Cane Corso no quintal", "Cane Corso filhote", "Cane Corso treino"):
+        assert title in html
+
+
+def test_the_same_video_collected_twice_and_a_busy_channel_do_not_flood_the_list():
+    again = [_trend(topic="Mesmo vídeo", url="https://www.youtube.com/watch?v=repetido001", channel="Canal X") for _ in range(3)]
+    busy = [_trend(topic=f"Do mesmo canal {n}", url=f"https://www.youtube.com/watch?v=mesmo{n:07d}", channel="Canal Cheio",
+                   views=500.0 - n) for n in range(6)]
+    html = _page_html(again + busy)
+    assert html.count("Mesmo vídeo") >= 1 and html.count('class="card cartao-tendencia"') == 1 + 2  # 1 do repetido + 2 do canal cheio

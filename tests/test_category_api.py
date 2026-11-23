@@ -75,7 +75,8 @@ def api_env(conn, dsn, tmp_path):
         storage_root=tmp_path,
         token_env_path=token_file,
     )
-    studio = Studio(settings, youtube_fetcher=mock_yt_fetcher)
+    # Sem Em Alta: estes testes são só da busca por termo e não podem chamar a rede de verdade.
+    studio = Studio(settings, youtube_fetcher=mock_yt_fetcher, youtube_popular_fetcher=lambda *a, **k: [])
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
     client = TestClient(app)
@@ -265,7 +266,8 @@ def test_refresh_trends_uses_project_category_queries(api_env):
     r_refresh = client.post(f"/studio/projects/{p_id}/trends/refresh", json={}, headers=WORKER_HEADER)
     assert r_refresh.status_code == 200
     assert r_refresh.json() == {"stored": 3}
-    assert recorded == ["Bass House 2026", "Tchami", "Tomorrowland 2026"]
+    # intercalado entre os pilares: o 1º termo de cada pilar entra antes do 2º de qualquer um
+    assert recorded == ["Bass House 2026", "Tomorrowland 2026", "Tchami"]
 
 
 def test_refresh_trends_fallback_when_no_categories(api_env):
@@ -277,7 +279,7 @@ def test_refresh_trends_fallback_when_no_categories(api_env):
     assert r_refresh.status_code == 200
     data = r_refresh.json()
     assert data["stored"] > 0
-    assert len(recorded) > 0  # Fallback default queries were used
+    assert recorded == ["Musica Eletronica"]  # sem pilar: o nicho do canal, nunca termos fixos de outro assunto
 
 
 def test_refresh_trends_custom_queries_override(api_env):
@@ -447,8 +449,8 @@ def test_refresh_trends_calls_popular_fetcher_on_default_refresh():
         pillar_called.append((key, queries))
         return [dummy_trend_item(q) for q in queries]
 
-    def mock_popular(key, region, max_results):
-        popular_called.append((key, region, max_results))
+    def mock_popular(key, region, max_results, category_id=None):
+        popular_called.append((key, region, max_results, category_id))
         return [dummy_trend_item(f"Popular in {region}")]
 
     ingest = FakeIngest()
@@ -464,9 +466,10 @@ def test_refresh_trends_calls_popular_fetcher_on_default_refresh():
     assert count == 3  # 1 pillar + 1 BR + 1 US
     assert len(pillar_called) == 1
     assert pillar_called[0] == ("fake-key", ["AI 2026"])
+    # Em Alta DA CATEGORIA do pilar ("Tech" -> 28 Ciência e tecnologia), não o Em Alta da plataforma inteira.
     assert popular_called == [
-        ("fake-key", "BR", 10),
-        ("fake-key", "US", 10),
+        ("fake-key", "BR", 10, "28"),
+        ("fake-key", "US", 10, "28"),
     ]
 
 
@@ -489,8 +492,8 @@ def test_refresh_trends_bypasses_popular_fetcher_on_custom_queries():
     def mock_fetcher(key, queries):
         return [dummy_trend_item(q) for q in queries]
 
-    def mock_popular(key, region, max_results):
-        popular_called.append((key, region, max_results))
+    def mock_popular(key, region, max_results, category_id=None):
+        popular_called.append((key, region, max_results, category_id))
         return [dummy_trend_item("pop")]
 
     refresh = RefreshTrends(
@@ -509,12 +512,13 @@ def test_refresh_trends_bypasses_popular_fetcher_on_custom_queries():
 def test_refresh_trends_popular_fetcher_resilience():
     import uuid
     from app.studio.application.categories import RefreshTrends
+    from app.studio.domain.categories import ProjectCategory
 
     p_id = uuid.uuid4().hex
 
     class FakeCatRepo:
         def list(self, project_id):
-            return []
+            return [ProjectCategory(uuid.uuid4().hex, project_id, "Tech", ["AI 2026"])]
 
     class FakeIngest:
         def execute(self, project_id, items):
@@ -523,7 +527,7 @@ def test_refresh_trends_popular_fetcher_resilience():
     def mock_fetcher(key, queries):
         return [dummy_trend_item(queries[0])]
 
-    def failing_popular(key, region, max_results):
+    def failing_popular(key, region, max_results, category_id=None):
         raise RuntimeError("Network timeout connecting to YouTube")
 
     refresh = RefreshTrends(
@@ -544,14 +548,14 @@ def test_refresh_trends_endpoint_includes_popular_trends(conn, dsn, tmp_path):
     conn.commit()
     connect = lambda: psycopg.connect(dsn)
     videos = PostgresVideoRepository(connect)
-    project = videos.create_project("Canal Pop", niche="Geral", language="pt-BR")
+    project = videos.create_project("Canal Pop", niche="Música", language="pt-BR")
 
     popular_regions = []
 
     def mock_yt_fetcher(key: str, queries: list[str]) -> list[TrendItem]:
         return [dummy_trend_item(queries[0])]
 
-    def mock_pop_fetcher(key: str, region: str, max_results: int) -> list[TrendItem]:
+    def mock_pop_fetcher(key: str, region: str, max_results: int, category_id: str | None = None) -> list[TrendItem]:
         popular_regions.append(region)
         return [dummy_trend_item(f"Popular {region}")]
 
@@ -566,7 +570,7 @@ def test_refresh_trends_endpoint_includes_popular_trends(conn, dsn, tmp_path):
 
     r = client.post(f"/studio/projects/{project.id}/trends/refresh", headers=WORKER_HEADER)
     assert r.status_code == 200
-    assert r.json() == {"stored": 3}  # 1 default pillar + 1 BR + 1 US
+    assert r.json() == {"stored": 3}  # 1 termo (nicho do canal "Música") + 1 BR + 1 US
     assert popular_regions == ["BR", "US"]
 
 

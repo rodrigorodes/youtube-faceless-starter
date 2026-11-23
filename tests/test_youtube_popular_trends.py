@@ -170,3 +170,30 @@ def test_fetch_popular_trends_handles_empty_or_missing_fields(monkeypatch):
     assert items[0].metric_value == 0.0
     assert items[0].evidence[0].views == 0
     assert items[0].evidence[0].published_at is None
+
+
+def _urls(mock_urlopen):
+    return [(c[0][0].full_url if hasattr(c[0][0], "full_url") else str(c[0][0])) for c in mock_urlopen.call_args_list]
+
+
+def test_popular_with_a_category_asks_for_that_category_only(monkeypatch):
+    mock_urlopen = MagicMock(return_value=_mock_response({"items": []}))
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    fetch_popular_trends("k", "BR", max_results=10, category_id="20")
+    assert "videoCategoryId=20" in _urls(mock_urlopen)[0]
+    mock_urlopen.reset_mock()
+    fetch_popular_trends("k", "BR", max_results=10)
+    assert "videoCategoryId" not in _urls(mock_urlopen)[0]  # sem categoria: comportamento antigo, plataforma inteira
+
+
+def test_search_asks_for_brazilian_portuguese_and_keeps_every_video_ordered_by_views(monkeypatch):
+    from app.studio.adapters.youtube_trends import SEARCH_RESULTS_PER_TERM, fetch_youtube_trends
+    search = {"items": [{"id": {"videoId": f"v{n}"}} for n in range(3)]}
+    stats = {"items": [{"id": f"v{n}", "snippet": {"title": f"Vídeo {n}", "channelTitle": f"Canal {n}"},
+                        "statistics": {"viewCount": str(100 * (n + 1))}} for n in range(3)]}
+    mock_urlopen = MagicMock(side_effect=[_mock_response(search), _mock_response(stats)])
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    items = fetch_youtube_trends("k", ["cane corso"])
+    first = _urls(mock_urlopen)[0]
+    assert "regionCode=BR" in first and "relevanceLanguage=pt" in first and f"maxResults={SEARCH_RESULTS_PER_TERM}" in first
+    assert len(items) == 1 and [e.views for e in items[0].evidence] == [300, 200, 100]

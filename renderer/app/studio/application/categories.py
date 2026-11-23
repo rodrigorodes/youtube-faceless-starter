@@ -2,21 +2,26 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..domain.categories import ProjectCategory, clean_queries
 from ..domain.ids import check_id
+from ..domain.trend_cards import SEARCH_SOURCE
 from ..domain.trends import TrendItem
+from ..domain.youtube_categories import youtube_category_for
 from .errors import ProjectNotFound
 from .ports import CategoryRepository, VideoRepository
 from .trends import IngestTrends
 
-DEFAULT_REFRESH_QUERIES = [
-    "Música Eletrônica 2026",
-    "Alok 2026",
-    "Vintage Culture 2026",
-    "ADE 2026",
-]
+# Cota da YouTube Data API (10.000 unidades/dia, compartilhadas com o upload de vídeo):
+#   search.list = 100 unidades POR TERMO; videos.list (Em Alta e estatísticas) = 1 unidade por chamada.
+MAX_SEARCH_TERMS_PER_REFRESH = 6          # teto de 600 unidades por "Buscar agora"
+SEARCH_COOLDOWN = timedelta(hours=6)      # termo buscado há menos que isso não gasta cota de novo
+MAX_POPULAR_CATEGORIES = 3                # categorias de Em Alta por coleta (1 unidade por categoria e região)
+POPULAR_REGIONS = ("BR", "US")
+POPULAR_PER_CALL = 10
+_INGEST_BATCH = 50                        # `validate_trends` aceita até 50 itens por lote
 
 
 class RefreshError(RuntimeError):
@@ -29,6 +34,10 @@ class MissingApiKey(RefreshError):
 
 class YouTubeApiError(RefreshError):
     """Falha de comunicação ou recusa da YouTube Data API."""
+
+
+class NoSearchTerms(RefreshError):
+    """Sem pilar com termos e sem nicho no canal: não há o que buscar (e não se inventa um assunto)."""
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -92,8 +101,9 @@ class RefreshTrends:
         worker_token: str | None = None,
         videos_repo: VideoRepository | None = None,
         fetcher: Callable[[str, list[str]], list[TrendItem]] | None = None,
-        popular_fetcher: Callable[[str, str, int], list[TrendItem]] | None = None,
+        popular_fetcher: Callable[..., list[TrendItem]] | None = None,
         environ: Mapping[str, str] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ):
         self.repo = repo
         self.ingest = ingest
@@ -103,6 +113,7 @@ class RefreshTrends:
         self.fetcher = fetcher
         self.popular_fetcher = popular_fetcher
         self.environ = environ
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def _get_api_key(self) -> str:
         if self.environ is not None:
@@ -120,7 +131,8 @@ class RefreshTrends:
         if self.fetcher is None:
             raise YouTubeApiError("No trend fetcher configured")
         p_id = check_id(project_id)
-        if self.videos_repo is not None and self.videos_repo.get_project(p_id) is None:
+        project = self.videos_repo.get_project(p_id) if self.videos_repo is not None else None
+        if self.videos_repo is not None and project is None:
             raise ProjectNotFound(p_id)
 
         if custom_queries:
@@ -129,38 +141,90 @@ class RefreshTrends:
             items = self.fetcher(key, queries)
             if not items:
                 raise YouTubeApiError("No trend topics returned by YouTube Data API for queries")
-            return self.ingest.execute(p_id, items)
+            return self._ingest(p_id, items)
 
         categories = self.repo.list(p_id)
-        queries = []
-        for cat in categories:
-            for q in cat.queries:
-                if q not in queries:
-                    queries.append(q)
-        if not queries:
-            queries = DEFAULT_REFRESH_QUERIES.copy()
+        niche = (getattr(project, "niche", "") or "").strip()
+        terms, term_pillar = self._terms(categories, niche)
+        popular_plan = self._popular_plan(categories, niche)
+        if not terms and not popular_plan:
+            raise NoSearchTerms(
+                "Sem termos para buscar: cadastre um pilar com termos ou defina o nicho do canal.")
 
         key = self._get_api_key()
         all_items: list[TrendItem] = []
-        if queries:
-            items = self.fetcher(key, queries)
-            if items:
-                all_items.extend(items)
+        searched = self._not_searched_recently(p_id, terms)
+        if searched:
+            for item in self.fetcher(key, searched):
+                all_items.append(item.model_copy(update={"category_id": term_pillar.get(item.topic.casefold())}))
 
         if self.popular_fetcher:
-            try:
-                br_items = self.popular_fetcher(key, "BR", 10)
-                if br_items:
-                    all_items.extend(br_items)
-            except Exception:
-                pass
-            try:
-                us_items = self.popular_fetcher(key, "US", 10)
-                if us_items:
-                    all_items.extend(us_items)
-            except Exception:
-                pass
+            seen_urls: set[tuple[str, str]] = set()
+            for pillar_id, yt_category in popular_plan:
+                for region in POPULAR_REGIONS:
+                    try:
+                        found = self.popular_fetcher(key, region, POPULAR_PER_CALL, category_id=yt_category)
+                    except Exception:
+                        continue  # o Em Alta é complemento: falha parcial não derruba a coleta
+                    for item in found or []:
+                        # o mesmo vídeo em duas categorias do mesmo país entra uma vez; BR e US são fontes distintas
+                        url = (region, item.evidence[0].url if item.evidence else item.topic)
+                        if url in seen_urls:
+                            continue
+                        seen_urls.add(url)
+                        all_items.append(item.model_copy(update={"category_id": pillar_id}))
 
         if not all_items:
+            if terms and not searched:
+                return 0  # todos os termos foram buscados há pouco: nada novo a pagar em cota
             raise YouTubeApiError("No trend topics returned by YouTube Data API for queries")
-        return self.ingest.execute(p_id, all_items)
+        return self._ingest(p_id, all_items)
+
+    def _ingest(self, project_id: str, items: list[TrendItem]) -> int:
+        stored = 0
+        for start in range(0, len(items), _INGEST_BATCH):
+            stored += self.ingest.execute(project_id, items[start:start + _INGEST_BATCH])
+        return stored
+
+    @staticmethod
+    def _terms(categories: list[ProjectCategory], niche: str) -> tuple[list[str], dict[str, str | None]]:
+        """Termos da coleta, no máximo `MAX_SEARCH_TERMS_PER_REFRESH`, intercalando os pilares (o 1º termo de
+        cada pilar antes do 2º de qualquer um) para que todos os pilares entrem. Sem pilar, o nicho do canal."""
+        terms: list[str] = []
+        owner: dict[str, str | None] = {}
+        depth = max((len(c.queries) for c in categories), default=0)
+        for level in range(depth):
+            for cat in categories:
+                if level < len(cat.queries) and cat.queries[level].casefold() not in owner:
+                    owner[cat.queries[level].casefold()] = cat.id
+                    terms.append(cat.queries[level])
+        if not terms and niche:
+            terms, owner = [niche], {niche.casefold(): None}
+        return terms[:MAX_SEARCH_TERMS_PER_REFRESH], owner
+
+    @staticmethod
+    def _popular_plan(categories: list[ProjectCategory], niche: str) -> list[tuple[str | None, str]]:
+        """(pilar, categoria do YouTube) do Em Alta. Sem categoria identificável não há Em Alta: o Em Alta da
+        plataforma inteira não é ideia do nicho do canal."""
+        plan: list[tuple[str | None, str]] = []
+        seen: set[str] = set()
+        for cat in categories:
+            yt = youtube_category_for(cat.name, *cat.queries)
+            if yt and yt not in seen:
+                seen.add(yt)
+                plan.append((cat.id, yt))
+        if not plan:
+            yt = youtube_category_for(niche)
+            if yt:
+                plan.append((None, yt))
+        return plan[:MAX_POPULAR_CATEGORIES]
+
+    def _not_searched_recently(self, project_id: str, terms: list[str]) -> list[str]:
+        """Remove os termos já buscados dentro do intervalo mínimo: repetir o clique não repete a conta de cota."""
+        repo = getattr(self.ingest, "trends_repo", None)
+        if not terms or repo is None:
+            return list(terms)
+        since = self.clock() - SEARCH_COOLDOWN
+        fresh = {rec.topic.casefold() for rec in repo.list(project_id, since=since)
+                 if rec.source_name == SEARCH_SOURCE and rec.observed_at >= since}
+        return [term for term in terms if term.casefold() not in fresh]
