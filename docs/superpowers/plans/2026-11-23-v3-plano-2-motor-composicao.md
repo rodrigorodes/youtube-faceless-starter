@@ -164,35 +164,11 @@ git commit -m "feat(studio): adicionar metadados de b-roll em cenas e controles 
     - Transição entre cenas: Fade / Corte seco (radios habilitados).
   - `#form-composicao` coleta e empacota `caption.position`, `caption.font_family`, `caption.style_kind` e `transition` no payload enviado via `PATCH /studio/videos/{id}/style-patch`.
 
-- [ ] **Step 1: Write failing test in `tests/test_video_composition_v3.py`**
-
-```python
-def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
-    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
-    html = render_video_workspace(video, active_area="composicao", script=None, scenes=[], sources=[])
-    # Não devem estar desabilitados
-    assert 'name="comp-posicao" value="top"' in html
-    assert 'name="comp-posicao" value="middle"' in html
-    assert 'name="comp-posicao" value="bottom"' in html
-    assert 'name="comp-fonte"' in html
-    assert 'name="comp-transicao"' in html
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -k "test_v3_composition_tab_has_enabled_position" -v`
-Expected: FAIL
-
-- [ ] **Step 3: Update `panel_video_workspace.py` composition controls and JS**
-
-Remover `disabled` e badges "Em breve no Plano 2" dos controles agora suportados. Incluir os valores no objeto `patch` submetido no evento `submit` de `#form-composicao`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_video_composition_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Update `panel_video_workspace.py` composition controls and JS**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_composition_v3.py
