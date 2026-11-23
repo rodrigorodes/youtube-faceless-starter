@@ -79,37 +79,11 @@ git commit -m "feat(studio): suportar posicao da legenda topo/meio/base no layou
     - Se `style_kind == "box"` (ou default): desenha a caixa arredondada de fundo (`rounded_rectangle`).
     - Se `style_kind == "simple"`: omite a caixa de fundo e desenha o texto com contorno reforçado/sombra escura para manter legibilidade sobre o vídeo.
 
-- [ ] **Step 1: Write failing test in `tests/test_caption_position_v3.py`**
-
-```python
-def test_caption_font_and_style_kind_validation():
-    patch = normalize_style_patch({"caption": {"font_family": "inter", "style_kind": "simples"}})
-    assert patch["caption"]["font_family"] == "inter"
-    assert patch["caption"]["style_kind"] == "simple"
-
-def test_caption_overlay_simple_skips_box(tmp_path):
-    from app.studio.adapters.render_plan_ffmpeg import caption_overlay
-    dst = tmp_path / "caption.png"
-    style = ResolvedStyle(id="s1", name="Simple", version=1, caption={"style_kind": "simple"})
-    caption_overlay(VideoFormat.short, "Legenda teste simples", dst, style)
-    assert dst.exists()
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_caption_position_v3.py -k "test_caption_font_and_style_kind" -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement font family and style kind in `visual_style.py` and `render_plan_ffmpeg.py`**
-
-Adicionar validação de `font_family` e `style_kind` em `_clean_caption`. Implementar helper de resolução de fonte com fallback e ajustar `caption_overlay` para renderizar caixas somente quando `style_kind == "box"`.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=renderer python3 -m pytest tests/test_caption_position_v3.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write failing test in `tests/test_caption_position_v3.py`**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement font family and style kind in `visual_style.py` and `render_plan_ffmpeg.py`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git add renderer/app/studio/domain/visual_style.py renderer/app/studio/adapters/render_plan_ffmpeg.py tests/test_caption_position_v3.py
