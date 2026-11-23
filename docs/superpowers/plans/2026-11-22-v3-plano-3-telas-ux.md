@@ -1,0 +1,437 @@
+# V3 - Plano 3: Telas e Jornadas UX V3 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Implementar as telas e jornadas da UX V3 do Faceless Studio em `renderer/app/studio/api/`, espelhando fielmente a proposta aprovada no protótipo navegável V3 (`prototype-v4-v3/index.html` e `v3.js`).
+
+**Architecture:**
+- Frontend Server-Rendered (Python/FastAPI): Casca `shell_v3.py` com tokens visuais e CSS do Studio.
+- Home (`panel_home.py`): Card de criação rápida com seletor "Tenho uma ideia" vs "Já tenho roteiro", padrões do canal e botão contextual de ação.
+- Canais (`panel_channels.py`): Criação atômica de canal em tela única com progressive disclosure (`<details>`) para personalização e chamada transacional (`POST /channels/transactional`).
+- Workspace do Vídeo (`panel_video_nav.py`, `panel_video_workspace.py`): 5 abas principais (`cenas`, `composicao`, `qualidade`, `publicacao`, `fontes`), link de diagnóstico separado para `producao`, storyboard focado com histórico de narração, aprovação centrada na prévia, agendamento em horário de Brasília (UTC−03:00) e rotulagem honesta dos controles de composição.
+
+**Tech Stack:** Python 3.11, FastAPI, Pydantic v2, PostgreSQL, HTML5 semântico, CSS moderno (design tokens, color-scheme, dialog nativo, details/summary), Pytest, Playwright.
+
+**Spec:** `docs/superpowers/specs/2026-11-22-v3-decisoes-e-escopo.md` e referência visual em `docs/backlogs/faceless-visual-evolution 2/prototype-v4-v3/index.html`.
+
+## Global Constraints
+
+- Nunca executar `git push`, merge de PR ou remoção via GitHub.
+- Fidelidade visual e semântica estrita à proposta V3 em `prototype-v4-v3/index.html`.
+- Respeitar honestidade do produto: custo ausente nunca vira US$ 0,00; controles sem lastro no motor são rotulados "em breve" sem simulação falsa.
+- Nenhuma alteração pode quebrar endpoints JSON REST existentes ou migrações do banco de dados.
+- Todo JavaScript do cliente deve ser defensivo, sem dependências externas e com degradação graciosa.
+
+## Review Focus
+
+1. **Roteiro pronto colado na Home**: não pode ser tratado como mero tema de prompt; o texto original deve ser preservado e gravado como fonte do vídeo. (Task 1)
+2. **Criação de canal**: deve disparar `POST /studio/channels/transactional` enviando todos os dados preenchidos de uma só vez, com feedback claro em caso de erro sem recarregar a página com perda de dados. (Task 2)
+3. **Workspace com 5 abas**: rotas legadas (`/visao-geral`, `/narracao`) devem ser mapeadas de forma segura sem 404, e o link de diagnóstico de produção não deve aparecer como aba do menu principal. (Task 3)
+4. **Storyboard com cena em foco e histórico de áudio**: restaurar versão de voz anterior não pode sobrescrever o texto atual se divergente, marcando o áudio como desatualizado (`stale`). (Task 4)
+5. **Agendamento de publicação**: deve validar fuso horário de Brasília (UTC−03:00) e rejeitar datas passadas, desmarcando estado de publicação imediata. (Task 6)
+
+---
+
+### Task 1: Home V3 (Hero de Criação Rápida com Ideia vs Roteiro)
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_home.py`
+- Test: `tests/test_home_v3.py`
+
+**Interfaces:**
+- Consumes: `view.project_id`, `view.channels`, `PanelView`
+- Produces: Card de criação rápida com:
+  - Seletor de entrada: "Tenho uma ideia" (`idea`) e "Já tenho roteiro" (`script`)
+  - Placeholder dinâmico e aviso de que parágrafos viram cenas
+  - Informação dos padrões do canal ativo (nome, duração, estilo)
+  - Botão de ação: "⚡ Gerar vídeo completo" (no piloto) ou "🎬 Abrir storyboard" (no diretor)
+  - JavaScript inline enviando POST para `/studio/videos` e, se roteiro, para `/studio/videos/{id}/sources`
+
+- [ ] **Step 1: Write failing test in `tests/test_home_v3.py`**
+
+```python
+def test_home_v3_quick_creation_has_idea_and_script_toggle():
+    html = _home()
+    assert 'name="tipo-entrada"' in html or 'data-kind="input-toggle"' in html
+    assert "Tenho uma ideia" in html
+    assert "Já tenho roteiro" in html
+    assert 'id="home-topico"' in html or 'id="homeTopic"' in html
+    assert "Padrões do canal" in html or "padrão do canal" in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py -k test_home_v3_quick_creation_has_idea_and_script_toggle -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement quick creation card in `renderer/app/studio/api/panel_home.py`**
+
+Atualizar o formulário da Home com seletor de pills (Ideia / Roteiro), textarea com placeholder ajustável, indicação dos padrões do canal e script inline para criar o rascunho e associar o roteiro como fonte quando fornecido.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_home.py tests/test_home_v3.py
+git commit -m "feat(studio): atualizar hero da Home com seletor ideia vs roteiro e padroes do canal"
+```
+
+---
+
+### Task 2: Criação e Perfil de Canal V3 com Transacionalidade
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_channels.py`
+- Test: `tests/test_channels_page.py`
+- Create: `tests/test_channels_v3_ux.py`
+
+**Interfaces:**
+- Consumes: `POST /studio/channels/transactional`, `GET /studio/channels/{id}`, `PATCH /studio/channels/{id}`
+- Produces:
+  - Formulário de novo canal com dados essenciais visíveis (nome, nicho, idioma, modo padrão, formato padrão, estilo)
+  - Detalhes expansíveis (`<details class="diag">`) para Editorial, Orçamento e Provedores
+  - Submissão AJAX chamando `POST /studio/channels/transactional` com feedback inline
+  - Painel de perfil existente exibindo e editando `default_mode` e `default_format`
+
+- [ ] **Step 1: Write failing test in `tests/test_channels_v3_ux.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_channels import render_channels
+from app.studio.application.channels_page import ChannelsPageView
+from app.studio.domain.channel import ChannelProfile
+from app.studio.domain.contracts import ProductionMode, VideoFormat
+
+def test_channels_page_renders_transactional_form_and_preferences():
+    view = ChannelsPageView(project=None, profile=None, channels=[])
+    html = render_channels(view)
+    assert 'id="form-novo-canal-v3"' in html or 'id="new-channel-form"' in html
+    assert 'name="default_mode"' in html or 'name="modo-padrao"' in html
+    assert 'name="default_format"' in html or 'name="formato-padrao"' in html
+    assert "/studio/channels/transactional" in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channels_v3_ux.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement V3 channel creation and profile editing in `panel_channels.py`**
+
+Adicionar campos de modo padrão e formato padrão no formulário de criação e no cartão de perfil do canal. Atualizar o script de criação para submeter o JSON completo para `/studio/channels/transactional`.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_channels_v3_ux.py tests/test_channels_page.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_channels.py tests/test_channels_v3_ux.py
+git commit -m "feat(studio): atualizar criacao de canal para fluxo transacional V3"
+```
+
+---
+
+### Task 3: Reestruturação da Navegação do Workspace (5 Áreas + Diagnóstico)
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_video_nav.py`
+- Modify: `renderer/app/studio/api/panel_video_workspace.py`
+- Create: `tests/test_video_workspace_v3_nav.py`
+
+**Interfaces:**
+- Consumes: Rota `/studio/panel/videos/{id}/{area}`
+- Produces:
+  - 5 abas canônicas: `cenas` ("Cenas & Storyboard"), `composicao` ("Composição & Legendas"), `qualidade` ("Qualidade & Aprovação"), `publicacao` ("Publicação YouTube"), `fontes` ("Fontes & Evidências")
+  - Área `producao` acessível via link no cabeçalho ("Ver progresso / Diagnóstico"), sem aparecer no menu de abas principal
+  - Normalização segura de URLs legadas (`visao-geral` e `narracao` redirecionando/mapeando para `cenas`)
+
+- [ ] **Step 1: Write failing test in `tests/test_video_workspace_v3_nav.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_video_nav import VIDEO_AREAS, normalize_area, video_area_nav
+
+def test_v3_video_nav_has_five_primary_areas():
+    area_ids = [aid for aid, _ in VIDEO_AREAS]
+    assert area_ids == ["cenas", "composicao", "qualidade", "publicacao", "fontes"]
+    assert "producao" not in area_ids
+
+def test_v3_video_nav_normalizes_legacy_areas():
+    assert normalize_area("visao-geral") == "cenas"
+    assert normalize_area("narracao") == "cenas"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_workspace_v3_nav.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Update `panel_video_nav.py` and `panel_video_workspace.py`**
+
+Ajustar `VIDEO_AREAS` para as 5 áreas aprovadas. Adicionar link "Ver progresso / Diagnóstico" no cabeçalho do workspace apontando para a área `producao`. Atualizar `normalize_area` para mapear áreas antigas para `cenas`.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_workspace_v3_nav.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_video_nav.py renderer/app/studio/api/panel_video_workspace.py tests/test_video_workspace_v3_nav.py
+git commit -m "feat(studio): reestruturar navegacao do workspace para 5 abas e diagnostico"
+```
+
+---
+
+### Task 4: Storyboard V3 (Cena em Foco, Desfazer/Refazer e Histórico de Áudio)
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_video_workspace.py`
+- Modify: `renderer/app/studio/api/panel_script.py`
+- Create: `tests/test_video_storyboard_v3.py`
+
+**Interfaces:**
+- Consumes: Cenas do vídeo, narrações, `scene_revisions`
+- Produces:
+  - Navegação entre cenas (1, 2, 3...) com visualização compacta de uma cena ativa por vez
+  - Seletor com `<details>` para expandir e ler o roteiro completo
+  - Botões de desfazer e refazer no cabeçalho do storyboard
+  - Cartão de cena com ações de regenerar voz, trocar mídia e ver histórico de gerações
+  - Diálogo/seção para ouvir versões anteriores e restaurar voz
+
+- [ ] **Step 1: Write failing test in `tests/test_video_storyboard_v3.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_video_workspace import render_video_workspace
+from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
+
+def test_v3_storyboard_renders_scene_selector_and_full_script_details():
+    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.SCRIPTED)
+    # Render da área 'cenas'
+    html = render_video_workspace(video, active_area="cenas", script=None, scenes=[], sources=[])
+    assert 'id="seletor-cenas"' in html or 'class="seletor-cenas"' in html
+    assert "Ver roteiro completo" in html
+    assert "Desfazer" in html or "btn-undo" in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_storyboard_v3.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement V3 storyboard UI in `panel_video_workspace.py`**
+
+Implementar o layout da aba de cenas com foco individual por cena, seletor expansível do roteiro integral, botões de ação e diálogo de histórico de versões de narração.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_storyboard_v3.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_video_workspace.py renderer/app/studio/api/panel_script.py tests/test_video_storyboard_v3.py
+git commit -m "feat(studio): storyboard V3 com cena em foco, desfazer e historico de audio"
+```
+
+---
+
+### Task 5: Qualidade & Aprovação V3 (Prévia em Destaque e Verificações Técnicas)
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_video_workspace.py`
+- Create: `tests/test_video_qa_v3.py`
+
+**Interfaces:**
+- Consumes: `video.qa_report`, status do vídeo
+- Produces:
+  - Aba `qualidade` renderizando o player/prévia do vídeo no topo
+  - Cartão de resumo de revisão com pendências acionáveis
+  - Detalhes expansíveis `<details class="diag">` com o checklist técnico completo
+  - Botão de aprovação direcionando o operador para a publicação (`/publicacao`)
+  - Disclaimer explícito: QA técnico automatizado não valida fatos do roteiro
+
+- [ ] **Step 1: Write failing test in `tests/test_video_qa_v3.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_video_workspace import render_video_workspace
+from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
+
+def test_v3_qa_tab_features_centered_preview_and_collapsible_checks():
+    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.RENDERED)
+    html = render_video_workspace(video, active_area="qualidade", script=None, scenes=[], sources=[])
+    assert "Ver todas as verificações técnicas" in html
+    assert "Aprovar e preparar publicação" in html or "Aprovar" in html
+    assert "QA técnico não verifica fatos" in html or "veracidade factual" in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_qa_v3.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Update QA tab in `panel_video_workspace.py`**
+
+Reorganizar o painel de qualidade para colocar o player/prévia em posição de destaque, agrupar checagens técnicas no `<details>`, exibir o status de prontidão e atualizar a ação de aprovação para preparar a publicação.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_qa_v3.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_qa_v3.py
+git commit -m "feat(studio): aba de qualidade centrada na previa com verificacoes agrupadas"
+```
+
+---
+
+### Task 6: Publicação V3 (Agendamento Brasília UTC−03:00 e Revalidação)
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_video_workspace.py`
+- Create: `tests/test_video_publication_v3.py`
+
+**Interfaces:**
+- Consumes: Metadados de publicação, canais do YouTube autorizados, status de aprovação
+- Produces:
+  - Aba `publicacao` com seletor "Publicar agora" vs "Agendar publicação"
+  - Campo de agendamento datetime com aviso de Horário de Brasília (UTC−03:00)
+  - Validação de data futura no cliente e feedback imediato
+  - Cartão de status: "Agendado para [data]" vs "Publicado"
+  - Detecção de edições posteriores desarmando a prontidão para publicação
+
+- [ ] **Step 1: Write failing test in `tests/test_video_publication_v3.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_video_workspace import render_video_workspace
+from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
+
+def test_v3_publication_tab_renders_schedule_and_timezone_notice():
+    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.APPROVED)
+    html = render_video_workspace(video, active_area="publicacao", script=None, scenes=[], sources=[])
+    assert "Horário de Brasília" in html or "UTC−03:00" in html
+    assert 'name="tipo-publicacao"' in html or 'id="agendar-publicacao"' in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_publication_v3.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Update publication tab in `panel_video_workspace.py`**
+
+Implementar formulário de publicação V3 com campos de visibilidade, título, descrição, tags, rádio de imediato vs agendado, datetime com indicação de fuso Brasília UTC−03:00 e lógica de confirmação.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_publication_v3.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_publication_v3.py
+git commit -m "feat(studio): aba de publicacao com agendamento no fuso de Brasilia"
+```
+
+---
+
+### Task 7: Composição & Legendas V3 (Honestidade Visual e Rótulos "Em Breve")
+
+**Files:**
+- Modify: `renderer/app/studio/api/panel_video_workspace.py`
+- Create: `tests/test_video_composition_v3.py`
+
+**Interfaces:**
+- Consumes: Parâmetros de estilo e patch do vídeo
+- Produces:
+  - Aba `composicao` com controles ativos suportados pelo motor atual (`caption.font_size`, `caption.bottom`, `palette`, `motion`, `music.bpm/seed`)
+  - Controles visuais do protótipo V3 destinados ao Plano 2 (posição topo/meio, fonte customizada, transição fade, FPS) claramente rotulados como "Em breve no Plano 2" ou desabilitados, garantindo honestidade
+
+- [ ] **Step 1: Write failing test in `tests/test_video_composition_v3.py`**
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
+from app.studio.api.panel_video_workspace import render_video_workspace
+from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
+
+def test_v3_composition_tab_labels_unsupported_controls_honestly():
+    video = Video(id="v"*32, project_id="p"*32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
+    html = render_video_workspace(video, active_area="composicao", script=None, scenes=[], sources=[])
+    assert "Tamanho da legenda" in html
+    assert "Distância da base" in html
+    assert "Em breve" in html or "Plano 2" in html
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Update composition tab in `panel_video_workspace.py`**
+
+Refatorar a aba de composição para exibir os controles vigentes de legenda, paleta e movimento, rotulando os controles de evolução futura como "Em breve no Plano 2".
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_video_composition_v3.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add renderer/app/studio/api/panel_video_workspace.py tests/test_video_composition_v3.py
+git commit -m "feat(studio): aba de composicao V3 com controles vigentes e rotulos honestos"
+```
+
+---
+
+### Task 8: Verificação de Regressão da UX V3 e Testes E2E
+
+**Files:**
+- Test: `tests/test_home_v3.py`, `tests/test_channels_page.py`, `tests/test_video_workspace_*.py`, `tests/e2e_ux/`
+
+- [ ] **Step 1: Run all unit and integration UI suites**
+
+Run: `PYTHONPATH=renderer python3 -m pytest tests/test_home_v3.py tests/test_channels_v3_ux.py tests/test_video_workspace_*.py tests/test_video_storyboard_v3.py tests/test_video_qa_v3.py tests/test_video_publication_v3.py tests/test_video_composition_v3.py -v`
+Expected: Todos passando com zero erros.
+
+- [ ] **Step 2: Run containerized integration suites**
+
+Run: `bash scripts/test-container.sh tests/test_home_v3.py tests/test_channels_page.py tests/test_channel_preferences_api.py`
+Expected: Todos passando com código 0.
+
+- [ ] **Step 3: Commit final integration milestone**
+
+```bash
+git commit --allow-empty -m "chore: marco do plano 3 - telas e jornadas UX V3 concluidas"
+```
+
+---
