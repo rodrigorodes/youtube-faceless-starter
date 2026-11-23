@@ -1718,20 +1718,22 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/panel/tendencias", response_class=HTMLResponse)
     def panel_tendencias_html(days: int = 7, project_id: str | None = None,
-                              filtro: str = "todas"):
+                              filtro: str = "todas", sort: str = "prioridade",
+                              tipo: str = "todos"):
         """O filtro vem da URL (link compartilhável); a lista cresce por scroll infinito."""
         def get_page(uc):
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             p_id = _active_channel(uc, project_id)
-            return render_tendencias_v3(uc.panel.execute(days=days, project_id=p_id), filtro=filtro)
+            return render_tendencias_v3(uc.panel.execute(days=days, project_id=p_id, sort=sort, tipo=tipo), filtro=filtro)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 
     @router.get("/panel/tendencias/cartoes", response_class=HTMLResponse)
     def panel_tendencias_cartoes_html(days: int = 7, project_id: str | None = None,
                                       filtro: str = "todas", offset: int = 0,
-                                      limite: int = 24):
+                                      limite: int = 24, sort: str = "prioridade",
+                                      tipo: str = "todos"):
         """Próximo lote do scroll infinito (fragmento HTML, sem casca).
 
         É aditivo: a página completa continua sendo a fonte da verdade e o botão
@@ -1741,7 +1743,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.panel is None:
                 raise HTTPException(503, "panel services unavailable")
             p_id = _active_channel(uc, project_id)
-            return render_tendencias_cartoes(uc.panel.execute(days=days, project_id=p_id),
+            return render_tendencias_cartoes(uc.panel.execute(days=days, project_id=p_id, sort=sort, tipo=tipo),
                                              filtro=filtro, offset=offset, limite=limite)
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)

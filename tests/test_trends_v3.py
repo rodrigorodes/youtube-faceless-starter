@@ -263,3 +263,104 @@ def test_the_same_video_collected_twice_and_a_busy_channel_do_not_flood_the_list
                    views=500.0 - n) for n in range(6)]
     html = _page_html(again + busy)
     assert html.count("Mesmo vídeo") >= 1 and html.count('class="card cartao-tendencia"') == 1 + 2  # 1 do repetido + 2 do canal cheio
+
+
+def test_render_trends_v3_contains_variation_a_elements():
+    from app.studio.api.panel_trends import render_tendencias_v3
+
+    view = _view([_trend()])
+    html, _ = render_tendencias_v3(view)
+    assert 'class="cardthumb"' in html
+    assert 'class="signals"' in html
+    assert 'class="score"' in html
+    assert "Por que esta nota" in html
+    assert "Como calculamos" in html
+    assert "btn-guardar" in html
+
+
+def test_render_trends_v3_control_bar_sorting_and_filtering_links():
+    from app.studio.api.panel_trends import render_tendencias_v3
+    from app.studio.application.panel import PanelView
+
+    base_view = _view([_trend()])
+    view = PanelView(
+        generated_at=base_view.generated_at,
+        days=base_view.days,
+        projects=base_view.projects,
+        totals=base_view.totals,
+        month=base_view.month,
+        topics=base_view.topics,
+        trends=base_view.trends,
+        trends_status=base_view.trends_status,
+        last_collected_at=base_view.last_collected_at,
+        categories=base_view.categories,
+        project_id=base_view.project_id,
+        sort="velocidade",
+        tipo="guardados",
+    )
+    html, _ = render_tendencias_v3(view)
+    assert "Ordenar por" in html
+    assert "Prioridade" in html
+    assert "Velocidade" in html
+    assert "Mais recentes" in html
+
+    assert "Mostrar" in html
+    assert "Todos" in html
+    assert "Perenes" in html
+    assert "Sem risco" in html
+    assert "Guardados" in html
+
+    assert "sort=velocidade" in html
+    assert "tipo=guardados" in html
+    assert 'href="/studio/panel/tendencias?filtro=todas&amp;sort=velocidade&amp;tipo=guardados' in html or 'href="/studio/panel/tendencias?filtro=todas&amp;sort=prioridade' in html
+
+
+def test_render_trends_v3_dialog_como_calculamos():
+    from app.studio.api.panel_trends import render_tendencias_v3
+
+    view = _view([_trend()])
+    html, _ = render_tendencias_v3(view)
+    assert 'id="dialog-como-calculamos"' in html
+    assert 'id="btn-como-calculamos"' in html
+    assert "Fórmula da Prioridade" in html
+    assert "API YOUTUBE" in html
+    assert "CALCULADO" in html
+    assert "SEU CANAL" in html
+
+
+def test_trend_card_saved_state_toggle_button():
+    from app.studio.api.panel_trends import render_tendencias_v3
+    from app.studio.application.panel import TrendItemView
+    import dataclasses
+
+    view = _view([_trend()])
+    trend = view.trends[0]
+
+    # Não guardado
+    html_unsaved, _ = render_tendencias_v3(view)
+    assert 'data-guardado="false"' in html_unsaved
+    assert "☆ Guardar" in html_unsaved
+
+    # Guardado
+    saved_trend = dataclasses.replace(trend, is_saved=True)
+    saved_view = dataclasses.replace(view, trends=[saved_trend])
+    html_saved, _ = render_tendencias_v3(saved_view)
+    assert 'data-guardado="true"' in html_saved
+    assert "★ Guardado" in html_saved
+
+
+def test_trend_card_breakdown_details_meters():
+    from app.studio.api.panel_trends import render_tendencias_v3
+
+    view = _view([_trend()])
+    html, _ = render_tendencias_v3(view)
+    assert '<details class="more">' in html
+    assert "<summary>Por que esta nota</summary>" in html
+    assert "Velocidade" in html
+    assert "Acima do nicho" in html
+    assert "Concorrência" in html
+    assert "Aderência ao canal" in html
+    assert "Variedade" in html
+    assert 'class="meter' in html
+
+
