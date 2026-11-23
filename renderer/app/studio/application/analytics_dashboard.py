@@ -278,6 +278,7 @@ class AnalyticsDashboardView:
     experiment_ids: tuple[str, ...]
     scope_text: str
     channel_text: str
+    published_count: int = 0
 
     @property
     def last_collected_text(self) -> str:
@@ -552,6 +553,7 @@ class BuildAnalyticsDashboard:
             experiment_ids=tuple(item.experiment_id for item in experiments),
             scope_text="concedido" if "yt-analytics.readonly" in channel.scopes else "não concedido",
             channel_text="conectado" if channel.connected else "não conectado",
+            published_count=sum(1 for v in videos if v.publication_id and v.youtube_video_id),
         )
 
     # -- tiles ---------------------------------------------------------------------------

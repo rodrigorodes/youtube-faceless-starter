@@ -1,0 +1,21 @@
+{"screen": "video-producao", "viewport": "1440", "text_similarity": 44.0, "text_diffs": 6, "field_similarity": 7.7, "field_diffs": 2, "style_diffs": 3, "pixel_diff_pct": 4.2, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[replace] REF=['US$ 3,20 de 20,00', 'Valores ilustrativos', '🎨 Cinemática Sombria · 🎙 Rodrigo Faber', 'Mockup · dados ilustrativos'] | APP=['Consumo em tempo real', 'Uso registrado no Studio', '🎨 Padrão do canal · 🎙 Voz vinculada']
+[replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0', 'A cidade subterrânea de Derinkuyu', 'Rascunho (Diretor)', 'Vídeo 16:9', '🎙 Rodrigo Faber'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho', 'Short 9:16']
+[delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
+[replace] REF=['✓', 'Roteiro', 'Concluída', 'US$ 0,02', '○', 'Narração (voz)'] | APP=['Nenhuma etapa executada ainda.', 'Produção', 'Nenhuma produção iniciada para este vídeo.', 'Iniciar produção']
+[replace] REF=['parcial: US$ 0,02', 'Etapas sem custo medido não são somadas como zero.'] | APP=['sem registro de uso', 'Custo registrado pelo uso real do vídeo.']
+[replace] REF=['video_id=v2', 'modo=diretor', 'revisão=0', 'estado=draft', '🧭 Roteiro da demo'] | APP=['video_id=661b9715244941ee9f9dcceecc44a5e4', 'modo=', 'estado=PENDING']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'button[button]:Iniciar produção']
+[delete] REF=['button[submit]:🧭 Roteiro da demo'] | APP=[]
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start

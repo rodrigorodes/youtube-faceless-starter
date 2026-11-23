@@ -40,7 +40,7 @@ def test_home_uses_the_v3_hero_and_sections():
     assert "O que você vai criar hoje?" in text
     assert "Digite um tema ou cole seu roteiro" in text
     assert "Comece por uma tendência no seu nicho" in text
-    assert "Ver todas as tendências" in text
+    assert "Ver todas as tendências" not in text  # o protótipo v4-v3 não tem esse link
     assert "Continuar de onde parou" not in text and "Ver todos os vídeos" not in text
     assert 'class="hero"' in html and 'class="prompt"' in html
     # formato como no protótipo: Short 9:16 marcado por padrão (o canal sem perfil não define outro)
@@ -113,8 +113,9 @@ def test_home_trend_card_shows_evidence_and_creates_from_topic():
     for expected in ("YouTube Brasil (Em Alta)", "GTA VI: dia 3", "Brasil", "Canal X", "18/11/2026"):
         assert expected in text, expected
     assert 'data-usar-tendencia="GTA VI: dia 3"' in card
-    assert 'href="https://www.youtube.com/watch?v=abc123XYZ_0"' in card
-    assert 'rel="noopener noreferrer"' in card
+    # protótipo v4-v3: o cartão de Início é pill + título + uma linha + ação; o vídeo base com link
+    # fica na tela Tendências.
+    assert "Vídeo base" not in card
 
 
 def test_home_prefills_topic_and_never_renders_zero_cost_or_inline_handlers():

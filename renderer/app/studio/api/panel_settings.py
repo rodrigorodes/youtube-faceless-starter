@@ -67,7 +67,7 @@ def _channel_card(pid: str, name: str, profile, active: bool) -> str:
             f'<span class="pill">{e(_MODOS.get(mode, mode))}</span>',
             f'<span class="pill">{"Short 9:16" if fmt == "short" else "Vídeo 16:9"}</span>',
             f'<span class="pill {"ok" if profile.youtube_channel_id else "warn"}">YouTube '
-            f'{"vinculado" if profile.youtube_channel_id else "não vinculado"}</span>',
+            f'{"conectado" if profile.youtube_channel_id else "desconectado"}</span>',
         ))
     q = f"project_id={e(pid)}"
     return (f'<div class="card{" channel-active" if active else ""}">'
@@ -95,7 +95,7 @@ def render_channel_list(view, profiles: dict | None = None):
       <a class="btn primary small" href="/studio/canais/novo">+ Novo canal</a></div>
       <div class="grid2">{cards}
       <a class="card channel-add" href="/studio/canais/novo"><span style="font-size:30px">＋</span><b>Criar novo canal</b>
-      <span class="sample">Comece com o essencial</span></a></div>"""
+      <span class="sample">Assistente em 6 passos</span></a></div>"""
     body = shell_v3.render_settings_page_body(active_section="canais", section_title="Canais",
                                               content_html=content, project_id=project_id)
     html = shell_v3.render_document(title="Faceless Studio — Canais", active="configuracoes",

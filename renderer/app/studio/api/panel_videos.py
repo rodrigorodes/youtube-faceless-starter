@@ -98,14 +98,30 @@ def _formato(video: VideoItem) -> str:
     return {"short": "9:16", "long": "16:9"}.get(value, str(value))
 
 
+def _estado(video: VideoItem) -> tuple[str, str]:
+    label, tone = _ESTADO.get(video.stage, (video.stage.value, ""))
+    if video.stage == Stage.PENDING and video.production_mode == "diretor":
+        label = "Rascunho (Diretor)"  # `STATE.draft` do protótipo: rascunho é o storyboard do Modo Diretor
+    return label, tone
+
+
+def _aba(video: VideoItem) -> str:
+    """`data-tab` do protótipo: aprovação abre Qualidade, falha abre Produção, o resto abre Cenas."""
+    return {Stage.AWAITING_APPROVAL: "qualidade", Stage.FAILED: "producao"}.get(video.stage, "cenas")
+
+
 def video_row(video: VideoItem) -> str:
     title = video.title or video.topic
-    label, tone = _ESTADO.get(video.stage, (video.stage.value, ""))
+    label, tone = _estado(video)
+    modo = "🎬 Diretor" if video.production_mode == "diretor" else "⚡ Piloto"
+    estilo = video.style_name or "padrão do canal"
+    cenas = "—" if video.scene_count is None else str(video.scene_count)
+    href = f"/studio/panel/videos/{e(video.id, quote=True)}/{_aba(video)}"
     return (f'<tr class="click" tabindex="0" data-tema="{e(title.lower(), quote=True)}" data-situacao="{_situacao_key(video.stage)}">'
-            f'<td><a href="/studio/panel/videos/{e(video.id, quote=True)}" style="text-decoration:none;color:inherit">'
-            f'<b>{e(title)}</b></a></td>'
-            f'<td>{e(_formato(video))}</td><td><span class="pill {tone}">{e(label)}</span></td>'
-            f'<td class="sample">{e(video.cost_text)}</td><td class="sample">{video.updated_at:%d/%m/%Y}</td></tr>')
+            f'<td><a href="{href}" style="text-decoration:none;color:inherit"><b>{e(title)}</b></a>'
+            f'<div class="sample">v{video.version_count or 0} · {e(estilo)}</div></td>'
+            f'<td>{modo}</td><td>{e(_formato(video))}</td><td><span class="pill {tone}">{e(label)}</span></td>'
+            f'<td>{cenas}</td><td>{e(video.cost_text)}</td></tr>')
 
 
 def render_videos(view: PanelView) -> tuple[str, dict[str, str]]:
@@ -116,11 +132,11 @@ def render_videos(view: PanelView) -> tuple[str, dict[str, str]]:
 
     if all_videos:
         cards_html = ('<div class="card" style="padding:0;overflow:auto"><table class="vtable">'
-                      '<thead><tr><th>Vídeo</th><th>Formato</th><th>Estado</th><th>Custo</th><th>Atualizado</th></tr></thead><tbody>'
+                      '<thead><tr><th>Vídeo</th><th>Modo</th><th>Formato</th><th>Estado</th><th>Cenas</th><th>Custo</th></tr></thead><tbody>'
                       + "".join(video_row(v) for v in all_videos) + '</tbody></table></div>')
-        vazio_msg = '<p class="vazio card" id="videos-vazio" hidden style="display:none;grid-column:1/-1"></p>'
+        vazio_msg = '<div class="card" id="videos-vazio" hidden style="display:none"><p class="sub">Nenhum vídeo neste filtro.</p></div>'
     else:
-        cards_html = '<p class="vazio card" style="grid-column:1/-1">Nenhum vídeo ainda. Descreva um tema ou clique em «✦ Criar vídeo» para criar o primeiro.</p>'
+        cards_html = '<div class="card"><p class="sub">Nenhum vídeo neste filtro.</p></div>'
         vazio_msg = ""
 
     pills = "".join(
@@ -146,10 +162,6 @@ def render_videos(view: PanelView) -> tuple[str, dict[str, str]]:
         {warning}
         <div class="row" style="margin-bottom:16px" id="filtro-situacao">
           {pills}
-          <div style="flex:1;min-width:220px;max-width:340px;margin-left:auto">
-            <label class="sr" for="busca-videos">Buscar por tema</label>
-            <input type="text" id="busca-videos" placeholder="Buscar por tema…">
-          </div>
         </div>
         <div id="lista-videos" style="min-width:0">
           {cards_html}

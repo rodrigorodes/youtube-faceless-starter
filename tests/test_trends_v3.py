@@ -56,7 +56,7 @@ def test_trends_uses_v3_shell_and_nav():
     assert 'class="crumb"' not in html
     assert "Radar" in html
     assert "Tendências e ideias</h1>" in html
-    assert "Cada tendência vem com a evidência" in html
+    assert "Ideias para o nicho do canal. Escolha como produzir." in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
     assert re.search(r'href="/studio/panel/tendencias(?:\?project_id=[^"]+)?" aria-current="page"', main)
@@ -81,7 +81,7 @@ def test_trends_has_action_buttons_and_filter_chips():
     assert 'data-filtro="regiao:BR"' not in html
     assert 'data-filtro="regiao:US"' not in html
     assert f'data-filtro="pilar:{c_id}"' in html
-    assert 'id="btn-novo-pilar"' in html
+    assert 'id="btn-novo-pilar"' not in html  # `pgIdeas` não tem "+ Novo pilar"; o diálogo abre por "Gerenciar pilares"
 
 
 def test_trends_renders_cards_with_evidence():

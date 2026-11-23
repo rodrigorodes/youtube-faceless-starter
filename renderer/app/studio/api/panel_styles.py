@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import secrets
 
 from ..application.styles_page import StyleListItem, StylesPageView
@@ -126,6 +127,15 @@ function collectStyleParams(form) {
   });
   if (Object.keys(palette).length) { params.palette = palette; } else { delete params.palette; }
 
+  const descInput = form.querySelector('[data-description]');
+  const artInput = form.querySelector('[data-art]');
+  const extra = Object.assign({}, base.extra || {});
+  const desc = descInput ? descInput.value.trim() : '';
+  const art = artInput ? artInput.value.trim() : '';
+  if (descInput) { if (desc) { extra.description = desc; } else { delete extra.description; } }
+  if (artInput) { if (art) { extra.art_prompt = art; } else { delete extra.art_prompt; } }
+  if (Object.keys(extra).length) { params.extra = extra; } else { delete params.extra; }
+
   const voiceInput = form.querySelector('[data-voice]');
   const model = voiceInput ? voiceInput.value.trim() : '';
   if (model) { params.voice = { model: model }; } else { delete params.voice; }
@@ -213,15 +223,57 @@ document.querySelectorAll('[data-archive-style]').forEach((button) => {
   });
 });
 
-const firstStyle = document.getElementById('btn-criar-primeiro');
-if (firstStyle) {
-  firstStyle.addEventListener('click', () => {
-    const details = document.getElementById('novo-estilo');
-    if (details) { details.open = true; details.scrollIntoView({ block: 'start' }); }
-    const field = document.getElementById('novo-estilo-nome');
-    if (field) field.focus();
-  });
+function abrirDialogo(id) {
+  const dlg = document.getElementById(id);
+  if (!dlg) return;
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  const campo = dlg.querySelector('[data-name]');
+  if (campo) campo.focus();
 }
+document.querySelectorAll('[data-abrir-dialogo]').forEach((btn) => {
+  btn.addEventListener('click', () => abrirDialogo(btn.getAttribute('data-abrir-dialogo')));
+});
+document.querySelectorAll('dialog.modal').forEach((dlg) => {
+  dlg.addEventListener('click', (ev) => {
+    if (ev.target === dlg || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlg.close();
+  });
+});
+
+document.querySelectorAll('[data-vincular-estilo]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    const root = document.getElementById('pagina-biblioteca');
+    const canal = root ? root.getAttribute('data-canal') : '';
+    const versao = Number(root ? root.getAttribute('data-canal-versao') : '0');
+    const status = document.getElementById('biblioteca-status');
+    button.disabled = true;
+    if (status) status.textContent = 'Vinculando ao canal...';
+    try {
+      const response = await fetch('/studio/channels/' + encodeURIComponent(canal), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_version: versao, changes: { style_id: button.getAttribute('data-vincular-estilo') } })
+      });
+      if (response.ok) { window.location.reload(); return; }
+      if (status) status.textContent = response.status === 409
+        ? 'Outra alteração venceu a corrida: recarregue e tente de novo.'
+        : 'Não foi possível vincular o estilo ao canal.';
+    } catch (error) {
+      if (status) status.textContent = 'Falha de rede ao vincular o estilo.';
+    }
+    button.disabled = false;
+  });
+});
+
+const abas = Array.prototype.slice.call(document.querySelectorAll('[data-aba-biblioteca]'));
+abas.forEach((aba) => {
+  aba.addEventListener('click', () => {
+    abas.forEach((o) => {
+      const on = o === aba;
+      if (on) o.setAttribute('aria-current', 'page'); else o.removeAttribute('aria-current');
+      const painel = document.getElementById('painel-' + o.getAttribute('data-aba-biblioteca'));
+      if (painel) painel.hidden = !on;
+    });
+  });
+});
 """
 
 
@@ -340,9 +392,33 @@ def _style_form(prefix: str, *, style=None) -> str:
         f"</div>"
         for key, label in _PALETTE_FIELDS
     )
+    extra = params.get("extra") if isinstance(params.get("extra"), dict) else {}
+    desc_fields = (
+        f'<div class="field"><label for="{prefix}-descricao">Descrição curta</label>'
+        f'<input type="text" id="{prefix}-descricao" data-description maxlength="200" value="{e(extra.get("description", ""))}"></div>'
+        f'<div class="field"><label for="{prefix}-arte">Instrução de arte (prompt base)</label>'
+        f'<textarea id="{prefix}-arte" rows="3" data-art maxlength="500" placeholder="Ex.: noir, preto e branco, alto contraste">'
+        f'{e(extra.get("art_prompt", ""))}</textarea></div>'
+    )
+    if not is_edit:
+        # `renderModal` → `m.t==='style'` do protótipo: Nome, Descrição curta, Instrução de arte.
+        return f"""
+      <form class="style-form" style="margin:0" data-style-form data-mode="create" data-style-id="" data-version="0" data-params="{{}}">
+        <h3>Criar novo estilo</h3>
+        <div class="field" style="margin-top:12px"><label for="{prefix}-nome">Nome</label>
+          <input type="text" id="{prefix}-nome" name="name" maxlength="120" required data-name placeholder="Ex.: Noir Poético"></div>
+        {desc_fields}
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost small" type="button" data-fechar-dialogo>Cancelar</button>
+          <button class="btn primary small" type="submit" data-submit>Salvar na biblioteca</button>
+        </div>
+        <div class="form-feedback" data-feedback role="status" aria-live="polite"></div>
+      </form>
+    """
     return f"""
       <form class="style-form" data-style-form data-mode="{mode}" data-style-id="{e(style_id)}"
             data-version="{version}" data-params="{e(json.dumps(params, ensure_ascii=False))}">
+        <h3>Editar estilo</h3>
         <div class="grid-2">
           <div class="field">
             <label for="{prefix}-nome">Nome do estilo</label>
@@ -363,6 +439,7 @@ def _style_form(prefix: str, *, style=None) -> str:
             <span class="hint" id="{prefix}-bpm-hint">20 a 300 bpm. Vazio = sem batida declarada.</span>
           </div>
         </div>
+        <div class="grid-2" style="margin-top:0.9rem">{desc_fields}</div>
         <details class="advanced" id="{prefix}-avancado">
           <summary class="advanced-summary">Avançado — legenda, cores e voz</summary>
           <div class="advanced-body">
@@ -402,124 +479,85 @@ def _style_form(prefix: str, *, style=None) -> str:
     """
 
 
-def _create_card() -> str:
-    return f"""
-      <details class="style-disclosure" id="novo-estilo">
-        <summary>
-          <span class="btn btn-primary btn-compact">+ Novo estilo</span>
-          <span class="dim" style="font-size:0.85rem">criar um estilo reutilizável entre canais</span>
-        </summary>
-        {_style_form("novo-estilo")}
-      </details>
-    """
+def _estilo_descricao(style) -> str:
+    extra = style.params.get("extra") if isinstance(style.params.get("extra"), dict) else {}
+    desc = str(extra.get("description") or "").strip()
+    return desc or _param_summary(style.params)
 
 
-def _empty_card() -> str:
-    return """
-      <div class="card empty" id="estilos-vazio">
-        <h2>Nenhum estilo ainda</h2>
-        <p class="muted">A biblioteca está vazia. Crie o primeiro estilo para reusá-lo em vários canais.</p>
-        <p class="fine">Sem estilo escolhido, o canal segue o padrão do estúdio — e está ótimo. Criar um estilo não muda nenhum canal sozinho.</p>
-        <div class="empty-cta">
-          <button class="btn btn-primary" type="button" id="btn-criar-primeiro">Criar o primeiro estilo</button>
-        </div>
-      </div>
-    """
+def _estilo_thumb(style) -> str:
+    """Miniatura: o gradiente vem da paleta real do estilo; sem paleta, o fundo neutro da casca."""
+    palette = style.params.get("palette") if isinstance(style.params.get("palette"), dict) else {}
+    cor = str(palette.get("accent") or "")
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?", cor):
+        cor = "#2b2540"
+    return f"linear-gradient(135deg,{cor},#15171c)"
 
 
-def _style_row(item: StyleListItem) -> str:
+def _style_card(item: StyleListItem, ativo: bool, tem_canal: bool) -> str:
     style = item.style
-    prefix = f"editar-{style.id}"
-    return f"""
-      <li class="style-row" data-style-id="{e(style.id)}">
-        <div>
-          <div class="item-title">{e(style.name)}</div>
-          <div class="item-sub">{e(_param_summary(style.params))} · versão {style.version}</div>
-          {_unused_param_note(style.params)}
-        </div>
-        <span class="usage">{e(_usage_text(item.channels_using))}</span>
-        <details class="style-disclosure">
-          <summary class="btn btn-sm btn-ghost">Editar</summary>
-          {_style_form(prefix, style=style)}
-        </details>
-      </li>
-    """
+    estilo = ('style="border:2px solid var(--accent);background:var(--accentbg);padding:17px"' if ativo else "")
+    selo = '<span class="pill accent">✓ Ativo no canal</span>' if ativo else ""
+    if ativo:
+        acao = '<span class="sample" style="color:var(--ok)">Padrão herdado para novos vídeos</span>'
+    elif tem_canal:
+        acao = (f'<button class="btn small" type="button" data-vincular-estilo="{e(style.id)}">Vincular ao canal</button>')
+    else:
+        acao = '<span class="sample">Sem canal ativo para vincular.</span>'
+    editar = (f'<button class="btn ghost small" type="button" data-abrir-dialogo="editar-{e(style.id)}" '
+              f'style="margin-left:6px">Editar</button>')
+    return f"""<div class="card" data-style-id="{e(style.id)}" {estilo}>
+          <div class="thumb" style="height:100px;background:{e(_estilo_thumb(style))};margin-bottom:10px"><span style="font-size:34px">🎨</span></div>
+          <div class="between"><b>{e(style.name)}</b>{selo}</div>
+          <p class="sub" style="margin:4px 0 10px">{e(_estilo_descricao(style))}</p>
+          {acao}{editar}
+        </div>"""
 
 
-def _list_card(view: StylesPageView) -> str:
-    rows = "".join(_style_row(item) for item in view.items)
-    return f"""
-      <div class="card">
-        <div class="spread">
-          <div>
-            <h2>Biblioteca de estilos</h2>
-            <p class="dim" style="margin:4px 0 0;font-size:12.5px">
-              Estilo é compartilhado entre canais. O resumo mostra o que o render aplica; a contagem é medida no banco.
-            </p>
-          </div>
-          <span class="chip-metric">{len(view.items)} estilo(s)</span>
-        </div>
-        <ul class="list" style="margin-top:14px">{rows}</ul>
-      </div>
-    """
-
-
-def _rail(view: StylesPageView) -> str:
-    channels_with_style = sum(item.channels_using for item in view.items)
-    return f"""
-      <aside class="rail" aria-label="Resumo">
-        <section class="card" aria-labelledby="h-biblioteca">
-          <h2 id="h-biblioteca">A biblioteca</h2>
-          <div class="kv"><span>Estilos ativos</span><span>{len(view.items)}</span></div>
-          <div class="kv"><span>Canais com estilo</span><span>{channels_with_style}</span></div>
-          <p class="fine">Estilo é compartilhado: editar aqui vale para todos os canais que o usam. Nada de copiar à mão.</p>
-        </section>
-        <section class="card" aria-labelledby="h-arquivar">
-          <h2 id="h-arquivar">Arquivar, não apagar</h2>
-          <p class="fine">Arquivar tira o estilo da lista e libera o nome; os canais que usavam voltam ao padrão do estúdio. O histórico das versões é preservado.</p>
-        </section>
-      </aside>
-    """
-
-
-def _sidebar_card(view: StylesPageView) -> str:
-    return f"""
-        <div class="side-card">
-          <h2>Biblioteca de estilos</h2>
-          <div class="kv"><span>Estilos ativos</span><span>{len(view.items)}</span></div>
-          <div class="kv"><span>Canais com estilo</span><span>{sum(item.channels_using for item in view.items)}</span></div>
-        </div>
-    """
+def _dialog(dialog_id: str, form_html: str) -> str:
+    return (f'<dialog id="{e(dialog_id)}" class="modal" aria-label="Estilo">'
+            f'{form_html}</dialog>')
 
 
 def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | None = None,
-                  project_id: str = "") -> tuple[str, dict[str, str]]:
-    """Página da Biblioteca de estilos: casca aprovada + lista real + criar/editar/arquivar.
+                  project_id: str = "", channel_name: str = "", channel_style_id: str | None = None,
+                  channel_version: int | None = None, channel_voice: str = "") -> tuple[str, dict[str, str]]:
+    """Biblioteca (`pgLibrary`): abas Estilos visuais / Vozes / Músicas / Modelos de roteiro.
 
-    W1.5: é o item **Biblioteca** do menu principal (protótipo `NAV` → `library`), não uma seção
-    de Configurações. Recebe o canal ativo para a topbar e para os links não perderem o contexto.
+    Estilos vêm da biblioteca real; "Vincular ao canal" grava `style_id` no perfil do canal ativo.
+    Vozes, Músicas e Modelos de roteiro não têm catálogo no produto: o painel diz isso em vez de
+    inventar itens do mockup.
     """
     nonce = secrets.token_urlsafe(16)
-    body = _empty_card() if view.is_empty else _list_card(view)
-    content_html = f"""
-      <div class="card">
-        <div class="spread">
-          <p class="page-goal" style="color: var(--text-muted); font-size: 0.85rem; margin: 0">
-            Ação primária: <b>manter estilos reutilizáveis</b>. O estilo é compartilhado — separado do canal, para não virar cópia à mão.
-          </p>
-          <span class="chip-metric">{len(view.items)} estilo(s)</span>
+    nome_canal = channel_name or next((n for pid, n in (projects or []) if pid == project_id), "") or "nenhum canal"
+    tem_canal = bool(project_id) and channel_version is not None
+    if view.is_empty:
+        cards = '<div class="card" id="estilos-vazio"><p class="sub">A biblioteca ainda não tem estilos. Use "+ Criar novo estilo".</p></div>'
+    else:
+        cards = '<div class="grid3">' + "".join(
+            _style_card(item, item.style.id == channel_style_id, tem_canal) for item in view.items) + "</div>"
+    dialogs = _dialog("novo-estilo-dialog", _style_form("novo-estilo")) + "".join(
+        _dialog(f"editar-{item.style.id}", _style_form(f"editar-{item.style.id}", style=item.style))
+        for item in view.items)
+    voz = (f'Ainda não há catálogo de vozes na biblioteca. A voz do canal ativo é "{e(channel_voice)}" e é definida no perfil do canal.'
+           if channel_voice else "Ainda não há catálogo de vozes na biblioteca. A voz é definida no perfil de cada canal.")
+    abas = (("estilos", "Estilos visuais"), ("vozes", "Vozes"), ("musicas", "Músicas"), ("modelos", "Modelos de roteiro"))
+    atual = ' aria-current="page"'
+    tabs = "".join(f'<button class="tab" type="button" data-aba-biblioteca="{k}"{atual if k == "estilos" else ""}>{l}</button>'
+                   for k, l in abas)
+    body_page = f"""      <section class="pagina" id="pagina-biblioteca" aria-labelledby="t-biblioteca" data-canal="{e(project_id)}" data-canal-versao="{e(channel_version or 0)}">
+        <div class="head"><div><p class="eyebrow">Recursos reutilizáveis</p><h1 id="t-biblioteca">Biblioteca</h1><p class="sub">Canal ativo: {e(nome_canal)}</p></div></div>
+        <nav class="tabs" aria-label="Biblioteca">{tabs}</nav>
+        <div id="painel-estilos">
+          <div class="between" style="margin-bottom:14px"><p class="sub">O estilo vinculado ao canal é herdado por todos os novos vídeos.</p><button class="btn small" type="button" data-abrir-dialogo="novo-estilo-dialog">+ Criar novo estilo</button></div>
+          {cards}
+          <p class="sample" id="biblioteca-status" role="status" aria-live="polite"></p>
         </div>
-      </div>
-      {body}
-      {_create_card()}
-    """
-    # UX: o título da página já diz "Biblioteca"; o cartão não repete o mesmo `<h2>` (protótipo
-    # `library`, `prototype/index.html:635`, também não tem cabeçalho duplicado).
-    body_page = shell_v3.render_library_page_body(
-        title="Estilos reutilizáveis",
-        lead="Os estilos são reutilizados; personalizações do canal permanecem independentes.",
-        content_html=content_html,
-    )
+        <div id="painel-vozes" hidden><p class="sub">{voz}</p></div>
+        <div id="painel-musicas" hidden><p class="sub">Ainda não há biblioteca de músicas. O ritmo (bpm) é um parâmetro de cada estilo visual.</p></div>
+        <div id="painel-modelos" hidden><p class="sub">Ainda não há modelos de roteiro cadastrados.</p></div>
+        {dialogs}
+      </section>"""
     html = shell_v3.render_document(
         title="Faceless Studio — Biblioteca",
         active="biblioteca",

@@ -1,0 +1,23 @@
+{"screen": "video-publicacao", "viewport": "390", "text_similarity": 58.5, "text_diffs": 7, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 4, "pixel_diff_pct": 19.29, "height_ref": 1969, "height_app": 1769, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Curiosidades Históricas / O mistério do navio Mary Celeste', '⚡ Criado no piloto automático · v1', 'O mistério do navio Mary Celeste', 'Aguardando aprovação'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho']
+[delete] REF=['🎙 Rodrigo Faber', '🎨 Cinemática Sombria', 'Editar no Modo Diretor'] | APP=[]
+[delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
+[replace] REF=['Título', '40/100', 'Descrição', 'O navio que foi achado vazio em 1872. Se inscreva para mais mistérios! #historia #misterio', 'Tags (separadas por vírgula)', 'Visibilidade'] | APP=['Publicação', 'Nenhuma publicação registrada para este vídeo.', 'A confirmação de publicação vive aqui.', 'Trocar o destino do YouTube ou título/descrição/tags/visibilidade depois de aprovar invalida a intenção anterior: será preciso confirmar de novo (A19).', 'Decisão', 'Este vídeo não está em revisão.']
+[replace] REF=['Conectado', '@CuriosidadesHistoricas', 'Autorização de upload ativa (simulada).', '🚀 Publicar no YouTube', 'Nada é enviado sem este clique. Mockup: não envia nada de verdade.', '🧭 Roteiro da demo'] | APP=['Canal Preview E2E 6631e8', 'Sem destino YouTube conectado e autorização vigente, a publicação é recusada (o gate falha fechado — renderer/app/studio/domain/channel.py). Conecte o canal em Configurações → Conexões antes de publicar.', 'Publicar agora', 'Abrir Conexões', 'Nada é enviado sem este clique.']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'a:Ir para Qualidade']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ir para Qualidade' ref<button.btn small> app<a.btn small>
+    textAlign: ref=center | app=start

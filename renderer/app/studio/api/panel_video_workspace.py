@@ -1246,6 +1246,7 @@ def _area_producao(view, *, style_view=None, script_view=None, video_id: str, co
     )
     run = getattr(view, "latest_run", None)
     mode = getattr(getattr(view.video, "production_mode", None), "value", getattr(view.video, "production_mode", ""))
+    mode = mode or ""
     diag = (
         '<details class="diag"><summary>Diagnóstico técnico</summary>'
         f'<p class="mono" style="margin-top:8px">video_id={e(video_id)}<br>modo={e(mode)}'

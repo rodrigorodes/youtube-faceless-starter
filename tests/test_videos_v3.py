@@ -38,9 +38,9 @@ def test_videos_uses_v3_shell_and_nav():
     assert markup.count('aria-current="page"') == 1
 
 
-def test_videos_search_and_filter_controls():
+def test_videos_filter_controls_without_search_box():
     html, _ = _videos_page()
-    assert 'id="busca-videos"' in html
+    assert 'id="busca-videos"' not in html  # `pgVideos` do protótipo v4-v3 não tem busca
     # pills do protótipo (`vfilter`): "Todos" ativo por padrão, com contagem real
     assert re.search(r'class="pill btnlike accent"[^>]*data-filtro="todos">Todos · 0</span>', html)
     for key in ("aprovar", "rascunho", "falha", "publicados"):
@@ -49,7 +49,7 @@ def test_videos_search_and_filter_controls():
 
 def test_videos_empty_state():
     html, _ = _videos_page(videos=[])
-    assert "Nenhum vídeo ainda" in html
+    assert "Nenhum vídeo neste filtro." in html
 
 
 def test_videos_renders_real_cards_with_filter_attributes():
@@ -62,9 +62,10 @@ def test_videos_renders_real_cards_with_filter_attributes():
     assert 'data-situacao="publicados"' in html
     assert 'data-situacao="aprovar"' in html
     assert 'data-situacao="outros"' in html  # em produção: só aparece em "Todos"
-    assert 'href="/studio/panel/videos/v1"' in html
-    assert 'href="/studio/panel/videos/v2"' in html
-    assert 'href="/studio/panel/videos/v3"' in html
+    # `data-tab` do protótipo: aprovação → qualidade, falha → produção, o resto → cenas
+    assert 'href="/studio/panel/videos/v1/cenas"' in html
+    assert 'href="/studio/panel/videos/v2/qualidade"' in html
+    assert 'href="/studio/panel/videos/v3/cenas"' in html
     assert "GTA VI Guia Completo" in html
     assert "IA Autônoma no Trabalho" in html
     assert "Renderizando Cenas" in html
@@ -88,7 +89,7 @@ def test_videos_table_has_only_columns_the_product_knows():
     rows = [_row("v1", "Qualquer", VideoStatus.AWAITING_APPROVAL, updated_at=NOW)]
     html, _ = _videos_page(videos=rows)
     head = re.search(r"<thead>(.*?)</thead>", html, re.S).group(1)
-    assert re.findall(r"<th>(.*?)</th>", head) == ["Vídeo", "Formato", "Estado", "Custo", "Atualizado"]
+    assert re.findall(r"<th>(.*?)</th>", head) == ["Vídeo", "Modo", "Formato", "Estado", "Cenas", "Custo"]
     assert "Não informado" not in html
 
 
@@ -97,7 +98,7 @@ def test_videos_table_has_only_columns_the_product_knows():
 
 def _card_of(html: str, video_id: str) -> str:
     cards = re.findall(r'<tr class="click".*?</tr>', html, re.S)
-    picked = [c for c in cards if f'"/studio/panel/videos/{video_id}"' in c]
+    picked = [c for c in cards if f'"/studio/panel/videos/{video_id}/' in c]
     assert len(picked) == 1, f"cartão de {video_id} não é único: {len(picked)}"
     return picked[0]
 

@@ -1,0 +1,22 @@
+{"screen": "ideas", "viewport": "768", "text_similarity": 23.7, "text_diffs": 8, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 3, "pixel_diff_pct": 5.65, "height_ref": 1541, "height_app": 4763, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['História', 'Ciência', 'Explodindo no Brasil', 'História', 'O mistério do navio Mary Celeste', 'Encontrado vazio e navegando perfeitamente em 1872.'] | APP=['Flat Iron', '↻ Buscar agora', 'Gerenciar pilares (1)', 'YouTube EUA (Em Alta)', 'If You Steal a Car in GTA 6, I’ll Pay For It!', 'Estados Unidos · MrBeast Gaming · 18.584.093 visualizações · 21/11/2026 ·']
+[replace] REF=['Documentário', 'História', 'A cidade subterrânea de Derinkuyu', 'Abrigava 20 mil pessoas abaixo do solo.'] | APP=['YouTube EUA (Em Alta)', 'If You Steal a Car in GTA 6, I’ll Pay For It!', 'Estados Unidos · MrBeast Gaming · 13.226.253 visualizações · 21/11/2026 ·', 'youtube.com/watch?v=Ra6sNe8s2Hc']
+[replace] REF=['Global', 'História', 'A biblioteca secreta do Vaticano', '85 quilômetros de arquivos fechados ao público.'] | APP=['YouTube Brasil (Em Alta)', 'If You Steal a Car in GTA 6, I’ll Pay For It!', 'Brasil · MrBeast Gaming · 13.226.253 visualizações · 21/11/2026 ·', 'youtube.com/watch?v=Ra6sNe8s2Hc']
+[replace] REF=['Em alta', 'Ciência', 'Por que o Nilo mudou de curso?', 'Estudos recentes ligam o rio ao colapso de cidades.'] | APP=['YouTube EUA (Em Alta)', 'If You Steal a Car in GTA 6, I’ll Pay For It!', 'Estados Unidos · MrBeast Gaming · 13.226.253 visualizações · 21/11/2026 ·', 'youtube.com/watch?v=Ra6sNe8s2Hc']
+[replace] REF=['Nicho crescendo', 'Ciência', 'O que acontece se a Terra parar 5 segundos?', 'Pergunta clássica com alto potencial de retenção.'] | APP=['YouTube Brasil (Em Alta)', 'If You Steal a Car in GTA 6, I’ll Pay For It!', 'Brasil · MrBeast Gaming · 13.226.253 visualizações · 21/11/2026 ·', 'youtube.com/watch?v=Ra6sNe8s2Hc']
+[replace] REF=['Global', 'Ciência', 'Sinais de rádio que nunca foram explicados', 'Wow! signal e outros mistérios do espaço.'] | APP=['YouTube EUA (Em Alta)', 'Anuel AA | SE TOCO EL T*TITO CON MI GL*CK (Video Oficial)', 'Estados Unidos · Anuel AA · 7.385.871 visualizações · 20/11/2026 ·', 'youtube.com/watch?v=1lOvAvBlzSM']
+[replace] REF=['Ideias ilustrativas.', '🧭 Roteiro da demo'] | APP=['YouTube EUA (Em Alta)', 'Anuel AA | SE TOCO EL T*TITO CON MI GL*CK (Video Oficial)', 'Estados Unidos · Anuel AA · 5.799.044 visualizações · 20/11/2026 ·', 'youtube.com/watch?v=1lOvAvBlzSM', '⚡ Criar com piloto', '🎬 Criar no Modo Diretor']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'button[button]:↻ Buscar agora', 'button[button]:Gerenciar pilares (1)', 'a:⚡ Criar com piloto', 'a:🎬 Criar no Modo Diretor']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'⚡ Criar com piloto' ref<button.btn primary small> app<a.btn primary small>
+    textAlign: ref=center | app=start
+'🎬 Criar no Modo Diretor' ref<button.btn small> app<a.btn small>
+    textAlign: ref=center | app=start

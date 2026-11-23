@@ -191,6 +191,7 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
   gap: 6px;
   align-items: center;
   justify-content: center;
+  text-align: center;
   text-decoration: none;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -208,6 +209,8 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
 .btn.ghost:hover, .btn-ghost:hover { background: var(--panel3); }
 .btn.small, .btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 7px; }
 .btn.long { width: 100%; }
+.choice { cursor: pointer; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: left; display: block; width: 100%; color: var(--text); font: inherit; }
+.choice[aria-pressed=true] { border: 2px solid var(--accent); background: var(--accentbg); padding: 13px; }
 .btn[disabled], .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; pointer-events: none; }
 
 /* Pílulas (Pills) e Badges */
@@ -443,7 +446,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 }
 .frame.r169 { aspect-ratio: 16/9; width: 100%; }
 .frame.r916 { aspect-ratio: 9/16; width: 230px; }
-.frame .bg { position: absolute; inset: 0; }
+.frame .bg { position: absolute; inset: 0; animation: ken 12s ease-in-out infinite alternate; }
+@keyframes ken { from { transform: scale(1); } to { transform: scale(1.08); } }
+.frame.static .bg { animation: none; }
+.toast { position: fixed; right: 22px; top: 70px; background: var(--panel); border: 1px solid var(--accent); color: var(--text); padding: 10px 16px; border-radius: 10px; z-index: 80; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); font-size: 13px; max-width: 360px; }
+.chart { display: flex; align-items: flex-end; gap: 8px; height: 130px; padding-top: 10px; }
+.chart div { flex: 1; background: linear-gradient(180deg, var(--accent), #4a3a8a); border-radius: 5px 5px 0 0; min-height: 4px; position: relative; }
+.chart div span { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); }
 .cap {
   position: absolute;
   left: 8%;

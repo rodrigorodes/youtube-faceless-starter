@@ -57,9 +57,8 @@ def test_analytics_uses_v3_shell_and_nav():
     html, _ = _analytics_page()
     assert html.count("<h1") == 1
     assert 'class="crumb"' not in html
-    assert "CRESCIMENTO DO CANAL" in html
+    assert "Resultados" in html
     assert "Desempenho</h1>" in html
-    assert "Acompanhe o resultado sem perder o foco na criação." in html
 
     main = re.search(r'<nav aria-label="Principal">(.*?)</nav>', html, re.S).group(1)
     assert re.search(r'href="/studio/panel/analytics(?:\?project_id=[^"]+)?" aria-current="page"', main)

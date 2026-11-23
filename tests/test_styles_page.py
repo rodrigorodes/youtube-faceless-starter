@@ -80,8 +80,8 @@ def test_styles_empty_state_teaches_the_next_step(env):
     r = page(env)
     assert r.status_code == 200, r.text
     visible = page_text(r.text)
-    assert "Nenhum estilo ainda" in visible
-    assert "Criar o primeiro estilo" in visible
+    assert "A biblioteca ainda não tem estilos" in visible  # sem estilo do mockup
+    assert "+ Criar novo estilo" in visible
     assert_ux_contract(r.text, page="estilos/vazio")
 
 
@@ -107,13 +107,13 @@ def test_styles_page_lists_name_summary_and_measured_usage(env):
     visible = page_text(page(env).text)
     assert "Documentário Cinemático" in visible
     assert "zoom_in" in visible and "122 bpm" in visible and "legenda 58px" in visible
-    assert "1 canal usa" in visible  # contagem medida, não estimada
-    # arquivável pela tela (o controle existe), sem apagar
+    # `pgLibrary` não mostra contagem de uso por cartão; arquivar continua no diálogo de edição
+    assert "Vincular ao canal" in visible or "Ativo no canal" in visible
     assert "Arquivar" in page(env).text
 
 
 def test_styles_page_empty_library_says_no_canal_uses_any(env):
-    assert "Nenhum canal usa" not in page_text(page(env).text)  # sem estilo, não há linha de uso
+    assert "Nenhum canal usa" not in page_text(page(env).text)
 
 
 def test_styles_page_never_invents_preview_or_percentage(env):
@@ -169,13 +169,15 @@ def test_styles_page_marks_biblioteca_active_and_no_dead_configuracoes(env):
 
 
 def test_styles_form_has_labels_hints_and_collapsed_advanced(env):
+    _create_style(env, "Com avançado")
     html = page(env).text
-    for field_id in ("novo-estilo-nome", "novo-estilo-bpm", "novo-estilo-caption-size",
-                     "novo-estilo-voice"):
+    # modal de criação = `renderModal` (`m.t==='style'`): Nome, Descrição curta, Instrução de arte
+    for field_id in ("novo-estilo-nome", "novo-estilo-descricao", "novo-estilo-arte"):
         assert f'for="{field_id}"' in html, field_id
-    assert 'aria-describedby="novo-estilo-nome-hint"' in html
+    assert "Salvar na biblioteca" in html and "Cancelar" in html
+    # o diálogo de edição mantém os parâmetros reais do render, com "Avançado" recolhido
+    assert re.search(r'for="editar-[0-9a-f]{32}-bpm"', html)
     assert 'role="status"' in html and 'aria-live="polite"' in html
-    # "Avançado" recolhido por padrão (divulgação progressiva em 2 níveis)
     assert "<details open" not in html
     assert 'class="advanced"' in html
 
@@ -201,8 +203,8 @@ def test_styles_page_flags_declared_but_unapplied_params(env):
     assert "não aplicado pelo render" in visible
     assert "transição" in visible and "extra" in visible
     # O resumo do que o render aplica não lista o que ele não aplica.
-    row = visible.split("Com transição", 1)[1]
-    summary = row.split("versão", 1)[0]
+    card = page(env).text.split('class="card" data-style-id', 1)[1].split("</div>", 4)
+    summary = re.search(r'<p class="sub"[^>]*>(.*?)</p>', "</div>".join(card), re.S).group(1)
     assert "transição" not in summary and "extra" not in summary
 
 

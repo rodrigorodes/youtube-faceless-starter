@@ -430,28 +430,54 @@ def render_analytics(view: AnalyticsDashboardView,
 
         {_advanced_html(view)}"""
 
+    def _tile_value(metric: str) -> str:
+        tile = next((t for t in view.tiles if t.metric == metric), None)
+        if tile is not None:
+            for group in tile.groups:
+                if group.state == "measured" and group.text is not None:
+                    return e(group.text)
+        return "Não disponível"
+
+    published = view.published_count
+    dias = view.period.days
+    nota = ("Dados medidos pela API do YouTube neste período."
+            if view.has_measurements else
+            "Sem medição neste período. A versão real exibe dados da API do YouTube apenas depois da conexão do canal.")
+    funcionou = "".join(f"<li>{e(i.title)}</li>" for i in view.insights) or "<li>Ainda não há insights com amostra suficiente.</li>"
+    cards = "".join(
+        f'<div class="card"><p class="sub">{label}</p><p style="font-size:24px;font-weight:780">{value}</p></div>'
+        for label, value in (
+            (f"Visualizações ({dias} dias)", _tile_value("views")),
+            ("Retenção média", _tile_value("average_view_percentage")),
+            ("Vídeos publicados", str(published)),
+            ("Custo médio por vídeo", "Não disponível"),
+        ))
+    grafico = ('<p class="sub">Sem medição por dia neste período.</p>'
+               if not view.has_measurements else
+               '<p class="sub">Medição diária ainda não disponível.</p>')
+
     body = f"""      <section class="pagina" id="pagina-desempenho" aria-labelledby="t-desempenho">
         <div class="head">
           <div>
-            <p class="eyebrow">CRESCIMENTO DO CANAL</p>
-            <h1 class="h1" id="t-desempenho">Desempenho</h1>
-            <p class="sub">Acompanhe o resultado sem perder o foco na criação.</p>
+            <p class="eyebrow">Resultados</p>
+            <h1 id="t-desempenho">Desempenho</h1>
+            <p class="sub">{e(view.project_name)}</p>
           </div>
-          <div class="row" style="align-items:flex-end">
-            <div class="field" style="margin:0">
-              <label for="analytics-project">Canal</label>
-              <select id="analytics-project" style="min-width:180px">{project_options}</select>
-            </div>
-            <div class="field" style="margin:0">
-              <label for="periodo">Período</label>
-              <select id="periodo" class="campo" style="min-width:150px">
-                {period_options}
-              </select>
-            </div>
+          <div class="field" style="margin:0">
+            <label for="periodo">Período</label>
+            <select id="periodo" style="min-width:150px">{period_options}</select>
           </div>
         </div>
-
+        <div class="note" style="margin-bottom:16px">{e(nota)}</div>
+        <div class="grid4" style="margin-bottom:20px">{cards}</div>
+        <div class="two">
+          <div class="card"><h3>Visualizações por dia</h3>{grafico}</div>
+          <div class="card"><h3 style="margin-bottom:10px">O que funcionou</h3>
+            <ul class="sub" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px">{funcionou}</ul></div>
+        </div>
+        <div style="margin-top:20px">
         {content_html}
+        </div>
         <script id="analytics-data" type="application/json">{json.dumps(view.project_id)}</script>
       </section>"""
 

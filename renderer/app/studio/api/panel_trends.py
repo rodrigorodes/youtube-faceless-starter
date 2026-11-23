@@ -215,7 +215,7 @@ def _mais_html(view: PanelView, filtro: str, mostrados: int, total: int) -> str:
     return (f'<div class="mais-tendencias" id="mais-tendencias" style="text-align:center;margin-top:16px"\n'
             f'             data-proximo="{e(proximo, quote=True)}">\n'
             f'          <button class="btn small" type="button" id="btn-carregar-mais">Carregar mais tendências</button>\n'
-            f'          <p class="sample" role="status" id="status-carregar-mais" style="margin-top:8px">Mostrando {mostrados} de {total}.</p>\n'
+            f'          <p class="sr-only" role="status" id="status-carregar-mais">Mostrando {mostrados} de {total}.</p>\n'
             f'        </div>')
 
 
@@ -249,34 +249,24 @@ def _create_video_url(project_id: str | None, topic: str, mode: str = "piloto") 
 
 
 def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
-    region = panel_home._REGIOES.get(trend.region or "", trend.region or "Não informada")
-    pillar = e(trend.category_name) if trend.category_name else ""
-    stale = ' <span class="pill bad">Desatualizada</span>' if trend.stale else ""
+    """`pgIdeas`: pill + nicho à direita, título, uma linha de apoio (a evidência real), duas ações."""
+    region = panel_home._REGIOES.get(trend.region or "", trend.region or "Região não informada")
+    partes = [e(region), e(trend.channel_title or "canal não informado"),
+              e(trend.metric_text or "visualizações não informadas"),
+              e(trend.published_text or "data não informada")]
     if trend.video_url:
         label = f"youtube.com/watch?v={trend.video_id}" if trend.video_id else trend.video_url
-        base = (f'<a href="{e(trend.video_url, quote=True)}" target="_blank" rel="noopener noreferrer">{e(label)}'
-                '<span class="sr-only"> (abre em nova aba)</span></a>')
-    else:
-        base = "Não informado"
-    rows = (
-        ("Região", e(region)),
-        ("Canal do vídeo base", e(trend.channel_title or "Não informado")),
-        ("Visualizações", e(trend.metric_text or "Não informado")),
-        ("Publicado", e(trend.published_text or "Não informado")),
-        ("Vídeo base", base),
-    )
-    items = "".join(
-        f'<div class="between sub" style="padding:2px 0;gap:8px;flex-wrap:nowrap"><span>{k}</span>'
-        f'<span style="color:var(--text);text-align:right;min-width:0;overflow-wrap:anywhere">{v}</span></div>'
-        for k, v in rows)
+        partes.append(f'<a href="{e(trend.video_url, quote=True)}" target="_blank" rel="noopener noreferrer">{e(label)}'
+                      '<span class="sr-only"> (abre em nova aba)</span></a>')
+    pillar = e(trend.category_name) if trend.category_name else ""
     reg_val = trend.region or "UNKNOWN"
     cat_val = trend.category_id or ""
     piloto = _create_video_url(project_id, trend.topic, "piloto")
     diretor = _create_video_url(project_id, trend.topic, "diretor")
     return f"""<article class="card cartao-tendencia" data-regiao="{e(reg_val)}" data-pilar="{e(cat_val)}">
-            <div class="between"><span class="pill accent">{e(panel_home._origin(trend))}</span><span class="sample">{pillar}{stale}</span></div>
-            <h3 style="margin:8px 0 6px">{e(trend.topic)}</h3>
-            <div class="evidencias">{items}</div>
+            <div class="between"><span class="pill accent">{e(panel_home._origin(trend))}</span><span class="sample">{pillar}</span></div>
+            <h3 style="margin:8px 0 2px">{e(trend.topic)}</h3>
+            <p class="sub">{" · ".join(partes)}</p>
             <div class="row" style="margin-top:12px">
               <a class="btn primary small" href="{e(piloto, quote=True)}" data-usar-tendencia="{e(trend.topic, quote=True)}">⚡ Criar com piloto</a>
               <a class="btn small" href="{e(diretor, quote=True)}">🎬 Criar no Modo Diretor</a>
@@ -360,12 +350,11 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
     # canal, só com o nome — sem "Em Alta <região>" e sem contagem entre parênteses. A região
     # continua na evidência de cada cartão e o filtro por região segue válido na URL
     # (`?filtro=regiao:BR`), para links antigos não quebrarem.
-    chips = [_chip(_trends_url(view, _FILTRO_TODAS), _FILTRO_TODAS, "Todas", filtro == _FILTRO_TODAS)]
+    chips = [_chip(_trends_url(view, _FILTRO_TODAS), _FILTRO_TODAS, "Todos", filtro == _FILTRO_TODAS)]
     for c in view.categories:
         valor = f"pilar:{c.id}"
         chips.append(_chip(_trends_url(view, valor), valor, e(c.name), filtro == valor))
-    chips_html = "".join(chips) + (
-        '<button class="pill btnlike" type="button" id="btn-novo-pilar">+ Novo pilar</button>')
+    chips_html = "".join(chips)
 
     if view.trends and not selecionadas:
         cards_html = ""
@@ -386,28 +375,12 @@ def render_tendencias_v3(view: PanelView, filtro: str = _FILTRO_TODAS,
     )
 
     body = f"""      <section class="pagina" id="pagina-tendencias" aria-labelledby="t-tendencias">
-        <div class="head">
-          <div>
-            <p class="eyebrow">Radar</p>
-            <h1 id="t-tendencias">Tendências e ideias</h1>
-            <p class="sub">Cada tendência vem com a evidência: origem, região, números e o vídeo base. Escolha como produzir.</p>
-          </div>
-          <search class="row" id="barra-tendencias" aria-label="Filtrar tendências">
-            {chips_html}
-          </search>
-        </div>
-        <div class="between" style="margin-bottom:16px">
-          <div class="note" style="flex:1;margin:0">A coleta usa os <b>termos de busca dos pilares</b> do canal.
-          {e(coleta_info)} Sem coleta, a tela fica vazia de propósito — nada é estimado.</div>
-          <div class="row">
-            <button class="btn small" type="button" id="btn-refresh-trends">↻ Buscar agora</button>
+        <div class="head"><div><p class="eyebrow">Radar</p><h1 id="t-tendencias">Tendências e ideias</h1><p class="sub">Ideias para o nicho do canal. Escolha como produzir.</p></div>
+          <div class="row" id="barra-tendencias">{chips_html}
+            <button class="btn ghost small" type="button" id="btn-refresh-trends" title="{e(coleta_info)}">↻ Buscar agora</button>
             <button class="btn ghost small" type="button" id="btn-gerenciar-pilares">Gerenciar pilares ({len(view.categories)})</button>
-          </div>
-        </div>
-
-        <div class="grid2 grade-tendencias" id="lista-tendencias">
-          {cards_html}
-        </div>
+          </div></div>
+        <div class="grid2" id="lista-tendencias">{cards_html}</div>
         {mais_html}
         {vazio_msg}
       </section>

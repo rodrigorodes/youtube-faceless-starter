@@ -212,7 +212,7 @@ def render_settings_page_body(*, active_section: str, section_title: str, conten
     return f"""      <section class="pagina" id="pagina-configuracoes" aria-labelledby="t-config">
         <div class="head"><div><p class="eyebrow">Ajustes</p>
         <h1 class="h1" id="t-config">Configurações</h1>
-        <p class="sub">Identidade do canal, produção, integrações e controles avançados.</p></div></div>
+        <p class="sub">Canal: <!--canal-ativo--></p></div></div>
 
         <div class="grade-config">
           {render_settings_nav(active_section, project_id)}
@@ -499,7 +499,7 @@ def render_document(*, title: str, active: str, crumb: str, body_html: str, nonc
   <main class="main">
     {render_topbar(crumb=crumb, projects=projects, project_id=project_id, video_channel=video_channel)}
     <div class="content" id="conteudo">
-{propagate(body_html, project_id)}
+{propagate(body_html, project_id).replace("<!--canal-ativo-->", e(next((n for pid, n in projects if pid == project_id and n), None) or (projects[0][1] if projects and projects[0][1] else None) or "nenhum canal"))}
     </div>
   </main>
 </div>

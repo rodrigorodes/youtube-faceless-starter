@@ -169,6 +169,10 @@ class VideoItem:
     updated_at: datetime
     actions: list[str]
     format: VideoFormat = VideoFormat.short
+    production_mode: str | None = None
+    scene_count: int | None = None
+    version_count: int | None = None
+    style_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -303,6 +307,10 @@ class BuildPanel:
                 updated_at=r.updated_at,
                 actions=actions,
                 format=r.format,
+                production_mode=r.production_mode,
+                scene_count=r.scene_count,
+                version_count=r.version_count,
+                style_name=r.style_name,
             )
             key = topic_key(r.topic)
             grouped_videos[key].append((r, st, c_summary, item))

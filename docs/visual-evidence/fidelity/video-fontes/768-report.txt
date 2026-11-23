@@ -1,0 +1,20 @@
+{"screen": "video-fontes", "viewport": "768", "text_similarity": 75.6, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 3, "pixel_diff_pct": 9.57, "height_ref": 1000, "height_app": 1000, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0', 'A cidade subterrânea de Derinkuyu', 'Rascunho (Diretor)', 'Vídeo 16:9', '🎙 Rodrigo Faber'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho', 'Short 9:16']
+[delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
+[replace] REF=['uma URL registrada é apenas uma referência. O Studio não verifica nem extrai o conteúdo automaticamente. Só o texto colado entra no roteiro.'] | APP=['uma URL registrada é apenas uma referência — não é fonte extraída nem verificada. O Studio não verifica nem extrai o conteúdo automaticamente; só o texto colado entra no roteiro, e nada aqui é fact-checkado.']
+[replace] REF=['🧭 Roteiro da demo'] | APP=['Abrir roteiro e estrutura']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'button[button]:+ Adicionar fonte']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start

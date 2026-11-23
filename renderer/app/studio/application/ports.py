@@ -651,6 +651,11 @@ class VideoRow:
     error: str | None
     # (provider, model, cost_usd, cost_confirmation_kind); kind ∈ ACTUAL/ESTIMATE/FREE/None.
     cost_rows: list[tuple[str, str, float, str | None]]
+    # Colunas da lista de Vídeos (protótipo `pgVideos`): modo, nº de cenas, versões renderizadas, estilo.
+    production_mode: str | None = None
+    scene_count: int | None = None
+    version_count: int | None = None
+    style_name: str | None = None
 
 
 @dataclass(frozen=True)

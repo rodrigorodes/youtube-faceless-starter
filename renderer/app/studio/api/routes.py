@@ -2642,7 +2642,13 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             if uc.styles_page is None:
                 raise HTTPException(503, "style services unavailable")
             projects, p_id = _topbar(uc, project_id)
-            return render_styles(uc.styles_page.execute(), projects=projects, project_id=p_id or "")
+            profile = (uc.get_channel_profile.execute(p_id)
+                       if p_id and getattr(uc, "get_channel_profile", None) is not None else None)
+            return render_styles(uc.styles_page.execute(), projects=projects, project_id=p_id or "",
+                                 channel_name=profile.name if profile else "",
+                                 channel_style_id=profile.style_id if profile else None,
+                                 channel_version=profile.version if profile else None,
+                                 channel_voice=(profile.voice or "") if profile else "")
         page, headers = run(get_page)
         return HTMLResponse(page, headers=headers)
 

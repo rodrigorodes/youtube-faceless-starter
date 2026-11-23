@@ -1,0 +1,50 @@
+{"screen": "video-composicao", "viewport": "390", "text_similarity": 56.1, "text_diffs": 12, "field_similarity": 10.3, "field_diffs": 3, "style_diffs": 8, "pixel_diff_pct": 13.5, "height_ref": 2511, "height_app": 2806, "overflow_ref": 76, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Curiosidades Históricas / A cidade subterrânea de Derinkuyu', '🎬 Modo Diretor · v0', 'A cidade subterrânea de Derinkuyu', 'Rascunho (Diretor)', 'Vídeo 16:9', '🎙 Rodrigo Faber'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho', 'Short 9:16']
+[delete] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.'] | APP=[]
+[replace] REF=['🏜️', 'Sob os', 'campos', 'da Capadócia existe', 'Prévia ilustrativa — a renderização real usa a mesma configuração.'] | APP=['🎞️', 'Legenda de exemplo', 'Prévia aproximada das legendas — não é o vídeo renderizado.']
+[replace] REF=['Mídia base', 'Cena 1 (Stock) → Cena 2 (sem mídia) → Cena 3 (sem mídia)', 'B-roll', 'Nenhum B-roll ativo', 'Narração', 'Narração contínua · Rodrigo Faber · ~0:19'] | APP=['Sem cenas no roteiro: a linha do tempo aparece quando houver cenas.', 'Ver detalhes técnicos da composição', 'Plano de composição', 'Sem plano de composição ainda. O plano aparece aqui depois que o render compila a primeira revisão; até lá não há timeline ilustrativa.', 'Composição do vídeo', 'Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de composição não estão disponíveis.']
+[replace] REF=['Documental · Tensão leve · 18% · reduz sob a voz', 'Legendas', 'Inter · Destaque por palavra · baixo'] | APP=['padrão do plano (bpm 122 · seed 7)', 'Transição', 'não declarada', 'Resolução e FPS são fixos hoje', ': quem decide é o motor de render; esta tela não os configura.', 'A transição é apenas declarada e ainda não é consumida pelo compilador']
+[replace] REF=['Música de fundo', 'Volume da música:', '18%'] | APP=['Distância da base (px)', 'Andamento da música (BPM)', 'Semente da música (seed)', 'Volume da música', 'Em breve']
+[insert] REF=[] | APP=['Em breve']
+[insert] REF=[] | APP=['Cores da legenda', 'Cor do texto da legenda', 'Cor da caixa da legenda', 'Cor de destaque (accent)']
+[replace] REF=['3 cenas', '~0:19 · estimativa US$ 0,26', '3 cena(s) sem mídia ou áudio atual'] | APP=['Salvar composição', '0 cenas', '~0:00 · estimativa de custo não disponível']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico', 'summary:Ver detalhes técnicos da composição']
+[replace] REF=['select[select-one]:1080p 720p', 'select[select-one]:24 30 60', 'select[select-one]:Fade suave Corte seco Deslizar'] | APP=['select[select-one]:Fixa no motor', 'select[select-one]:25 fps (vigente)', 'select[select-one]:Fade suave Corte seco Deslizar (em breve']
+[replace] REF=['select[select-one]:Cinemática Sombria (canal) Documentário ', 'button[submit]:🎬 Gerar o que falta e renderizar', 'button[submit]:🧭 Roteiro da demo'] | APP=['summary:Cores da legenda', 'input[text]:palette.caption_text', 'input[text]:palette.caption_box', 'input[text]:palette.accent', 'select[select-one]:Nenhum estilo resolvido', 'button[submit]:Salvar composição']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Música' ref<span.> app<span.>
+    fontSize: ref=11.5px | app=12.5px
+    lineHeight: ref=17.25px | app=18.75px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'Abaixar a música quando houver voz' ref<span.> app<label.tog>
+    display: ref=block | app=flex
+    gap: ref=normal | app=8px
+'Transição' ref<label.> app<span.>
+    fontSize: ref=12px | app=12.5px
+    fontWeight: ref=600 | app=400
+    lineHeight: ref=18px | app=18.75px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'Movimento' ref<label.> app<span.>
+    fontSize: ref=12px | app=12.5px
+    fontWeight: ref=600 | app=400
+    lineHeight: ref=18px | app=18.75px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'🎬 Gerar o que falta e renderizar' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start

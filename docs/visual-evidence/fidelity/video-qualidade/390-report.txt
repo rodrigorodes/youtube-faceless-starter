@@ -1,0 +1,26 @@
+{"screen": "video-qualidade", "viewport": "390", "text_similarity": 52.5, "text_diffs": 9, "field_similarity": 6.5, "field_diffs": 2, "style_diffs": 4, "pixel_diff_pct": 16.53, "height_ref": 2098, "height_app": 1530, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Curiosidades Históricas / O mistério do navio Mary Celeste', '⚡ Criado no piloto automático · v1', 'O mistério do navio Mary Celeste', 'Aguardando aprovação'] | APP=['Canal Preview E2E 6631e8 / A Filosofia Estoica e a Mente 4b09', '⚡ Criado no piloto automático', 'A Filosofia Estoica e a Mente 4b09', 'Rascunho']
+[delete] REF=['🎙 Rodrigo Faber', '🎨 Cinemática Sombria', 'Editar no Modo Diretor'] | APP=[]
+[replace] REF=['Proposta interativa: geração e publicação simuladas. Controles visuais representam o produto proposto, não garantem suporte atual do motor.', 'Prévia da versão v1', '⚓', 'Em 1872, um navio foi encontrado', 'Prévia ilustrativa · duração real não medida neste mockup'] | APP=['Prévia da versão', 'Ainda não há versão renderizada. Prévia e aprovação ficam disponíveis após a renderização.']
+[replace] REF=['Duração próxima da meta · Estimada 0:23 · meta 0:45 (estimativa por contagem de palavras; duração real só é medida após renderizar).', 'Revisar cenas', 'Verificações ilustrativas. QA técnico não verifica fatos do roteiro.'] | APP=['Aguardando renderização', 'Aguardando renderização do vídeo para revisão.', 'Avaliação semântica não verificada:', 'verificações técnicas. QA técnico não verifica fatos do roteiro (veracidade factual) nem a correspondência entre roteiro e imagem (depende de provider real e não é verificada aqui).']
+[replace] REF=['Verificações de qualidade', 'Checagens determinísticas sobre o que está nas cenas e na composição.', 'Mídia em todas as cenas', '3 de 3 cenas com mídia.', '✓ Passou', 'Narração presente e atualizada'] | APP=['Relatório de QA do render', 'Relatório de QA do render não disponível nesta leitura.', 'Aprovação desta versão']
+[replace] REF=['0 bloqueio(s) · 1 aviso(s)', 'Elegível para aprovação.'] | APP=['0 bloqueio(s) · 0 aviso(s)', 'Aprovação disponível após a renderização.', 'Ainda não chegou à aprovação.']
+[delete] REF=['🧭 Roteiro da demo'] | APP=[]
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:← Vídeos', 'button[button]:Histórico de versões', 'a:Ver progresso / Diagnóstico']
+[replace] REF=['button[submit]:✓ Aprovar e preparar publicação →', 'button[submit]:Pedir ajustes (volta ao storyboard)', 'button[submit]:🧭 Roteiro da demo'] | APP=['button[button]:✓ Aprovar e preparar publicação →', 'a:Pedir ajustes (volta ao storyboard)']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'← Vídeos' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Ver progresso / Diagnóstico' ref<button.btn ghost small> app<a.btn ghost small>
+    textAlign: ref=center | app=start
+'Pedir ajustes (volta ao storyboard)' ref<button.btn ghost long small> app<a.btn ghost long small>
+    textAlign: ref=center | app=start

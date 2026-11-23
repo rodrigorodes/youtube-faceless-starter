@@ -17,19 +17,19 @@ from . import shell_v3
 _SITUACAO = {
     Stage.PENDING: ("Não iniciado", "parado", "Ainda sem produção. Abra o vídeo para informar a fonte."),
     Stage.IN_PRODUCTION: ("Em produção", "", "Produção em andamento."),
-    Stage.AWAITING_APPROVAL: ("Esperando você", "espera", "Esperando sua aprovação."),
+    Stage.AWAITING_APPROVAL: ("Esperando você", "espera", "Pronto pelo piloto automático. Revise e aprove."),
     Stage.APPROVED: ("Aprovado", "ok", "Aprovado e pronto para publicar."),
     Stage.COMPLETED: ("Concluído", "ok", "Produção concluída."),
-    Stage.FAILED: ("Falhou", "espera", "A produção falhou. Abra o vídeo para ver o motivo."),
+    Stage.FAILED: ("Falhou", "espera", "Uma etapa falhou. Dá para retomar de onde parou."),
     Stage.REJECTED: ("Rejeitado", "parado", "Vídeo rejeitado."),
 }
 _NEEDS_YOU = {Stage.AWAITING_APPROVAL, Stage.FAILED, Stage.PENDING}
 _NEEDS_ORDER = {Stage.AWAITING_APPROVAL: 0, Stage.PENDING: 1, Stage.FAILED: 2}
 # (classe do pill, rótulo, linha de apoio, ação, ação primária?) — rótulos de `pgHome`; apoio fala só do que o produto sabe.
 _NEEDS_CARD = {
-    Stage.AWAITING_APPROVAL: ("warn", "Aguardando aprovação", "Esperando sua aprovação.", "Revisar e aprovar", True),
+    Stage.AWAITING_APPROVAL: ("warn", "Aguardando aprovação", "Pronto pelo piloto automático. Revise e aprove.", "Revisar e aprovar", True),
     Stage.PENDING: ("accent", "Rascunho", "Ainda sem produção. Abra o vídeo para informar a fonte.", "Continuar editando", False),
-    Stage.FAILED: ("bad", "Falhou na produção", "A produção falhou. Abra o vídeo para ver o motivo.", "Ver e retomar", False),
+    Stage.FAILED: ("bad", "Falhou na produção", "Uma etapa falhou. Dá para retomar de onde parou.", "Ver e retomar", False),
 }
 _FORMATOS = {"short": "Short · 9:16", "long": "Vídeo · 16:9"}
 _REGIOES = {"BR": "Brasil", "US": "Estados Unidos", "UNKNOWN": "Origem desconhecida"}
@@ -86,7 +86,7 @@ def _origin(trend: TrendItemView) -> str:
 
 
 def trend_card(trend: TrendItemView) -> str:
-    """Cartão do protótipo (pill + título + uma linha + ação). A evidência real cabe na linha de apoio."""
+    """Cartão do protótipo (pill + título + uma linha + ação). A evidência real é a linha de apoio."""
     region = _REGIOES.get(trend.region or "", trend.region or "Região não informada")
     evidence = " · ".join((
         region,
@@ -94,18 +94,10 @@ def trend_card(trend: TrendItemView) -> str:
         trend.metric_text or "visualizações não informadas",
         trend.published_text or "data não informada",
     ))
-    pillar = f'<span class="pill" style="margin-left:6px">{e(trend.category_name)}</span>' if trend.category_name else ""
-    stale = '<span class="pill bad" style="margin-left:6px">Desatualizada</span>' if trend.stale else ""
-    if trend.video_url:
-        label = f"youtube.com/watch?v={trend.video_id}" if trend.video_id else trend.video_url
-        base = (f'<p class="sample" style="margin-top:4px">Vídeo base: <a href="{e(trend.video_url, quote=True)}" '
-                f'target="_blank" rel="noopener noreferrer">{e(label)}<span class="sr-only"> (abre em nova aba)</span></a></p>')
-    else:
-        base = '<p class="sample" style="margin-top:4px">Vídeo base: não informado</p>'
     return f"""<article class="card cartao-tendencia">
-            <div><span class="pill accent">{e(_origin(trend))}</span>{pillar}{stale}</div>
+            <span class="pill accent">{e(_origin(trend))}</span>
             <h3 style="margin:8px 0 2px">{e(trend.topic)}</h3>
-            <p class="sub">{e(evidence)}</p>{base}
+            <p class="sub">{e(evidence)}</p>
             <div style="margin-top:12px">
               <button class="btn small" type="button" data-usar-tendencia="{e(trend.topic, quote=True)}">Criar com esta ideia</button>
             </div>
@@ -439,10 +431,7 @@ def render_home(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, str
         '<h2 style="margin-bottom:12px">Precisa de você</h2>'
         + ('<p class="aviso" style="margin-bottom:14px">Exibindo os 500 vídeos mais recentes do período selecionado.</p>'
            if view.truncated else "")
-        + f'<div class="grade" style="margin-bottom:14px">{"".join(video_card(v) for v in videos)}</div>'
-        + (f'<p class="sample" style="margin-bottom:26px"><a href="/studio/panel/videos">Ver os outros '
-           f'{len(needs_all) - len(videos)} em Vídeos</a></p>' if len(needs_all) > len(videos)
-           else '<div style="margin-bottom:12px"></div>')
+        + f'<div class="grade" style="margin-bottom:26px">{"".join(video_card(v) for v in videos)}</div>'
     ) if videos else ""
     first_html = first_steps(channel_name) if (view.projects and not has_any_video) else ""
     trends_html = (
@@ -468,7 +457,6 @@ def render_home(view: PanelView, *, topic: str = "") -> tuple[str, dict[str, str
         <div class="secao" id="tendencias">
           <h2 style="margin-bottom:12px">Comece por uma tendência no seu nicho</h2>
           <div class="grade-tendencias">{trends_html}</div>
-          <p class="sample" style="margin-top:8px"><a href="/studio/panel/tendencias">Ver todas as tendências</a></p>
         </div>
       </section>"""
 

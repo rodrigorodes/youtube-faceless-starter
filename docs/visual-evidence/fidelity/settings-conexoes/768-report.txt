@@ -1,0 +1,57 @@
+{"screen": "settings-conexoes", "viewport": "768", "text_similarity": 26.3, "text_diffs": 6, "field_similarity": 0.0, "field_diffs": 1, "style_diffs": 5, "pixel_diff_pct": 10.03, "height_ref": 2647, "height_app": 1066, "overflow_ref": 0, "overflow_app": 0}
+
+## TEXTO (ref -> app)
+[insert] REF=[] | APP=['Carregando…', 'Ir para o conteúdo']
+[delete] REF=['Mockup · dados ilustrativos'] | APP=[]
+[replace] REF=['Canal: Curiosidades Históricas · alterações salvam na hora (mockup).'] | APP=['Identidade do canal, produção, integrações e controles avançados.']
+[replace] REF=['Canal do YouTube', '✓ Conectado', '@CuriosidadesHistoricas · escopos:'] | APP=['Providers', 'Equipe', 'Avançado e diagnóstico', 'Contas do Google e canais do YouTube', 'Ação primária:', 'conectar a conta e escolher o canal']
+[replace] REF=[','] | APP=['— Enviar (subir) os vídeos para o canal.']
+[replace] REF=['· token guardado no servidor (simulado).', 'Reconectar', 'Revogar acesso', 'Ao conectar, o Google abre a tela de consentimento; o servidor troca o código e guarda os tokens. Nenhuma credencial volta ao navegador.', 'Equipe', '+ Convidar'] | APP=['— Ler o canal e os vídeos — para conferir o destino antes de publicar.', 'Os tokens ficam no cofre do servidor. Nenhum valor de credencial é exibido nesta página.']
+
+## CAMPOS/BOTOES (ref -> app)
+[replace] REF=['button[submit]:⌂ Início', 'button[submit]:✦ Criar vídeo', 'button[submit]:▤ Vídeos', 'button[submit]:◎ Tendências e ideias', 'button[submit]:▥ Desempenho', 'button[submit]:❖ Biblioteca'] | APP=['select[select-one]:Musica Musica Musica Prova fix B2 (valid', 'a:✦ Criar vídeo', 'a:Providers', 'a:Equipe', 'a:Avançado e diagnóstico', 'button[button]:Conectar conta Google']
+
+## ESTILOS COMPUTADOS (mesmo texto)
+'✦ Criar vídeo' ref<button.btn primary> app<a.btn primary>
+    textAlign: ref=center | app=start
+'youtube.upload' ref<code.mono> app<code.>
+    fontFamily: ref=ui-monospace, Menlo, monospace | app=monospace
+    fontSize: ref=12px | app=11.48px
+    lineHeight: ref=18px | app=18.368px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'youtube.readonly' ref<code.mono> app<code.>
+    fontFamily: ref=ui-monospace, Menlo, monospace | app=monospace
+    fontSize: ref=12px | app=11.48px
+    lineHeight: ref=18px | app=18.368px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+'Equipe' ref<h3.> app<a.btn small>
+    fontSize: ref=15px | app=12px
+    fontWeight: ref=700 | app=600
+    lineHeight: ref=22.5px | app=18px
+    backgroundColor: ref=rgba(0, 0, 0, 0) | app=rgb(28, 30, 36)
+    borderTopWidth: ref=0px | app=1px
+    borderTopColor: ref=rgb(243, 243, 247) | app=rgb(44, 46, 55)
+    borderTopLeftRadius: ref=0px | app=7px
+    paddingTop: ref=0px | app=4px
+    paddingRight: ref=0px | app=10px
+    paddingBottom: ref=0px | app=4px
+    paddingLeft: ref=0px | app=10px
+    display: ref=block | app=flex
+    gap: ref=normal | app=6px
+'Avançado e diagnóstico' ref<summary.> app<a.btn small>
+    fontSize: ref=14px | app=12px
+    fontWeight: ref=650 | app=600
+    lineHeight: ref=21px | app=18px
+    color: ref=rgb(163, 166, 180) | app=rgb(243, 243, 247)
+    backgroundColor: ref=rgba(0, 0, 0, 0) | app=rgb(28, 30, 36)
+    borderTopWidth: ref=0px | app=1px
+    borderTopColor: ref=rgb(163, 166, 180) | app=rgb(44, 46, 55)
+    borderTopLeftRadius: ref=0px | app=7px
+    paddingTop: ref=0px | app=4px
+    paddingRight: ref=0px | app=10px
+    paddingBottom: ref=0px | app=4px
+    paddingLeft: ref=0px | app=10px
+    display: ref=list-item | app=flex
+    gap: ref=normal | app=6px

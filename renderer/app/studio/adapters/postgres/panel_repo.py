@@ -48,7 +48,15 @@ class PostgresPanelRepository(_Base):
                     (SELECT jsonb_agg(jsonb_build_array(u.provider, u.model, u.cost_usd, u.cost_confirmation_kind) ORDER BY u.id)
                      FROM studio.usage_ledger u WHERE u.video_id = v.id),
                     '[]'::jsonb
-                ) AS costs
+                ) AS costs,
+                v.production_mode,
+                (SELECT count(*) FROM studio.scenes sc WHERE sc.video_id = v.id) AS scene_count,
+                (SELECT count(*) FROM studio.render_jobs rj WHERE rj.video_id = v.id AND rj.status = 'SUCCEEDED') AS version_count,
+                COALESCE(
+                    (SELECT vs.name FROM studio.visual_styles vs WHERE vs.id = v.style_id),
+                    (SELECT cvs.name FROM studio.channel_profiles cp
+                       JOIN studio.visual_styles cvs ON cvs.id = cp.style_id WHERE cp.project_id = v.project_id)
+                ) AS style_name
             FROM studio.videos v
             LEFT JOIN LATERAL (
                 SELECT status, error FROM studio.render_jobs r
@@ -84,6 +92,10 @@ class PostgresPanelRepository(_Base):
                 publication_status=PublicationStatus(r["publication_status"]) if r["publication_status"] else None,
                 error=err,
                 cost_rows=costs,
+                production_mode=r.get("production_mode"),
+                scene_count=int(r["scene_count"]) if r.get("scene_count") is not None else None,
+                version_count=int(r["version_count"]) if r.get("version_count") is not None else None,
+                style_name=r.get("style_name"),
             ))
         return out
 
@@ -93,7 +105,7 @@ class PostgresPanelRepository(_Base):
             # 1. Video Row
             cur.execute("""
                 SELECT
-                    v.id, v.project_id, v.topic, v.format, v.status, v.title, v.updated_at,
+                    v.id, v.project_id, v.topic, v.format, v.status, v.title, v.updated_at, v.production_mode,
                     j.status AS job_status,
                     left(j.error, 300) AS render_error,
                     EXISTS(SELECT 1 FROM studio.step_runs sr WHERE sr.video_id = v.id AND sr.status = 'RUNNING') AS step_running,
@@ -171,6 +183,7 @@ class PostgresPanelRepository(_Base):
             publication_status=PublicationStatus(vr["publication_status"]) if vr["publication_status"] else None,
             error=vr["pub_error"] or vr["render_error"],
             cost_rows=costs,
+            production_mode=vr.get("production_mode"),
         )
 
         steps = [
