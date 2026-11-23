@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import datetime
 from html import escape as e
 
 from ..application.panel import VideoDetailView
@@ -728,6 +729,13 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             )
             + '</ul></div>'
         )
+    elif view.stage not in _PREVIEW_STAGES:
+        readiness_badge = '<span class="pill pill-espera">Aguardando renderização</span>'
+        readiness_html = (
+            f'<div class="readiness-box" style="margin:1rem 0;">'
+            f'<p><strong>Situação:</strong> {readiness_badge} — Aguardando renderização do vídeo para revisão.</p>'
+            '</div>'
+        )
     else:
         readiness_badge = '<span class="pill pill-good">Pronto para sua revisão</span>'
         readiness_html = (
@@ -818,8 +826,84 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
 
 
 def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None) -> str:
-    if view.publication is not None:
-        pub = view.publication
+    video = getattr(view, "video", view)
+    pub = getattr(view, "publication", None)
+
+    # 1. Edições pendentes (dirty / pending revisions)
+    is_dirty = bool(
+        getattr(view, "dirty", False)
+        or getattr(view, "is_dirty", False)
+        or getattr(view, "pending_revisions", False)
+        or getattr(video, "dirty", False)
+        or getattr(video, "is_dirty", False)
+        or getattr(video, "pending_revisions", False)
+    )
+
+    # 2. Agendamento / publish_at
+    publish_at = (
+        (getattr(pub, "publish_at", None) if pub is not None else None)
+        or getattr(view, "publish_at", None)
+        or getattr(video, "publish_at", None)
+        or (getattr(preview.publication, "publish_at", None) if preview and getattr(preview, "publication", None) else None)
+        or (getattr(preview.approval, "publish_at", None) if preview and getattr(preview, "approval", None) else None)
+    )
+
+    data_str = ""
+    sched_input_val = ""
+    if publish_at is not None:
+        if isinstance(publish_at, datetime):
+            data_str = publish_at.strftime("%d/%m/%Y às %H:%M")
+            sched_input_val = publish_at.strftime("%Y-%m-%dT%H:%M")
+        else:
+            data_str = str(publish_at)
+            sched_input_val = str(publish_at)
+
+    # 3. Estado publicado
+    is_published = False
+    if pub is not None:
+        pub_status_str = getattr(pub.status, "value", str(pub.status)).upper()
+        if pub_status_str in ("UPLOADED", "PUBLISHED"):
+            is_published = True
+    if getattr(view, "stage", None) == Stage.COMPLETED or getattr(video, "status", None) == VideoStatus.PUBLISHED:
+        is_published = True
+
+    # 4. Estado agendado
+    is_scheduled = False
+    if not is_published:
+        if publish_at is not None:
+            is_scheduled = True
+        elif pub is not None and getattr(pub.status, "value", str(pub.status)).upper() in ("SCHEDULED", "AGENDADO"):
+            is_scheduled = True
+        elif str(getattr(video, "status", "")).upper() in ("SCHEDULED", "AGENDADO"):
+            is_scheduled = True
+
+    # Resumo / Cartão de status
+    if is_published:
+        if pub is not None:
+            status_value = getattr(pub.status, "value", str(pub.status))
+            status_line = f'{e(status_value)} — <span class="pill pill-good">Publicado</span>'
+            rows = _kv("Situação", status_line) + _kv("Tentativa", str(pub.attempt))
+            if pub.error:
+                rows += _kv("Erro registrado", e(pub.error))
+        else:
+            rows = _kv("Situação", '<span class="pill pill-good">Publicado</span>')
+        summary = f'<div class="card"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
+    elif is_scheduled:
+        if pub is not None:
+            status_value = getattr(pub.status, "value", str(pub.status))
+            status_line = f'{e(status_value)} — <span class="pill pill-info">Agendado</span>'
+            rows = _kv("Situação", status_line)
+            if data_str:
+                rows += _kv("Agendamento", f"Agendado para {e(data_str)} (Horário de Brasília)")
+            rows += _kv("Tentativa", str(pub.attempt))
+            if pub.error:
+                rows += _kv("Erro registrado", e(pub.error))
+        else:
+            rows = _kv("Situação", '<span class="pill pill-info">Agendado</span>')
+            if data_str:
+                rows += _kv("Agendamento", f"Agendado para {e(data_str)} (Horário de Brasília)")
+        summary = f'<div class="card"><h3>Publicação</h3><p class="muted">Registro de publicação deste vídeo.</p>{rows}</div>'
+    elif pub is not None:
         status_value = getattr(pub.status, "value", str(pub.status))
         rows = _kv("Situação", e(status_value)) + _kv("Tentativa", str(pub.attempt))
         if pub.error:
@@ -828,6 +912,55 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
     else:
         summary = ('<div class="card"><h3>Publicação</h3>'
                    '<p class="muted">Nenhuma publicação registrada para este vídeo.</p></div>')
+
+    # Opções de publicação V3 (imediato vs agendado)
+    dirty_html = ""
+    if is_dirty:
+        dirty_html = (
+            '<div class="aviso aviso-alerta" id="aviso-edicoes-pendentes" style="margin-bottom:1rem">'
+            '<strong>Edições pendentes: o agendamento precisa ser revisado após novas alterações.</strong>'
+            '</div>'
+        )
+
+    scheduled_note = ""
+    if is_scheduled and data_str:
+        scheduled_note = f'<div class="aviso aviso-info" style="margin-bottom:1rem">Agendado para {e(data_str)} · Brasília. Ainda não publicado.</div>'
+
+    action_btn_text = "Atualizar agendamento" if is_scheduled else "Publicar agora"
+
+    checked_now = ' checked' if not is_scheduled else ''
+    checked_sched = ' checked' if is_scheduled else ''
+    sched_style = '' if is_scheduled else ' style="display:none"'
+
+    options_card = (
+        '<div class="card" id="card-opcoes-publicacao" style="margin-top:1.25rem">'
+        '<h3>Opções de Publicação</h3>'
+        f'{dirty_html}'
+        f'{scheduled_note}'
+        '<div class="campo">'
+        '<label class="rotulo"><strong>Modalidade de publicação:</strong></label>'
+        '<div class="grupo-radios" style="display:flex;gap:1.5rem;margin:0.5rem 0;flex-wrap:wrap">'
+        '<label class="radio-opcao" style="display:flex;align-items:center;gap:6px;cursor:pointer">'
+        f'<input type="radio" name="tipo-publicacao" id="publicar-agora" value="imediato"{checked_now}>'
+        '<span>Publicar agora (Publicar imediatamente)</span>'
+        '</label>'
+        '<label class="radio-opcao" style="display:flex;align-items:center;gap:6px;cursor:pointer">'
+        f'<input type="radio" name="tipo-publicacao" id="agendar-publicacao" value="agendado"{checked_sched}>'
+        '<span>Agendar publicação (Agendar para depois)</span>'
+        '</label>'
+        '</div>'
+        '</div>'
+        f'<div class="campo campo-agendamento" id="bloco-agendamento"{sched_style}>'
+        '<label for="agendamento-data"><strong>Data e horário de publicação</strong></label>'
+        f'<input type="datetime-local" id="agendamento-data" name="agendamento-data" class="campo" value="{e(sched_input_val)}">'
+        '<p class="dica">Horário de Brasília · UTC−03:00. Agendar não publica agora.</p>'
+        '<span id="agendamento-feedback" class="feedback" role="status" aria-live="polite"></span>'
+        '</div>'
+        '<div class="acoes" style="margin-top:1.25rem">'
+        f'<button type="button" class="btn btn-primario" id="btn-publicar-acao" data-video-id="{e(video_id)}">{action_btn_text}</button>'
+        '</div>'
+        '</div>'
+    )
 
     # W5.1 (PUB-01): o formulário de aprovação vive aqui agora. Quando a prévia está disponível,
     # o mesmo bloco da página de prévia é renderizado (sem duplicar HTML); a prévia completa
@@ -855,7 +988,7 @@ def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, 
         "(renderer/app/studio/domain/channel.py). Conecte o canal em Canais → Conexão antes de "
         "publicar.</p>"
     )
-    return summary + heading + decision + preview_html + destination
+    return summary + heading + options_card + decision + preview_html + destination
 
 
 def _area_producao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
@@ -1421,6 +1554,83 @@ PAGE_JS = """
       }
     });
   }
+
+  // Validação e alternância de agendamento na aba de publicação
+  var scheduleInput = document.getElementById('agendamento-data');
+  var scheduleRadio = document.getElementById('agendar-publicacao');
+  var nowRadio = document.getElementById('publicar-agora');
+  var scheduleFeedback = document.getElementById('agendamento-feedback');
+  var btnPublishAction = document.getElementById('btn-publicar-acao');
+  var scheduleBlock = document.getElementById('bloco-agendamento');
+
+  function validateBrasiliaSchedule() {
+    if (!scheduleInput) return true;
+    var isScheduleMode = scheduleRadio ? scheduleRadio.checked : true;
+    if (!isScheduleMode) {
+      if (scheduleFeedback) {
+        scheduleFeedback.textContent = '';
+        scheduleFeedback.classList.remove('erro');
+      }
+      return true;
+    }
+    var val = scheduleInput.value.trim();
+    if (!val) {
+      if (scheduleFeedback) {
+        scheduleFeedback.textContent = 'Escolha uma data futura no horário de Brasília.';
+        scheduleFeedback.classList.add('erro');
+      }
+      return false;
+    }
+    // Formato datetime-local: "YYYY-MM-DDTHH:mm" -> interpreta como Horário de Brasília (UTC-03:00)
+    var isoString = val.length === 16 ? val + ':00-03:00' : (val.length === 19 ? val + '-03:00' : val);
+    var scheduledMillis = new Date(isoString).getTime();
+    if (isNaN(scheduledMillis) || scheduledMillis <= Date.now()) {
+      if (scheduleFeedback) {
+        scheduleFeedback.textContent = 'Escolha uma data futura no horário de Brasília.';
+        scheduleFeedback.classList.add('erro');
+      }
+      return false;
+    }
+    if (scheduleFeedback) {
+      scheduleFeedback.textContent = '';
+      scheduleFeedback.classList.remove('erro');
+    }
+    return true;
+  }
+
+  if (scheduleRadio && nowRadio && scheduleBlock) {
+    scheduleRadio.addEventListener('change', function () {
+      if (scheduleRadio.checked) {
+        scheduleBlock.style.display = 'block';
+        validateBrasiliaSchedule();
+      }
+    });
+    nowRadio.addEventListener('change', function () {
+      if (nowRadio.checked) {
+        scheduleBlock.style.display = 'none';
+        if (scheduleFeedback) {
+          scheduleFeedback.textContent = '';
+          scheduleFeedback.classList.remove('erro');
+        }
+      }
+    });
+  }
+
+  if (scheduleInput) {
+    scheduleInput.addEventListener('input', validateBrasiliaSchedule);
+    scheduleInput.addEventListener('change', validateBrasiliaSchedule);
+  }
+
+  if (btnPublishAction) {
+    btnPublishAction.addEventListener('click', function (e) {
+      if (scheduleRadio && scheduleRadio.checked) {
+        if (!validateBrasiliaSchedule()) {
+          e.preventDefault();
+          return false;
+        }
+      }
+    });
+  }
 })();
 """
 
@@ -1498,8 +1708,8 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
 
     nonce = secrets.token_urlsafe(16)
     active_area = _normalize_area(area)
-    video_id = view.video.id
-    title = view.video.title or view.video.topic
+    video_id = getattr(view.video, "id", "")
+    title = getattr(view.video, "title", None) or getattr(view.video, "topic", "Vídeo")
     stage_label = legacy.STAGE_LABELS.get(view.stage, view.stage.value)
 
     channel_crumb = f" / {e(channel_name)}" if channel_name else ""
