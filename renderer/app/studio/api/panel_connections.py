@@ -39,6 +39,7 @@ _STATUS = {
 _SCOPES_EXPLAINED = (
     ("youtube.upload", "Enviar (subir) os vídeos para o canal."),
     ("youtube.readonly", "Ler o canal e os vídeos — para conferir o destino antes de publicar."),
+    ("userinfo.email", "Ver o e-mail da conta Google — só para identificar qual conta está conectada."),
 )
 
 CONNECTIONS_CSS = """

@@ -106,16 +106,30 @@ def test_network_failure_is_transient_and_does_not_echo_the_request():
     assert REFRESH not in str(caught.value) and "ConnectError" in str(caught.value)
 
 
-def test_identity_uses_the_bearer_token_and_returns_the_real_channel():
+def _identity_handler(userinfo):
     def handler(request):
-        assert request.method == "GET" and str(request.url).startswith("https://www.googleapis.com/youtube/v3/channels?")
-        assert request.headers["authorization"] == f"Bearer {ACCESS}"
-        assert "mine=true" in str(request.url)
-        return httpx.Response(200, json={"items": [{"id": "UC_synthetic_channel", "snippet": {"title": "Canal de teste"}}]})
+        assert request.method == "GET" and request.headers["authorization"] == f"Bearer {ACCESS}"
+        if str(request.url).startswith("https://www.googleapis.com/youtube/v3/channels?"):
+            assert "mine=true" in str(request.url)
+            return httpx.Response(200, json={"items": [{"id": "UC_synthetic_channel", "snippet": {"title": "Canal de teste"}}]})
+        assert str(request.url) == "https://www.googleapis.com/oauth2/v2/userinfo"
+        return userinfo
+    return handler
 
-    app, _ = client(handler)
+
+def test_identity_uses_the_bearer_token_and_returns_the_real_channel_and_account_email():
+    app, calls = client(_identity_handler(httpx.Response(200, json={"email": "eu@gmail.com", "verified_email": True})))
     identity = app.identity(ACCESS)
     assert identity.channel_id == "UC_synthetic_channel" and identity.title == "Canal de teste"
+    assert identity.email == "eu@gmail.com"
+    assert len(calls) == 2
+
+
+def test_identity_without_the_email_grant_leaves_the_email_empty_instead_of_failing():
+    # consentimento antigo (sem userinfo.email): o canal continua identificado; a conta não é inventada
+    app, _ = client(_identity_handler(httpx.Response(403, json={"error": {"status": "PERMISSION_DENIED"}})))
+    identity = app.identity(ACCESS)
+    assert identity.channel_id == "UC_synthetic_channel" and identity.email == ""
 
 
 def test_identity_without_a_channel_requires_reconnect():

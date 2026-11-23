@@ -224,6 +224,12 @@ def test_begin_stores_state_and_verifier_and_returns_only_the_url():
     assert w["secrets"].get(scope, "oauth_state_expires_at") == (NOW + timedelta(minutes=10)).isoformat()
 
 
+def test_begin_asks_for_the_account_email_scope_so_the_account_can_be_identified():
+    # sem `userinfo.email` o Google não revela a conta e a conexão real nunca conclui
+    url = world()["begin"].execute()["authorization_url"]
+    assert "youtube.upload" in url and "userinfo.email" in url
+
+
 # -- CompleteAccountConsent -------------------------------------------------
 
 

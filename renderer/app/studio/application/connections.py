@@ -36,7 +36,7 @@ from ..domain.youtube_identity import (
     validate_youtube_channel_id,
 )
 from ..domain.youtube_oauth import (
-    DEFAULT_SCOPES,
+    ACCOUNT_SCOPES,
     OAuthIdentity,
     derive_channel_status,
     pkce_pair,
@@ -137,7 +137,7 @@ class BeginAccountConsent:
     """Gera a URL de autorização + `state` (PKCE); guarda state/verifier no cofre com validade curta."""
 
     def __init__(self, oauth: OAuthClient, secrets: SecretStore, *, redirect_uri: str = DEFAULT_REDIRECT_URI,
-                 scopes: Sequence[str] = DEFAULT_SCOPES, clock=_utc_now):
+                 scopes: Sequence[str] = ACCOUNT_SCOPES, clock=_utc_now):
         self.oauth, self.secrets = oauth, secrets
         self.redirect_uri, self.scopes, self.clock = redirect_uri, tuple(scopes), clock
 
@@ -190,7 +190,7 @@ class CompleteAccountConsent:
         chosen_email = (getattr(identity, "email", "") or email or "").strip()
         if not chosen_email:
             raise AccountIdentityUnavailable(
-                "the authorized account did not expose an email; reconnect with account identity")
+                "the authorized account did not expose an email; reconnect and allow access to the account email")
         account_email = validate_email(chosen_email)  # e-mail malformado nunca vira conta
         youtube_channel_id = validate_youtube_channel_id(identity.channel_id)
 

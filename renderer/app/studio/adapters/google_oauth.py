@@ -30,6 +30,7 @@ from ..domain.youtube_oauth import (
 )
 
 CHANNELS_ENDPOINT = "https://www.googleapis.com/youtube/v3/channels"
+USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
 _SAFE_CODE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
@@ -182,7 +183,28 @@ class GoogleOAuthClient(OAuthClient):
         if not items or not isinstance(items[0], dict) or not str(items[0].get("id") or "").strip():
             raise OAuthReconnectRequired("the authorized account has no YouTube channel")
         title = items[0].get("snippet", {}).get("title", "") if isinstance(items[0].get("snippet"), dict) else ""
-        return OAuthIdentity(channel_id=str(items[0]["id"]).strip(), title=str(title).strip()[:200])
+        return OAuthIdentity(channel_id=str(items[0]["id"]).strip(), title=str(title).strip()[:200],
+                             email=self._account_email(access_token.strip()))
+
+    def _account_email(self, access_token: str) -> str:
+        """E-mail da conta Google, quando o consentimento inclui `userinfo.email`; senão, vazio.
+
+        Falha aqui não derruba a conexão: um consentimento antigo (sem o escopo) devolve 401/403 e a
+        camada de aplicação decide (a conta nunca é inventada a partir do canal). Erro de rede é
+        transitório e propaga, para não gravar uma conta sem identidade por um soluço.
+        """
+        response = self._request("GET", USERINFO_ENDPOINT,
+                                 headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"})
+        if not 200 <= response.status_code < 300:
+            if response.status_code in (400, 401, 403):
+                return ""
+            raise classify_token_error(response.status_code, "")(
+                f"the Google account identity request failed (HTTP {response.status_code})")
+        try:
+            email = response.json().get("email")
+        except (ValueError, AttributeError):
+            return ""
+        return email.strip() if isinstance(email, str) else ""
 
 
 def google_oauth_from_client_secret(path: Path | str, *, redirect_uri: str | None = None,

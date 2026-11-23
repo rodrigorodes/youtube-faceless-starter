@@ -20,6 +20,9 @@ REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 DEFAULT_SCOPES = (YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE)
+EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email"
+# Conexões por conta: além do YouTube, o e-mail identifica a conta Google (a API do YouTube não o expõe).
+ACCOUNT_SCOPES = DEFAULT_SCOPES + (EMAIL_SCOPE,)
 TOKEN_SKEW = timedelta(seconds=120)  # nunca usar um token que vence durante a requisição
 _STATE_MIN, _STATE_MAX = 16, 256
 _VERIFIER_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
