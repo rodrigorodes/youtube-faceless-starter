@@ -8,6 +8,7 @@ palavra capitalizada, os dois tokens são checados.
 import re
 import unicodedata
 from dataclasses import dataclass
+from collections.abc import Sequence
 from decimal import Decimal
 
 _WORDS = {
@@ -186,3 +187,36 @@ def check_names(text: str, source_texts: list[str], allow_names: frozenset[str] 
         source_words |= set(re.findall(r"[a-z]+", normalize(source)))
     allowed = {normalize(name) for name in allow_names}
     return [Unsupported("name", n) for n in sorted(proper_nouns_in(text)) if n not in source_words and n not in allowed]
+
+
+def supporting_claim_ids(narration: str, claims: Sequence[tuple[str, str]],
+                         allow_names: frozenset[str] = frozenset()) -> list[str] | None:
+    """Fatos (id, texto) que juntos sustentam os números e nomes da narração, na ordem de `claims`.
+
+    O fact-check confere cada cena só contra os fatos que ela cita; ao editar o texto, a citação precisa
+    acompanhá-lo, ou a cena é reprovada por "fato" que existe nas fontes. Cobertura gulosa: a cada passo, o
+    fato que cobre mais números/nomes ainda descobertos. `[]` se o texto não tem nada checável (a cena segue
+    conferida contra todas as fontes); `None` se algum número ou nome não está em nenhum fato — quem chama
+    mantém a citação anterior em vez de inventar uma.
+    """
+    allowed = {normalize(name) for name in allow_names}
+    need_numbers = set(numbers_in(narration))
+    need_names = {n for n in proper_nouns_in(narration) if n not in allowed}
+    if not need_numbers and not need_names:
+        return []
+    indexed = [(cid, numbers_in(text), set(re.findall(r"[a-z]+", normalize(text)))) for cid, text in claims]
+    chosen: set[str] = set()
+    while need_numbers or need_names:
+        gain, pick = 0, None
+        for cid, numbers, words in indexed:
+            if cid in chosen:
+                continue
+            covered = len(need_numbers & numbers) + len(need_names & words)
+            if covered > gain:
+                gain, pick = covered, (cid, numbers, words)
+        if pick is None:
+            return None
+        chosen.add(pick[0])
+        need_numbers -= pick[1]
+        need_names -= pick[2]
+    return [cid for cid, _, _ in indexed if cid in chosen]

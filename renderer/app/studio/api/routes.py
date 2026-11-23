@@ -1935,9 +1935,10 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             composition_view = None
             if area == "composicao" and uc.composition_view is not None:
                 composition_view = uc.composition_view.execute(check_id(video_id))
-            # W5.1 (PUB-01): a aba Publicação renderiza o formulário de aprovação da prévia.
+            # W5.1 (PUB-01): a aba Publicação renderiza o formulário de aprovação da prévia. A aba Qualidade também
+            # aprova: a decisão é presa à revisão do render (`output_asset_id`) que a prévia identifica.
             preview = (uc.publishing.preview.execute(check_id(video_id))
-                       if area == "publicacao" and uc.publishing is not None else None)
+                       if area in ("publicacao", "qualidade") and uc.publishing is not None else None)
             scenes = None
             script = None
             if uc.editorial is not None and getattr(uc.editorial, "get_script", None) is not None:

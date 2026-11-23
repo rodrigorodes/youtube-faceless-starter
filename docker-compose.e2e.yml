@@ -1,0 +1,51 @@
+# Stack ISOLADA para o E2E de ponta a ponta: renderer + Postgres descartável, provedores sem custo.
+#
+#   scripts/run-e2e-full.sh            # sobe, roda a jornada completa e derruba
+#
+# Nada aqui toca o banco, o `storage/` nem a porta 8000 da stack de uso diário: projeto Docker
+# próprio (`-p faceless-e2e`), Postgres em tmpfs, storage em tmpfs e porta 8100.
+# Provedores: texto `demo`, imagem `placeholder`, voz Piper local e render ffmpeg local — custo zero.
+# Sem OAuth do YouTube e sem ponte do OpenCode: o que depende deles fica fora do escopo (publicar).
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: e2e-descartavel
+      POSTGRES_DB: e2e
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e -d e2e"]
+      interval: 2s
+      retries: 30
+  renderer-e2e:
+    build: ./renderer
+    ports:
+      - "127.0.0.1:8100:8000"
+    environment:
+      OUTPUT_DIR: /data/output
+      JOB_DIR: /data/jobs
+      STUDIO_DATABASE_URL: postgresql://e2e:e2e-descartavel@postgres-e2e:5432/e2e
+      STUDIO_ALLOWED_HOSTS: localhost,127.0.0.1,renderer-e2e
+      STUDIO_BROWSER_USER: e2e
+      STUDIO_BROWSER_PASSWORD: e2e-senha-descartavel
+      STUDIO_WORKER_TOKEN: e2e-worker-descartavel-distinto-da-senha
+      STUDIO_STORAGE_ROOT: /data
+      STUDIO_TEXT: demo
+      STUDIO_IMAGE: placeholder
+      STUDIO_VOICE: piper:pt_BR-faber-medium
+      STUDIO_RENDERER: ffmpeg
+      STUDIO_AUTO_RESEARCH: "0"
+      STUDIO_BUDGET_GUARD: "0"
+      MAX_DURATION_SECONDS: "60"
+    tmpfs:
+      - /data
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

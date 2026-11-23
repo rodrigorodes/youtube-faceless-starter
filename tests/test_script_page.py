@@ -507,3 +507,28 @@ def test_short_script_edit_with_text_unsupported_by_the_sources_writes_nothing(e
     assert r.status_code == 502 and "sources" in r.json()["detail"].lower()
     assert count(env, "SELECT count(*) FROM studio.scripts WHERE video_id=%s", (video.id,)) == 1
     assert count(env, "SELECT count(*) FROM studio.script_edit_requests WHERE video_id=%s", (video.id,)) == 0
+
+
+def test_short_script_edit_cites_the_facts_that_support_the_new_text(env):
+    """Bug (E2E real): editar o texto para outro fato das fontes mantinha a citação antiga e o fact-check reprovava."""
+    video = env["videos"].create_video(env["project"].id, "Tema curto", VideoFormat.short)
+    source = ("Constantinopla caiu em 29 de maio de 1453 depois de um cerco de 53 dias. "
+              "O sultão Mehmed II comandava cerca de 80 mil soldados otomanos.")
+    env["snaps"].add(video.id, "https://example.com/x", source)
+    from app.studio.application.editorial import _claims
+    claims = _claims(env["snaps"].list(video.id))
+    first, second = claims[0], claims[1]
+    texts = [first.text, "A cidade resistiu por semanas ao cerco."]
+    env["scripts"].save_and_advance(
+        video.id, "\n".join(texts),
+        [SceneDraft(t, "Legenda", "CEN", "wide empty stage with colored lights", [first.id]) for t in texts],
+        [first.id], VideoStatus.IDEA, VideoStatus.SCRIPTED)
+
+    r = post_edit(env, video, 1, "cite-1", narration="O sultão Mehmed II comandava cerca de 80 mil soldados otomanos.")
+    assert r.status_code == 200, r.text
+    scenes = env["scripts"].scenes(video.id)
+    assert scenes[1].claim_ids == [second.id]  # a citação acompanhou o texto novo
+    assert scenes[0].claim_ids == [first.id]  # a outra cena não mudou
+    # o texto editado agora passa no mesmo critério do fact-check (conferido só contra o fato citado)
+    from app.studio.domain.facts import check_narration
+    assert check_narration(scenes[1].narration, [second.text]) == []

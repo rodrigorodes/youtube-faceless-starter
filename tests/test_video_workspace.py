@@ -155,13 +155,14 @@ def _composition_view(*, scene_id: str = "cena-1", overlay: bool = True):
     return BuildCompositionView(_plan_repo(_persisted_plan(scene_id=scene_id, overlay=overlay))).execute(VIDEO)
 
 
-def _render(area, *, view=None, style_view=None, script_view=None, composition_view=None) -> str:
+def _render(area, *, view=None, style_view=None, script_view=None, composition_view=None, preview=None) -> str:
     return render_video_workspace(
         view if view is not None else _view(),
         area,
         style_view=style_view,
         script_view=script_view,
         composition_view=composition_view,
+        preview=preview,
     )[0]
 
 
@@ -534,3 +535,18 @@ def test_fontes_flags_a_source_too_short_to_yield_any_claim():
     assert content.count("Texto curto demais para o roteiro") == 1
     assert content.index("Texto curto demais") < content.index("exemplo.test/longa")
     assert 'id="source-text-rule"' in content and "40 a 400 caracteres" in content
+
+
+def test_qualidade_approve_button_sends_the_reviewed_render_revision():
+    """Bug (achado no E2E real): o botão enviava `{}` e a API respondia "the reviewed render revision is required"."""
+    view = _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL)
+    html = _render("qualidade", view=view, preview=_preview())
+    button = re.search(r'<button[^>]*id="btn-approve-video"[^>]*>', _content(html)).group(0)
+    assert 'data-output-asset-id="' + "e" * 32 + '"' in button and "disabled" not in button
+    assert "output_asset_id: approveBtn.getAttribute('data-output-asset-id')" in html  # o corpo do POST leva a revisão
+
+
+def test_qualidade_approve_button_is_disabled_without_a_known_render_revision():
+    view = _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL)
+    button = re.search(r'<button[^>]*id="btn-approve-video"[^>]*>', _content(_render("qualidade", view=view))).group(0)
+    assert "disabled" in button and "prévia" in button.lower()

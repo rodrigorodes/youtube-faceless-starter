@@ -1111,10 +1111,19 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             f"Ir para publicação →</a>{_reopen_button(view, video_id)}</div>"
         )
     else:
-        disabled = "" if rendered else " disabled"
+        # A API aprova uma REVISÃO de render específica (`output_asset_id`): a que o usuário viu na prévia.
+        # Sem ela conhecida, aprovar às cegas seria recusado; o botão fica desabilitado e diz o motivo.
+        revision = getattr(preview, "output_asset_id", None) if preview is not None else None
+        if not rendered:
+            disabled = " disabled"
+        elif not revision:
+            disabled = ' disabled title="Abra a prévia completa para revisar o render antes de aprovar."'
+        else:
+            disabled = ""
+        revision_attr = f' data-output-asset-id="{e(revision)}"' if revision else ""
         actions = (
             '<div class="stack" style="gap:8px">'
-            f'<button type="button" class="btn ok long" data-a="approve" data-video-id="{e(video_id)}" '
+            f'<button type="button" class="btn ok long" data-a="approve" data-video-id="{e(video_id)}"{revision_attr} '
             f'id="btn-approve-video"{disabled}>✓ Aprovar e preparar publicação →</button>'
             + (_reopen_button(view, video_id) or
                f'<a class="btn ghost long small" href="{area_href(video_id, "cenas")}">Pedir ajustes (volta ao storyboard)</a>')
@@ -1767,7 +1776,7 @@ PAGE_JS = """
         var response = await fetch('/studio/videos/' + encodeURIComponent(videoId) + '/approve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
+          body: JSON.stringify({ output_asset_id: approveBtn.getAttribute('data-output-asset-id') })
         });
         var data = await response.json().catch(function () { return {}; });
         if (response.ok) {

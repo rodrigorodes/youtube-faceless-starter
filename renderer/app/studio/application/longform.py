@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 from ..domain.contracts import Scene, Script, Video, VideoStatus
 from ..domain.effective_config import EffectiveConfig
-from ..domain.facts import check_narration
+from ..domain.facts import check_narration, supporting_claim_ids
 from ..domain.longform import (
     MAX_LONG_SCENES,
     MIN_LONG_SCENES,
@@ -438,6 +438,15 @@ class _ScriptSceneMutation:
         drafts = _scenes_to_drafts(self.scripts.scenes(video_id))
         return video, plan, drafts, snapshots, claims
 
+    def _citation(self, narration: str, claims, fallback: Sequence[str]) -> list[str]:
+        """Citação da cena para o texto novo: o fact-check confere a cena só contra os fatos que ela cita.
+
+        Sem derivar, editar o texto para outro fato das fontes passava na edição (que olha todas as fontes) e
+        reprovava depois no fact-check. Sem número ou nome checável, ou sem fato que cubra todos, mantém a anterior.
+        """
+        derived = supporting_claim_ids(narration, [(c.id, c.text) for c in claims], self.allow_names)
+        return derived if derived else list(fallback)
+
     def _review_planless(self, drafts: Sequence[SceneDraft], snapshots, changed: Sequence[int]) -> None:
         """Roteiro curto: só o texto novo ou editado precisa ter lastro nas fontes (o resto já foi checado antes)."""
         sources = [snap.text for snap in snapshots]
@@ -538,7 +547,9 @@ class EditScriptScene(_ScriptSceneMutation):
         drafts[scene_idx] = SceneDraft(
             narration=narration.strip(), caption=(caption if caption is not None else current.caption),
             label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
-            claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
+            claim_ids=(list(claim_ids) if claim_ids is not None
+                       else self._citation(narration.strip(), claims, current.claim_ids)
+                       if narration.strip() != current.narration else current.claim_ids),
         )
         review, content_hash, text, cited = self._review_and_hash(video_id, plan, drafts, snapshots, claims)
         script = self.longform.save_planned_version(video_id, text, drafts, cited, plan, content_hash,
@@ -568,7 +579,9 @@ class EditScriptScene(_ScriptSceneMutation):
         drafts[scene_idx] = SceneDraft(
             narration=narration.strip(), caption=(caption if caption is not None else current.caption),
             label=current.label, image_prompt=(image_prompt if image_prompt is not None else current.image_prompt),
-            claim_ids=list(claim_ids) if claim_ids is not None else current.claim_ids,
+            claim_ids=(list(claim_ids) if claim_ids is not None
+                       else self._citation(narration.strip(), claims, current.claim_ids)
+                       if narration.strip() != current.narration else current.claim_ids),
         )
         changed = [scene_idx] if drafts[scene_idx].narration != current.narration else []
         return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest,
@@ -597,8 +610,9 @@ class AddScriptScene(_ScriptSceneMutation):
             raise InvalidInput(f"scene position {position} is out of range")
         if plan is not None:
             plan = with_chapter_scene_delta(plan, chapter_for_position(plan, position), 1)
+        cited_ids = list(claim_ids) or self._citation(narration.strip(), claims, [])
         drafts.insert(position, SceneDraft(narration.strip(), caption.strip(), label.strip(),
-                                           image_prompt.strip(), list(claim_ids)))
+                                           image_prompt.strip(), cited_ids))
         return self._save(video, plan, drafts, snapshots, claims, expected_version, idempotency_key, digest,
                           [position])
 

@@ -125,3 +125,35 @@ def test_name_after_abbreviation_or_quote_is_checked():
 def test_letters_without_decomposition_match_the_source():
     assert check_narration("No palco, R\u00f8dh\u00e5d tocou", ["R\u00f8dh\u00e5d played the closing set"]) == []
     assert normalize("Stra\u00dfe \u0141\u00f3d\u017a \u00c6on") == "strasse lodz aeon"
+
+
+# ---- supporting_claim_ids: a citação da cena acompanha o texto editado -----------------------------------------
+from app.studio.domain.facts import supporting_claim_ids  # noqa: E402
+
+CLAIMS = [
+    ("c1", "Constantinopla caiu em 29 de maio de 1453 depois de um cerco de 53 dias."),
+    ("c2", "O sultão Mehmed II comandava cerca de 80 mil soldados otomanos."),
+    ("c3", "A cidade era defendida por aproximadamente 7 mil homens sob o imperador Constantino XI."),
+]
+
+
+def test_supporting_claims_follow_the_numbers_and_names_in_the_new_text():
+    assert supporting_claim_ids("O sultão Mehmed II comandava cerca de 80 mil soldados.", CLAIMS) == ["c2"]
+    assert supporting_claim_ids("Eram 80 mil atacantes contra 7 mil defensores.", CLAIMS) == ["c2", "c3"]
+
+
+def test_supporting_claims_are_empty_when_the_text_has_nothing_checkable():
+    assert supporting_claim_ids("A cidade era enorme e muito bonita.", CLAIMS) == []
+
+
+def test_supporting_claims_are_none_when_a_token_is_not_in_any_claim():
+    """Se algum número/nome não está em nenhum fato, não há citação completa: quem chama mantém a anterior."""
+    assert supporting_claim_ids("O cerco durou 987654 dias.", CLAIMS) is None
+
+
+def test_the_derived_claims_make_the_fact_check_pass():
+    text = "O sultão Mehmed II comandava cerca de 80 mil soldados."
+    ids = supporting_claim_ids(text, CLAIMS)
+    cited = [t for cid, t in CLAIMS if cid in ids]
+    assert check_narration(text, cited) == []
+    assert check_narration(text, [CLAIMS[0][1]]) != []  # com a citação antiga (c1) o fact-check reprovaria
