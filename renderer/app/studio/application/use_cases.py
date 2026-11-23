@@ -1,7 +1,7 @@
 """Casos de uso. Dependem das portas, nunca de adaptadores."""
 from dataclasses import dataclass
 
-from ..domain.contracts import Project, Video, VideoFormat, VideoStatus
+from ..domain.contracts import ProductionMode, Project, Video, VideoFormat, VideoStatus
 from ..domain.states import assert_transition
 from .editorial import Editorial
 from .media import Media
@@ -65,11 +65,12 @@ class CreateVideo:
         self.styles = styles
 
     def execute(self, project_id: str, topic: str, fmt: VideoFormat,
-                style_id: str | None = None) -> Video:
+                style_id: str | None = None,
+                production_mode: ProductionMode = ProductionMode.piloto) -> Video:
         if self.repo.get_project(project_id) is None:
             raise ProjectNotFound(project_id)
         if style_id is None:
-            return self.repo.create_video(project_id, topic, fmt)
+            return self.repo.create_video(project_id, topic, fmt, production_mode=production_mode)
         if self.styles is None:
             # sem biblioteca não há como provar que o estilo existe: falha fechado
             raise VisualStyleNotFound(style_id)
@@ -79,7 +80,7 @@ class CreateVideo:
             raise VisualStyleNotFound(style_id)
         if style.archived:
             raise VisualStyleArchived(f"visual style {style.name!r} is archived")
-        return self.repo.create_video(project_id, topic, fmt, style_id=style.id)
+        return self.repo.create_video(project_id, topic, fmt, style_id=style.id, production_mode=production_mode)
 
 
 class GetVideo:

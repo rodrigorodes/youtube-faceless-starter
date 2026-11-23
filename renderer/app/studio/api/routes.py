@@ -84,7 +84,8 @@ from ..application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUn
 from ..application.panel import cost_breakdown
 from ..application.ports import MediaCandidate, ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, ProductionMode, Scene, Script, Video, VideoFormat, VideoStatus
+from ..application.channel_creation import ChannelCreationPayload, IdempotencyConflict as ChannelIdempotencyConflict
 from ..domain.qa_report import QaReport
 from ..domain.analytics_learning import AnalyticsPeriod, DashboardQuery, ExperimentVariant
 from ..domain.insight import MetricWindow
@@ -137,6 +138,17 @@ def _required_idempotency_key(request: Request, field: str | None) -> str:
         raise HTTPException(422, str(exc)) from exc
 
 
+def _optional_idempotency_key(request: Request, field: str | None = None) -> str | None:
+    """Header ``Idempotency-Key`` (ou campo do corpo) opcional; se presente, exige forma canônica."""
+    key = request.headers.get("idempotency-key") or field
+    if not key:
+        return None
+    try:
+        return canonical_idempotency_key(key)
+    except InvalidIdempotencyKey as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 def _authenticate(request: Request) -> None:
     user = os.getenv("STUDIO_BROWSER_USER", "")
     password = os.getenv("STUDIO_BROWSER_PASSWORD", "")
@@ -171,11 +183,23 @@ class ProjectIn(BaseModel):
 
 
 class VideoIn(BaseModel):
-    project_id: str
+    project_id: str | None = None
     topic: str = Field(min_length=3, max_length=300)
     format: VideoFormat = VideoFormat.short
     # F02.T02/G15: estilo escolhido no Create; ausente = herda o do canal (comportamento antigo).
     style_id: str | None = Field(default=None, min_length=1, max_length=64)
+    production_mode: ProductionMode = ProductionMode.piloto
+
+
+class VideoOut(Video):
+    pass
+
+
+def _video_out(video: Video) -> dict:
+    data = video.model_dump()
+    if isinstance(data.get("production_mode"), ProductionMode):
+        data["production_mode"] = data["production_mode"].value
+    return data
 
 
 class SourceIn(BaseModel):
@@ -595,12 +619,16 @@ class ChannelProfileIn(BaseModel):
     cta: str = Field(default="", max_length=500)
     style_id: str | None = None
     youtube_channel_id: str | None = None
+    default_mode: ProductionMode = ProductionMode.piloto
+    default_format: VideoFormat = VideoFormat.short
     archived: bool = False
 
 
 class ChannelUpdateIn(BaseModel):
     expected_version: int = Field(ge=1)
-    changes: dict[str, object]
+    changes: dict[str, object] = Field(default_factory=dict)
+    default_mode: ProductionMode = ProductionMode.piloto
+    default_format: VideoFormat = VideoFormat.short
 
 
 class ChannelProfileOut(BaseModel):
@@ -620,10 +648,63 @@ class ChannelProfileOut(BaseModel):
     cta: str
     style_id: str | None = None
     youtube_channel_id: str | None = None
+    default_mode: ProductionMode = ProductionMode.piloto
+    default_format: VideoFormat = VideoFormat.short
     version: int
     archived: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class ProjectOut(BaseModel):
+    id: str
+    name: str
+    niche: str = ""
+    language: str = "pt-BR"
+    budget_usd_month: float = 15.0
+    config: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class ChannelBudgetOut(BaseModel):
+    project_id: str
+    hard_monthly_usd: float
+    soft_monthly_usd: float
+    hard_video_usd: float
+    soft_video_usd: float
+    economic_profile: str
+
+
+class ChannelTransactionalIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    niche: str = Field(default="", max_length=200)
+    language: str = Field(default="pt-BR", max_length=20)
+    strategy: str = Field(default="", max_length=500)
+    audience: str = Field(default="", max_length=500)
+    pillars: list[str] = Field(default_factory=list, max_length=20)
+    narrative: str = Field(default="", max_length=4000)
+    target_duration_s: int = Field(default=60, ge=1, le=36000)
+    visual_identity: str = Field(default="", max_length=2000)
+    voice: str = Field(default="", max_length=200)
+    audio: str = Field(default="", max_length=200)
+    thumbnail: str = Field(default="", max_length=2000)
+    cta: str = Field(default="", max_length=500)
+    style_id: str | None = None
+    youtube_channel_id: str | None = None
+    default_mode: ProductionMode = ProductionMode.piloto
+    default_format: VideoFormat = VideoFormat.short
+    hard_monthly_usd: float = Field(default=100.0, ge=0)
+    soft_monthly_usd: float | None = Field(default=None, ge=0)
+    hard_video_usd: float = Field(default=10.0, ge=0)
+    soft_video_usd: float | None = Field(default=None, ge=0)
+    economic_profile: EconomicProfile = EconomicProfile.BALANCED
+    provider_config: dict[str, str] | None = None
+
+
+class ChannelTransactionalOut(BaseModel):
+    project: ProjectOut
+    profile: ChannelProfileOut
+    budget: ChannelBudgetOut
 
 
 class VisualStyleIn(BaseModel):
@@ -849,6 +930,8 @@ def _channel_out(profile) -> dict:
             "voice": profile.voice, "audio": profile.audio, "thumbnail": profile.thumbnail, "cta": profile.cta,
             "style_id": profile.style_id,
             "youtube_channel_id": profile.youtube_channel_id,
+            "default_mode": profile.default_mode,
+            "default_format": profile.default_format,
             "version": profile.version, "archived": profile.archived,
             "created_at": profile.created_at, "updated_at": profile.updated_at}
 
@@ -1207,10 +1290,19 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return {"stored": stored}
         return run(go)
 
-    @router.post("/videos", status_code=201, response_model=Video)
+    @router.post("/videos", status_code=201, response_model=VideoOut)
     def create_video(body: VideoIn):
+        if not body.project_id:
+            raise HTTPException(422, "project_id is required")
         return run(lambda uc: uc.create_video.execute(check_id(body.project_id), body.topic, body.format,
-                                                      body.style_id))
+                                                      body.style_id,
+                                                      production_mode=body.production_mode))
+
+    @router.post("/projects/{project_id}/videos", status_code=201, response_model=VideoOut)
+    def create_project_video(project_id: str, body: VideoIn):
+        return run(lambda uc: uc.create_video.execute(check_id(project_id), body.topic, body.format,
+                                                      body.style_id,
+                                                      production_mode=body.production_mode))
 
     @router.get("/videos/{video_id}", response_model=Video)
     def get_video(video_id: str):
@@ -2376,11 +2468,67 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.patch("/channels/{profile_id}", response_model=ChannelProfileOut)
     def update_channel(profile_id: str, body: ChannelUpdateIn):
         def go(uc):
+            changes = dict(body.changes)
+            if "default_mode" not in changes and "default_mode" in body.model_fields_set:
+                changes["default_mode"] = body.default_mode.value if isinstance(body.default_mode, ProductionMode) else str(body.default_mode)
+            if "default_format" not in changes and "default_format" in body.model_fields_set:
+                changes["default_format"] = body.default_format.value if isinstance(body.default_format, VideoFormat) else str(body.default_format)
             profile = _need(uc, "update_channel_profile", "channel services unavailable").execute(
-                check_id(profile_id), body.changes, body.expected_version)
+                check_id(profile_id), changes, body.expected_version)
             if profile is None:
                 raise HTTPException(404, "channel profile not found")
             return _channel_out(profile)
+        return run(go)
+
+    @router.post("/channels/transactional", status_code=201, response_model=ChannelTransactionalOut)
+    def create_channel_transactional(request: Request, body: ChannelTransactionalIn):
+        key = _optional_idempotency_key(request)
+
+        def go(uc):
+            payload = ChannelCreationPayload(
+                name=body.name,
+                niche=body.niche,
+                language=body.language,
+                strategy=body.strategy,
+                audience=body.audience,
+                pillars=tuple(body.pillars),
+                narrative=body.narrative,
+                target_duration_s=body.target_duration_s,
+                visual_identity=body.visual_identity,
+                voice=body.voice,
+                audio=body.audio,
+                thumbnail=body.thumbnail,
+                cta=body.cta,
+                style_id=body.style_id,
+                youtube_channel_id=body.youtube_channel_id,
+                default_mode=body.default_mode,
+                default_format=body.default_format,
+                hard_monthly_usd=body.hard_monthly_usd,
+                soft_monthly_usd=body.soft_monthly_usd,
+                hard_video_usd=body.hard_video_usd,
+                soft_video_usd=body.soft_video_usd,
+                economic_profile=body.economic_profile,
+                provider_config=body.provider_config,
+            )
+            try:
+                res = _need(uc, "create_channel_transactional", "channel services unavailable").execute(
+                    payload, idempotency_key=key
+                )
+            except ChannelIdempotencyConflict as exc:
+                raise HTTPException(409, detail="Idempotency conflict") from exc
+            return {
+                "project": res.project,
+                "profile": _channel_out(res.profile),
+                "budget": {
+                    "project_id": res.budget.project_id,
+                    "hard_monthly_usd": float(res.budget.hard_monthly_usd),
+                    "soft_monthly_usd": float(res.budget.soft_monthly_usd),
+                    "hard_video_usd": float(res.budget.hard_video_usd),
+                    "soft_video_usd": float(res.budget.soft_video_usd),
+                    "economic_profile": res.budget.economic_profile.value,
+                },
+            }
+
         return run(go)
 
     # -- estilos: biblioteca compartilhada (VS-05a) ---------------------------

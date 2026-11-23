@@ -27,7 +27,7 @@ from ..domain.youtube_identity import ChannelAuthorization, GoogleAccount, OAuth
 from ..domain.saas import ByokKey, KeyAuditAction, MembershipStatus, Role
 from ..domain.youtube_oauth import OAuthIdentity, OAuthTokenResponse
 from ..domain.publication_policy import PublicationIntentEvidence
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, PublicationStatus, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, JobStatus, ProductionMode, PublicationStatus, RenderJob, Project, Scene, Script, SourceSnapshot, UsageEntry, Video, VideoFormat, VideoStatus
 from ..domain.effective_config import EffectiveConfig
 from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxEvent, ProductionRun, ProductionStage,
                                      RunCreation, RunOperation, RunState, RunTransition, StageClaim, StageExecution,
@@ -156,7 +156,8 @@ class VideoRepository(Protocol):
     def get_project(self, project_id: str) -> Project | None: ...
     def set_project_config(self, project_id: str, config: dict[str, str]) -> Project | None: ...
     def create_video(self, project_id: str, topic: str, fmt: VideoFormat,
-                     style_id: str | None = None) -> Video: ...
+                     style_id: str | None = None,
+                     production_mode: ProductionMode = ProductionMode.piloto) -> Video: ...
     def get_video(self, video_id: str) -> Video | None: ...
     def set_video_style(self, video_id: str, style_id: str | None) -> "Video | None":
         """VS-02b: fixa (ou limpa) o estilo que sobrepõe o do canal; None se o vídeo não existe."""
