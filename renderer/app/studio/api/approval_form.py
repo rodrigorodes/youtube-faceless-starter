@@ -112,7 +112,7 @@ def render_approval_decision(p: Preview, *, base: str | None = None, bare: bool 
                     '<span class="micro">(obrigatório e fica registrado)</span></label><textarea id="override_reason" rows="2" maxlength="500"></textarea></div>')
     frame_open = "" if bare else "<div class='card painel' style='margin-top: 18px;'><h3>Decisão de Aprovação</h3>"
     frame_close = "" if bare else "</div>"
-    return (f"{frame_open}<form id=\"review\" data-base=\"{e(base)}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\" onsubmit=\"return false\">"
+    return (f"{frame_open}<form id=\"review\" data-base=\"{e(base)}\" data-output-asset-id=\"{e(p.output_asset_id or '')}\">"
             f'<div class="campo"><label for="title">Título <span class="micro">(até 100 caracteres, sem &lt; ou &gt;)</span></label>'
             f'<input id="title" type="text" maxlength="100" value="{e(p.default_title)}"></div>'
             f'<div class="campo"><label for="description">Descrição <span class="micro">(créditos, fontes e aviso de IA são acrescentados na publicação)</span></label>'

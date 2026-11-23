@@ -35,3 +35,16 @@ def test_every_button_class_used_by_the_form_exists_in_the_v3_theme():
         classes = re.search(r'class="([^"]+)"', tag).group(1).split()
         assert any(f".{name}" in V3_CSS for name in classes if name != "btn"), tag
     assert ".btn-danger" in V3_CSS and ".acoes" in V3_CSS
+
+
+def test_form_has_no_inline_event_handler_blocked_by_the_csp():
+    assert "onsubmit" not in _form()  # o envio já é interceptado por addEventListener no APPROVAL_JS
+
+
+def test_workspace_csp_allows_the_players_own_media():
+    from test_video_workspace import _view
+
+    from app.studio.api.panel_video_workspace import render_video_workspace
+    _, headers = render_video_workspace(_view(), "qualidade")
+    csp = headers["Content-Security-Policy"]
+    assert "media-src 'self'" in csp and "default-src 'none'" in csp

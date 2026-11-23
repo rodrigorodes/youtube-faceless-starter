@@ -2233,7 +2233,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
 {_workspace_header(view, video_id, title, channel_name=channel_name, style_view=style_view,
                    channel_voice=channel_voice)}
         {_video_area_nav(video_id, active_area, dots)}
-        {_progress_slot(view, run_stages) if active_area in ("cenas", "composicao") else _progress_card(view, run_stages)}
+        {_progress_slot(view, run_stages)}
         {_content(view, active_area, style_view=style_view, script_view=script_view, video_id=video_id,
                   composition_view=composition_view,
                   preview=preview if active_area in ("publicacao", "qualidade") else None,
@@ -2244,7 +2244,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"
     # O JS do formulário de aprovação só entra na área Publicação (W5.1); o resto não mudou.
     page_js = (PAGE_JS + (STORYBOARD_JS if active_area == "cenas" else "")
-               + (RUN_JS if active_area in ("cenas", "composicao") else "")
+               + (RUN_JS if active_area != "producao" else "")  # o cartão acompanha a execução em todas as abas
                + (PUBLICACAO_JS + approval_form.APPROVAL_JS if active_area == "publicacao" else ""))
     html = shell_v3.render_document(
         title="Faceless Studio — Vídeo",
@@ -2257,4 +2257,8 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
         cost_note="",
         page_js=page_js,
     )
-    return WorkspaceResult((html, legacy._headers(nonce)))
+    headers = legacy._headers(nonce)
+    # O player da aba Qualidade (vídeo + legendas) é do mesmo servidor; sem `media-src` o default-src 'none' o bloqueava.
+    headers["Content-Security-Policy"] = headers["Content-Security-Policy"].replace(
+        "img-src", "media-src 'self'; img-src", 1)
+    return WorkspaceResult((html, headers))

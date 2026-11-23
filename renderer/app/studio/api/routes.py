@@ -1955,10 +1955,11 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                                     if x.asset is not None}
                 except Exception:
                     scene_assets = None
-            # VE-08.6: a execução viva alimenta o cartão de progresso com as etapas reais (não com um chute).
+            # VE-08.6: a execução viva alimenta o cartão de progresso com as etapas reais (não com um chute),
+            # em todas as abas: sem isso o cartão caía nas etapas registradas (ex.: só "1/1 Render").
             run_stages = None
             live = detail.latest_run
-            if (area in ("cenas", "composicao") and live is not None
+            if (live is not None
                     and live.state in ("CREATED", "RUNNING", "WAITING_HUMAN", "PAUSED")
                     and uc.production is not None):
                 try:

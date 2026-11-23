@@ -165,3 +165,43 @@ def test_source_form_script_starts_the_production_when_autostart_is_armed():
 def test_new_video_pilot_without_script_starts_the_production_without_asking_for_a_source():
     assert "'/fontes'" not in NEW_VIDEO_JS and "ainda n\\u00e3o pesquisa" not in NEW_VIDEO_JS
     assert "Promise.resolve(!scriptText && payload.production_mode !== 'diretor')" in NEW_VIDEO_JS
+
+
+# ---- Cartão "Produção em andamento": o mesmo em todas as abas, com as etapas reais da execução ----
+
+NOVE = [("research", "SUCCEEDED"), ("script", "SUCCEEDED"), ("factcheck", "SUCCEEDED"), ("storyboard", "SUCCEEDED"),
+        ("assets", "SUCCEEDED"), ("render", "SUCCEEDED"), ("qa", "SUCCEEDED"), ("approval", "WAITING_HUMAN"),
+        ("publish", "PENDING")]
+
+
+def _com_run_viva():
+    import dataclasses
+
+    from app.studio.application.panel import LatestRun
+    from app.studio.domain.contracts import VideoStatus
+    from app.studio.application.panel import Stage
+    view = _view(status=VideoStatus.AWAITING_APPROVAL, stage=Stage.AWAITING_APPROVAL,
+                 latest_run=LatestRun(run_id="a" * 32, state="WAITING_HUMAN"))
+    return dataclasses.replace(view, steps=[SimpleStep("render", "SUCCEEDED")])
+
+
+class SimpleStep:
+    def __init__(self, step, status):
+        self.step, self.status = step, status
+
+
+def test_progress_card_shows_the_real_run_stages_in_every_area():
+    from app.studio.api.panel_video_workspace import render_video_workspace
+    for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
+        html = render_video_workspace(_com_run_viva(), area, run_stages=NOVE)[0]
+        card = re.search(r'<div class="card" id="progress-card".*?data-f="pills">(.*?)</div></div>', html, re.S)
+        assert card is not None, area
+        assert "7/9 etapas" in html and "1/1 etapas" not in html, area
+        assert card.group(1).count("<span") == 9, area
+
+
+def test_every_area_keeps_the_progress_card_following_the_run():
+    from app.studio.api.panel_video_workspace import render_video_workspace
+    for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
+        html = render_video_workspace(_com_run_viva(), area, run_stages=NOVE)[0]
+        assert 'id="progress-slot"' in html and "function poll(runId)" in html, area  # o JS que acompanha a execução
