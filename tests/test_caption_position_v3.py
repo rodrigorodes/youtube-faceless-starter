@@ -89,3 +89,121 @@ def test_caption_layout_defaults_without_position():
 
     lay_style_empty = caption_layout(VideoFormat.short, ResolvedStyle())
     assert lay_style_empty["caption_bottom"] == _LAYOUT[VideoFormat.short]["caption_bottom"]
+
+
+def test_caption_font_and_style_kind_validation():
+    patch = normalize_style_patch({"caption": {"font_family": "inter", "style_kind": "simples"}})
+    assert patch["caption"]["font_family"] == "inter"
+    assert patch["caption"]["style_kind"] == "simple"
+
+    patch_caixa = normalize_style_patch({"caption": {"style_kind": "caixa"}})
+    assert patch_caixa["caption"]["style_kind"] == "box"
+
+    patch_destaque = normalize_style_patch({"caption": {"style_kind": "destaque"}})
+    assert patch_destaque["caption"]["style_kind"] == "word_highlight"
+
+    for fam in ("dejavu", "roboto", "georgia", "inter"):
+        p = normalize_style_patch({"caption": {"font_family": fam}})
+        assert p["caption"]["font_family"] == fam
+
+    for sk in ("box", "simple", "word_highlight"):
+        p = normalize_style_patch({"caption": {"style_kind": sk}})
+        assert p["caption"]["style_kind"] == sk
+
+    with pytest.raises(StylePatchInvalid):
+        normalize_style_patch({"caption": {"font_family": "comic-sans"}})
+
+    with pytest.raises(StylePatchInvalid):
+        normalize_style_patch({"caption": {"font_family": 123}})
+
+    with pytest.raises(StylePatchInvalid):
+        normalize_style_patch({"caption": {"style_kind": "neon"}})
+
+    with pytest.raises(StylePatchInvalid):
+        normalize_style_patch({"caption": {"style_kind": 123}})
+
+
+def test_clean_params_caption_font_and_style_kind():
+    params = clean_params({"caption": {"font_family": "roboto", "style_kind": "caixa"}})
+    assert params["caption"] == {"font_family": "roboto", "style_kind": "box"}
+
+    params_dest = clean_params({"caption": {"style_kind": "destaque"}})
+    assert params_dest["caption"] == {"style_kind": "word_highlight"}
+
+    params_simp = clean_params({"caption": {"style_kind": "simples"}})
+    assert params_simp["caption"] == {"style_kind": "simple"}
+
+    with pytest.raises(VisualStyleParamsInvalid):
+        clean_params({"caption": {"font_family": "helvetica"}})
+
+    with pytest.raises(VisualStyleParamsInvalid):
+        clean_params({"caption": {"style_kind": "glow"}})
+
+    with pytest.raises(VisualStyleParamsInvalid):
+        clean_params({"caption": {"font_family": 999}})
+
+    with pytest.raises(VisualStyleParamsInvalid):
+        clean_params({"caption": {"style_kind": 999}})
+
+
+def test_caption_layout_passes_font_family_and_style_kind():
+    style = ResolvedStyle(
+        id="s1",
+        name="Styled",
+        version=1,
+        caption={"font_family": "georgia", "style_kind": "simple"},
+    )
+    lay = caption_layout(VideoFormat.short, style)
+    assert lay.get("font_family") == "georgia"
+    assert lay.get("style_kind") == "simple"
+
+
+def test_caption_overlay_simple_skips_box(tmp_path):
+    from PIL import Image
+    from app.studio.adapters.render_plan_ffmpeg import caption_overlay
+
+    dst_box = tmp_path / "caption_box.png"
+    dst_simple = tmp_path / "caption_simple.png"
+
+    style_box = ResolvedStyle(id="s_box", name="Box", version=1, caption={"style_kind": "box"})
+    style_simple = ResolvedStyle(id="s_sim", name="Simple", version=1, caption={"style_kind": "simple"})
+
+    text = "Legenda teste simples"
+    caption_overlay(VideoFormat.short, text, dst_box, style_box)
+    caption_overlay(VideoFormat.short, text, dst_simple, style_simple)
+
+    assert dst_box.exists()
+    assert dst_simple.exists()
+
+    img_box = Image.open(dst_box)
+    img_simple = Image.open(dst_simple)
+
+    # In box mode, pixel at (75, 1500) has background box color (alpha > 0)
+    assert img_box.getpixel((75, 1500))[3] > 0
+
+    # In simple mode, pixel at (75, 1500) has no background box (alpha == 0, transparent)
+    assert img_simple.getpixel((75, 1500)) == (0, 0, 0, 0)
+
+
+def test_resolve_caption_font_returns_font_and_falls_back():
+    from unittest.mock import MagicMock, patch
+    from PIL import ImageFont
+    from app.studio.adapters.render_plan_ffmpeg import FONT_BOLD, resolve_caption_font
+
+    font = resolve_caption_font("dejavu", 40)
+    assert font is not None
+    assert isinstance(font, (ImageFont.FreeTypeFont, ImageFont.ImageFont))
+
+    font_none = resolve_caption_font(None, 40)
+    assert font_none is not None
+
+    font_unknown = resolve_caption_font("unknown_font_family", 40)
+    assert font_unknown is not None
+
+    with patch("PIL.ImageFont.truetype") as mock_truetype:
+        fake_font = MagicMock()
+        mock_truetype.return_value = fake_font
+        result = resolve_caption_font("roboto", 48)
+        assert result == fake_font
+        assert mock_truetype.called
+

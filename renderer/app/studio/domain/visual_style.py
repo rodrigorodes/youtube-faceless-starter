@@ -217,10 +217,22 @@ CAPTION_POSITION_ALIASES: Mapping[str, str] = MappingProxyType({
     "base": "bottom",
 })
 
+CAPTION_FONT_FAMILIES: tuple[str, ...] = ("dejavu", "roboto", "georgia", "inter")
+
+CAPTION_STYLE_KINDS: tuple[str, ...] = ("box", "simple", "word_highlight")
+CAPTION_STYLE_KIND_ALIASES: Mapping[str, str] = MappingProxyType({
+    "box": "box",
+    "caixa": "box",
+    "simple": "simple",
+    "simples": "simple",
+    "word_highlight": "word_highlight",
+    "destaque": "word_highlight",
+})
+
 
 def _clean_caption(value: object) -> dict:
     caption = _object(value, "caption")
-    _unknown("params.caption", caption, ("font_size", "bottom", "position"))
+    _unknown("params.caption", caption, ("font_size", "bottom", "position", "font_family", "style_kind"))
     out: dict[str, Any] = {}
     if "font_size" in caption:
         out["font_size"] = _int(caption["font_size"], "params.caption.font_size", minimum=8, maximum=400)
@@ -236,8 +248,28 @@ def _clean_caption(value: object) -> dict:
                 f"params.caption.position must be one of {sorted(CAPTION_POSITION_ALIASES.keys())}"
             )
         out["position"] = CAPTION_POSITION_ALIASES[cleaned_pos]
+    if "font_family" in caption:
+        fam = caption["font_family"]
+        if not isinstance(fam, str):
+            raise VisualStyleParamsInvalid("params.caption.font_family must be a string")
+        cleaned_fam = fam.strip().lower()
+        if cleaned_fam not in CAPTION_FONT_FAMILIES:
+            raise VisualStyleParamsInvalid(
+                f"params.caption.font_family must be one of {sorted(CAPTION_FONT_FAMILIES)}"
+            )
+        out["font_family"] = cleaned_fam
+    if "style_kind" in caption:
+        sk = caption["style_kind"]
+        if not isinstance(sk, str):
+            raise VisualStyleParamsInvalid("params.caption.style_kind must be a string")
+        cleaned_sk = sk.strip().lower()
+        if cleaned_sk not in CAPTION_STYLE_KIND_ALIASES:
+            raise VisualStyleParamsInvalid(
+                f"params.caption.style_kind must be one of {sorted(CAPTION_STYLE_KIND_ALIASES.keys())}"
+            )
+        out["style_kind"] = CAPTION_STYLE_KIND_ALIASES[cleaned_sk]
     if not out:
-        raise VisualStyleParamsInvalid("params.caption needs at least one of font_size/bottom/position")
+        raise VisualStyleParamsInvalid("params.caption needs at least one of font_size/bottom/position/font_family/style_kind")
     return out
 
 
@@ -310,7 +342,7 @@ PATCH_GROUP_FIELDS: Mapping[str, tuple[str, ...] | None] = MappingProxyType({
     "motion": (),
     "music": ("bpm", "seed"),
     "transition": ("kind", "duration_ticks"),
-    "caption": ("font_size", "bottom", "position"),
+    "caption": ("font_size", "bottom", "position", "font_family", "style_kind"),
     "palette": ("caption_text", "caption_box", "accent"),
     "voice": ("model",),
     "extra": None,
@@ -369,6 +401,24 @@ def _patch_field(group: str, key: str, value: object, where: str) -> Any:
                     f"{path} must be one of {sorted(CAPTION_POSITION_ALIASES.keys())}"
                 )
             return CAPTION_POSITION_ALIASES[cleaned_pos]
+        if key == "font_family":
+            if not isinstance(value, str):
+                raise StylePatchInvalid(f"{path} must be a string")
+            cleaned_fam = value.strip().lower()
+            if cleaned_fam not in CAPTION_FONT_FAMILIES:
+                raise StylePatchInvalid(
+                    f"{path} must be one of {sorted(CAPTION_FONT_FAMILIES)}"
+                )
+            return cleaned_fam
+        if key == "style_kind":
+            if not isinstance(value, str):
+                raise StylePatchInvalid(f"{path} must be a string")
+            cleaned_sk = value.strip().lower()
+            if cleaned_sk not in CAPTION_STYLE_KIND_ALIASES:
+                raise StylePatchInvalid(
+                    f"{path} must be one of {sorted(CAPTION_STYLE_KIND_ALIASES.keys())}"
+                )
+            return CAPTION_STYLE_KIND_ALIASES[cleaned_sk]
     if group == "palette":
         if not isinstance(value, str) or not _HEX_COLOR.match(value):
             raise StylePatchInvalid(

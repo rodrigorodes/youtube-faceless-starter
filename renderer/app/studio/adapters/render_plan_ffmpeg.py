@@ -37,6 +37,7 @@ import uuid
 import wave
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -86,6 +87,60 @@ def _rgba(color: str) -> tuple[int, int, int, int]:
     return tuple(int(body[i:i + 2], 16) for i in (0, 2, 4)) + (int(alpha, 16) if alpha else 255,)
 
 
+_FONT_FAMILY_PATHS: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "dejavu": (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "DejaVuSans-Bold.ttf",
+        "DejaVuSans",
+    ),
+    "roboto": (
+        "/usr/share/fonts/truetype/roboto/unhinted/Roboto-Bold.ttf",
+        "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf",
+        "/usr/share/fonts/truetype/roboto/Roboto-Medium.ttf",
+        "/Library/Fonts/Roboto-Bold.ttf",
+        "Roboto-Bold.ttf",
+        "Roboto-Bold",
+        "Roboto",
+    ),
+    "georgia": (
+        "/usr/share/fonts/truetype/msttcorefonts/georgiab.ttf",
+        "/usr/share/fonts/truetype/msttcorefonts/Georgia_Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Georgia.ttf",
+        "Georgia Bold",
+        "Georgia",
+    ),
+    "inter": (
+        "/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
+        "/usr/share/fonts/opentype/inter/Inter-Bold.otf",
+        "/Library/Fonts/Inter-Bold.ttf",
+        "Inter-Bold.ttf",
+        "Inter-Bold",
+        "Inter",
+    ),
+})
+
+
+def _font_safe(path: str, size: int) -> ImageFont.FreeTypeFont:
+    try:
+        return ImageFont.truetype(path, size)
+    except (OSError, Exception):
+        return ImageFont.load_default(size=size)
+
+
+def resolve_caption_font(family: str | None, size: int) -> ImageFont.FreeTypeFont:
+    """Carrega a fonte tipográfica da legenda com fallback gracioso para FONT_BOLD."""
+    if family:
+        candidates = _FONT_FAMILY_PATHS.get(str(family).strip().lower(), ())
+        for candidate in candidates:
+            try:
+                return ImageFont.truetype(candidate, size)
+            except (OSError, Exception):
+                continue
+    return _font_safe(FONT_BOLD, size)
+
+
 def caption_layout(fmt: VideoFormat, style: ResolvedStyle | None = None) -> dict:
     """Geometria da legenda: o ``_LAYOUT`` atual como **default**, sobreposto pelo estilo.
 
@@ -113,6 +168,10 @@ def caption_layout(fmt: VideoFormat, style: ResolvedStyle | None = None) -> dict
         layout["caption_bottom"] = caption["bottom"]
     if "font_size" in caption:
         layout["caption_font"] = caption["font_size"]
+    if "font_family" in caption:
+        layout["font_family"] = caption["font_family"]
+    if "style_kind" in caption:
+        layout["style_kind"] = caption["style_kind"]
     return layout
 
 
@@ -141,9 +200,9 @@ def static_overlay(fmt: VideoFormat, label: str, disclosure: str, dst: Path,
     colors = overlay_colors(style)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.text((60, 96), disclosure, font=ImageFont.truetype(FONT, 30), fill=(255, 255, 255, 190))
+    draw.text((60, 96), disclosure, font=_font_safe(FONT, 30), fill=(255, 255, 255, 190))
     if label:
-        badge = ImageFont.truetype(FONT_BOLD, 46)
+        badge = _font_safe(FONT_BOLD, 46)
         box = draw.textbbox((0, 0), label, font=badge)
         bw, bh = box[2] - box[0], box[3] - box[1]
         draw.rounded_rectangle((60, 160, 60 + bw + 56, 160 + bh + 40), radius=26, fill=colors["accent"])
@@ -156,19 +215,27 @@ def caption_overlay(fmt: VideoFormat, text: str, dst: Path, style: ResolvedStyle
     w, h = SIZE[fmt]
     lay = caption_layout(fmt, style)
     colors = overlay_colors(style)
+    style_kind = lay.get("style_kind", "box")
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_BOLD, lay["caption_font"])
+    font = resolve_caption_font(lay.get("font_family"), lay["caption_font"])
     lines = _wrap(draw, text, font, w - 2 * lay["caption_side"])[:4]
     height = len(lines) * lay["line_h"] + 64
     bottom = lay["caption_bottom"]
     top = bottom - height
-    draw.rounded_rectangle((lay["box_side"], top, w - lay["box_side"], bottom), radius=36, fill=colors["caption_box"])
     y = top + 32
-    for line in lines:
-        draw.text((lay["caption_side"] + 2, y + 2), line, font=font, fill=(0, 0, 0, 200))
-        draw.text((lay["caption_side"], y), line, font=font, fill=colors["caption_text"])
-        y += lay["line_h"]
+    if style_kind == "box":
+        draw.rounded_rectangle((lay["box_side"], top, w - lay["box_side"], bottom), radius=36, fill=colors["caption_box"])
+        for line in lines:
+            draw.text((lay["caption_side"] + 2, y + 2), line, font=font, fill=(0, 0, 0, 200))
+            draw.text((lay["caption_side"], y), line, font=font, fill=colors["caption_text"])
+            y += lay["line_h"]
+    else:
+        for line in lines:
+            for dx, dy in ((-2, -2), (-2, 2), (2, -2), (2, 2), (0, 2), (0, -2), (2, 0), (-2, 0), (2, 2)):
+                draw.text((lay["caption_side"] + dx, y + dy), line, font=font, fill=(0, 0, 0, 220))
+            draw.text((lay["caption_side"], y), line, font=font, fill=colors["caption_text"])
+            y += lay["line_h"]
     img.save(dst)
 
 
@@ -177,7 +244,7 @@ def text_card(fmt: VideoFormat, text: str, dst: Path) -> None:
     w, h = SIZE[fmt]
     img = Image.new("RGB", (w, h), (16, 18, 32))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_BOLD, 140 if fmt == VideoFormat.short else 120)
+    font = _font_safe(FONT_BOLD, 140 if fmt == VideoFormat.short else 120)
     lines = _wrap(draw, text, font, int(w * 0.8))[:6]
     line_h = font.size + 24
     y = h // 2 - len(lines) * line_h // 2
