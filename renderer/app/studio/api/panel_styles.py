@@ -56,27 +56,27 @@ STYLES_CSS = """
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 0;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--line2);
 }
 .style-row:first-child { border-top: 0; }
 .item-title { font-weight: 600; }
-.item-sub { font-size: 0.78rem; color: var(--text-dim); }
-.item-sub.unused { color: var(--text-muted); font-style: italic; }
-.usage { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.item-sub { font-size: 0.78rem; color: var(--dim); }
+.item-sub.unused { color: var(--muted); font-style: italic; }
+.usage { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1.1rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
-.field .hint { color: var(--text-dim); font-size: 0.72rem; line-height: 1.4; }
+.field .hint { color: var(--dim); font-size: 0.72rem; line-height: 1.4; }
 .input {
   width: 100%;
   padding: 0.5rem 0.6rem;
-  background: var(--input-bg);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--txt);
+  border: 1px solid var(--line);
   border-radius: 10px;
   font: inherit;
   font-size: max(1rem, 0.9em);
 }
-.input:focus-visible { outline: 3px solid var(--primary-focus); outline-offset: 1px; border-color: var(--primary); }
+.input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 .input:user-invalid { border-color: var(--bad); }
 textarea.input { min-height: 5rem; resize: vertical; }
 fieldset.motion-field { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
@@ -87,7 +87,7 @@ fieldset.motion-field legend { font-weight: 600; font-size: 0.85rem; padding: 0;
 .style-disclosure > summary { cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; }
 .style-disclosure > summary::-webkit-details-marker { display: none; }
 .style-form { margin-top: 0.75rem; }
-.form-feedback { font-size: 0.8rem; color: var(--text-muted); }
+.form-feedback { font-size: 0.8rem; color: var(--muted); }
 .empty-cta { margin-top: 0.9rem; }
 @media (max-width: 820px) {
   .style-row { grid-template-columns: minmax(0, 1fr); }

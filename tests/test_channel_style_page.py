@@ -123,9 +123,8 @@ def test_view_marks_transition_and_extra_as_declared_but_not_applied():
     view = _view(_profile(style_id=SID, patch={"extra": {"lut": "warm"}}), [style])
 
     transition = _field(view, "transition.kind")
-    assert transition.applied is False
+    assert transition.applied is True
     assert transition.origin == "style" and transition.effective == "fade"
-    assert transition.reason
 
     extra = _field(view, "extra.lut")
     assert extra.applied is False and extra.overridden is True

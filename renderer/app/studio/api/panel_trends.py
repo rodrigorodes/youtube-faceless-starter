@@ -246,8 +246,8 @@ def _create_video_url(project_id: str | None, topic: str) -> str:
 
 def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
     region = panel_home._REGIOES.get(trend.region or "", trend.region or "Não informada")
-    pillar = f'<span class="chip-pilar">Pilar: {e(trend.category_name)}</span>' if trend.category_name else ""
-    stale = '<span class="selo">Desatualizada</span>' if trend.stale else ""
+    pillar = f'<span class="pill" style="margin-left:6px">{e(trend.category_name)}</span>' if trend.category_name else ""
+    stale = '<span class="pill bad" style="margin-left:6px">Desatualizada</span>' if trend.stale else ""
     if trend.video_url:
         label = f"youtube.com/watch?v={trend.video_id}" if trend.video_id else trend.video_url
         base = (f'<a href="{e(trend.video_url, quote=True)}" target="_blank" rel="noopener noreferrer">{e(label)}'
@@ -261,16 +261,19 @@ def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
         ("Publicado", e(trend.published_text or "Não informado")),
         ("Vídeo base", base),
     )
-    items = "".join(f"<li><span>{k}</span><span>{v}</span></li>" for k, v in rows)
+    items = "".join(f"<li style='display:flex;justify-content:space-between;padding:2px 0;font-size:12px;color:var(--muted)'><span>{k}</span><span>{v}</span></li>" for k, v in rows)
     reg_val = trend.region or "UNKNOWN"
     cat_val = trend.category_id or ""
     create_href = _create_video_url(project_id, trend.topic)
     return f"""<article class="cartao-tendencia" data-regiao="{e(reg_val)}" data-pilar="{e(cat_val)}">
-            <div class="pilha"><span class="origem">{e(panel_home._origin(trend))}</span>{pillar}{stale}</div>
-            <h3>{e(trend.topic)}</h3>
-            <ul class="evidencias">{items}</ul>
-            <div class="pilha">
-              <a class="btn btn-primario" href="{e(create_href, quote=True)}" data-usar-tendencia="{e(trend.topic, quote=True)}">Criar vídeo deste tema</a>
+            <div class="between" style="margin-bottom:8px">
+              <span class="pill accent">{e(panel_home._origin(trend))}</span>
+              <div>{pillar}{stale}</div>
+            </div>
+            <h3 style="margin:0 0 8px;font-size:15px">{e(trend.topic)}</h3>
+            <ul class="evidencias" style="list-style:none;padding:0;margin:0 0 12px">{items}</ul>
+            <div style="margin-top:auto">
+              <a class="btn small primary" href="{e(create_href, quote=True)}" data-usar-tendencia="{e(trend.topic, quote=True)}">Criar vídeo deste tema</a>
             </div>
           </article>"""
 

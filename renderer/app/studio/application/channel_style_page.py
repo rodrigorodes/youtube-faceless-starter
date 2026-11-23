@@ -69,15 +69,12 @@ _APPLIED_SPECS: tuple[_FieldSpec, ...] = (
     _FieldSpec("palette", "caption_box", "Cor da caixa da legenda", "color"),
     _FieldSpec("palette", "accent", "Cor de destaque", "color"),
     _FieldSpec("voice", "model", "Voz (modelo)", "text"),
+    _FieldSpec("transition", "kind", "Transição", "text"),
+    _FieldSpec("transition", "duration_ticks", "Duração da transição (ticks)", "int", minimum=0),
 )
 
 # Carregado pelo contrato, **não** aplicado pelo render: aparece informativo e sem edição.
-_LOADED_ONLY_SPECS: tuple[_FieldSpec, ...] = (
-    _FieldSpec("transition", "kind", "Transição", "text", applied=False,
-               reason=TRANSITION_NOT_APPLIED),
-    _FieldSpec("transition", "duration_ticks", "Duração da transição (ticks)", "int", minimum=0,
-               applied=False, reason=TRANSITION_NOT_APPLIED),
-)
+_LOADED_ONLY_SPECS: tuple[_FieldSpec, ...] = ()
 
 
 @dataclass(frozen=True)

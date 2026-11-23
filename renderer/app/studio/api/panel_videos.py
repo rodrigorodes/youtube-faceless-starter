@@ -77,16 +77,17 @@ def _situacao_key(stage: Stage) -> str:
 def video_card(video: VideoItem) -> str:
     label, css, step = panel_home._SITUACAO.get(video.stage, (video.stage.value, "parado", ""))
     title = video.title or video.topic
-    dot = f"situacao {css}".strip()
     sit_key = _situacao_key(video.stage)
+    pill_cls = "warn" if "aprovação" in label.lower() or "esperando" in label.lower() else ("accent" if "rascunho" in label.lower() or "roteiro" in label.lower() else ("bad" if "falha" in label.lower() else "ok"))
     return f"""<article class="cartao-projeto" data-tema="{e(title.lower(), quote=True)}" data-situacao="{e(sit_key)}">
-            <a href="/studio/panel/videos/{e(video.id, quote=True)}" aria-label="Abrir o vídeo {e(title)}">
-              <div class="miniatura"><b>{e(panel_home._format_label(video))}</b></div>
-              <div class="cartao-corpo">
-                <h3>{e(title)}</h3>
-                <p class="linha-meta"><span class="{dot}"><i aria-hidden="true"></i>{e(label)}</span></p>
-                <p class="etapa-atual">{e(step)}</p>
+            <a href="/studio/panel/videos/{e(video.id, quote=True)}" aria-label="Abrir o vídeo {e(title)}" style="text-decoration:none;color:inherit;display:block">
+              <div class="between" style="margin-bottom:8px">
+                <span class="pill {pill_cls}">{e(label)}</span>
+                <span class="sample">{e(panel_home._format_label(video))}</span>
               </div>
+              <h3 style="margin:0 0 6px;font-size:15px">{e(title)}</h3>
+              <p class="sub" style="margin:0 0 12px">{e(step)}</p>
+              <div style="margin-top:auto"><span class="btn small primary">Abrir vídeo →</span></div>
             </a>
           </article>"""
 
@@ -99,40 +100,42 @@ def render_videos(view: PanelView) -> tuple[str, dict[str, str]]:
 
     if all_videos:
         cards_html = "".join(video_card(v) for v in all_videos)
-        vazio_msg = '<p class="vazio" id="videos-vazio" hidden style="display:none;"></p>'
+        vazio_msg = '<p class="vazio card" id="videos-vazio" hidden style="display:none;grid-column:1/-1"></p>'
     else:
-        cards_html = '<p class="vazio">Nenhum vídeo ainda. Descreva um tema ou clique em «+ Novo vídeo» para criar o primeiro.</p>'
+        cards_html = '<p class="vazio card" style="grid-column:1/-1">Nenhum vídeo ainda. Descreva um tema ou clique em «✦ Criar vídeo» para criar o primeiro.</p>'
         vazio_msg = ""
 
     warning = (
-        '<p class="aviso">Exibindo os 500 vídeos mais recentes do período selecionado.</p>'
+        '<p class="aviso" style="margin-bottom:14px">Exibindo os 500 vídeos mais recentes do período selecionado.</p>'
         if view.truncated else ""
     )
 
     body = f"""      <section class="pagina" id="pagina-videos" aria-labelledby="t-videos">
-        <div class="secao-cab">
+        <div class="head">
           <div>
             <p class="eyebrow">SEU CONTEÚDO</p>
-            <h1 class="h1" id="t-videos">Vídeos</h1>
-            <p class="lead">Todos os vídeos do canal, em um só lugar.</p>
+            <h1 id="t-videos">Vídeos</h1>
+            <p class="sub">Todos os vídeos do canal, em um só lugar.</p>
           </div>
-          <a class="btn btn-primario" href="/studio/panel/novo-video">＋ Novo vídeo</a>
+          <a class="btn primary" href="/studio/panel/novo-video">✦ Criar vídeo</a>
         </div>
         {warning}
-        <div class="linha-busca">
-          <div class="campo">
-            <label for="busca-videos">Buscar por tema</label>
-            <input type="text" id="busca-videos" placeholder="Ex.: cidades do futuro">
-          </div>
-          <fieldset class="filtros">
-            <legend>Situação</legend>
-            <div class="pills" id="filtro-situacao">
-              <label class="pill"><input type="radio" name="filtro" value="todos" checked> Todos</label>
-              <label class="pill"><input type="radio" name="filtro" value="producao"> Em criação</label>
-              <label class="pill"><input type="radio" name="filtro" value="aprovar"> Esperando você</label>
-              <label class="pill"><input type="radio" name="filtro" value="publicados"> Publicados</label>
+        <div class="card flat" style="margin-bottom:20px;padding:14px 18px">
+          <div class="between">
+            <div style="flex:1;max-width:380px">
+              <label class="sr" for="busca-videos">Buscar por tema</label>
+              <input type="text" id="busca-videos" placeholder="Buscar por tema (ex.: cidades do futuro)…">
             </div>
-          </fieldset>
+            <fieldset class="filtros">
+              <legend class="sr-only">Situação</legend>
+              <div class="pills" id="filtro-situacao">
+                <label class="pill"><input type="radio" name="filtro" value="todos" checked> Todos</label>
+                <label class="pill"><input type="radio" name="filtro" value="producao"> Em criação</label>
+                <label class="pill"><input type="radio" name="filtro" value="aprovar"> Esperando você</label>
+                <label class="pill"><input type="radio" name="filtro" value="publicados"> Publicados</label>
+              </div>
+            </fieldset>
+          </div>
         </div>
         <div class="grade" id="lista-videos">
           {cards_html}

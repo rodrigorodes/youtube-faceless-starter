@@ -27,50 +27,50 @@ from . import shell_v3
 e = lambda value: html.escape(str(value if value is not None else ""), quote=True)  # noqa: E731
 
 ANALYTICS_CSS = """
-.page-goal { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem; max-width: 70ch; }
-.page-goal b { color: var(--text); }
+.page-goal { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; max-width: 70ch; }
+.page-goal b { color: var(--txt); }
 .filter-form { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-top: 1rem; }
 .filter-form .field { min-width: 190px; flex: 1 1 190px; }
 .filter-form select { min-height: 40px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.65rem; align-items: center; }
 .chip {
   display: inline-flex; align-items: center; min-height: 40px; padding: 0.35rem 0.75rem;
-  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
-  color: var(--text-muted); font-size: 0.78rem; text-decoration: none;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--muted); font-size: 0.78rem; text-decoration: none;
 }
-.chip:hover { color: var(--text); border-color: var(--border-hover); }
-.chip[aria-current="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.chip:hover { color: var(--txt); border-color: var(--line2); }
+.chip[aria-current="true"] { background: var(--accentbg); border-color: var(--accent); color: var(--txt); font-weight: 600; }
 .chip-static { cursor: default; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin-top: 1rem; }
 .tile {
-  border: 1px solid var(--border); background: var(--surface-raised); border-radius: 14px;
+  border: 1px solid var(--line); background: var(--panel2); border-radius: 14px;
   padding: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; min-height: 152px;
 }
 .tile.na { border-style: dashed; background: var(--panel2); }
-.tile .tile-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.tile .tile-label { font-size: 0.72rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
 .tile .metric { font-size: 1.45rem; font-weight: 700; line-height: 1.15; }
-.tile .label { font-size: 0.76rem; color: var(--text-muted); }
-.tile .why { font-size: 0.72rem; color: var(--text-dim); line-height: 1.45; }
-.tile-group + .tile-group { border-top: 1px dashed var(--border-soft); padding-top: 0.55rem; }
-.s-idle { color: var(--text-muted); background: var(--surface-raised); border-color: var(--border); }
-.ins { border: 1px solid var(--border-soft); border-radius: 12px; padding: 0.9rem; background: var(--surface); }
+.tile .label { font-size: 0.76rem; color: var(--muted); }
+.tile .why { font-size: 0.72rem; color: var(--dim); line-height: 1.45; }
+.tile-group + .tile-group { border-top: 1px dashed var(--line2); padding-top: 0.55rem; }
+.s-idle { color: var(--muted); background: var(--panel2); border-color: var(--line); }
+.ins { border: 1px solid var(--line2); border-radius: 12px; padding: 0.9rem; background: var(--panel); }
 .ins + .ins { margin-top: 0.6rem; }
 .ins p { margin: 0.45rem 0 0; }
-.ins .ev { font-size: 0.75rem; color: var(--text-dim); border-left: 2px solid var(--border); padding-left: 0.65rem; margin-top: 0.5rem; }
+.ins .ev { font-size: 0.75rem; color: var(--dim); border-left: 2px solid var(--line); padding-left: 0.65rem; margin-top: 0.5rem; }
 .subblock { margin-top: 0.65rem; }
-.subblock > .label { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 0.25rem; }
-.subblock ul { margin: 0; padding-left: 1.1rem; color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; }
+.subblock > .label { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 0.25rem; }
+.subblock ul { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
 .exp-list { list-style: none; padding: 0; margin: 0; }
 .table-scroll { overflow-x: auto; margin-top: 1rem; }
 .metrics-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; min-width: 760px; }
-.metrics-table th, .metrics-table td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
-.metrics-table th { color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.metrics-table th, .metrics-table td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--line2); vertical-align: top; }
+.metrics-table th { color: var(--dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 .metrics-table .cell-num { font-variant-numeric: tabular-nums; font-weight: 600; }
-.metrics-table .cell-why { color: var(--text-dim); font-size: 0.7rem; line-height: 1.4; display: block; margin-top: 0.2rem; }
-.metrics-table .cell-origin { color: var(--text-dim); font-size: 0.68rem; display: block; margin-top: 0.2rem; }
-.status-line { margin-top: 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+.metrics-table .cell-why { color: var(--dim); font-size: 0.7rem; line-height: 1.4; display: block; margin-top: 0.2rem; }
+.metrics-table .cell-origin { color: var(--dim); font-size: 0.68rem; display: block; margin-top: 0.2rem; }
+.status-line { margin-top: 0.6rem; font-size: 0.78rem; color: var(--muted); }
 .recommendation-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
-.recommendation-note { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.5rem; }
+.recommendation-note { font-size: 0.72rem; color: var(--dim); margin-top: 0.5rem; }
 @media (max-width: 1180px) {
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -431,18 +431,18 @@ def render_analytics(view: AnalyticsDashboardView,
         {_advanced_html(view)}"""
 
     body = f"""      <section class="pagina" id="pagina-desempenho" aria-labelledby="t-desempenho">
-        <div class="secao-cab">
+        <div class="head">
           <div>
             <p class="eyebrow">CRESCIMENTO DO CANAL</p>
             <h1 class="h1" id="t-desempenho">Desempenho</h1>
-            <p class="lead">Acompanhe o resultado sem perder o foco na criação.</p>
+            <p class="sub">Acompanhe o resultado sem perder o foco na criação.</p>
           </div>
-          <div class="pilha" style="align-items:flex-end">
-            <div class="campo" style="margin:0">
+          <div class="row" style="align-items:flex-end">
+            <div class="field" style="margin:0">
               <label for="analytics-project">Canal</label>
               <select id="analytics-project" style="min-width:180px">{project_options}</select>
             </div>
-            <div class="campo" style="margin:0">
+            <div class="field" style="margin:0">
               <label for="periodo">Período</label>
               <select id="periodo" class="campo" style="min-width:150px">
                 {period_options}

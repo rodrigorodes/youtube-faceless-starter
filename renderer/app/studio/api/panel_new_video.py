@@ -25,6 +25,15 @@ NEW_VIDEO_JS = """
   var btnCriar = $('#btn-criar-abrir') || $('#btn-criar');
   var fb = $('#feedback-criar');
 
+  document.querySelectorAll('.modecard').forEach(function (mc) {
+    mc.addEventListener('click', function () {
+      document.querySelectorAll('.modecard').forEach(function (m) { m.setAttribute('aria-pressed', 'false'); });
+      mc.setAttribute('aria-pressed', 'true');
+      var r = mc.querySelector('input[type="radio"]');
+      if (r) r.checked = true;
+    });
+  });
+
   if (form && temaCampo && btnCriar) {
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -183,117 +192,129 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
     mode_piloto_checked = " checked" if default_mode != "diretor" else ""
 
     body = f"""      <section class="pagina" id="pagina-novo-video" aria-labelledby="t-novo">
-        <div class="secao-cab">
+        <div class="head">
           <div>
             <p class="eyebrow">CRIAR / NOVO VÍDEO</p>
-            <h1 class="h1" id="t-novo">Novo vídeo do canal</h1>
-            <p class="lead">Qual história você quer contar? · Canal: <b>{e(current_channel_name)}</b></p>
+            <h1 id="t-novo">Novo vídeo do canal</h1>
+            <p class="sub">Tudo em uma tela. Voz e estilo vêm do canal e você pode trocar só para este vídeo.</p>
           </div>
-          <a class="btn" href="/studio/panel">← Voltar ao Início</a>
+          <a class="btn ghost small" href="/studio/panel">← Voltar ao Início</a>
         </div>
         {gate}
 
-        <div class="grade-criar" style="display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:start">
-          <form id="form-novo-video" class="card painel" novalidate>
-            <div class="campo">
-              <label for="tema-novo">Sobre o que é o vídeo?</label>
-              <textarea id="tema-novo" name="topic" maxlength="300" required aria-describedby="dica-tema"
-                        placeholder="Descreva a história que você quer contar. Ex.: por que as cidades surgiram?"{disabled}></textarea>
-              <p class="dica" id="dica-tema">De 3 a 300 caracteres.</p>
-              <p class="campo-erro" id="erro-tema">Informe o tema do vídeo (mínimo de 3 caracteres).</p>
-            </div>
-
-            <div class="grid-2" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px">
-              <div class="field">
-                <label>Formato</label>
-                <fieldset class="pills" style="margin:0">
-                  <legend class="sr-only">Formato</legend>
-                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long"{format_long_checked}{disabled}>
-                    <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                      <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20M2 15h20"/></svg>
-                    Vídeo · horizontal 16:9</label>
-                  <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{format_short_checked}{disabled}>
-                    <svg class="icone-formato" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                      <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M7 6h10M7 18h10"/></svg>
-                    Short · vertical 9:16</label>
+        <form id="form-novo-video" novalidate>
+          <div class="two">
+            <div class="stack">
+              <div class="card">
+                <h3 style="margin-bottom:10px">1 · Como você quer produzir?</h3>
+                <fieldset class="pills" style="border:0;padding:0;margin:0">
+                  <legend class="sr-only">Modo de produção</legend>
+                  <div class="grid2">
+                    <label class="modecard" id="card-modo-piloto" style="cursor:pointer" aria-pressed="{'true' if default_mode != 'diretor' else 'false'}">
+                      <input type="radio" name="modo-producao" value="piloto"{mode_piloto_checked}{disabled} class="sr-only">
+                      <span class="pill ok">⚡ Rápido · 1 clique</span>
+                      <h3>Piloto automático</h3>
+                      <p class="sub">Gera roteiro, voz, imagens e composição de ponta a ponta com os padrões do canal. Você só aprova no final.</p>
+                    </label>
+                    <label class="modecard" id="card-modo-diretor" style="cursor:pointer" aria-pressed="{'true' if default_mode == 'diretor' else 'false'}">
+                      <input type="radio" name="modo-producao" value="diretor"{mode_diretor_checked}{disabled} class="sr-only">
+                      <span class="pill accent">🎬 Controle total</span>
+                      <h3>Modo Diretor</h3>
+                      <p class="sub">Cria o roteiro em cenas e para. Você edita texto, mídia, voz e legendas antes de renderizar.</p>
+                    </label>
+                  </div>
                 </fieldset>
               </div>
-              <div class="field">
-                <label for="duracao-alvo">Duração-alvo em segundos</label>
-                <input class="input" id="duracao-alvo" name="duration" type="number" min="10" max="36000" value="60" required{disabled}
-                       style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--txt)">
-                <p class="dica" style="margin:4px 0 0;font-size:11px;color:var(--muted)">Meta de duração estimada.</p>
+
+              <div class="card">
+                <h3 style="margin-bottom:10px">2 · Tema ou roteiro</h3>
+                <div class="field">
+                  <label for="tema-novo">Sobre o que é o vídeo?</label>
+                  <textarea id="tema-novo" name="topic" rows="3" maxlength="300" required aria-describedby="dica-tema"
+                            placeholder="Descreva a história que você quer contar. Ex.: por que as cidades surgiram?"{disabled}></textarea>
+                  <p class="sub" id="dica-tema" style="font-size:11px;margin-top:4px">De 3 a 300 caracteres.</p>
+                  <p class="campo-erro" id="erro-tema" style="display:none;color:var(--bad)">Informe o tema do vídeo (mínimo de 3 caracteres).</p>
+                </div>
+                <div class="field" style="margin-top:10px">
+                  <label for="roteiro-pronto">Roteiro pronto (opcional)</label>
+                  <textarea id="roteiro-pronto" name="script" rows="4" maxlength="50000"
+                            placeholder="Cole seu roteiro ou escreva depois. Separe as cenas por uma linha em branco."{disabled}></textarea>
+                  <p class="sub" style="font-size:11px;margin-top:4px">Seu texto será preservado nas fontes e usado na criação das cenas.</p>
+                </div>
+                <div class="field" style="margin-top:10px">
+                  <label class="check" for="revisar-roteiro" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                    <input id="revisar-roteiro" type="checkbox" checked{disabled}>
+                    Revisar roteiro antes de gerar voz e imagens
+                  </label>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3 style="margin-bottom:10px">3 · Formato, duração e estilo</h3>
+                <div class="row" style="margin-bottom:14px">
+                  <span class="lbl">Formato</span>
+                  <fieldset class="pills" style="margin:0;border:0;padding:0">
+                    <legend class="sr-only">Formato</legend>
+                    <label class="pill pill-formato"><input type="radio" name="formato-novo" value="long"{format_long_checked}{disabled}>
+                      <svg class="icone-formato" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+                        <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20M2 15h20"/></svg>
+                      Vídeo · 16:9</label>
+                    <label class="pill pill-formato"><input type="radio" name="formato-novo" value="short"{format_short_checked}{disabled}>
+                      <svg class="icone-formato" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+                        <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M7 6h10M7 18h10"/></svg>
+                      Short · 9:16</label>
+                  </fieldset>
+                  <span class="lbl" style="margin-left:10px">Duração alvo</span>
+                  <input class="input" id="duracao-alvo" name="duration" type="number" min="10" max="36000" value="60" required{disabled} style="width:90px">
+                </div>
+                <p class="lbl" style="margin-bottom:8px">Estilo visual</p>
+                <fieldset class="pills" style="margin:0;border:0;padding:0;display:block;width:100%">
+                  <legend class="sr-only">Estilo visual</legend>
+                  {style_options}
+                </fieldset>
+                <p class="sub" style="font-size:11px;margin-top:8px">
+                  <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a>
+                </p>
               </div>
             </div>
 
-            <div class="campo" style="margin-top:14px">
-              <label>Modo de produção</label>
-              <fieldset class="pills" style="margin:0">
-                <legend class="sr-only">Modo de produção</legend>
-                <label class="pill"><input type="radio" name="modo-producao" value="piloto"{mode_piloto_checked}{disabled}>
-                  Piloto automático (1 clique)</label>
-                <label class="pill"><input type="radio" name="modo-producao" value="diretor"{mode_diretor_checked}{disabled}>
-                  Modo Diretor (revisão por cena)</label>
-              </fieldset>
-            </div>
+            <aside class="stack" style="position:sticky;top:80px">
+              <aside class="painel" aria-labelledby="t-preset">
+                <h3 id="t-preset">Predefinição do canal</h3>
+                <p class="sub" style="margin:4px 0 12px">{e(current_channel_name)}</p>
+                <table class="tabela-kv">
+                  <caption class="sr-only">O que o canal define para cada vídeo</caption>
+                  <tr><th scope="row">Canal</th><td class="texto-canal">{e(current_channel_name)}</td></tr>
+                  <tr><th scope="row">Idioma</th><td>{idioma}</td></tr>
+                  <tr><th scope="row">Voz</th><td>{voz}</td></tr>
+                  <tr><th scope="row">Estilo</th><td>{estilo}</td></tr>
+                </table>
+                <p class="sub" style="font-size:11px;margin:12px 0 14px">
+                  <a href="/studio/canais#painel-perfil">Personalizar identidade do canal →</a>
+                </p>
+                <div class="hr"></div>
+                <p class="sample" style="margin-bottom:10px">Criar o rascunho prepara as cenas e fontes sem iniciar cobrança.</p>
+                <button class="btn primary long" type="submit" id="btn-criar-abrir"{disabled}>Criar e abrir vídeo →</button>
+                <p class="feedback" id="feedback-criar" role="status" style="margin-top:8px"></p>
+              </aside>
 
-            <div class="campo" style="margin-top:16px">
-              <label for="roteiro-pronto">Roteiro pronto (opcional)</label>
-              <textarea id="roteiro-pronto" name="script" rows="4" maxlength="50000"
-                        placeholder="Cole seu roteiro ou escreva depois. Separe as cenas por uma linha em branco."{disabled}></textarea>
-              <p class="dica" style="margin:4px 0 0;font-size:11px;color:var(--muted)">Seu texto será preservado nas fontes e usado na criação das cenas.</p>
-            </div>
+              <div class="card painel" aria-labelledby="t-caminho">
+                <h3 id="t-caminho" style="font-size:15px;margin:0 0 10px">Seu caminho até publicar</h3>
+                <p class="sub" style="font-size:13px;line-height:1.6;margin:0 0 10px">
+                  1. Adicione fontes e revise o roteiro.<br>
+                  2. Gere narração e monte as cenas.<br>
+                  3. Ajuste composição e confira a qualidade.<br>
+                  4. Aprove a versão e prepare a publicação.
+                </p>
+                <p class="sample" style="margin:0">
+                  Etapas reunidas dentro do vídeo. Você pode voltar para ajustar qualquer parte.
+                </p>
+              </div>
 
-            <div class="campo" style="margin-top:12px">
-              <label class="check" for="revisar-roteiro" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-                <input id="revisar-roteiro" type="checkbox" checked{disabled}>
-                Revisar roteiro antes de gerar voz e imagens
-              </label>
-            </div>
-
-            <fieldset class="pills" style="margin-top:16px;display:block;width:100%">
-              <legend>Estilo visual</legend>
-              {style_options}
-            </fieldset>
-            <p class="micro" style="margin:8px 0 0">
-              <a href="/studio/panel/estilos">Gerenciar estilos da biblioteca →</a></p>
-
-            <p class="feedback" id="feedback-criar" role="status"></p>
-
-            <div class="acoes" style="margin-top:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-              <span class="micro dim">Criar rascunho não inicia geração paga.</span>
-              <button class="btn btn-primario" type="submit" id="btn-criar-abrir"{disabled}>Criar e abrir vídeo →</button>
-            </div>
-          </form>
-
-          <div class="stack" style="display:grid;gap:16px">
-            <aside class="painel" aria-labelledby="t-preset">
-              <h3 id="t-preset">Predefinição do canal</h3>
-              <table class="tabela-kv">
-                <caption class="sr-only">O que o canal define para cada vídeo</caption>
-                <tr><th scope="row">Canal</th><td class="texto-canal">{e(current_channel_name)}</td></tr>
-                <tr><th scope="row">Idioma</th><td>{idioma}</td></tr>
-                <tr><th scope="row">Voz</th><td>{voz}</td></tr>
-                <tr><th scope="row">Estilo</th><td>{estilo}</td></tr>
-              </table>
-              <p class="micro" style="margin:14px 0 0">
-                <a href="/studio/canais#painel-perfil">Personalizar identidade do canal →</a></p>
+              <div class="note info">O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo.</div>
             </aside>
-
-            <div class="card painel" aria-labelledby="t-caminho">
-              <h3 id="t-caminho" style="font-size:15px;margin:0 0 10px">Seu caminho até publicar</h3>
-              <p class="dim" style="font-size:13px;line-height:1.6;margin:0 0 10px">
-                1. Adicione fontes e revise o roteiro.<br>
-                2. Gere narração e monte as cenas.<br>
-                3. Ajuste composição e confira a qualidade.<br>
-                4. Aprove a versão e prepare a publicação.
-              </p>
-              <p class="micro dim" style="margin:0">
-                Etapas reunidas dentro do vídeo. Você pode voltar para ajustar qualquer parte.
-              </p>
-            </div>
           </div>
-        </div>
+        </form>
       </section>"""
 
     html = shell_v3.render_document(

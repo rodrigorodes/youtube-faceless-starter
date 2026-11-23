@@ -50,4 +50,4 @@ def video_area_nav(video_id: str, active: str) -> str:
         items.append(
             f'<a class="{cls}" href="{area_href(video_id, area_id)}"{current}>{e(label)}</a>'
         )
-    return f'<nav class="tabs abas-video" aria-label="Áreas do vídeo">{"".join(items)}</nav>'
+    return f'<nav class="abas-video" aria-label="Áreas do vídeo">{"".join(items)}</nav>'
