@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from ...application.errors import VisualStyleNotFound
 from ...application.use_cases import InvalidInput, ServiceUnavailable
 from ...application.video_style import VideoStylePatch, VideoStylePatchConflict
-from ...domain.contracts import Project, Video, VideoFormat, VideoStatus
+from ...domain.contracts import ProductionMode, Project, Video, VideoFormat, VideoStatus
 from ...domain.qa_report import QaCoverage, QaFinding, QaReport
 from ...domain.ids import check_id
 from ...domain.schema import SCHEMA_VERSION
@@ -112,6 +112,8 @@ def _qa_report(payload: dict | None) -> QaReport | None:
 def _video(row: dict) -> Video:
     row = dict(row)
     row["qa_report"] = _qa_report(row["qa_report"])
+    if "production_mode" in row and row["production_mode"] is not None:
+        row["production_mode"] = ProductionMode(row["production_mode"])
     return Video.model_validate(row)
 
 
@@ -158,7 +160,8 @@ class PostgresVideoRepository:
             return Project.model_validate(row)
 
     def create_video(self, project_id: str, topic: str, fmt: VideoFormat,
-                     style_id: str | None = None) -> Video:
+                     style_id: str | None = None,
+                     production_mode: ProductionMode = ProductionMode.piloto) -> Video:
         """Cria o vídeo já com o estilo escolhido (F02.T02), numa única transação.
 
         O estilo é validado no caso de uso (existe e está ativo); a FK do banco é a última
@@ -167,12 +170,13 @@ class PostgresVideoRepository:
         with _translated():
             video_id = uuid.uuid4().hex
             sid = check_id(style_id) if style_id is not None else None
+            pmode = production_mode.value if isinstance(production_mode, ProductionMode) else str(production_mode)
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
                 try:
-                    cur.execute("INSERT INTO studio.videos(id, project_id, topic, format, style_id) "
-                                "VALUES (%s, %s, %s, %s, %s) "
-                                "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
-                                (video_id, check_id(project_id), topic, fmt.value, sid))
+                    cur.execute("INSERT INTO studio.videos(id, project_id, topic, format, style_id, production_mode) "
+                                "VALUES (%s, %s, %s, %s, %s, %s) "
+                                "RETURNING id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
+                                (video_id, check_id(project_id), topic, fmt.value, sid, pmode))
                 except psycopg.errors.ForeignKeyViolation as exc:
                     # corrida com o arquivamento entre a validação e o INSERT: falha fechado,
                     # sem deixar vídeo com vínculo quebrado
@@ -182,7 +186,7 @@ class PostgresVideoRepository:
     def get_video(self, video_id: str) -> Video | None:
         with _translated():
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at "
+                cur.execute("SELECT id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at "
                             "FROM studio.videos WHERE id = %s", (check_id(video_id),))
                 row = cur.fetchone()
             return _video(row) if row else None
@@ -249,7 +253,7 @@ class PostgresVideoRepository:
                 try:
                     cur.execute(
                         "UPDATE studio.videos SET style_id = %s, updated_at = now() WHERE id = %s "
-                        "RETURNING id, project_id, topic, format, status, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
+                        "RETURNING id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
                         (check_id(style_id) if style_id is not None else None, check_id(video_id)))
                 except psycopg.errors.ForeignKeyViolation as exc:
                     raise VisualStyleNotFound(f"visual style {style_id!r} does not exist") from exc
