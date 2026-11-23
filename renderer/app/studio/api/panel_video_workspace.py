@@ -702,7 +702,7 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '    </div>'
         '    <div class="campo">'
         '      <label for="composicao-bottom">Distância da base (bottom, px)</label>'
-        f'      <input type="number" id="composicao-bottom" name="caption.bottom" class="input campo" value="{e(str(bottom_val))}" min="0" max="400">'
+        f'      <input type="number" id="composicao-bottom" name="caption.bottom" class="input campo" value="{e(str(bottom_val))}" min="0" max="400"{" disabled" if caption_pos != "bottom" else ""}>'
         '    </div>'
         '    <div class="campo">'
         '      <label>Posição da legenda</label>'
@@ -1849,6 +1849,19 @@ PAGE_JS = """
   // Composição V3: submissão de alterações de estilo (PATCH /studio/videos/{id}/style-patch)
   var compForm = document.getElementById('form-composicao');
   if (compForm) {
+    var compBottomInput = document.getElementById('composicao-bottom');
+    var compPosRadios = compForm.querySelectorAll('input[name="comp-posicao"]');
+    function syncBottomInputState() {
+      var checkedPos = compForm.querySelector('input[name="comp-posicao"]:checked');
+      if (compBottomInput && checkedPos) {
+        compBottomInput.disabled = (checkedPos.value !== 'bottom');
+      }
+    }
+    compPosRadios.forEach(function (radio) {
+      radio.addEventListener('change', syncBottomInputState);
+    });
+    syncBottomInputState();
+
     compForm.addEventListener('submit', async function (ev) {
       ev.preventDefault();
       var videoId = compForm.getAttribute('data-video-id') || '';
@@ -1876,14 +1889,18 @@ PAGE_JS = """
       var transKind = transRadio ? transRadio.value : 'fade';
       var transTicks = transKind === 'fade' ? 25 : 0;
 
+      var captionObj = {
+        font_size: fontSizeInput ? Number(fontSizeInput.value) || 42 : 42,
+        position: captionPos,
+        font_family: captionFont,
+        style_kind: captionEstilo
+      };
+      if (captionPos === 'bottom') {
+        captionObj.bottom = bottomInput ? Number(bottomInput.value) || 96 : 96;
+      }
+
       var patch = {
-        caption: {
-          font_size: fontSizeInput ? Number(fontSizeInput.value) || 42 : 42,
-          bottom: bottomInput ? Number(bottomInput.value) || 96 : 96,
-          position: captionPos,
-          font_family: captionFont,
-          style_kind: captionEstilo
-        },
+        caption: captionObj,
         transition: {
           kind: transKind,
           duration_ticks: transTicks

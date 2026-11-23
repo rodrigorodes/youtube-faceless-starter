@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
+from app.studio.adapters.render_plan_ffmpeg import caption_layout
 from app.studio.api.panel_video_workspace import render_video_workspace
 from app.studio.api.routes import make_router
 from app.studio.application.panel import VideoDetailView
@@ -16,7 +17,7 @@ from app.studio.application.use_cases import UseCases
 from app.studio.application.video_style import VideoStylePatch, VideoStylePatchConflict, VideoStyleView
 from app.studio.domain.contracts import Video, VideoFormat, VideoStatus
 from app.studio.domain.panel import Stage
-from app.studio.domain.visual_style import StylePatch, StylePatchInvalid, VisualStyle
+from app.studio.domain.visual_style import ResolvedStyle, StylePatch, StylePatchInvalid, VisualStyle
 
 AUTH_HEADER = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-browser-password").decode()}
 POST_HEADER = {**AUTH_HEADER, "Origin": "http://testserver"}
@@ -46,6 +47,43 @@ def _sample_style_view(style: VisualStyle | None = None) -> VideoStyleView:
         inherited_style_name=st.name,
         styles=(st,),
     )
+
+
+def test_v3_composition_omits_bottom_when_position_is_top_or_middle():
+    video = Video(id="1" * 32, project_id="2" * 32, topic="Tema", format=VideoFormat.short, status=VideoStatus.IDEA)
+
+    # 1. Quando o estilo tem position top, composicao-bottom é desabilitado no HTML
+    top_style = VisualStyle(id="a" * 32, name="Top Style", params={"caption": {"position": "top"}})
+    top_view = _sample_style_view(top_style)
+    html_top = str(render_video_workspace(video, active_area="composicao", style_view=top_view, script=None, scenes=[], sources=[]))
+    bottom_match_top = re.search(r'<input[^>]*id="composicao-bottom"[^>]*>', html_top)
+    assert bottom_match_top is not None
+    assert "disabled" in bottom_match_top.group(0)
+
+    # 2. Quando o estilo tem position bottom, composicao-bottom permanece habilitado
+    bot_style = VisualStyle(id="b" * 32, name="Bot Style", params={"caption": {"position": "bottom", "bottom": 120}})
+    bot_view = _sample_style_view(bot_style)
+    html_bot = str(render_video_workspace(video, active_area="composicao", style_view=bot_view, script=None, scenes=[], sources=[]))
+    bottom_match_bot = re.search(r'<input[^>]*id="composicao-bottom"[^>]*>', html_bot)
+    assert bottom_match_bot is not None
+    assert "disabled" not in bottom_match_bot.group(0)
+
+    # 3. Em PAGE_JS: verifica sincronização reativa e omissão de bottom quando position !== 'bottom'
+    assert "syncBottomInputState" in html_bot
+    assert "compBottomInput.disabled = (checkedPos.value !== 'bottom');" in html_bot
+    assert "if (captionPos === 'bottom')" in html_bot
+
+    # 4. Verificação de layout de renderização:
+    # Sem bottom no patch/caption, caption_layout calcula a distância da base correta para o topo (480px no short)
+    resolved_top = ResolvedStyle(id="a"*32, name="Top", caption={"position": "top"})
+    layout_top = caption_layout(VideoFormat.short, resolved_top)
+    assert layout_top["caption_bottom"] == 480
+    assert layout_top["position"] == "top"
+
+    # Se bottom fosse enviado indevidamente (ex: bottom=96), sobrescreveria a posição calculada
+    resolved_override = ResolvedStyle(id="a"*32, name="Top", caption={"position": "top", "bottom": 96})
+    layout_override = caption_layout(VideoFormat.short, resolved_override)
+    assert layout_override["caption_bottom"] == 96  # evidencia o risco prevenido
 
 
 def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
