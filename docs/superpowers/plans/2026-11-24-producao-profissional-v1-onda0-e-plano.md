@@ -109,7 +109,32 @@ Cada onda = 1 worktree/branch (`ve/…` convention), PRs pequenos, testes antes 
 6. **Testes:** contrato, migração/compat, ordenação, sobreposição, duração, transições, ausência de mídia, **integração FFmpeg real com assets sintéticos locais** (gerados por `ffmpeg lavfi` no contêiner), golden preservado para v1.
 **Aceite:** cena com 3 assets (2 imagens + 1 vídeo) renderiza com crossfade/corte; vídeo v1 antigo renderiza byte-equivalente.
 
-### Onda 2 — Inteligência (Creative Director + Media Intelligence)
+### Onda 2 — Inteligência (Creative Director + Media Intelligence) — **CONCLUÍDA** ✅
+
+- **Status:** CONCLUÍDA em 2026-11-24 na branch `feat/onda1-fundacao-renderplan-v2` (worktree `ve-onda1-fundacao`).
+- **Commits:**
+  - `659cfbc` feat(director): definir contrato de dominio CreativeBrief
+  - `743fae2` feat(director): implementar caso de uso CreateCreativeBrief e injecao no roteiro
+  - `d7eb5d4` feat(media): implementar MediaRanker com pontuacao deterministica e deduplicacao
+  - `1bd567d` feat(pexels): suportar busca de video stock na API do Pexels
+  - `a43b931` feat(pixabay): implementar adaptador MediaSearch para fotos e videos do Pixabay
+  - `1a7be9a` feat(media): integrar ranking inteligente, deduplicacao e suporte multiprovedor
+  - `334d804` fix(media): implementar deduplicacao entre cenas, fetcher multiprovedor e queries complementares
+- **Modelos e Entregas:**
+  - `CreativeBrief` (`domain/creative_director.py`): Contrato puro e congelado para direção criativa (hook, estrutura de conteúdo, tom, ritmo, direção visual, tipos de mídia recomendados, estratégia de legendas, orientação de áudio, validação estrita de budget e critérios de qualidade).
+  - `CreateCreativeBrief` e `build_prompt` (`application/creative_director.py`, `application/editorial.py`): Caso de uso para síntese de briefing com cache de hash (`paid_key`), e enriquecimento do prompt de roteiro para gerar `visual_intent`, `recommended_asset_kind` e `search_queries` por cena.
+  - `MediaRanker` (`domain/media_ranker.py`): Motor determinístico de pontuação de candidatos de mídia por resolução, aspect ratio, duração mínima, casamento léxico com intent/queries e penalidade severa de repetição (`-50 pts`) para evitar mídias duplicadas entre cenas.
+  - `PexelsMediaSearch` com vídeo (`adapters/media_pexels.py`): Suporte completo à busca de vídeo stock na API do Pexels (`media_type="video"`), além de imagens, extraindo `duration_s`, resolução e atribuição fotográfica/videográfica.
+  - `PixabayMediaSearch` (`adapters/media_pixabay.py`): Adaptador completo para fotos e vídeos da API Pixabay sob `Pixabay Content License`, resiliente a payloads parciais.
+  - `MultiProviderMediaFetcher` e `MultiProviderMediaSearch` (`adapters/media_multi.py`, `composition/wiring.py`): Agregador resiliente multiprovedor (Pexels + Pixabay) e despachante inteligente de download por URL/licença, integrado ao pipeline `ProduceAssets` e `SearchSceneMedia` com tracking de `used_media_ids` e expansão de queries de busca.
+- **Evidência de Testes:**
+  - Suíte completa de inteligência de mídia e editorial no contêiner:
+    `TMPDIR=/tmp scripts/test-container.sh tests/test_creative_director_*.py tests/test_media_*.py -q`
+    Resultado: **169 passed, 0 failures, 2 warnings** em 9.67s.
+  - Suíte completa de regressão combinada (editorial, mídia, render e contratos):
+    `TMPDIR=/tmp scripts/test-container.sh tests/test_creative_director_*.py tests/test_media_*.py tests/test_render_*.py tests/test_contracts_snapshot.py -q`
+    Resultado: **556 passed, 0 failures, 2 warnings** em 89.77s.
+
 1. `CreativeBrief` v1 (objetivo, abertura, hook, estrutura, tom, ritmo, direção visual, tipos de mídia, texto/legenda, música/SFX, restrições de custo, critérios de qualidade) + validação (nenhuma sugestão altera config sensível nem estoura budget).
 2. Etapa `direction` no `ProductionRun`, atrás de flag; usa `ContentBrief` existente como base; `paid_key` por hash de entradas.
 3. Prompt de cenas passa a devolver `visual_intent`, `asset_kind`, `queries[]` por beat.
