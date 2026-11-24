@@ -283,8 +283,13 @@ def compile_render_plan(
     mix_filter = _mix_filter(getattr(plan, "audio_mix", None), total_s=total_s)
 
     if subtitles_ass_path:
+        escaped_sub_path = (
+            subtitles_ass_path.replace("\\", "\\\\")
+            .replace("'", "'\\''")
+            .replace(":", "\\:")
+        )
         video_codec_args = (
-            "-vf", f"subtitles={subtitles_ass_path}",
+            "-vf", f"subtitles='{escaped_sub_path}'",
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-pix_fmt", "yuv420p",

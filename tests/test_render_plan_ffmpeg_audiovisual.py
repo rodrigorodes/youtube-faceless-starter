@@ -157,7 +157,8 @@ def test_audio_args_switches_to_subtitles_filter_when_subtitles_present(tmp_path
     args = compiled.audio.args
     assert "-vf" in args
     vf_idx = args.index("-vf")
-    assert args[vf_idx + 1] == f"subtitles={compiled.subtitles_ass_path}"
+    escaped = compiled.subtitles_ass_path.replace("\\", "\\\\").replace("'", "'\\''").replace(":", "\\:")
+    assert args[vf_idx + 1] == f"subtitles='{escaped}'"
     assert "-c:v" in args
     cv_idx = args.index("-c:v")
     assert args[cv_idx + 1] == "libx264"

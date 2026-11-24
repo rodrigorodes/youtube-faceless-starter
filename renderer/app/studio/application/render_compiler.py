@@ -191,6 +191,7 @@ def structure_render_plan(
     _validate_overlays(plan, manifest, by_id)
 
     subtitles = sorted(plan.timeline.subtitles, key=lambda c: c.start_tick)
+    shot_subtitles = subtitles if plan.schema_version == 1 else []
     shots: list[ShotPlan] = []
     for index, (scene, shot) in enumerate(ordered_bases):
         reference = manifest.get(shot.asset_ref)
@@ -206,7 +207,7 @@ def structure_render_plan(
         shots.append(
             _shot_plan(
                 plan, scene, shot, reference, descriptor, index, work, tps,
-                subtitles, label_by_scene.get(scene.scene_id, ""),
+                shot_subtitles, label_by_scene.get(scene.scene_id, ""),
                 overlays=layers,
             )
         )

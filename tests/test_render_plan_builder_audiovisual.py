@@ -336,3 +336,50 @@ def test_compile_render_plan_without_subtitles(tmp_path):
 
     assert compiled.subtitles_ass_content is None
     assert compiled.subtitles_ass_path is None
+
+
+def test_pacing_dynamic_with_narration_and_compile_render_plan_v2(tmp_path):
+    # Cena com ~6s de fala e pacing_preset="dynamic" (divide a cena em múltiplos shots)
+    scene = story(
+        scene_id="scene-long-pacing",
+        speech=6.0,
+        narration="Esta é uma cena longa com seis segundos de fala narrada para testar a integração entre pacing e legendas.",
+    )
+    plan = build_render_plan(
+        plan_id="plan-pacing-dynamic-narrated",
+        revision=1,
+        project_id="proj-1",
+        video_id="vid-1",
+        format=VideoFormat.short,
+        scenes=[scene],
+        assets=[asset_ref()],
+        pacing_preset="dynamic",
+    )
+
+    # Verifica que o pacing dividiu a cena em múltiplos shots
+    assert len(plan.timeline.scenes[0].shots) >= 3
+    # Verifica que há legendas geradas na timeline
+    assert len(plan.timeline.subtitles) > 0
+
+    work_dir = str(tmp_path / "job-pacing-dynamic")
+    (tmp_path / "job-pacing-dynamic").mkdir(parents=True, exist_ok=True)
+
+    compiled = compile_render_plan(
+        plan=plan,
+        assets={"asset-01": descriptor("asset-01")},
+        work_dir=work_dir,
+    )
+
+    # Confirma que compilou com sucesso sem colisão de legendas per-shot
+    assert len(compiled.shots) == len(plan.timeline.scenes[0].shots)
+    for shot in compiled.shots:
+        assert len(shot.captions) == 0
+
+    # Confirma que as legendas ASS foram geradas no nível global
+    assert compiled.subtitles_ass_path is not None
+    assert Path(compiled.subtitles_ass_path).exists()
+    assert compiled.subtitles_ass_content is not None
+    assert "Dialogue:" in compiled.subtitles_ass_content
+    assert "pacing" in compiled.subtitles_ass_content
+    assert "legendas" in compiled.subtitles_ass_content
+
