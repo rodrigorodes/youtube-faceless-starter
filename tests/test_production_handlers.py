@@ -313,27 +313,38 @@ class _Lease:
 
 
 class _DbPubs:
-    def __init__(self, status="UPLOADING", youtube=None, lease_until=None, remote_state=None, cas=True):
+    """Máquina de estados honesta: o CAS só age com a tentativa certa e o lease vencido."""
+
+    def __init__(self, status="UPLOADING", youtube=None, lease_until=None, remote_state=None, attempt=3,
+                 dead_letter=False, cas_blocked=False):
         from app.studio.domain.contracts import Publication, PublicationStatus
-        from app.studio.application.reopen import PublicationLease
-        self.pub = Publication(id="p" * 32, video_id=VIDEO, status=PublicationStatus(status), attempt=3,
+        self.pub = Publication(id="p" * 32, video_id=VIDEO, status=PublicationStatus(status), attempt=attempt,
                                youtube_video_id=youtube)
-        self.state = PublicationLease(publication_id=self.pub.id, status=self.pub.status, lease_until=lease_until,
-                                      upload_uri=None, youtube_video_id=youtube, remote_state=remote_state)
-        self.cas, self.calls = cas, []
+        self.lease_until, self.remote_state, self.dead_letter = lease_until, remote_state, dead_letter
+        self.cas_blocked, self.calls, self.on_cas_fail = cas_blocked, [], None
 
     def get(self, video_id):
         return self.pub
 
     def lease_state(self, video_id):
+        from app.studio.application.reopen import PublicationLease
         self.calls.append("lease_state")
-        return self.state
+        return PublicationLease(publication_id=self.pub.id, status=self.pub.status, lease_until=self.lease_until,
+                                upload_uri=None, youtube_video_id=self.pub.youtube_video_id,
+                                remote_state=self.remote_state, dead_letter=self.dead_letter)
 
     def mark_stale_ambiguous(self, publication_id, attempt, error):
+        from app.studio.domain.contracts import PublicationStatus
         self.calls.append(("mark_stale_ambiguous", attempt))
-        if self.cas:
-            self.state = self.state.__class__(**{**self.state.__dict__, "remote_state": "UNKNOWN"})
-        return self.cas
+        expired = self.lease_until is not None and self.lease_until <= datetime.now(timezone.utc)
+        if (self.cas_blocked or attempt != self.pub.attempt or not expired
+                or self.pub.status is not PublicationStatus.UPLOADING):
+            if self.on_cas_fail:
+                self.on_cas_fail(self)
+            return False
+        self.pub = self.pub.model_copy(update={"status": PublicationStatus.PENDING})
+        self.remote_state, self.lease_until = "UNKNOWN", None
+        return True
 
 
 class _Reconcile:
@@ -418,25 +429,92 @@ def test_live_uploading_lease_fails_without_upload_or_cas():
     assert publish.calls == [] and not any(isinstance(c, tuple) for c in pubs.calls)
 
 
-def test_cas_false_rereads_once_and_a_live_lease_then_fails():
-    pubs = _DbPubs(lease_until=_past(), cas=False)
+def test_cas_false_twice_fails_as_unsettled_without_upload():
+    pubs = _DbPubs(lease_until=_past(), cas_blocked=True)
+    handler, publish = _handler(pubs, _Reconcile("RETRY"))
+    with pytest.raises(StageExecutionFailed) as caught:
+        handler.execute(_ctx(_Lease()))
+    assert "could not settle" in str(caught.value)
+    assert pubs.calls.count(("mark_stale_ambiguous", 3)) == 2 and publish.calls == []
 
-    def reread():
-        from app.studio.application.reopen import PublicationLease
-        pubs.state = PublicationLease(publication_id=pubs.pub.id, status=pubs.pub.status, lease_until=_future(),
-                                      upload_uri=None, youtube_video_id=None)
-        return pubs.state
-    original = pubs.mark_stale_ambiguous
 
-    def cas(*a):
-        original(*a)
-        reread()
-        return False
-    pubs.mark_stale_ambiguous = cas
+def test_cas_false_then_reread_shows_a_video_id_completes_without_upload():
+    from app.studio.application.reopen import PublicationLease  # noqa: F401
+    pubs = _DbPubs(lease_until=_past(), cas_blocked=True)
+    pubs.on_cas_fail = lambda p: setattr(p, "pub", p.pub.model_copy(update={"youtube_video_id": "yt7"}))
+    handler, publish = _handler(pubs, _Reconcile("RETRY"))
+    outcome = handler.execute(_ctx(_Lease()))
+    assert outcome.checkpoint.payload["youtube_video_id"] == "yt7" and publish.calls == []
+
+
+def test_cas_false_then_live_lease_on_reread_fails_without_upload():
+    pubs = _DbPubs(lease_until=_past(), cas_blocked=True)
+    pubs.on_cas_fail = lambda p: setattr(p, "lease_until", _future())
     handler, publish = _handler(pubs, _Reconcile("RETRY"))
     with pytest.raises(StageExecutionFailed):
         handler.execute(_ctx(_Lease()))
     assert publish.calls == []
+
+
+@pytest.mark.parametrize("status", ["PENDING", "FAILED"])
+def test_prior_ambiguous_publication_uploaded_by_reconcile_completes(status):
+    from app.studio.application.publication_execution import PublicationResult, PublicationRun
+    pubs = _DbPubs(status=status, remote_state="UNKNOWN")
+    rec = _Reconcile("UPLOADED")
+    rec.execute = lambda pid: (rec.calls.append(pid), PublicationRun(
+        result=PublicationResult.UPLOADED, publication=pubs.pub, youtube_video_id="yt3"))[1]
+    handler, publish = _handler(pubs, rec)
+    outcome = handler.execute(_ctx(_Lease()))
+    assert outcome.checkpoint.payload["youtube_video_id"] == "yt3"
+    assert publish.calls == [] and not any(isinstance(c, tuple) for c in pubs.calls)
+
+
+@pytest.mark.parametrize("status", ["PENDING", "FAILED"])
+def test_prior_ambiguous_publication_reconcile_retry_proceeds(status):
+    pubs, rec = _DbPubs(status=status, remote_state="UNKNOWN"), _Reconcile("RETRY")
+    handler, publish = _handler(pubs, rec)
+    handler.execute(_ctx(_Lease()))
+    assert rec.calls == ["p" * 32] and publish.calls == [{"video_id": VIDEO}]
+
+
+@pytest.mark.parametrize("result", ["RECONCILE", "DEAD_LETTER", "BLOCKED"])
+def test_prior_ambiguous_publication_other_results_fail(result):
+    pubs, rec = _DbPubs(status="FAILED", remote_state="UNKNOWN"), _Reconcile(result)
+    handler, publish = _handler(pubs, rec)
+    with pytest.raises(StageExecutionFailed):
+        handler.execute(_ctx(_Lease()))
+    assert publish.calls == []
+
+
+def test_reconcile_uploaded_without_any_video_id_is_never_checkpointed():
+    pubs, rec = _DbPubs(status="FAILED", remote_state="UNKNOWN"), _Reconcile("UPLOADED")
+    handler, publish = _handler(pubs, rec)
+    with pytest.raises(StageExecutionFailed):
+        handler.execute(_ctx(_Lease()))
+    assert publish.calls == []
+
+
+def test_dead_letter_publication_fails_without_upload():
+    pubs = _DbPubs(status="FAILED", dead_letter=True)
+    handler, publish = _handler(pubs, _Reconcile("RETRY"))
+    with pytest.raises(StageExecutionFailed):
+        handler.execute(_ctx(_Lease()))
+    assert publish.calls == []
+
+
+def test_stale_cas_is_honest_about_attempt_and_moves_to_unknown():
+    pubs = _DbPubs(lease_until=_past())
+    assert pubs.mark_stale_ambiguous("p" * 32, 99, "x") is False
+    assert pubs.mark_stale_ambiguous("p" * 32, 3, "x") is True
+    assert pubs.pub.status.value == "PENDING" and pubs.remote_state == "UNKNOWN" and pubs.lease_until is None
+
+
+def test_build_stage_handlers_rejects_reconcile_without_publications():
+    from app.studio.application.production import build_stage_handlers
+    with pytest.raises(ValueError):
+        build_stage_handlers(editorial=None, media=None, start_render=None, run_render=None, videos=None,
+                             jobs=None, assets=None, approvals=None, publish=_uploaded(),
+                             reconcile=_Reconcile("RETRY"))
 
 
 def test_unknown_remote_state_without_reconcile_fails_without_upload():

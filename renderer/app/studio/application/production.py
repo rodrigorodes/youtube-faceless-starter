@@ -522,6 +522,9 @@ class PublishHandler(_AvailableHandler):
             {"stage": self.stage.value, "youtube_video_id": youtube_video_id, "publication_id": publication_id},
             context.checkpoint_version))
 
+    def _confirmed_id(self, pub, state) -> str | None:
+        return (pub.youtube_video_id if pub else None) or (state.youtube_video_id if state else None) or None
+
     def _reconcile_first(self, context: StageContext) -> StageOutcome | None:
         """D8: nunca reenvia sobre uma publicação ambígua/obsoleta; o CAS do banco decide a obsolescência."""
         video_id = context.run.video_id
@@ -529,8 +532,11 @@ class PublishHandler(_AvailableHandler):
         if pub is None:
             return None
         state = self.pubs.lease_state(video_id)
-        if pub.youtube_video_id:
-            return self._done(context, pub.youtube_video_id, pub.id)
+        confirmed = self._confirmed_id(pub, state)
+        if confirmed:
+            return self._done(context, confirmed, pub.id)
+        if state is not None and state.dead_letter:
+            raise StageExecutionFailed("publication is in the dead-letter queue; resolve it manually")
         if pub.status is PublicationStatus.UPLOADING:
             for _ in range(2):
                 until = state.lease_until if state else None
@@ -540,9 +546,11 @@ class PublishHandler(_AvailableHandler):
                         pub.id, pub.attempt,
                         "stage re-claimed after the previous executor stopped; upload outcome unknown"):
                     break
+                pub = self.pubs.get(video_id) or pub
                 state = self.pubs.lease_state(video_id)
-                if state is not None and state.youtube_video_id:
-                    return self._done(context, state.youtube_video_id, pub.id)
+                confirmed = self._confirmed_id(pub, state)
+                if confirmed:
+                    return self._done(context, confirmed, pub.id)
             else:
                 raise StageExecutionFailed("could not settle the previous upload attempt; try again later")
             state = self.pubs.lease_state(video_id)
@@ -551,7 +559,11 @@ class PublishHandler(_AvailableHandler):
                 raise StageExecutionFailed("publication outcome is ambiguous; reconcile before retrying")
             run = self.reconcile.execute(pub.id)
             if run.result is PublicationResult.UPLOADED:
-                return self._done(context, run.youtube_video_id, pub.id)
+                confirmed = (run.youtube_video_id or (run.publication.youtube_video_id if run.publication else None)
+                             or pub.youtube_video_id)
+                if not confirmed:
+                    raise StageExecutionFailed("reconcile reported UPLOADED without a confirmed YouTube video id")
+                return self._done(context, confirmed, pub.id)
             if run.result is not PublicationResult.RETRY:
                 raise StageExecutionFailed(
                     f"publication did not complete ({run.result.value}): {run.detail or 'no detail'}")
@@ -581,6 +593,8 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
                          publications: PublicationQueueRepository | None = None
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
+    if reconcile is not None and publications is None:
+        raise ValueError("`reconcile` requires `publications`: it would be silently ignored")
     handlers: dict[ProductionStage, StageHandler] = {
         ProductionStage.SCRIPT: ScriptHandler(editorial, videos),
         ProductionStage.FACTCHECK: FactCheckHandler(editorial),
