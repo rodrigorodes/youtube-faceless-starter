@@ -191,7 +191,6 @@ def structure_render_plan(
     _validate_overlays(plan, manifest, by_id)
 
     subtitles = sorted(plan.timeline.subtitles, key=lambda c: c.start_tick)
-    shot_subtitles = subtitles if plan.schema_version == 1 else []
     shots: list[ShotPlan] = []
     for index, (scene, shot) in enumerate(ordered_bases):
         reference = manifest.get(shot.asset_ref)
@@ -204,6 +203,10 @@ def structure_render_plan(
         if not descriptor.available:
             raise CompileError(f"asset {shot.asset_ref!r} is unavailable at {descriptor.uri!r}")
         layers = _compile_layers(scene, shot, manifest, by_id)
+        # Subtitles em cenas com múltiplos cortes de base (pacing) cruzam cortes
+        # e são renderizadas globalmente via ASS no compilador v2; cenas com apenas
+        # 1 base shot preservam os overlays por shot (incluindo cenas com overlays).
+        shot_subtitles = subtitles if len(scene.base_shots) == 1 else []
         shots.append(
             _shot_plan(
                 plan, scene, shot, reference, descriptor, index, work, tps,
