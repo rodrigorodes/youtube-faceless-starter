@@ -35,6 +35,8 @@ from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxE
                                      StageTransition)
 from ..domain.run_config import StoredRunConfig
 from ..domain.longform import ScriptApproval, ScriptPlan
+from ..domain.media import MediaCandidate
+
 
 if TYPE_CHECKING:
     from .reopen import PublicationLease  # só para a anotação da porta; evita ciclo `ports` ↔ `video_style`
@@ -74,43 +76,6 @@ class OverlayLayer:
     duration_s: float      # > 0
     z_index: int = 1       # >= 1
     fit: Literal["cover", "contain"] = "contain"
-
-
-@dataclass(frozen=True)
-class MediaCandidate:
-    """Candidato de mídia de uma busca agnóstica de fornecedor.
-
-    Licença, proveniência (``source_url``), URL do arquivo e atribuição são obrigatórias: um
-    candidato sem esses dados nunca é aceito — o core não inventa licença nem crédito. Custo e
-    dimensões são opcionais porque nem todo provedor os informa. O fornecedor concreto não
-    aparece neste contrato; o adaptador é quem o conhece.
-    """
-
-    license: str
-    source_url: str
-    url: str
-    attribution: str
-    author: str = ""
-    media_id: str = ""
-    media_type: str = "image"
-    width: int | None = None
-    height: int | None = None
-    cost_usd: Decimal | None = None
-
-    def __post_init__(self) -> None:
-        for name in ("license", "source_url", "url", "attribution", "media_type"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name} is required")
-        if self.cost_usd is not None:
-            amount = Decimal(str(self.cost_usd))
-            if not amount.is_finite() or amount < 0:
-                raise ValueError("cost_usd must be a finite non-negative Decimal")
-            object.__setattr__(self, "cost_usd", amount)
-        for name in ("width", "height"):
-            value = getattr(self, name)
-            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
-                raise ValueError(f"{name} must be a positive integer when provided")
 
 
 @dataclass(frozen=True)
