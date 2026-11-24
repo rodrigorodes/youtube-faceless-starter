@@ -195,6 +195,9 @@ class VideoIn(BaseModel):
     # F02.T02/G15: estilo escolhido no Create; ausente = herda o do canal (comportamento antigo).
     style_id: str | None = Field(default=None, min_length=1, max_length=64)
     production_mode: ProductionMode = ProductionMode.piloto
+    target_duration_s: int | None = Field(default=None, ge=1)
+    pacing_preset: str = Field(default="dynamic")
+    budget_cap_usd: float | None = Field(default=None, ge=0.0)
 
 
 class VideoOut(Video):
@@ -1329,13 +1332,19 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(422, "project_id is required")
         return run(lambda uc: uc.create_video.execute(check_id(body.project_id), body.topic, body.format,
                                                       body.style_id,
-                                                      production_mode=body.production_mode))
+                                                      production_mode=body.production_mode,
+                                                      target_duration_s=body.target_duration_s,
+                                                      pacing_preset=body.pacing_preset,
+                                                      budget_cap_usd=body.budget_cap_usd))
 
     @router.post("/projects/{project_id}/videos", status_code=201, response_model=VideoOut)
     def create_project_video(project_id: str, body: VideoIn):
         return run(lambda uc: uc.create_video.execute(check_id(project_id), body.topic, body.format,
                                                       body.style_id,
-                                                      production_mode=body.production_mode))
+                                                      production_mode=body.production_mode,
+                                                      target_duration_s=body.target_duration_s,
+                                                      pacing_preset=body.pacing_preset,
+                                                      budget_cap_usd=body.budget_cap_usd))
 
     @router.get("/videos/{video_id}", response_model=Video)
     def get_video(video_id: str):

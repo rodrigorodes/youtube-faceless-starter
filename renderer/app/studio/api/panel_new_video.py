@@ -33,6 +33,21 @@ NEW_VIDEO_JS = """
     var format = $('input[name="formato-novo"]:checked');
     $('#resumo-modo').textContent = mode && mode.value === 'diretor' ? 'Modo Diretor' : 'Piloto automático';
     $('#resumo-formato').textContent = format && format.value === 'long' ? 'Vídeo 16:9' : 'Short 9:16';
+    var durSel = $('#duracao-alvo');
+    var resDur = $('#resumo-duracao');
+    if (resDur && durSel && durSel.selectedOptions && durSel.selectedOptions[0]) {
+      resDur.textContent = durSel.selectedOptions[0].textContent;
+    }
+    var ritmo = $('input[name="ritmo-cortes"]:checked');
+    var resRitmo = $('#resumo-ritmo');
+    if (resRitmo && ritmo) {
+      resRitmo.textContent = ritmo.value === 'cinematic' ? 'Cinemático' : (ritmo.value === 'balanced' ? 'Balanceado' : 'Dinâmico');
+    }
+    var teto = $('#teto-custo');
+    var resTeto = $('#resumo-teto');
+    if (resTeto) {
+      resTeto.textContent = teto && teto.value ? ('US$ ' + parseFloat(teto.value).toFixed(2)) : 'padrão do servidor';
+    }
     var diretor = mode && mode.value === 'diretor';
     var rotulo = $('#btn-criar-abrir');
     if (rotulo && !rotulo.classList.contains('carregando')) {
@@ -150,11 +165,18 @@ NEW_VIDEO_JS = """
         return;
       }
 
+      var durSel = $('#duracao-alvo');
+      var ritmo = $('input[name="ritmo-cortes"]:checked');
+      var teto = $('#teto-custo');
+
       var payload = {
         project_id: canalSel.value,
         topic: tema,
         format: fmt ? fmt.value : 'short',
-        production_mode: modo ? modo.value : 'piloto'
+        production_mode: modo ? modo.value : 'piloto',
+        pacing_preset: ritmo ? ritmo.value : 'dynamic',
+        target_duration_s: durSel && durSel.value ? parseInt(durSel.value, 10) : null,
+        budget_cap_usd: teto && teto.value ? parseFloat(teto.value) : null
       };
       if (est && est.value) payload.style_id = est.value;
 
@@ -408,6 +430,20 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   <label class="lbl" for="duracao-alvo" style="margin-left:10px">Duração alvo</label>
                   <select id="duracao-alvo" name="duration"{disabled} style="width:auto"></select>
                 </div>
+                <div style="margin:0 0 14px">
+                  <p class="lbl" style="margin-bottom:6px">Ritmo de cortes</p>
+                  <div class="seg" role="group" style="display:inline-flex">
+                    <label class="seg-btn"><input type="radio" class="sr-only" name="ritmo-cortes" value="dynamic" checked{disabled}><span>⚡ Dinâmico</span></label>
+                    <label class="seg-btn"><input type="radio" class="sr-only" name="ritmo-cortes" value="balanced"{disabled}><span>Balanceado</span></label>
+                    <label class="seg-btn"><input type="radio" class="sr-only" name="ritmo-cortes" value="cinematic"{disabled}><span>Cinemático</span></label>
+                  </div>
+                  <p class="sample" style="margin-top:6px">Dinâmico: um corte a cada ~2,5 s (1,5–3,5 s). Balanceado: ~3,5 s. Cinemático: ~5 s. Cena longa com uma só imagem é dividida em tomadas com zoom/pan alternados.</p>
+                </div>
+                <div style="margin:0 0 14px">
+                  <label class="lbl" for="teto-custo">Teto de custo deste vídeo (US$)</label>
+                  <input type="number" step="0.01" min="0" id="teto-custo" name="teto-custo" value="" placeholder="Opcional · padrão do servidor" style="max-width:260px"{disabled}>
+                  <p class="sample" style="margin-top:6px">A produção para antes de ultrapassar este valor.</p>
+                </div>
                 <p class="lbl" style="margin-bottom:6px">Voz do narrador{voz_vinculo}</p>
                 <div class="row" style="margin-bottom:14px">
                   <span class="pill accent">{voz}</span>
@@ -425,6 +461,9 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                 <p class="sub" style="margin:4px 0 12px">{e(current_channel_name)}</p>
                 <div class="between sub"><span>Modo</span><b id="resumo-modo" style="color:var(--text)"></b></div>
                 <div class="between sub"><span>Formato</span><b id="resumo-formato" style="color:var(--text)"></b></div>
+                <div class="between sub"><span>Duração alvo</span><b id="resumo-duracao" style="color:var(--text)">60 s</b></div>
+                <div class="between sub"><span>Ritmo de cortes</span><b id="resumo-ritmo" style="color:var(--text)">Dinâmico</b></div>
+                <div class="between sub"><span>Teto de custo</span><b id="resumo-teto" style="color:var(--text)">padrão do servidor</b></div>
                 <div class="between sub"><span>Voz</span><b style="color:var(--text)">{voz}</b></div>
                 <div class="between sub"><span>Estilo</span><b style="color:var(--text)">{estilo}</b></div>
                 <div class="between sub"><span>Estimativa de custo</span><b style="color:var(--text)">Não disponível</b></div>
