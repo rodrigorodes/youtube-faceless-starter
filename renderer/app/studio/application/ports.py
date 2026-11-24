@@ -657,6 +657,7 @@ class VideoRow:
     pacing_preset: str = "dynamic"
     budget_cap_usd: float | None = None
     creative_brief: dict | None = None
+    qa_report: Any | None = None
 
 
 @dataclass(frozen=True)

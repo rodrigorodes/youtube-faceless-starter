@@ -1177,7 +1177,11 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             ev = getattr(f, "evidence", str(f))
             sev = getattr(f, "severity", "warning")
             cid = getattr(f, "check_id", "")
-            actionable_issues.append((sev, ev, cid))
+            sc_id = getattr(f, "scene_id", None)
+            af = getattr(f, "auto_fixable", False)
+            nh = getattr(f, "needs_human", False)
+            act = getattr(f, "suggested_action", None)
+            actionable_issues.append((sev, ev, cid, sc_id, af, nh, act))
             if sev == "blocking":
                 has_blocking = True
         if not publishable:
@@ -1199,16 +1203,49 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
         approval_rows += _kv("Aprovação do roteiro",
                              "aprovada" if script_view.approved else "não registrada")
 
-    blocks = sum(1 for sev, _ev, _cid in actionable_issues if sev == "blocking")
+    blocks = sum(1 for item in actionable_issues if item[0] == "blocking")
     warns = len(actionable_issues) - blocks
     rendered = view.stage in _PREVIEW_STAGES
     if actionable_issues or (qa is not None and not publishable):
         issues_title = "Pontos para revisar"
     else:
         issues_title = "Pronto para sua revisão"
-    issue_lines = "".join(
-        f'<p class="sub" style="margin-top:8px">{e(cid or "QA")} · {e(ev)}</p>'
-        for _sev, ev, cid in actionable_issues)
+    def _format_issue_line(item) -> str:
+        _sev, ev, cid, sc_id, af, nh, act = item
+        line_parts = ['<p class="sub" style="margin-top:8px">']
+        if sc_id:
+            line_parts.append(f'<span class="pill accent small" style="margin-right:6px">Cena {e(sc_id)}</span>')
+        if af:
+            line_parts.append('<span class="pill ok small" style="margin-right:6px">⚡ Auto-correção</span>')
+        if nh:
+            line_parts.append('<span class="pill warn small" style="margin-right:6px">👤 Requer operador</span>')
+        line_parts.append(f'{e(cid or "QA")} · {e(ev)}')
+        if act:
+            line_parts.append(f'<br><small style="color:var(--accent2);margin-left:4px">Ação: {e(act)}</small>')
+        line_parts.append('</p>')
+        return "".join(line_parts)
+
+    def _format_finding_gate(f) -> str:
+        cid = e(getattr(f, "check_id", "CHECK"))
+        ev = e(getattr(f, "evidence", str(f)))
+        sev = getattr(f, "severity", "info")
+        badge_cls = "bad" if sev == "blocking" else "warn"
+        badge_txt = "✕ Bloqueia" if sev == "blocking" else "! Atenção"
+
+        parts = [f'<div class="gate"><div><b style="font-size:13px">{cid}</b>']
+        if sc_id := getattr(f, "scene_id", None):
+            parts.append(f'<span class="pill accent small" style="margin-left:6px">Cena {e(sc_id)}</span>')
+        if getattr(f, "auto_fixable", False):
+            parts.append('<span class="pill ok small" style="margin-left:6px">⚡ Auto-correção</span>')
+        if getattr(f, "needs_human", False):
+            parts.append('<span class="pill warn small" style="margin-left:6px">👤 Requer operador</span>')
+        parts.append(f'<small>{ev}</small>')
+        if act := getattr(f, "suggested_action", None):
+            parts.append(f'<small style="color:var(--accent2);margin-top:2px">Ação: {e(act)}</small>')
+        parts.append(f'</div><span class="pill {badge_cls}">{badge_txt}</span></div>')
+        return "".join(parts)
+
+    issue_lines = "".join(_format_issue_line(item) for item in actionable_issues)
     if not rendered:
         issue_lines = ('<p class="sub" style="margin-top:8px"><span class="pill pill-espera">Aguardando renderização</span>'
                        " Aguardando renderização do vídeo para revisão.</p>")
@@ -1233,13 +1270,7 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             + _kv("Achados", str(len(findings)))
         )
         if findings:
-            findings_items = "".join(
-                f'<div class="gate"><div><b style="font-size:13px">{e(getattr(f, "check_id", "CHECK"))}</b>'
-                f'<small>{e(getattr(f, "evidence", str(f)))}</small></div>'
-                f'<span class="pill {"bad" if getattr(f, "severity", "info") == "blocking" else "warn"}">'
-                f'{"✕ Bloqueia" if getattr(f, "severity", "info") == "blocking" else "! Atenção"}</span></div>'
-                for f in findings
-            )
+            findings_items = "".join(_format_finding_gate(f) for f in findings)
             qa_html += f'<div class="stack" style="gap:8px;margin-top:12px">{findings_items}</div>'
         qa_html += "</div>"
     else:

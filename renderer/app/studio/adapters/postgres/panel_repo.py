@@ -16,7 +16,7 @@ from ...application.ports import (
 from ...domain.contracts import JobStatus, PublicationStatus, VideoFormat, VideoStatus
 from ...domain.ids import check_id
 from .editorial_repo import _Base
-from .repo import _translated
+from .repo import _translated, _qa_report
 
 
 class PostgresPanelRepository(_Base):
@@ -106,7 +106,7 @@ class PostgresPanelRepository(_Base):
             cur.execute("""
                 SELECT
                     v.id, v.project_id, v.topic, v.format, v.status, v.title, v.updated_at, v.production_mode,
-                    v.target_duration_s, v.pacing_preset, v.budget_cap_usd, v.creative_brief,
+                    v.target_duration_s, v.pacing_preset, v.budget_cap_usd, v.creative_brief, v.qa_report,
                     j.status AS job_status,
                     left(j.error, 300) AS render_error,
                     EXISTS(SELECT 1 FROM studio.step_runs sr WHERE sr.video_id = v.id AND sr.status = 'RUNNING') AS step_running,
@@ -189,6 +189,7 @@ class PostgresPanelRepository(_Base):
             pacing_preset=vr.get("pacing_preset") or "dynamic",
             budget_cap_usd=float(vr["budget_cap_usd"]) if vr.get("budget_cap_usd") is not None else None,
             creative_brief=vr.get("creative_brief"),
+            qa_report=_qa_report(vr.get("qa_report")),
         )
 
         steps = [
