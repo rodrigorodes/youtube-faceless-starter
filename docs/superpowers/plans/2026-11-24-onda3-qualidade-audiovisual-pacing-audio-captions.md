@@ -53,15 +53,15 @@
       - Se `asset_count == 1` e `not is_video_asset` e duração > 3.5s: subdivide em múltiplos shots alternando `motion` (`zoom_in` -> `zoom_out`).
       - Soma das durações = `total_duration_ticks` exato.
 
-- [ ] **Step 1: Write failing test in `tests/test_pacing_engine.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing test in `tests/test_pacing_engine.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_engine.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement `PacingEngine` in `renderer/app/studio/domain/pacing.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement `PacingEngine` in `renderer/app/studio/domain/pacing.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_engine.py tests/test_architecture.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/domain/pacing.py tests/test_pacing_engine.py
   git commit -m "feat(pacing): implementar PacingEngine de dominio puro para cortes ritmados"
@@ -87,15 +87,15 @@
     - `select_track(tone: str, catalog: MusicCatalog) -> MusicTrack | None`
     - `build_audio_mix(music_gain: float = 0.35, ducking_ratio: float = 12.0) -> AudioMix`
 
-- [ ] **Step 1: Write failing tests in `tests/test_music_catalog.py` and `tests/test_audio_director.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing tests in `tests/test_music_catalog.py` and `tests/test_audio_director.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_music_catalog.py tests/test_audio_director.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement `MusicCatalog` in `domain/music.py` and `AudioDirector` in `application/audio_director.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement `MusicCatalog` in `domain/music.py` and `AudioDirector` in `application/audio_director.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_music_catalog.py tests/test_audio_director.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/domain/music.py renderer/app/studio/application/audio_director.py tests/test_music_catalog.py tests/test_audio_director.py
   git commit -m "feat(audio): implementar MusicCatalog local CC0 e caso de uso AudioDirector"
