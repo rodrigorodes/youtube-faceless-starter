@@ -66,11 +66,17 @@ class CreateVideo:
 
     def execute(self, project_id: str, topic: str, fmt: VideoFormat,
                 style_id: str | None = None,
-                production_mode: ProductionMode = ProductionMode.piloto) -> Video:
+                production_mode: ProductionMode = ProductionMode.piloto,
+                target_duration_s: int | None = None,
+                pacing_preset: str = "dynamic",
+                budget_cap_usd: float | None = None) -> Video:
         if self.repo.get_project(project_id) is None:
             raise ProjectNotFound(project_id)
         if style_id is None:
-            return self.repo.create_video(project_id, topic, fmt, production_mode=production_mode)
+            return self.repo.create_video(project_id, topic, fmt, production_mode=production_mode,
+                                          target_duration_s=target_duration_s,
+                                          pacing_preset=pacing_preset,
+                                          budget_cap_usd=budget_cap_usd)
         if self.styles is None:
             # sem biblioteca não há como provar que o estilo existe: falha fechado
             raise VisualStyleNotFound(style_id)
@@ -80,7 +86,10 @@ class CreateVideo:
             raise VisualStyleNotFound(style_id)
         if style.archived:
             raise VisualStyleArchived(f"visual style {style.name!r} is archived")
-        return self.repo.create_video(project_id, topic, fmt, style_id=style.id, production_mode=production_mode)
+        return self.repo.create_video(project_id, topic, fmt, style_id=style.id, production_mode=production_mode,
+                                      target_duration_s=target_duration_s,
+                                      pacing_preset=pacing_preset,
+                                      budget_cap_usd=budget_cap_usd)
 
 
 class GetVideo:

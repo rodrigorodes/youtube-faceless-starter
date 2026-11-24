@@ -236,7 +236,10 @@ class PostgresVideoRepository:
 
     def create_video(self, project_id: str, topic: str, fmt: VideoFormat,
                      style_id: str | None = None,
-                     production_mode: ProductionMode = ProductionMode.piloto) -> Video:
+                     production_mode: ProductionMode = ProductionMode.piloto,
+                     target_duration_s: int | None = None,
+                     pacing_preset: str = "dynamic",
+                     budget_cap_usd: float | None = None) -> Video:
         """Cria o vídeo já com o estilo escolhido (F02.T02), numa única transação.
 
         O estilo é validado no caso de uso (existe e está ativo); a FK do banco é a última
@@ -248,10 +251,10 @@ class PostgresVideoRepository:
             pmode = production_mode.value if isinstance(production_mode, ProductionMode) else str(production_mode)
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
                 try:
-                    cur.execute("INSERT INTO studio.videos(id, project_id, topic, format, style_id, production_mode) "
-                                "VALUES (%s, %s, %s, %s, %s, %s) "
-                                "RETURNING id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at",
-                                (video_id, check_id(project_id), topic, fmt.value, sid, pmode))
+                    cur.execute("INSERT INTO studio.videos(id, project_id, topic, format, style_id, production_mode, target_duration_s, pacing_preset, budget_cap_usd) "
+                                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                                "RETURNING id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, target_duration_s, pacing_preset, budget_cap_usd, creative_brief, created_at, updated_at",
+                                (video_id, check_id(project_id), topic, fmt.value, sid, pmode, target_duration_s, pacing_preset, budget_cap_usd))
                 except psycopg.errors.ForeignKeyViolation as exc:
                     # corrida com o arquivamento entre a validação e o INSERT: falha fechado,
                     # sem deixar vídeo com vínculo quebrado
@@ -261,10 +264,22 @@ class PostgresVideoRepository:
     def get_video(self, video_id: str) -> Video | None:
         with _translated():
             with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, created_at, updated_at "
+                cur.execute("SELECT id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, target_duration_s, pacing_preset, budget_cap_usd, creative_brief, created_at, updated_at "
                             "FROM studio.videos WHERE id = %s", (check_id(video_id),))
                 row = cur.fetchone()
             return _video(row) if row else None
+
+    def update_video_creative_brief(self, video_id: str, brief_dict: dict) -> None:
+        with _translated():
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE studio.videos SET creative_brief = %s, updated_at = NOW() WHERE id = %s",
+                            (psycopg.types.json.Jsonb(brief_dict), check_id(video_id)))
+
+    def update_video_pacing_preset(self, video_id: str, preset: str) -> None:
+        with _translated():
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE studio.videos SET pacing_preset = %s, updated_at = NOW() WHERE id = %s",
+                            (preset, check_id(video_id)))
 
     def get_video_style_patch(self, video_id: str) -> VideoStylePatch | None:
         """Lê o override de estilo do vídeo (F05.T02); ``None`` se o vídeo não existe.

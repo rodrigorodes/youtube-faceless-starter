@@ -94,6 +94,10 @@ class Video(_Model):
     # VS-02b: estilo que **sobrepõe** o do canal neste vídeo. Nulo (o normal) = herda o do canal.
     style_id: str | None = None
     qa_report: QaReport | None = None
+    target_duration_s: int | None = None
+    pacing_preset: str = "dynamic"
+    budget_cap_usd: float | None = None
+    creative_brief: dict | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
