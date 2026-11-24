@@ -569,9 +569,11 @@ class PostgresUsageRepository(_Base):
     def record(self, video_id: str | None, entry: UsageEntry) -> None:
         with _translated(), self._connect() as conn:
             conn.execute("INSERT INTO studio.usage_ledger(video_id, step, provider, model, input_tokens, output_tokens, "
-                         "cache_read_tokens, cache_write_tokens, cost_usd) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                         "cache_read_tokens, cache_write_tokens, cost_usd, category, duration_ms, attempt) "
+                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                          (check_id(video_id) if video_id else None, entry.step, entry.provider, entry.model, entry.input_tokens,
-                          entry.output_tokens, entry.cache_read_tokens, entry.cache_write_tokens, entry.cost_usd))
+                          entry.output_tokens, entry.cache_read_tokens, entry.cache_write_tokens, entry.cost_usd,
+                          entry.category, entry.duration_ms, entry.attempt))
 
     def spent_video(self, video_id: str) -> float:
         with _translated(), self._connect() as conn:
@@ -581,6 +583,12 @@ class PostgresUsageRepository(_Base):
         with _translated(), self._connect() as conn:
             return float(conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM studio.usage_ledger "
                                       "WHERE created_at >= date_trunc('month', now())").fetchone()[0])
+
+    def spent_by_category(self, video_id: str) -> dict[str, float]:
+        with _translated(), self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT category, COALESCE(SUM(cost_usd), 0) FROM studio.usage_ledger "
+                        "WHERE video_id = %s GROUP BY category", (check_id(video_id),))
+            return {str(r[0]): float(r[1]) for r in cur.fetchall()}
 
 
 def _read_scenes(conn, video_id: str) -> list[Scene]:

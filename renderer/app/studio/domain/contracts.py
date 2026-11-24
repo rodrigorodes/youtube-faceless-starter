@@ -203,6 +203,9 @@ class UsageEntry(_Model):
     cache_read_tokens: Tokens = None
     cache_write_tokens: Tokens = None
     cost_usd: Cost = 0.0
+    category: str = "other"
+    duration_ms: int | None = None
+    attempt: int = 1
 
 
 class SourceSnapshot(_Model):
