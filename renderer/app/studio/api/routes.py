@@ -1353,6 +1353,59 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "video not found")
         return video
 
+    @router.get("/videos/{video_id}/direction")
+    def get_video_direction(video_id: str):
+        video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
+        if video is None:
+            raise HTTPException(404, "video not found")
+        return {"brief": video.creative_brief}
+
+    @router.post("/videos/{video_id}/direction")
+    def post_video_direction(video_id: str, body: dict | None = None):
+        video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
+        if video is None:
+            raise HTTPException(404, "video not found")
+        brief = body.get("brief") if body else None
+        if not brief:
+            def gen(uc):
+                if hasattr(uc, "creative_director") and uc.creative_director:
+                    proj = uc.get_video.repo.get_project(video.project_id)
+                    ctx = {"project_name": proj.name if proj else "", "niche": proj.niche if proj else ""}
+                    return uc.creative_director.execute(video.topic, ctx, budget_cap=video.budget_cap_usd).model_dump()
+                return {
+                    "schema_version": 1,
+                    "topic": video.topic,
+                    "narrative_goal": f"Apresentar visão aprofundada sobre {video.topic}",
+                    "hook": f"Você sabia disto sobre {video.topic}?",
+                    "content_structure": ["Introdução e Gancho", "Desenvolvimento dos Fatos", "Conclusão e Fechamento"],
+                    "tone": "Curioso e envolvente",
+                    "pacing": video.pacing_preset,
+                    "visual_direction": "Imagens nítidas e contextualizadas",
+                    "recommended_media_types": ["image", "video"],
+                    "caption_strategy": "Palavra ativa com realce",
+                    "audio_guidance": "Trilha sonora ambiente e equilibrada",
+                    "max_budget_usd": video.budget_cap_usd,
+                    "quality_criteria": ["Boa resolução", "Sem repetição de mídia"],
+                }
+            brief = run(gen)
+        run(lambda uc: uc.get_video.repo.update_video_creative_brief(check_id(video_id), brief))
+        return {"ok": True, "brief": brief}
+
+    @router.put("/videos/{video_id}/direction")
+    def put_video_direction(video_id: str, body: dict):
+        video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
+        if video is None:
+            raise HTTPException(404, "video not found")
+        brief = body.get("brief") if isinstance(body, dict) else body
+        if not brief:
+            raise HTTPException(422, "brief is required")
+        current = dict(video.creative_brief or {})
+        if isinstance(brief, dict):
+            current.update(brief)
+        brief = current
+        run(lambda uc: uc.get_video.repo.update_video_creative_brief(check_id(video_id), brief))
+        return {"ok": True, "brief": brief}
+
     @router.post("/videos/{video_id}/transition")
     def transition(video_id: str, body: TransitionIn):
         if body.new in RESERVED_TARGETS or (body.expected == VideoStatus.FAILED and body.new in POST_GATE):

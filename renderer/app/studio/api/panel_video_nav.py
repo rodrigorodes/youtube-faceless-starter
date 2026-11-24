@@ -11,6 +11,7 @@ from __future__ import annotations
 from html import escape as e
 
 VIDEO_AREAS: tuple[tuple[str, str], ...] = (
+    ("direcao", "Direção criativa"),
     ("cenas", "Cenas & Storyboard"),
     ("composicao", "Composição & Legendas"),
     ("qualidade", "Qualidade & Aprovação"),

@@ -106,6 +106,7 @@ class PostgresPanelRepository(_Base):
             cur.execute("""
                 SELECT
                     v.id, v.project_id, v.topic, v.format, v.status, v.title, v.updated_at, v.production_mode,
+                    v.target_duration_s, v.pacing_preset, v.budget_cap_usd, v.creative_brief,
                     j.status AS job_status,
                     left(j.error, 300) AS render_error,
                     EXISTS(SELECT 1 FROM studio.step_runs sr WHERE sr.video_id = v.id AND sr.status = 'RUNNING') AS step_running,
@@ -184,6 +185,10 @@ class PostgresPanelRepository(_Base):
             error=vr["pub_error"] or vr["render_error"],
             cost_rows=costs,
             production_mode=vr.get("production_mode"),
+            target_duration_s=vr.get("target_duration_s"),
+            pacing_preset=vr.get("pacing_preset") or "dynamic",
+            budget_cap_usd=float(vr["budget_cap_usd"]) if vr.get("budget_cap_usd") is not None else None,
+            creative_brief=vr.get("creative_brief"),
         )
 
         steps = [

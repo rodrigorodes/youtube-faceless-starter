@@ -653,6 +653,10 @@ class VideoRow:
     scene_count: int | None = None
     version_count: int | None = None
     style_name: str | None = None
+    target_duration_s: int | None = None
+    pacing_preset: str = "dynamic"
+    budget_cap_usd: float | None = None
+    creative_brief: dict | None = None
 
 
 @dataclass(frozen=True)

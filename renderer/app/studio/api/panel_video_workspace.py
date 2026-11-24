@@ -151,6 +151,124 @@ def _revision_history_card(script_view, video_id: str) -> str:
     )
 
 
+def _area_direcao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
+    video = getattr(view, "video", None)
+    brief = getattr(video, "creative_brief", None) if video else None
+    pacing_val = getattr(video, "pacing_preset", "dynamic") if video else "dynamic"
+    pacing_label = {"cinematic": "Cinemático", "balanced": "Balanceado"}.get(pacing_val, "Dinâmico")
+    budget_val = getattr(video, "budget_cap_usd", None) if video else None
+    budget_label = f"US$ {budget_val:.2f}" if budget_val is not None else "padrão do servidor"
+
+    if not brief:
+        return (
+            '<div class="between" style="margin:14px 14px 16px">'
+            '<div><h2>Direção criativa</h2>'
+            '<p class="sub">O briefing que guia roteiro, mídia, ritmo e música. Gerado a partir do tema; você pode ajustar antes de produzir.</p></div>'
+            f'<div class="row"><button class="btn primary small" type="button" id="btn-gerar-briefing" onclick="gerarBriefing(\'{e(video_id)}\')">⚡ Gerar briefing</button></div>'
+            '</div>'
+            '<div class="card" style="margin:14px"><p>Nenhum briefing criativo gerado ainda para este vídeo. '
+            'Clique no botão acima para criar o briefing estruturado com gancho, estrutura, direção visual e orientações de áudio.</p></div>'
+        )
+
+    hook = e(str(brief.get("hook", "")))
+    goal = e(str(brief.get("narrative_goal", "")))
+    structure = brief.get("content_structure", [])
+    structure_html = "".join(f"<li>{e(str(item))}</li>" for item in structure)
+    tone = e(str(brief.get("tone", "")))
+    pacing = e(str(brief.get("pacing", "")))
+    visual = e(str(brief.get("visual_direction", "")))
+    audio = e(str(brief.get("audio_guidance", "")))
+    media_types = brief.get("recommended_media_types", ["image", "video"])
+    media_map = {"image": "Imagem", "video": "Vídeo stock", "graphic": "Gráfico", "text": "Texto"}
+    media_pills = "".join(f'<span class="pill accent" style="margin-right:6px">{media_map.get(m, m)}</span>' for m in media_types)
+    captions = e(str(brief.get("caption_strategy", "")))
+    criteria = brief.get("quality_criteria", [])
+    criteria_html = "".join(f"<li>{e(str(c))}</li>" for c in criteria)
+
+    return f"""
+<div class="between" style="margin:14px 14px 16px"><div><h2>Direção criativa</h2>
+<p class="sub">O briefing que guia roteiro, mídia, ritmo e música. Gerado a partir do tema; você pode ajustar antes de produzir.</p></div>
+<div class="row"><span class="pill ok">✓ Briefing gerado</span><button class="btn small" type="button" id="btn-regenerar-briefing" onclick="gerarBriefing('{e(video_id)}')">↻ Regenerar briefing</button></div></div>
+<div class="two" style="padding:0 14px 14px"><div class="stack">
+ <div class="card"><h3 style="margin-bottom:8px">Gancho · primeiros 3 s</h3>
+  <textarea id="brief-hook" rows="2" style="width:100%">{hook}</textarea>
+  <div class="field" style="margin-top:10px"><label for="brief-narrative-goal">Objetivo narrativo</label>
+  <textarea id="brief-narrative-goal" rows="2" style="width:100%">{goal}</textarea></div></div>
+ <div class="card"><h3 style="margin-bottom:8px">Estrutura do conteúdo</h3>
+  <ol id="brief-structure" style="margin:0 0 0 18px;line-height:1.9">{structure_html}</ol></div>
+ <div class="grid2">
+  <div class="card"><h3 style="margin-bottom:6px">Tom</h3><input type="text" id="brief-tone" value="{tone}"></div>
+  <div class="card"><h3 style="margin-bottom:6px">Ritmo</h3><input type="text" id="brief-pacing" value="{pacing}"></div>
+  <div class="card"><h3 style="margin-bottom:6px">Direção visual</h3><textarea id="brief-visual" rows="3" style="width:100%">{visual}</textarea></div>
+  <div class="card"><h3 style="margin-bottom:6px">Orientação de áudio</h3><textarea id="brief-audio" rows="3" style="width:100%">{audio}</textarea></div>
+ </div>
+ <div class="card"><h3 style="margin-bottom:8px">Tipos de mídia recomendados</h3><div class="row" id="brief-media-types">{media_pills}</div>
+  <div class="field" style="margin-top:10px"><label for="brief-captions">Estratégia de legendas</label><input type="text" id="brief-captions" value="{captions}"></div></div>
+ <div class="card"><h3 style="margin-bottom:8px">Critérios de qualidade</h3>
+  <ul id="brief-criteria" style="margin:0 0 0 18px;line-height:1.9">{criteria_html}</ul></div>
+</div>
+<aside class="card" style="position:sticky;top:80px;align-self:start"><h3>Como o briefing é usado</h3>
+ <p class="sub" style="margin:4px 0 12px">Cada decisão abaixo lê este briefing.</p>
+ <div class="between sub"><span>Roteiro e cenas</span><b style="color:var(--text)">estrutura e gancho</b></div>
+ <div class="between sub"><span>Busca de mídia</span><b style="color:var(--text)">direção visual + tipos</b></div>
+ <div class="between sub"><span>Ritmo de cortes</span><b style="color:var(--text)">{pacing_label}</b></div>
+ <div class="between sub"><span>Música</span><b style="color:var(--text)">orientação de áudio</b></div>
+ <div class="between sub"><span>Teto de custo</span><b style="color:var(--text)">{budget_label}</b></div>
+ <div class="hr"></div>
+ <button class="btn primary long" type="button" id="btn-salvar-briefing" onclick="salvarBriefing('{e(video_id)}')">Salvar ajustes do briefing</button>
+ <p class="sample" style="margin-top:8px">Salvar não refaz o que já foi renderizado; vale para as próximas gerações.</p>
+ <div id="brief-feedback" class="form-feedback" role="status" style="margin-top:8px"></div>
+</aside></div>
+"""
+
+
+DIRECAO_JS = """
+window.gerarBriefing = function (vid) {
+  var btn = document.getElementById('btn-gerar-briefing') || document.getElementById('btn-regenerar-briefing');
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando briefing...'; }
+  fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function (r) {
+    if (!r.ok) throw new Error('Falha ao gerar briefing');
+    return r.json();
+  }).then(function () {
+    window.location.reload();
+  }).catch(function (err) {
+    alert('Erro ao gerar briefing: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Regenerar briefing'; }
+  });
+};
+
+window.salvarBriefing = function (vid) {
+  var b = {
+    hook: document.getElementById('brief-hook') ? document.getElementById('brief-hook').value : '',
+    narrative_goal: document.getElementById('brief-narrative-goal') ? document.getElementById('brief-narrative-goal').value : '',
+    tone: document.getElementById('brief-tone') ? document.getElementById('brief-tone').value : '',
+    pacing: document.getElementById('brief-pacing') ? document.getElementById('brief-pacing').value : '',
+    visual_direction: document.getElementById('brief-visual') ? document.getElementById('brief-visual').value : '',
+    audio_guidance: document.getElementById('brief-audio') ? document.getElementById('brief-audio').value : '',
+    caption_strategy: document.getElementById('brief-captions') ? document.getElementById('brief-captions').value : ''
+  };
+  var fb = document.getElementById('brief-feedback');
+  if (fb) { fb.textContent = 'Salvando ajustes...'; fb.className = 'form-feedback'; }
+  fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ brief: b })
+  }).then(function (r) {
+    if (!r.ok) throw new Error('Falha ao salvar ajustes');
+    return r.json();
+  }).then(function () {
+    if (fb) { fb.textContent = 'Ajustes salvos com sucesso!'; fb.className = 'form-feedback ok'; }
+  }).catch(function (err) {
+    if (fb) { fb.textContent = 'Erro ao salvar: ' + err.message; fb.className = 'form-feedback err'; }
+  });
+};
+"""
+
+
 def _area_visao_geral(view, *, style_view=None, script_view=None, video_id: str, composition_view=None) -> str:
     scenes_text = "não disponível"
     target_text = "não registrada"
@@ -1411,6 +1529,7 @@ def _area_producao(view, *, style_view=None, script_view=None, video_id: str, co
 
 
 _AREA_RENDERERS = {
+    "direcao": _area_direcao,
     "visao-geral": _area_visao_geral,
     "fontes": _area_fontes,
     "narracao": _area_narracao,
@@ -2345,6 +2464,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"
     # O JS do formulário de aprovação só entra na área Publicação (W5.1); o resto não mudou.
     page_js = (PAGE_JS + (STORYBOARD_JS if active_area == "cenas" else "")
+               + (DIRECAO_JS if active_area == "direcao" else "")
                + (RUN_JS if active_area != "producao" else "")  # o cartão acompanha a execução em todas as abas
                + (PUBLICACAO_JS + approval_form.APPROVAL_JS if active_area == "publicacao" else ""))
     html = shell_v3.render_document(
