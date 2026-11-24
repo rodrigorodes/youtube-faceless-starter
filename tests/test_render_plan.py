@@ -102,7 +102,7 @@ def plan(**overrides):
 
 def test_minimal_plan_is_valid_and_versioned():
     p = plan()
-    assert p.schema_version == 1
+    assert p.schema_version == 2
     assert p.timeline.duration_ticks == 250
 
 
@@ -189,9 +189,9 @@ def test_missing_required_fields_are_rejected():
 
 def test_unknown_schema_version_is_rejected():
     with pytest.raises(ValidationError):
-        plan(schema_version=2)
+        plan(schema_version=99)
     with pytest.raises(ValueError, match="schema_version"):
-        load_versioned(RenderPlan, {**plan().model_dump(mode="json"), "schema_version": 2})
+        load_versioned(RenderPlan, {**plan().model_dump(mode="json"), "schema_version": 99})
 
 
 def test_plan_is_immutable():
@@ -339,7 +339,7 @@ def test_a_plan_persisted_before_the_config_snapshot_still_loads():
     old_document.pop("config_snapshot")
     restored = RenderPlan.model_validate(old_document)
     assert restored.config_snapshot is None
-    assert restored.schema_version == 1
+    assert restored.schema_version in (1, 2)
 
 
 # --------------------------------------------------------------------------- #

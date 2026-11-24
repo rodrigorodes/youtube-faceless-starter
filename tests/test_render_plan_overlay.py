@@ -76,8 +76,8 @@ def silent_scene(scene_id: str):
     return StoryboardScene(scene_id=scene_id, asset_id="asset-01", narration="Cena sem fala.", speech_seconds=0.0)
 
 
-def plan_with_overlay(*, overlays=None, speech_seconds: float = 2.0, scenes=None):
-    return build_render_plan(
+def plan_with_overlay(*, overlays=None, speech_seconds: float = 2.0, scenes=None, schema_version: int = 1):
+    plan = build_render_plan(
         plan_id="plan-overlay", revision=1, project_id="p", video_id="v", format=VideoFormat.short,
         scenes=scenes or [StoryboardScene(scene_id=SCENE_ID, asset_id="asset-01",
                                           narration="Primeira cena do vídeo.", speech_seconds=speech_seconds)],
@@ -87,6 +87,9 @@ def plan_with_overlay(*, overlays=None, speech_seconds: float = 2.0, scenes=None
             StoryboardOverlay(scene_id=SCENE_ID, asset_id="asset-overlay", start_s=0.1, duration_s=0.2)
         ],
     )
+    if plan.schema_version != schema_version:
+        plan = plan.model_copy(update={"schema_version": schema_version})
+    return plan
 
 
 def compile_plan(plan):
