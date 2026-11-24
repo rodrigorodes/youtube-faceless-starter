@@ -307,6 +307,44 @@ class PostgresProductionRunRepository:
             for row in runs
         )
 
+    def list_orphan_candidates(
+        self, *, grace_seconds: int, limit: int, exclude_run_ids: Iterable[str] = (),
+    ) -> tuple[tuple[ProductionRun, tuple[StageExecution, ...]], ...]:
+        """Candidatos a órfão para a recuperação periódica, filtrados com o relógio do banco.
+
+        `CREATED`, ou `RUNNING` sem etapa com lease vivo; e a última atividade (run e etapas)
+        precisa ter pelo menos `grace_seconds`. Ordem `created_at, run_id`, no máximo `limit`.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
+        if isinstance(grace_seconds, bool) or not isinstance(grace_seconds, int) or grace_seconds < 0:
+            raise ValueError("grace_seconds must be an integer >= 0")
+        excluded = [check_id(run_id) for run_id in exclude_run_ids]
+        order = {stage: index for index, stage in enumerate(self._dag.topological_order())}
+        columns = ", ".join(f"r.{col.strip()}" for col in _RUN_COLS.split(","))
+        with _translated(), _production_errors(), self._connect() as conn:
+            runs = _all(
+                conn,
+                f"SELECT {columns} FROM studio.production_runs r WHERE "
+                "(r.state = 'CREATED' OR (r.state = 'RUNNING' AND NOT EXISTS ("
+                "  SELECT 1 FROM studio.stage_executions l WHERE l.run_id = r.run_id "
+                "  AND l.lease_owner IS NOT NULL AND l.lease_expires_at > statement_timestamp()))) "
+                "AND GREATEST(r.updated_at, (SELECT max(a.updated_at) FROM studio.stage_executions a "
+                "  WHERE a.run_id = r.run_id)) <= statement_timestamp() - make_interval(secs => %s) "
+                "AND NOT (r.run_id = ANY(%s)) ORDER BY r.created_at, r.run_id LIMIT %s",
+                (grace_seconds, excluded, limit))
+            if not runs:
+                return ()
+            stages = _all(conn, f"SELECT {_STAGE_COLS} FROM studio.stage_executions WHERE run_id = ANY(%s)",
+                          ([row["run_id"] for row in runs],))
+        by_run: dict[str, list[StageExecution]] = {row["run_id"]: [] for row in runs}
+        for row in stages:
+            by_run[row["run_id"]].append(_stage(row))
+        return tuple(
+            (_run(row), tuple(sorted(by_run[row["run_id"]], key=lambda stage: order[stage.stage_id])))
+            for row in runs
+        )
+
     # -- etapas: claim, heartbeat, conclusão e falha -----------------------
 
     def claim_stage(self, run_id: str, stage_id: ProductionStage, owner: str,

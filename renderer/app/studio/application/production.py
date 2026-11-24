@@ -21,17 +21,18 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Protocol
 
-from ..domain.contracts import JobStatus, RenderJob, Video, VideoFormat, VideoStatus
+from ..domain.contracts import JobStatus, PublicationStatus, RenderJob, Video, VideoFormat, VideoStatus
 from ..domain.effective_config import EffectiveConfig
 from ..domain.ids import check_id
 from ..domain.production_run import (
@@ -63,14 +64,16 @@ from ..domain.qa_report import (
     blocking_evidence,
 )
 from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
+from .lease_heartbeat import LeaseHeartbeat, LeaseLost, StageLease
 from .editorial import Editorial, SourceRefused, SourceUnavailable, StateConflict
 from .media import Media
 from .research import AutoResearch
-from .publication_execution import PublicationResult, RunPublication
+from .publication_execution import PublicationResult, ReconcilePublication, RunPublication
 from .ports import (
     ApprovalRepository,
     AssetRepository,
     ProductionRunConfigStore,
+    PublicationQueueRepository,
     ProductionRunInFlightReader,
     ProductionRunRepository,
     ProductionRunStageReader,
@@ -215,6 +218,7 @@ class StageContext:
 
     run: ProductionRun
     execution: StageExecution
+    lease: StageLease | None = None
 
     @property
     def checkpoint_version(self) -> int:
@@ -508,16 +512,75 @@ class PublishHandler(_AvailableHandler):
 
     stage = ProductionStage.PUBLISH
 
-    def __init__(self, publish: RunPublication):
-        self.publish = publish
+    def __init__(self, publish: RunPublication, reconcile: ReconcilePublication | None = None,
+                 pubs: PublicationQueueRepository | None = None,
+                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+        self.publish, self.reconcile, self.pubs, self.clock = publish, reconcile, pubs, clock
+
+    def _done(self, context: StageContext, youtube_video_id: str | None, publication_id: str | None) -> StageOutcome:
+        return StageOutcome(checkpoint=Checkpoint(
+            {"stage": self.stage.value, "youtube_video_id": youtube_video_id, "publication_id": publication_id},
+            context.checkpoint_version))
+
+    def _confirmed_id(self, pub, state) -> str | None:
+        return (pub.youtube_video_id if pub else None) or (state.youtube_video_id if state else None) or None
+
+    def _reconcile_first(self, context: StageContext) -> StageOutcome | None:
+        """D8: nunca reenvia sobre uma publicação ambígua/obsoleta; o CAS do banco decide a obsolescência."""
+        video_id = context.run.video_id
+        pub = self.pubs.get(video_id)
+        if pub is None:
+            return None
+        state = self.pubs.lease_state(video_id)
+        confirmed = self._confirmed_id(pub, state)
+        if confirmed:
+            return self._done(context, confirmed, pub.id)
+        if state is not None and state.dead_letter:
+            raise StageExecutionFailed("publication is in the dead-letter queue; resolve it manually")
+        if pub.status is PublicationStatus.UPLOADING:
+            for _ in range(2):
+                until = state.lease_until if state else None
+                if until is not None and until > self.clock():
+                    raise StageExecutionFailed("a previous upload attempt is still active; wait for its lease or reconcile")
+                if self.pubs.mark_stale_ambiguous(
+                        pub.id, pub.attempt,
+                        "stage re-claimed after the previous executor stopped; upload outcome unknown"):
+                    break
+                pub = self.pubs.get(video_id) or pub
+                state = self.pubs.lease_state(video_id)
+                confirmed = self._confirmed_id(pub, state)
+                if confirmed:
+                    return self._done(context, confirmed, pub.id)
+            else:
+                raise StageExecutionFailed("could not settle the previous upload attempt; try again later")
+            state = self.pubs.lease_state(video_id)
+        if state is not None and state.remote_state == "UNKNOWN":
+            if self.reconcile is None:
+                raise StageExecutionFailed("publication outcome is ambiguous; reconcile before retrying")
+            run = self.reconcile.execute(pub.id)
+            if run.result is PublicationResult.UPLOADED:
+                confirmed = (run.youtube_video_id or (run.publication.youtube_video_id if run.publication else None)
+                             or pub.youtube_video_id)
+                if not confirmed:
+                    raise StageExecutionFailed("reconcile reported UPLOADED without a confirmed YouTube video id")
+                return self._done(context, confirmed, pub.id)
+            if run.result is not PublicationResult.RETRY:
+                raise StageExecutionFailed(
+                    f"publication did not complete ({run.result.value}): {run.detail or 'no detail'}")
+        return None
 
     def execute(self, context: StageContext) -> StageOutcome:
+        if context.lease is not None:
+            context.lease.ensure_held()
+        if self.pubs is not None:
+            done = self._reconcile_first(context)
+            if done is not None:
+                return done
+            if context.lease is not None:
+                context.lease.ensure_held()
         outcome = self.publish.execute(video_id=context.run.video_id)
         if outcome.result is PublicationResult.UPLOADED:
-            return StageOutcome(checkpoint=Checkpoint(
-                {"stage": self.stage.value, "youtube_video_id": outcome.youtube_video_id,
-                 "publication_id": outcome.publication.id if outcome.publication else None},
-                context.checkpoint_version))
+            return self._done(context, outcome.youtube_video_id, outcome.publication.id if outcome.publication else None)
         if outcome.result is PublicationResult.IDLE:
             raise StageExecutionFailed("no approved publication is pending for this video")
         raise StageExecutionFailed(f"publication did not complete ({outcome.result.value}): {outcome.detail or 'no detail'}")
@@ -526,9 +589,12 @@ class PublishHandler(_AvailableHandler):
 def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: StartRender, run_render: RunRender,
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
                          approvals: ApprovalRepository, publish: RunPublication | None = None,
-                         research: AutoResearch | None = None
+                         research: AutoResearch | None = None, reconcile: ReconcilePublication | None = None,
+                         publications: PublicationQueueRepository | None = None
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
+    if reconcile is not None and publications is None:
+        raise ValueError("`reconcile` requires `publications`: it would be silently ignored")
     handlers: dict[ProductionStage, StageHandler] = {
         ProductionStage.SCRIPT: ScriptHandler(editorial, videos),
         ProductionStage.FACTCHECK: FactCheckHandler(editorial),
@@ -540,7 +606,7 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
     }
     handlers[ProductionStage.RESEARCH] = (ResearchHandler(research) if research is not None
                                           else UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON))
-    handlers[ProductionStage.PUBLISH] = (PublishHandler(publish) if publish is not None
+    handlers[ProductionStage.PUBLISH] = (PublishHandler(publish, reconcile, publications) if publish is not None
                                          else UnavailableStageHandler(ProductionStage.PUBLISH, PUBLISH_REASON))
     return handlers
 
@@ -612,10 +678,16 @@ def has_live_lease(stages: Sequence[StageExecution], now: datetime) -> bool:
     return False
 
 
+def _latest_activity(run: ProductionRun, stages: Sequence[StageExecution]) -> datetime | None:
+    moments = [m for m in (run.updated_at, run.created_at, *(stage.updated_at for stage in stages)) if m is not None]
+    return max(moments) if moments else None
+
+
 def orphan_in_flight(
     in_flight: Iterable[tuple[ProductionRun, Sequence[StageExecution]]], now: datetime,
+    grace: timedelta = timedelta(0),
 ) -> tuple[str, ...]:
-    """Run ids **órfãos** entre os runs em voo: os que o boot deve re-dirigir.
+    """Run ids **órfãos** entre os runs em voo: os que a recuperação deve re-dirigir.
 
     Regra pura (sem I/O, `now` é parâmetro): um run é órfão quando nada o dirige agora.
 
@@ -626,15 +698,54 @@ def orphan_in_flight(
     - Qualquer outro estado (`FAILED`/`SUCCEEDED`/`CANCELLED`/`WAITING_HUMAN`/`PAUSED`) nunca entra,
       ainda que a leitura os traga: recuperar não é retomar nem retentar.
 
+    `grace` (recuperação periódica): além do acima, a última atividade conhecida (run e etapas,
+    ignorando `None`) precisa ser `<= now - grace`; sem nenhuma atividade conhecida o run é elegível.
+    Com `grace=0` (boot) o comportamento é o original.
+
     Devolve os ids na ordem de `in_flight` (ordem estável da porta), sem duplicar.
     """
     orphans: list[str] = []
     for run, stages in in_flight:
         if run.state is RunState.CREATED:
-            orphans.append(run.run_id)
-        elif run.state is RunState.RUNNING and not has_live_lease(stages, now):
+            eligible = True
+        elif run.state is RunState.RUNNING:
+            eligible = not has_live_lease(stages, now)
+        else:
+            eligible = False
+        if eligible and grace > timedelta(0):
+            latest = _latest_activity(run, stages)
+            eligible = latest is None or latest <= now - grace
+        if eligible:
             orphans.append(run.run_id)
     return tuple(orphans)
+
+
+class ActiveRuns:
+    """Runs despachados neste processo e ainda não terminados (contador por `run_id`, thread-safe).
+
+    Evita que a recuperação periódica re-despache um run que está na fila do executor (sem lease
+    ainda) ou entre duas etapas do worker. Entre réplicas a segurança vem do CAS de `claim_stage`.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+
+    def acquire(self, run_id: str) -> None:
+        with self._lock:
+            self._counts[run_id] = self._counts.get(run_id, 0) + 1
+
+    def release(self, run_id: str) -> None:
+        with self._lock:
+            remaining = self._counts.get(run_id, 0) - 1
+            if remaining > 0:
+                self._counts[run_id] = remaining
+            else:
+                self._counts.pop(run_id, None)
+
+    def snapshot(self) -> frozenset[str]:
+        with self._lock:
+            return frozenset(self._counts)
 
 
 # ---------------------------------------------------------------------------
@@ -905,16 +1016,27 @@ class ProductionCoordinator:
         except Exception as exc:  # leitura do snapshot não pode derrubar o worker
             logger.warning("frozen selection read failed for %s: %s", run.run_id, type(exc).__name__)
             return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
-        with use_frozen_provider_selection(selection):
+        heartbeat = LeaseHeartbeat(
+            renew=lambda: self.runs.renew_lease(run.run_id, execution.stage_id, owner, execution.fencing_token,
+                                                self.lease_seconds),
+            lease_seconds=self.lease_seconds)
+        failure: Exception | None = None
+        outcome = None
+        # `lost` deriva com o relógio mesmo depois do stop: captura-se logo após o handler e só ele decide.
+        with heartbeat as lease, use_frozen_provider_selection(selection):
             try:
-                outcome = handler.execute(StageContext(run=run, execution=execution))
-            except StageExecutionFailed as exc:
-                return self._fail(run, execution, owner, str(exc))
-            except StageCapabilityUnavailable as exc:
-                return self._fail(run, execution, owner, str(exc))
-            except Exception as exc:  # o worker não pode derrubar o processo: a etapa vira FAILED com a causa
-                logger.warning("stage %s failed: %s", execution.stage_id.value, type(exc).__name__)
-                return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
+                outcome = handler.execute(StageContext(run=run, execution=execution, lease=lease))
+            except Exception as exc:
+                failure = exc
+            lost = lease.lost
+        if lost or isinstance(failure, LeaseLost):
+            return WorkerStep(WorkerStepResult.LOST, run=run, stage=execution.stage_id, execution=execution,
+                              detail="lease lost during stage execution")
+        if failure is not None:
+            if isinstance(failure, (StageExecutionFailed, StageCapabilityUnavailable)):
+                return self._fail(run, execution, owner, str(failure))
+            logger.warning("stage %s failed: %s", execution.stage_id.value, type(failure).__name__)
+            return self._fail(run, execution, owner, f"{type(failure).__name__}: {failure}")
         if outcome.request_human is not None:
             return self._pause(run, execution, owner, WorkerStepResult.PAUSED, outcome.request_human)
         transition = self.runs.complete_stage(run.run_id, execution.stage_id, owner, execution.fencing_token,
@@ -1144,6 +1266,25 @@ class Production:
             return ()
         moment = now or datetime.now(timezone.utc)
         orphans = orphan_in_flight(self.in_flight.list_in_flight(), moment)
+        for run_id in orphans:
+            self._enqueue(run_id)
+        return orphans
+
+    def recover_orphans(self, *, now: datetime | None = None, grace_seconds: int = 30, limit: int = 50,
+                        active: ActiveRuns | None = None) -> tuple[str, ...]:
+        """Recuperação periódica: re-despacha órfãos com inatividade >= `grace_seconds`.
+
+        Pede à porta só os candidatos (limitados, sem os ids ativos neste processo), reaplica a
+        regra pura e usa o mesmo `submit`. Erro de leitura propaga (o laço chamador captura);
+        falha de `submit` fica isolada em `_enqueue`. Não escreve estado.
+        """
+        if self.in_flight is None:
+            return ()
+        moment = now or datetime.now(timezone.utc)
+        candidates = self.in_flight.list_orphan_candidates(
+            grace_seconds=grace_seconds, limit=limit,
+            exclude_run_ids=active.snapshot() if active is not None else frozenset())
+        orphans = orphan_in_flight(candidates, moment, timedelta(seconds=grace_seconds))
         for run_id in orphans:
             self._enqueue(run_id)
         return orphans

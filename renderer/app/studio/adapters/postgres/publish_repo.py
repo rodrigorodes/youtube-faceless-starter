@@ -212,6 +212,24 @@ class PostgresPublicationRepository(_Base):
                 "AND invalidated_at IS NULL",
                 (error.replace("\x00", "")[:500], check_id(publication_id), attempt)).rowcount == 1
 
+    def lease_state(self, video_id: str) -> PublicationLease | None:
+        """Lease e estado remoto da publicação ativa (somente leitura)."""
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT {PostgresReopenRepository._LEASE} FROM studio.publications "
+                        "WHERE video_id = %s AND invalidated_at IS NULL", (check_id(video_id),))
+            row = cur.fetchone()
+            return _lease(row) if row else None
+
+    def mark_stale_ambiguous(self, publication_id: str, attempt: int, error: str) -> bool:
+        """CAS: `UPLOADING` com lease vencido (relógio do banco) e sem id vira ambíguo/PENDING."""
+        with _translated(), self._connect() as conn:
+            return conn.execute(
+                "UPDATE studio.publications SET status = 'PENDING', lease_until = NULL, next_attempt_at = NULL, "
+                "remote_state = 'UNKNOWN', failure_class = 'AMBIGUOUS', error = %s, updated_at = now() "
+                "WHERE id = %s AND attempt = %s AND status = 'UPLOADING' AND youtube_video_id IS NULL "
+                "AND invalidated_at IS NULL AND lease_until IS NOT NULL AND lease_until <= clock_timestamp()",
+                (error.replace("\x00", "")[:500], check_id(publication_id), attempt)).rowcount == 1
+
     def resolve_ambiguous(self, publication_id: str, *, retry: bool, error: str, failure_class: str) -> bool:
         """Fecha a ambiguidade: `retry=True` só quando a reconciliação provou que não há vídeo."""
         with _translated(), self._connect() as conn:

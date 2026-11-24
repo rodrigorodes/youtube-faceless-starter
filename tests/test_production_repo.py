@@ -1066,3 +1066,60 @@ def test_postgres_adapter_matches_the_config_store_port(production_db):
                 for parameter in inspect.signature(function).parameters.values()]
 
     assert shape(PostgresProductionRunRepository.run_config) == shape(ProductionRunConfigStore.run_config)
+
+
+def _age(conn, seconds, run_id=RUN):
+    conn.execute("UPDATE studio.production_runs SET updated_at = statement_timestamp() - make_interval(secs => %s) "
+                 "WHERE run_id = %s", (seconds, run_id))
+    conn.execute("UPDATE studio.stage_executions SET updated_at = statement_timestamp() - make_interval(secs => %s) "
+                 "WHERE run_id = %s", (seconds, run_id))
+    conn.commit()
+
+
+def _candidates(repo, **kwargs):
+    kwargs.setdefault("grace_seconds", 30)
+    kwargs.setdefault("limit", 50)
+    return [run.run_id for run, _ in repo.list_orphan_candidates(**kwargs)]
+
+
+def test_orphan_candidates_filter_by_lease_activity_and_db_clock(production_db):
+    repo, conn = production_db
+    create(repo)
+    assert claim(repo, "research").result.value == "CLAIMED"
+    _age(conn, 3600)
+    assert _candidates(repo) == []                      # lease vivo
+    force_lease_expiry(conn, "research")
+    _age(conn, 5)
+    assert _candidates(repo) == []                      # lease expirado, atividade recente
+    _age(conn, 31)
+    assert _candidates(repo) == [RUN]
+    assert _candidates(repo, exclude_run_ids=(RUN,)) == []
+    run, stages = repo.list_orphan_candidates(grace_seconds=30, limit=5)[0]
+    assert run.run_id == RUN and stages
+
+
+def test_orphan_candidates_take_created_after_grace_and_skip_paused(production_db):
+    repo, conn = production_db
+    create(repo)
+    assert _candidates(repo) == []
+    _age(conn, 31)
+    assert _candidates(repo) == [RUN]
+    conn.execute("UPDATE studio.production_runs SET state = 'PAUSED' WHERE run_id = %s", (RUN,))
+    conn.commit()
+    assert _candidates(repo) == []
+    conn.execute("UPDATE studio.production_runs SET state = 'WAITING_HUMAN', reason = 'aprovar' WHERE run_id = %s", (RUN,))
+    conn.commit()
+    assert _candidates(repo) == []
+
+
+def test_orphan_candidates_limit_order_and_validation(production_db):
+    repo, conn = production_db
+    create(repo)
+    create(repo, run_id=OTHER_RUN, key="run-2", video=OTHER_VIDEO)
+    _age(conn, 60)
+    _age(conn, 60, OTHER_RUN)
+    assert _candidates(repo) == [RUN, OTHER_RUN]
+    assert _candidates(repo, limit=1) == [RUN]
+    for bad in (0, 501, True):
+        with pytest.raises(ValueError):
+            repo.list_orphan_candidates(grace_seconds=30, limit=bad)

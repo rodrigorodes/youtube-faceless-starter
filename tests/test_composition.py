@@ -37,6 +37,41 @@ def test_recover_in_flight_is_a_noop_without_a_database(tmp_path):
     assert studio.recover_in_flight() == ()
 
 
+def test_recover_orphans_is_a_noop_without_a_database(tmp_path):
+    studio = Studio(Settings(database_url=DEAD, storage_root=tmp_path))
+    assert studio.recover_orphans() == ()
+
+
+def test_tracked_submit_registers_and_releases_active_runs(tmp_path):
+    from concurrent.futures import Future
+
+    from app.studio.application.production import ActiveRuns
+    from app.studio.composition.wiring import tracked_submit
+
+    class Executor:
+        def __init__(self):
+            self.futures = []
+            self.fail = False
+
+        def submit(self, fn, *args):
+            if self.fail:
+                raise RuntimeError("pool shut down")
+            future = Future()
+            self.futures.append(future)
+            return future
+
+    executor, active = Executor(), ActiveRuns()
+    submit = tracked_submit(executor, lambda run_id: None, active)
+    submit("a" * 32)
+    assert active.snapshot() == frozenset({"a" * 32})
+    executor.futures[0].set_result(None)
+    assert active.snapshot() == frozenset()
+    executor.fail = True
+    with pytest.raises(RuntimeError):
+        submit("b" * 32)
+    assert active.snapshot() == frozenset()
+
+
 def test_ping_is_cached_for_a_few_seconds(conn, dsn, tmp_path, monkeypatch):
     from app.studio.adapters.postgres.db import migrate
     migrate(conn)
@@ -728,3 +763,17 @@ def test_wiring_consumes_the_channel_profile_and_keeps_the_legacy_path_without_i
                for message in events)
     assert any('"profile": null' in message and '"candidate": "opencode:gpt-legado"' in message
                for message in events)
+
+
+def test_recovery_interval_setting_parsing():
+    assert Settings().recovery_interval_seconds == 60.0
+    assert Settings.from_env({}).recovery_interval_seconds == 60
+
+    def parse(v):
+        return Settings.from_env({"STUDIO_RECOVERY_INTERVAL_SECONDS": v}).recovery_interval_seconds
+
+    assert parse("0") == 0
+    assert parse("2") == 5
+    assert parse("30") == 30
+    for bad in ("abc", "", "-1", "nan", "inf"):
+        assert parse(bad) == 60

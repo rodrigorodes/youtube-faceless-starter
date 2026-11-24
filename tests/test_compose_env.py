@@ -62,3 +62,63 @@ def test_env_example_documents_the_provider_production_flag():
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert re.search(r"^STUDIO_PROVIDER_PRODUCTION=$", text, flags=re.M)
     assert re.search(r"^STUDIO_SECRETS_ROOT=$", text, flags=re.M)
+
+
+import re as _re
+import sys
+
+sys.path.insert(0, str(ROOT / "renderer"))
+
+from app.studio.composition import Settings  # noqa: E402
+
+
+def _resolve_compose(value, env):
+    """Resolve `${VAR:-padrão}` como o Compose: vazio/ausente usa o padrão."""
+    def sub(match):
+        name, default = match.group(1), match.group(3) or ""
+        return env.get(name) or default
+    return _re.sub(r"\$\{([A-Z0-9_]+)(:-([^}]*))?\}", sub, value)
+
+
+def _renderer_env(env):
+    declared = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    return {key: _resolve_compose(value, env) for key, value in declared.items()}
+
+
+def test_compose_forwards_the_publication_switch_with_a_safe_default():
+    declared = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    assert declared["STUDIO_PUBLICATION_ENABLED"] == "${STUDIO_PUBLICATION_ENABLED:-1}"
+
+
+def test_publication_default_is_never_empty_because_empty_disables_it():
+    # `_flag("")` é falso: um default vazio desligaria a publicação em silêncio.
+    assert Settings.from_env({"STUDIO_PUBLICATION_ENABLED": ""}).publication_enabled is False
+    assert _renderer_env({})["STUDIO_PUBLICATION_ENABLED"] == "1"
+    assert Settings.from_env(_renderer_env({})).publication_enabled is True
+
+
+def test_env_zero_reaches_settings_through_compose_and_blocks_the_uploader(tmp_path):
+    from test_publication_execution import use  # fábrica de dublês já usada nos testes F01.T04
+    from app.studio.application.publication_execution import PublicationResult
+    settings = Settings.from_env(_renderer_env({"STUDIO_PUBLICATION_ENABLED": "0"}))
+    assert settings.publication_enabled is False
+    run, pubs, uploads, tokens = use(tmp_path, enabled=settings.publication_enabled)
+    assert run.execute().result is PublicationResult.BLOCKED
+    assert uploads.uploads == [] and tokens.calls == 0 and pubs.calls == []
+
+
+def test_env_example_documents_the_publication_switch_enabled_by_default():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert _re.search(r"^STUDIO_PUBLICATION_ENABLED=1$", text, flags=_re.M)
+
+
+def test_compose_forwards_the_recovery_interval_with_a_safe_default():
+    declared = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    assert declared["STUDIO_RECOVERY_INTERVAL_SECONDS"] == "${STUDIO_RECOVERY_INTERVAL_SECONDS:-60}"
+    assert _renderer_env({})["STUDIO_RECOVERY_INTERVAL_SECONDS"] == "60"
+    assert Settings.from_env(_renderer_env({})).recovery_interval_seconds == 60
+
+
+def test_env_example_documents_the_recovery_interval():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert _re.search(r"^STUDIO_RECOVERY_INTERVAL_SECONDS=60$", text, flags=_re.M)

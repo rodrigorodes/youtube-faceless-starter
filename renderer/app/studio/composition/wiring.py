@@ -120,7 +120,7 @@ from ..application.budget import PaidOperationGuard
 from ..application.reopen import ReopenForEditing
 from ..application.research import AutoResearch
 from ..adapters.wikipedia_research import WikipediaResearch
-from ..application.production import (COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
+from ..application.production import (ActiveRuns, COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
 from ..application.advanced_page import BuildAdvancedView
 from ..application.use_cases import ServiceUnavailable, UseCases
@@ -128,6 +128,23 @@ from ..application.use_cases import ServiceUnavailable, UseCases
 from .settings import CONNECT_OPTIONS, PING_TTL_SECONDS, RETRY_SECONDS, Settings
 from .providers import (FREE_PROVIDERS, ProviderRouting, _configured_provider_spec,
                         _provider_implementations, _provider_probes)
+
+
+def tracked_submit(executor, work, active):
+    """`submit` do worker que registra o run em `ActiveRuns` até o future terminar (ou o submit falhar).
+
+    Nunca descarta: só registra, para a recuperação periódica não re-despachar o que já está na fila.
+    """
+    def submit(run_id):
+        active.acquire(run_id)
+        try:
+            future = executor.submit(work, run_id)
+        except BaseException:
+            active.release(run_id)
+            raise
+        future.add_done_callback(lambda _future: active.release(run_id))
+        return future
+    return submit
 
 
 def channel_guard_limits(videos, budgets):
@@ -309,6 +326,7 @@ class Studio:
             return PlanFfmpegRenderer(model, plans=PostgresRenderPlanRepository(self._connect),
                                       cache_root=settings.storage_root / "render-cache")
         register("renderer", "ffmpeg", _renderer)
+        self._active_runs = ActiveRuns()
         self._executor = executor or ThreadPoolExecutor(max_workers=settings.render_concurrency, thread_name_prefix="render")
         self._analyzer = analyzer or FfmpegQa()
         # O probe mede (ffprobe/ebur128) com o MESMO analisador do render; o avaliador junta a
@@ -372,6 +390,13 @@ class Studio:
         if cases is None or cases.production is None:
             return ()
         return cases.production.recover_in_flight()
+
+    def recover_orphans(self) -> tuple[str, ...]:
+        """Recuperação periódica de runs órfãos; no-op sem banco/fiação de produção."""
+        cases = self.use_cases()
+        if cases is None or cases.production is None:
+            return ()
+        return cases.production.recover_orphans(active=self._active_runs)
 
     @property
     def quality_evaluator(self):
@@ -660,7 +685,8 @@ class Studio:
         coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
-                                        publish=publish, research=auto_research)
+                                        publish=publish, research=auto_research,
+                                        reconcile=reconcile, publications=pubs)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
         # pode dispensar a pausa intermediária.
         # F01.T03: piso medido no ESCOPO DO CANAL (não no gasto global) e com o teto das settings
@@ -673,7 +699,7 @@ class Studio:
         # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma
         # transação). A leitura para retomada/retry/painel vem da mesma porta (`run_config`).
         production = Production(coordinator=coordinator, worker=worker,
-                                submit=lambda run_id: self._executor.submit(worker.work, run_id),
+                                submit=tracked_submit(self._executor, worker.work, self._active_runs),
                                 in_flight=run_repo,
                                 effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo, budget_repo),
                                 config_store=run_repo,

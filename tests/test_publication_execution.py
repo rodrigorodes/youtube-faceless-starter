@@ -130,6 +130,7 @@ class Pubs:
         self.retry_pub = retry
         self.calls = []
         self.uploaded = None
+        self.lease = None
 
     def claim_retry(self, lease_seconds, max_attempts, video_id=None):
         self.calls.append(("claim_retry",))
@@ -153,6 +154,14 @@ class Pubs:
 
     def mark_ambiguous(self, publication_id, attempt, error):
         self.calls.append(("mark_ambiguous", attempt, error))
+        return True
+
+    def lease_state(self, video_id):
+        self.calls.append(("lease_state", video_id))
+        return self.lease
+
+    def mark_stale_ambiguous(self, publication_id, attempt, error):
+        self.calls.append(("mark_stale_ambiguous", attempt, error))
         return True
 
     def mark_uploaded(self, publication_id, youtube_video_id):

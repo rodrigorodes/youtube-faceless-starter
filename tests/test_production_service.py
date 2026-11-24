@@ -27,6 +27,7 @@ from app.studio.application.production import (  # noqa: E402
     RunConfigUnavailable,
     has_live_lease,
     orphan_in_flight,
+    ActiveRuns,
 )
 from app.studio.domain.contracts import Video, VideoFormat  # noqa: E402
 from app.studio.domain.effective_config import resolve_effective_config  # noqa: E402
@@ -265,10 +266,15 @@ class _Reader:
     def __init__(self, in_flight):
         self._in_flight = tuple(in_flight)
         self.calls = 0
+        self.candidate_calls = []
 
     def list_in_flight(self):
         self.calls += 1
         return self._in_flight
+
+    def list_orphan_candidates(self, *, grace_seconds, limit, exclude_run_ids=()):
+        self.candidate_calls.append((grace_seconds, limit, frozenset(exclude_run_ids)))
+        return tuple(item for item in self._in_flight if item[0].run_id not in exclude_run_ids)[:limit]
 
 
 def _recovery_service(in_flight, submit):
@@ -315,6 +321,109 @@ def test_recover_in_flight_is_a_noop_without_the_reader():
         transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING))),
         worker=None, submit=lambda run_id: None)
     assert service.recover_in_flight() == ()
+
+
+# -- R03: recuperação periódica (grace + ActiveRuns) -------------------------
+
+
+def _aged(run, seconds):
+    from dataclasses import replace
+    return replace(run, updated_at=NOW - timedelta(seconds=seconds))
+
+
+def test_orphan_in_flight_grace_holds_back_recent_activity():
+    grace = timedelta(seconds=30)
+    assert orphan_in_flight([(_aged(_run(RunState.RUNNING), 5), [_pending("script")])], NOW, grace) == ()
+    assert orphan_in_flight([(_aged(_run(RunState.RUNNING), 31), [_pending("script")])], NOW, grace) == (RUN,)
+    assert orphan_in_flight([(_aged(_run(RunState.RUNNING), 5), [_pending("script")])], NOW) == (RUN,)
+
+
+def test_orphan_in_flight_grace_uses_the_latest_stage_activity():
+    from dataclasses import replace
+    fresh = replace(_pending("script"), updated_at=NOW - timedelta(seconds=2))
+    assert orphan_in_flight([(_aged(_run(RunState.RUNNING), 300), [fresh])], NOW, timedelta(seconds=30)) == ()
+    assert orphan_in_flight([(_run(RunState.RUNNING), [_pending("script")])], NOW, timedelta(seconds=30)) == (RUN,)
+
+
+def test_orphan_in_flight_grace_also_applies_to_created():
+    grace = timedelta(seconds=30)
+    assert orphan_in_flight([(_aged(_run(RunState.CREATED), 5), [])], NOW, grace) == ()
+    assert orphan_in_flight([(_aged(_run(RunState.CREATED), 31), [])], NOW, grace) == (RUN,)
+
+
+def test_orphan_in_flight_never_takes_human_or_terminal_states_even_with_grace():
+    states = (RunState.FAILED, RunState.SUCCEEDED, RunState.CANCELLED, RunState.WAITING_HUMAN, RunState.PAUSED)
+    items = [(_aged(_run(state, f"{index:x}" * 32), 3600), [_pending("script")])
+             for index, state in enumerate(states, start=1)]
+    assert orphan_in_flight(items, NOW, timedelta(seconds=30)) == ()
+
+
+def test_recover_orphans_excludes_active_ids_and_submits_each_orphan_once():
+    reader = _Reader([(_run(RunState.RUNNING, "a" * 32), [_pending("script")]),
+                      (_run(RunState.RUNNING, "b" * 32), [_pending("script")]),
+                      (_run(RunState.CREATED, "c" * 32), [])])
+    active = ActiveRuns()
+    active.acquire("a" * 32)
+    submitted = []
+    service = Production(coordinator=_Coordinator(
+        transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING))),
+        worker=None, submit=submitted.append, in_flight=reader)
+    assert service.recover_orphans(now=NOW, grace_seconds=7, limit=9, active=active) == ("b" * 32, "c" * 32)
+    assert submitted == ["b" * 32, "c" * 32]
+    assert reader.candidate_calls == [(7, 9, frozenset({"a" * 32}))]
+
+
+def test_recover_orphans_isolates_a_failing_submit_and_respects_limit():
+    def submit(run_id):
+        submitted.append(run_id)
+        if run_id == "a" * 32:
+            raise RuntimeError("fila caiu")
+
+    submitted = []
+    reader = _Reader([(_run(RunState.CREATED, c * 32), []) for c in "abc"])
+    service = Production(coordinator=_Coordinator(
+        transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING))),
+        worker=None, submit=submit, in_flight=reader)
+    assert service.recover_orphans(now=NOW, limit=2) == ("a" * 32, "b" * 32)
+    assert submitted == ["a" * 32, "b" * 32]
+
+
+def test_recover_orphans_is_a_noop_without_the_reader_and_propagates_read_errors():
+    coordinator = _Coordinator(transition=RunTransition(RunTransitionResult.NOT_ALLOWED, _run(RunState.RUNNING)))
+    assert Production(coordinator=coordinator, worker=None, submit=lambda r: None).recover_orphans() == ()
+
+    class Broken:
+        def list_orphan_candidates(self, **kwargs):
+            raise RuntimeError("db down")
+
+    with pytest.raises(RuntimeError):
+        Production(coordinator=coordinator, worker=None, submit=lambda r: None, in_flight=Broken()).recover_orphans()
+
+
+def test_active_runs_counts_per_run_id():
+    active = ActiveRuns()
+    active.acquire(RUN)
+    active.acquire(RUN)
+    active.release(RUN)
+    assert active.snapshot() == frozenset({RUN})
+    active.release(RUN)
+    active.release(RUN)  # excesso é inócuo
+    assert active.snapshot() == frozenset()
+
+
+def test_active_runs_is_thread_safe():
+    from concurrent.futures import ThreadPoolExecutor
+
+    active = ActiveRuns()
+
+    def cycle(_):
+        for _i in range(200):
+            active.acquire(RUN)
+            active.release(RUN)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(cycle, range(8)))
+    assert active.snapshot() == frozenset()
 
 
 # -- F03.T04: lifecycle e compatibilidade (pause/resume/retry/regenerate/new run)
@@ -496,3 +605,114 @@ def test_regenerate_revision_must_be_a_positive_integer(revision):
         _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(
             RUN, revision=revision)
     assert coordinator.calls == []
+
+
+# -- R02: o coordenador renova o lease e nunca finaliza sem posse -------------------------
+
+
+def _lease_harness(monkeypatch, *, renew_result, handler_exc=None, lease_seconds=300):
+    from app.studio.application import production as production_module
+    from app.studio.application.production import (
+        ProductionCoordinator, StageExecutionFailed, StageOutcome, WorkerStepResult)
+    from app.studio.domain.production_run import (
+        Checkpoint, LeaseResult, StageClaim, StageClaimResult, StageDag, StageTransition, StageTransitionResult)
+
+    calls = []
+    run = ProductionRun(run_id=RUN, video_id=VIDEO, idempotency_key="k")
+    execution = StageExecution(run_id=RUN, stage_id=ProductionStage.SCRIPT, state=StageState.RUNNING, attempt=1,
+                               fencing_token=7, lease_owner="w", lease_expires_at=NOW)
+    renewed = __import__("threading").Event()
+
+    class Runs:
+        def get_run(self, run_id):
+            return run
+
+        def claim_stage(self, *args):
+            return StageClaim(StageClaimResult.CLAIMED, execution)
+
+        def renew_lease(self, *args):
+            calls.append(("renew", args))
+            renewed.set()
+            return renew_result
+
+        def complete_stage(self, *args, **kwargs):
+            calls.append(("complete", None))
+            return StageTransition(StageTransitionResult.APPLIED)
+
+        def fail_stage(self, *args, **kwargs):
+            calls.append(("fail", None))
+            return StageTransition(StageTransitionResult.APPLIED, execution)
+
+        def pause_run(self, *args, **kwargs):
+            calls.append(("pause", None))
+            return RunTransition(RunTransitionResult.NOT_ALLOWED)
+
+        def list_stages(self, run_id):
+            return ()
+
+    seen = {}
+
+    class Handler:
+        available = True
+
+        def execute(self, context):
+            seen["lease"] = context.lease
+            assert renewed.wait(5)
+            import time
+            deadline = time.monotonic() + 2
+            while renew_result != LeaseResult.RENEWED and not context.lease.lost and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if handler_exc is not None:
+                raise handler_exc
+            return StageOutcome(checkpoint=Checkpoint({"s": 1}, context.checkpoint_version))
+
+    real_stop = production_module.LeaseHeartbeat.stop
+
+    def stop(self):
+        calls.append(("stop", None))
+        real_stop(self)
+
+    monkeypatch.setattr(production_module.LeaseHeartbeat, "stop", stop, raising=False)
+    coordinator = ProductionCoordinator(Runs(), handlers={ProductionStage.SCRIPT: Handler()},
+                                        pipeline=StageDag({ProductionStage.SCRIPT: ()}), lease_seconds=lease_seconds)
+    return coordinator, calls, seen, StageExecutionFailed, WorkerStepResult
+
+
+def test_handler_runs_under_a_heartbeat_that_renews_with_the_exact_identity(monkeypatch):
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, seen, _, Result = _lease_harness(monkeypatch, renew_result=LeaseResult.RENEWED)
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.COMPLETED
+    assert seen["lease"] is not None
+    assert ("renew", (RUN, ProductionStage.SCRIPT, "w", 7, 300)) in calls
+    names = [name for name, _ in calls]
+    assert names.index("stop") < names.index("complete")
+
+
+def test_lease_lost_during_the_handler_never_completes(monkeypatch):
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(monkeypatch, renew_result=LeaseResult.LOST)
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert step.detail == "lease lost during stage execution"
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}
+
+
+def test_a_failure_after_losing_the_lease_never_fails_the_stage(monkeypatch):
+    from app.studio.application.production import StageExecutionFailed
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(
+        monkeypatch, renew_result=LeaseResult.LOST, handler_exc=StageExecutionFailed("boom"))
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}
+
+
+def test_a_lease_lost_exception_from_the_handler_maps_to_lost(monkeypatch):
+    from app.studio.application.lease_heartbeat import LeaseLost
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(
+        monkeypatch, renew_result=LeaseResult.RENEWED, handler_exc=LeaseLost("x"))
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}

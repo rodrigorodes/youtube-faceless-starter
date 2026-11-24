@@ -7,7 +7,8 @@ versões iniciais de recuperação e analytics.
 
 **Publicação segura:** o fluxo legado V2 que publicava sem aprovação humana
 foi removido. O Studio exige aprovação humana obrigatória via painel antes
-que qualquer vídeo possa ser reivindicado para publicação privada no YouTube.
+que qualquer vídeo possa ser reivindicado para publicação no YouTube. A intenção
+define destino e visibilidade; publicação pública exige confirmação explícita.
 Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publicacao.md).
 
 ## Documentação
@@ -17,6 +18,9 @@ Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publi
 - [Variáveis de ambiente](docs/04-variaveis-de-ambiente.md)
 - [OpenAI Luna via OAuth (OpenCode)](docs/07-openai-luna-oauth.md)
 - [Arquitetura e contratos (gerado)](docs/10-arquitetura.md)
+- [Arquitetura operacional: módulos, dados, execução e limites](docs/11-arquitetura-operacional.md)
+- [Revisão de arquitetura e prioridades — 24/11/2026](docs/reviews/2026-11-24-architecture-review.md)
+- [Modelo de dados (snapshot gerado)](docs/22-modelo-de-dados.md)
 - [Fluxo editorial: fontes, roteiro e checagem factual](docs/12-editorial.md)
 - [Storyboard e mídia: imagens por cena, cache, licença e custo](docs/13-midia.md)
 - [Narração e renderização: vídeo, legenda, QA e fila](docs/14-render.md)
@@ -34,7 +38,7 @@ Veja [guia do operador](docs/18-painel.md) e [publicação segura](docs/15-publi
 ## Instalação
 
 1. Copie `.env.example` para `.env` (Windows PowerShell: `Copy-Item .env.example .env`; macOS: `cp .env.example .env`).
-2. Edite `.env` e configure **duas senhas longas e diferentes** para `POSTGRES_PASSWORD` e `N8N_ENCRYPTION_KEY`. Não publique o arquivo.
+2. Edite `.env` e configure `POSTGRES_PASSWORD`, `N8N_ENCRYPTION_KEY` e as três variáveis de [autenticação Studio](docs/17-studio-auth.md). Use segredos distintos e não publique o arquivo. Para gerar com OpenCode, configure também o bridge conforme [guia](docs/07-openai-luna-oauth.md).
 3. Execute `docker compose up -d --build` no diretório do projeto.
 4. Acesse **http://localhost:5678** e crie a conta local de proprietário do n8n.
 5. Acesse **http://localhost:8000/docs** para testar o renderizador diretamente.
@@ -49,10 +53,11 @@ gerencie vídeos pelo painel do Studio em <http://localhost:8000/studio/panel>.
 
 ## Componentes
 
-- **n8n**: orquestração visual e histórico de execuções
-- **PostgreSQL**: banco interno do n8n (não é ainda o banco de domínio dos vídeos)
-- **Renderer FastAPI + FFmpeg**: gera MP4 demonstrativo, expõe API HTTP
-- **storage/**: arquivos e manifests persistidos no host
+- **n8n**: agendamento/integração opcional por workflows importados inativos; chama a API Studio.
+- **PostgreSQL**: banco do n8n e domínio persistente no schema `studio`, na mesma instância e banco no Compose padrão.
+- **Studio FastAPI**: painel HTML/JS servido pelo backend, API, coordenador de produção e executor local de tarefas; FFmpeg/Piper geram vídeo e voz.
+- **Bridge OpenCode no host**: integra provedores de texto/imagem por HTTP autenticado.
+- **storage/**: mídia, planos/cache de render e cofre de segredos em arquivos. O dump SQL não cobre esses arquivos.
 
 ## Contrato do Studio
 
@@ -61,14 +66,17 @@ A criação deixou de ser um `POST /videos` síncrono. O Studio expõe a API aut
 detalhamento está em [10-arquitetura](docs/10-arquitetura.md) e no
 [guia de autenticação](docs/17-studio-auth.md).
 
-## Próximas fases
+## Estado e evolução
 
-1. P01: persistir pedidos, estados e custos em banco de domínio separado; criar fila de jobs assíncrona.
-2. P02: roteiro com fontes verificáveis, storyboard estruturado e revisão editorial.
-3. P03: imagens reais (Gemini Image/stock), voz TTS, licenças e legendas.
-4. P04: templates 9:16 e 16:9, transições, áudio, normalização e QC.
-5. P05: aprovação humana persistente e YouTube OAuth/upload privado.
-6. P06: limites de gasto, retries seguros, idempotência, métricas e analytics.
+Já existem persistência, produção por etapas, snapshots de configuração, orçamento,
+aprovação versionada, publicação nativa com reconciliação e analytics. A instalação
+continua voltada a **um operador local**: canais não equivalem a tenants isolados,
+e a fila executora vive no processo da API.
+
+Prioridades fundamentadas, esforço e dependências estão na
+[revisão de arquitetura](docs/reviews/2026-11-24-architecture-review.md).
+Backlogs e protótipos em `docs/backlogs/` descrevem intenções/histórico; não comprovam
+capacidade entregue. Views e tendências são sinais editoriais, não garantia de monetização.
 
 ## Segurança e limitações
 
