@@ -228,6 +228,10 @@ class QaFinding(BaseModel):
     severity: Severity
     evidence: EvidenceText
     suggested_action: SingleLineText
+    scene_id: Identity | None = None
+    shot_id: Identity | None = None
+    auto_fixable: bool = False
+    needs_human: bool = False
 
 
 class QaCoverage(BaseModel):
