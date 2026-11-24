@@ -35,7 +35,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from .render_plan import RenderPlan
+from .render_plan import AudioMix, GeneratedAudioSource, RenderPlan, Shot
 
 NodeKind = Literal["narration", "visual", "music", "concat", "final"]
 
@@ -63,6 +63,74 @@ def narration_fingerprint(narration: str, voice: str = "", params: Mapping[str, 
     text = " ".join(str(narration).split())
     voices = ((voice, _canonical_params(params)),) if voice else ()
     return _fingerprint("narration", text, voices)
+
+
+def visual_fingerprint(
+    shot: Shot,
+    asset_digest: str,
+    style_digest: str | None = None,
+    *,
+    media_type: str = "",
+    relative_start_tick: int = 0,
+    badge: str = "",
+    disclosure: bool = False,
+    captions: tuple = (),
+    hosted: tuple = (),
+) -> str:
+    """Fingerprint físico do segmento visual do shot (RP-028/VE-Onda1).
+
+    Combina o conteúdo do asset, movimento, enquadramento, transição (tipo e duração),
+    offset temporal do asset (corte no clipe/imagem), duração, posição relativa à cena,
+    badges, disclosure, legendas relativas e overlays hospedados.
+    Se fornecido, ``style_digest`` invalida o nó quando estilos visuais (cor, fonte) mudam.
+    """
+    transition_kind = shot.transition.kind if shot.transition is not None else None
+    transition_duration = shot.transition.duration_ticks if shot.transition is not None else 0
+    return _fingerprint(
+        "visual",
+        shot.asset_ref,
+        asset_digest,
+        media_type,
+        shot.effects.motion,
+        shot.composition.fit if shot.composition is not None else None,
+        transition_kind,
+        transition_duration,
+        shot.asset_offset_ticks,
+        shot.duration_ticks,
+        relative_start_tick,
+        badge,
+        disclosure,
+        captions,
+        hosted,
+        style_digest,
+    )
+
+
+def music_fingerprint(
+    source: GeneratedAudioSource,
+    audio_mix: AudioMix | None = None,
+) -> str:
+    """Fingerprint físico da trilha musical (RP-028/VE-Onda1).
+
+    Combina os parâmetros determinísticos da síntese/fonte e os parâmetros declarativos
+    de mixagem (ganho, ducking, fades, loudnorm) se fornecidos.
+    """
+    mix_params: tuple | None = None
+    if audio_mix is not None:
+        if hasattr(audio_mix, "model_dump"):
+            mix_params = tuple(sorted(audio_mix.model_dump().items()))
+        elif isinstance(audio_mix, Mapping):
+            mix_params = tuple(sorted(audio_mix.items()))
+        else:
+            mix_params = tuple(sorted(vars(audio_mix).items()))
+    return _fingerprint(
+        "music",
+        source.source_id,
+        source.silent,
+        sorted(source.params.items()),
+        source.duration_ticks,
+        mix_params,
+    )
 
 
 @dataclass(frozen=True, order=True)
@@ -128,6 +196,17 @@ class DependencyGraph:
             grouped.setdefault(item.node.kind, []).append(item.node)
         return {kind: tuple(nodes) for kind, nodes in grouped.items()}
 
+    @classmethod
+    def build(
+        cls,
+        plan: RenderPlan,
+        *,
+        labels: Mapping[str, str] | None = None,
+        style_digest: str | Mapping[str, str] | None = None,
+    ) -> DependencyGraph:
+        """Constrói o grafo determinístico a partir de um RenderPlan."""
+        return plan_graph(plan, labels=labels, style_digest=style_digest)
+
 
 @dataclass(frozen=True)
 class CachePolicy:
@@ -168,12 +247,19 @@ class Invalidation:
         return self.reusable
 
 
-def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> DependencyGraph:
+def plan_graph(
+    plan: RenderPlan,
+    *,
+    labels: Mapping[str, str] | None = None,
+    style_digest: str | Mapping[str, str] | None = None,
+) -> DependencyGraph:
     """Constrói o grafo de dependências de uma revisão do ``RenderPlan``.
 
     ``labels`` é o selo editorial por cena — a mesma apresentação que o compilador recebe
     (``compile_render_plan(..., labels=...)``) e que **não** faz parte do contrato do plano;
     entra como parâmetro para o fingerprint do segmento visual não ignorar o selo.
+    ``style_digest`` permite invalidar os nós visuais quando o estilo visual (legendas/cores)
+    muda entre revisões.
     """
     if not isinstance(plan, RenderPlan):
         raise TypeError("plan_graph expects a RenderPlan")
@@ -228,29 +314,30 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
             )
             hosted = _hosted_overlays(scene, shot, manifest)
             visual_id = NodeId("visual", shot.shot_id)
+            current_style_digest = (
+                style_digest.get(shot.shot_id, style_digest.get(scene.scene_id))
+                if isinstance(style_digest, Mapping)
+                else style_digest
+            )
             nodes.append(
                 CacheNode(
                     node=visual_id,
-                    fingerprint=_fingerprint(
-                        "visual",
-                        shot.asset_ref,
-                        content_sha256,
-                        media_type,
-                        shot.effects.motion,
-                        shot.composition.fit if shot.composition is not None else None,
-                        shot.transition.kind if shot.transition is not None else None,
-                        shot.transition.duration_ticks if shot.transition is not None else 0,
-                        shot.duration_ticks,
-                        shot.start_tick - scene.start_tick,  # relativo à cena, não à timeline
-                        badges.get(scene.scene_id, ""),
-                        disclosure,
-                        captions,
-                        hosted,
+                    fingerprint=visual_fingerprint(
+                        shot,
+                        asset_digest=content_sha256,
+                        style_digest=current_style_digest,
+                        media_type=media_type,
+                        relative_start_tick=shot.start_tick - scene.start_tick,  # relativo à cena, não à timeline
+                        badge=badges.get(scene.scene_id, ""),
+                        disclosure=disclosure,
+                        captions=captions,
+                        hosted=hosted,
                     ),
                 )
             )
 
     music_ids: list[NodeId] = []
+    audio_mix = getattr(plan, "audio_mix", None)
     for source in sorted(plan.generated_audio, key=lambda s: (s.kind, s.source_id)):
         if source.kind != "music":
             continue
@@ -258,7 +345,7 @@ def plan_graph(plan: RenderPlan, *, labels: Mapping[str, str] | None = None) -> 
         nodes.append(
             CacheNode(
                 node=music_id,
-                fingerprint=_fingerprint("music", source.source_id, source.silent, sorted(source.params.items()), source.duration_ticks),
+                fingerprint=music_fingerprint(source, audio_mix=audio_mix),
             )
         )
         music_ids.append(music_id)
