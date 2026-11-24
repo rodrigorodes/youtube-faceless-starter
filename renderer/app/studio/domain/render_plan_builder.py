@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
+from pydantic import Field
+
 from .channel import ChannelProfile
 from .contracts import Asset, Scene as StoryboardRow, VideoFormat
 from .render import FPS, LEAD, SIZE, make_cues, scene_length
@@ -48,6 +50,7 @@ from .render_plan import (
     GeneratedAudioSource,
     Motion,
     NarrationCue,
+    NonBlank,
     Output,
     Provenance,
     RenderPlan,
@@ -59,6 +62,7 @@ from .render_plan import (
     Timeline,
     Track,
     Transition,
+    _PlanModel,
 )
 from .ticks import seconds_to_ticks, tick_windows
 
@@ -80,6 +84,21 @@ class PlanBuildError(ValueError):
     """O storyboard não pode virar um plano válido (entrada inconsistente, não I/O)."""
 
 
+class StoryboardShot(_PlanModel):
+    """Shot base individual dentro de uma cena do storyboard (VE-02).
+
+    Permite múltiplos cortes/ângulos por cena editorial mantendo a timeline contígua
+    e fechada.
+    """
+
+    shot_id: NonBlank
+    asset_id: NonBlank
+    duration_s: float = Field(gt=0.0)
+    asset_offset_s: float = Field(default=0.0, ge=0.0)
+    motion: Motion = "none"
+    transition: Transition | None = None
+
+
 @dataclass(frozen=True)
 class StoryboardScene:
     """Uma cena editorial já produzida, com a **fala medida** depois do TTS (R1).
@@ -92,6 +111,9 @@ class StoryboardScene:
     ``voice_id`` identifica a voz (nome+modelo) que sintetiza a fala. Ele entra nos ``params``
     da fonte de voz gerada para que o fingerprint da narração (RP-06c) invalide quando a voz
     muda, mesmo com o texto idêntico — sem ele, trocar a voz reusaria um WAV de outra voz.
+
+    ``shots`` é a lista de shots base sequenciais que cobrem a cena (VE-02). Quando ausente
+    ou vazia, preserva o comportamento legado de 1 shot base cobrindo toda a cena.
     """
 
     scene_id: str
@@ -101,6 +123,7 @@ class StoryboardScene:
     label: str = ""
     paid_operation_key: str | None = None
     voice_id: str = ""
+    shots: list[StoryboardShot] | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +153,7 @@ def storyboard_scene(
     *,
     speech_seconds: float,
     scene_id: str | None = None,
+    shots: list[StoryboardShot] | None = None,
 ) -> StoryboardScene:
     """Projeta a cena editorial do banco no insumo do builder (RP-015).
 
@@ -137,14 +161,15 @@ def storyboard_scene(
     ela entra como parâmetro, medida depois do TTS. É a única parte que o storyboard não
     fornece — o resto (narração, selo, asset) vem da linha real.
     """
-    if row.asset_id is None:
+    if row.asset_id is None and not shots:
         raise PlanBuildError(f"scene {row.id!r} has no asset: produce the assets before building the plan")
     return StoryboardScene(
         scene_id=scene_id or row.id,
-        asset_id=row.asset_id,
+        asset_id=row.asset_id or "",
         narration=row.narration,
         speech_seconds=speech_seconds,
         label=row.label,
+        shots=shots,
     )
 
 
@@ -279,11 +304,6 @@ def build_render_plan(
     for index, (scene, window, offset_s, _length_s) in enumerate(zip(ordered, windows, offsets, lengths)):
         start_tick, end_tick = window
         duration_ticks = end_tick - start_tick
-        reference = manifest.get(scene.asset_id)
-        if reference is None:
-            raise PlanBuildError(
-                f"scene {scene.scene_id!r} references asset {scene.asset_id!r} that is not in the manifest"
-            )
 
         base_transition: Transition | None = None
         if (
@@ -293,18 +313,81 @@ def build_render_plan(
         ):
             base_transition = shot_transition
 
-        shot = Shot(
-            shot_id=f"shot:{scene.scene_id}",
-            track_id=VISUAL_TRACK,
-            start_tick=start_tick,
-            duration_ticks=duration_ticks,
-            asset_ref=scene.asset_id,
-            composition=Composition(fit="cover"),
-            effects=Effects(motion=motion_by_scene[scene.scene_id]),
-            transition=base_transition,
-            paid_operation_key=scene.paid_operation_key,
-        )
-        scene_shots = [shot]
+        if scene.shots:
+            shot_durations = [seconds_to_ticks(s.duration_s, tps) for s in scene.shots]
+            for s_idx, s in enumerate(scene.shots):
+                if shot_durations[s_idx] < 1:
+                    raise PlanBuildError(
+                        f"shot {s.shot_id!r} of scene {scene.scene_id!r} duration "
+                        f"{s.duration_s!r}s is below one tick at {tps} ticks/s; use a finer timebase"
+                    )
+            residue = duration_ticks - sum(shot_durations)
+            if residue != 0:
+                shot_durations[-1] += residue
+            if shot_durations[-1] < 1:
+                raise PlanBuildError(
+                    f"shots of scene {scene.scene_id!r} do not fit scene duration: "
+                    f"last shot duration became {shot_durations[-1]} ticks"
+                )
+
+            curr_tick = start_tick
+            num_shots = len(scene.shots)
+            base_shots: list[Shot] = []
+            for s_idx, (sb_shot, dur) in enumerate(zip(scene.shots, shot_durations)):
+                if sb_shot.asset_id not in manifest:
+                    raise PlanBuildError(
+                        f"shot {sb_shot.shot_id!r} of scene {scene.scene_id!r} references asset "
+                        f"{sb_shot.asset_id!r} that is not in the manifest"
+                    )
+
+                transition_for_shot = sb_shot.transition
+                if transition_for_shot is None and s_idx == num_shots - 1:
+                    if base_transition is not None and base_transition.duration_ticks < dur:
+                        transition_for_shot = base_transition
+
+                shot_motion = sb_shot.motion
+                if shot_motion == "none" and motion_by_scene.get(scene.scene_id, "none") != "none":
+                    shot_motion = motion_by_scene[scene.scene_id]
+
+                base_shots.append(
+                    Shot(
+                        shot_id=sb_shot.shot_id,
+                        track_id=VISUAL_TRACK,
+                        start_tick=curr_tick,
+                        duration_ticks=dur,
+                        asset_ref=sb_shot.asset_id,
+                        asset_offset_ticks=seconds_to_ticks(sb_shot.asset_offset_s, tps),
+                        role="base",
+                        z_index=0,
+                        composition=Composition(fit="cover"),
+                        effects=Effects(motion=shot_motion),
+                        transition=transition_for_shot,
+                        paid_operation_key=scene.paid_operation_key,
+                    )
+                )
+                curr_tick += dur
+
+            scene_shots = base_shots
+        else:
+            reference = manifest.get(scene.asset_id)
+            if reference is None:
+                raise PlanBuildError(
+                    f"scene {scene.scene_id!r} references asset {scene.asset_id!r} that is not in the manifest"
+                )
+
+            shot = Shot(
+                shot_id=f"shot:{scene.scene_id}",
+                track_id=VISUAL_TRACK,
+                start_tick=start_tick,
+                duration_ticks=duration_ticks,
+                asset_ref=scene.asset_id,
+                composition=Composition(fit="cover"),
+                effects=Effects(motion=motion_by_scene[scene.scene_id]),
+                transition=base_transition,
+                paid_operation_key=scene.paid_operation_key,
+            )
+            scene_shots = [shot]
+
         scene_shots.extend(
             _overlay_shots(
                 scene.scene_id, start_tick, end_tick,
@@ -400,8 +483,12 @@ def _ordered_scenes(scenes: Sequence[StoryboardScene]) -> tuple[StoryboardScene,
         if scene.scene_id in seen:
             raise PlanBuildError(f"duplicate scene_id {scene.scene_id!r}")
         seen.add(scene.scene_id)
-        if not scene.asset_id or not scene.asset_id.strip():
+        if not scene.shots and (not scene.asset_id or not scene.asset_id.strip()):
             raise PlanBuildError(f"scene {scene.scene_id!r} has a blank asset_id")
+        if scene.shots:
+            for s_idx, shot in enumerate(scene.shots):
+                if not isinstance(shot, StoryboardShot):
+                    raise PlanBuildError(f"shot {s_idx} of scene {scene.scene_id!r} is not a StoryboardShot")
     return ordered
 
 

@@ -86,7 +86,7 @@ def test_builder_produces_a_valid_render_plan_from_the_storyboard():
                  assets=[asset_ref(), asset_ref("asset-02", content_sha256=SHA_B, uri="storage/img/asset-02.png")])
 
     assert isinstance(plan, RenderPlan)
-    assert plan.schema_version == 1
+    assert plan.schema_version == 2
     assert plan.plan_id == "plan-001" and plan.project_id == "project-001" and plan.video_id == "video-001"
     assert plan.output.format is VideoFormat.short
     assert (plan.output.width, plan.output.height) == (1080, 1920)
