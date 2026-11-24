@@ -142,7 +142,33 @@ Cada onda = 1 worktree/branch (`ve/…` convention), PRs pequenos, testes antes 
 5. Pexels **vídeo** (`media_type="video"` hoje lança `ModelUnavailable`), `per_page>1`; adapter Pixabay (**bloqueado sem chave**); upload de asset do usuário com licença declarada.
 6. Testes: schemas, budget excedido, falha de provider, retry, dedupe, ranking determinístico (providers falsos); testes de rede/pagos marcados `@pytest.mark.live` fora da suíte padrão.
 
-### Onda 3 — Qualidade audiovisual
+### Onda 3 — Qualidade audiovisual — **CONCLUÍDA** ✅
+
+- **Status:** CONCLUÍDA em 2026-11-24 na branch `feat/onda1-fundacao-renderplan-v2` (worktree `ve-onda1-fundacao`).
+- **Commits:**
+  - `c1e868a` feat(pacing): implementar PacingEngine de dominio puro para cortes ritmados
+  - `8f29096` feat(audio): implementar MusicCatalog local CC0 e caso de uso AudioDirector
+  - `5e06d30` feat(captions): implementar gerador de legendas dinamicas ASS com highlight e safe margins
+  - `a772158` feat(alignment): implementar servico de alinhamento de palavras hibrido deterministico e Whisper
+  - `bcbdd35` fix(alignment): garantir limites de duracao no Whisper, monotonicidade e seguranca contra duracao curta
+  - `9c70842` feat(renderplan): integrar pacing, musica local e legendas ASS no builder e compilador v2
+  - `6bb4518` feat(ffmpeg): implementar mixagem com ducking musical e queima de legendas ASS no FFmpeg
+- **Modelos e Entregas:**
+  - `PacingEngine` (`domain/pacing.py`): Motor puro de cálculo de ritmo de cortes visuais por preset (`dynamic`: 2-3s, `balanced`: 3-4.5s, `cinematic`: 4.5-7s). Subdivide cenas com garantia de soma exata de durações em ticks e alternância de movimento Ken Burns (`zoom_in` -> `zoom_out`) para cenas de asset único de imagem com duração > 3.5s no preset dinâmico.
+  - `MusicCatalog` (`domain/music.py`): Catálogo local de faixas musicais CC0 (`storage/music-candidates/manifest.json`), validação de licença, integridade de hash SHA-256 e seleção semântica por tom/humor (`mood_tags`).
+  - `AudioDirector` (`application/audio_director.py`): Orquestrador de trilha sonora compatível com o briefing criativo e geração declarativa de `AudioMix` (volume da música, ducking configurado via `sidechaincompress`, fade-in/out e loudness EBU R128).
+  - `AssSubtitleRenderer` (`domain/captions.py`, `adapters/captions_ass.py`): Gerador de legendas dinâmicas SubStation Alpha (`.ass` v4+) com realce de palavra ativa estilo karaoke (`\k`), respeitando safe margins estritas para YouTube Shorts vertical 9:16 (`MarginV = 280` para evitar sobreposição de UI) e horizontal 16:9 (`MarginV = 60`).
+  - `WordAlignmentService` (`adapters/alignment.py`): Serviço híbrido de alinhamento temporal de palavras. Modo determinístico nativo para CPU ponderado por caracteres e pontuação, normalizado pela duração real do áudio, com suporte opcional a sidecar HTTP Whisper (`WHISPER_URL`), garantindo monotonicidade temporal estrita e clamping dentro dos limites do áudio.
+  - `RenderPlanBuilder` e `RenderPlanCompilerV2` (`domain/render_plan_builder.py`, `adapters/render_plan_compiler.py`): Integração do `PacingEngine` na geração da timeline visual, inclusão de faixas do `MusicCatalog` no `asset_manifest` com `kind="music"`, configuração do `AudioMix` e geração de legendas `.ass` apontadas em `timeline.subtitles`.
+  - `RenderPlanFFmpeg` (`adapters/render_plan_ffmpeg.py`): Compilação e execução FFmpeg com mixagem de áudio com loop infinito (`aloop`), ganho ponderado (`volume`), ducking automático atenuando a trilha sob a narração (`sidechaincompress`) e `afade` de saída suave, além de queima de legendas via filtro `subtitles` (libass).
+- **Evidência de Testes:**
+  - Suíte completa da Onda 3 e regressão integrada de mídia, direção criativa, pacing, áudio, legendas e renderização:
+    `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_*.py tests/test_music_*.py tests/test_audio_director.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py -q`
+    Resultado: **461 passed, 0 failures, 2 warnings** em 28.29s.
+  - Suíte estrita da especificação da tarefa:
+    `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py -q`
+    Resultado: **457 passed, 0 failures, 2 warnings** em 32.23s.
+
 1. **Pacing Engine** (domínio puro): duração do clip por fala/ênfase/estilo → beats; presets de edição (extensão de `VisualStyle`).
 2. **Audio Director:** `AudioMix` aplicado; `afade`; SFX; música por arquivo de um **catálogo local licenciado** (CC0, com licença registrada); detecção de silêncio e true-peak no QA.
 3. **Captions:** spike de alinhamento (Piper → fallback faster-whisper opcional em imagem separada); cues por palavra; ASS com realce, margens seguras e quebra de linha.

@@ -120,15 +120,15 @@
     - Margem inferior protegida em 9:16 (`MarginV = 280` para evitar botões de Shorts) e 16:9 (`MarginV = 60`).
     - Aplica tags `{\k<centisegundos>}` para efeito karaoke/highlight da palavra ativa.
 
-- [ ] **Step 1: Write failing test in `tests/test_captions_ass.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing test in `tests/test_captions_ass.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_captions_ass.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement `AssSubtitleRenderer` in `adapters/captions_ass.py` and domain models in `domain/captions.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement `AssSubtitleRenderer` in `adapters/captions_ass.py` and domain models in `domain/captions.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_captions_ass.py tests/test_architecture.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/domain/captions.py renderer/app/studio/adapters/captions_ass.py tests/test_captions_ass.py
   git commit -m "feat(captions): implementar gerador de legendas dinamicas ASS com highlight e safe margins"
@@ -149,15 +149,15 @@
     - Modo nativo (CPU determinístico): calcula tempos relativos de cada palavra baseado no número de caracteres e pausas naturais de pontuação (`,`, `.`, `!`, `?`), normalizado pela duração real do áudio `audio_duration_ms`.
     - Modo Whisper (HTTP opcional se `WHISPER_URL` configurado): consulta sidecar com timeout estrito e fallback automático para o modo nativo em caso de erro ou divergência de texto.
 
-- [ ] **Step 1: Write failing test in `tests/test_word_alignment.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing test in `tests/test_word_alignment.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_word_alignment.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement `WordAlignmentService` in `adapters/alignment.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement `WordAlignmentService` in `adapters/alignment.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_word_alignment.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/adapters/alignment.py tests/test_word_alignment.py
   git commit -m "feat(alignment): implementar servico de alinhamento de palavras hibrido deterministico e Whisper"
@@ -180,15 +180,15 @@
     - Anexa a faixa de música selecionada em `asset_manifest` com `kind="music"` e configura `AudioMix`.
     - Preenche `timeline.subtitles` e escreve o arquivo `.ass` de legendas para o job.
 
-- [ ] **Step 1: Write failing test in `tests/test_render_plan_builder_audiovisual.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing test in `tests/test_render_plan_builder_audiovisual.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_render_plan_builder_audiovisual.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement integration in `render_plan_builder.py` and `render_plan_compiler.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement integration in `render_plan_builder.py` and `render_plan_compiler.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_render_plan_builder_audiovisual.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/domain/render_plan_builder.py renderer/app/studio/adapters/render_plan_compiler.py tests/test_render_plan_builder_audiovisual.py
   git commit -m "feat(renderplan): integrar pacing, musica local e legendas ASS no builder e compilador v2"
@@ -209,15 +209,15 @@
     - Na mixagem de áudio, consome o arquivo real de música de `storage/music-candidates/`, aplica `aloop`, `volume={music_gain}`, e ducking com `sidechaincompress` contra a narração.
     - Aplica `afade=t=out:st={total_s - afade_out_s}:d={afade_out_s}` para encerramento musical suave.
 
-- [ ] **Step 1: Write failing test in `tests/test_render_plan_ffmpeg_audiovisual.py`**
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 1: Write failing test in `tests/test_render_plan_ffmpeg_audiovisual.py`**
+- [x] **Step 2: Run test to verify it fails**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_render_plan_ffmpeg_audiovisual.py -q`
   Expected: FAIL
-- [ ] **Step 3: Implement audio ducking and ASS burning in `render_plan_ffmpeg.py`**
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 3: Implement audio ducking and ASS burning in `render_plan_ffmpeg.py`**
+- [x] **Step 4: Run test to verify it passes**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_render_plan_ffmpeg_audiovisual.py -q`
   Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   ```bash
   git add renderer/app/studio/adapters/render_plan_ffmpeg.py tests/test_render_plan_ffmpeg_audiovisual.py
   git commit -m "feat(ffmpeg): implementar mixagem com ducking musical e queima de legendas ASS no FFmpeg"
@@ -231,12 +231,12 @@
 - Modify: `docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-e-plano.md`
 - Modify: `docs/superpowers/plans/2026-11-24-onda3-qualidade-audiovisual-pacing-audio-captions.md`
 
-- [ ] **Step 1: Run full regression test suite in container**
+- [x] **Step 1: Run full regression test suite in container**
   Run: `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py -q`
   Expected: ALL PASS (0 failures)
-- [ ] **Step 2: Verify git status is clean and document progress**
+- [x] **Step 2: Verify git status is clean and document progress**
   Atualizar `docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-e-plano.md` marcando Onda 3 como concluída.
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   ```bash
   git add docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-e-plano.md docs/superpowers/plans/2026-11-24-onda3-qualidade-audiovisual-pacing-audio-captions.md
   git commit -m "docs(onda3): registrar conclusao da Onda 3 - Qualidade Audiovisual"
