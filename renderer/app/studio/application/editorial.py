@@ -20,6 +20,7 @@ from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 if TYPE_CHECKING:
+    from .creative_director import CreateCreativeBrief
     from .ideas import ScoreIdeas
     from .longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
                            GetScriptRevision, ListScriptRevisions, RemoveScriptScene, ReorderScriptScenes,
@@ -516,3 +517,4 @@ class Editorial:
     restore_revision: "RestoreScriptRevision | None" = None
     list_revisions: "ListScriptRevisions | None" = None
     get_revision: "GetScriptRevision | None" = None
+    creative_director: "CreateCreativeBrief | None" = None

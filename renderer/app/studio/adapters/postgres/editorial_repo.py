@@ -19,9 +19,10 @@ from ...domain.states import assert_transition
 from .repo import _translated
 
 _SNAPSHOT = "id, video_id, url, content_sha256, text, fetched_at"
-_SCENE = "id, video_id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, duration_s"
+_SCENE = ("id, video_id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
+          "duration_s, visual_intent, search_queries")
 _REVISION = ("scene_id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
-             "media_review_required, duration_s")
+             "media_review_required, duration_s, visual_intent, search_queries")
 
 
 class _Base:
@@ -192,21 +193,29 @@ class PostgresScriptRepository(_Base):
                 conn.execute(
                     "UPDATE studio.scenes SET idx = %s, narration = %s, caption = %s, label = %s, "
                     "image_prompt = %s, claim_ids = %s, asset_id = NULL, media_review_required = true, "
-                    "duration_s = CASE WHEN %s THEN NULL ELSE duration_s END WHERE id = %s",
+                    "duration_s = CASE WHEN %s THEN NULL ELSE duration_s END, "
+                    "visual_intent = %s, search_queries = %s WHERE id = %s",
                     (position, draft.narration, draft.caption, draft.label, draft.image_prompt,
-                     Jsonb(draft.claim_ids), narration_changed, scene_id),
+                     Jsonb(draft.claim_ids), narration_changed, getattr(draft, "visual_intent", "") or "",
+                     Jsonb(getattr(draft, "search_queries", []) or []), scene_id),
                 )
             else:
-                conn.execute("UPDATE studio.scenes SET idx = %s, caption = %s, label = %s, claim_ids = %s WHERE id = %s",
-                             (position, draft.caption, draft.label, Jsonb(draft.claim_ids), scene_id))
+                conn.execute("UPDATE studio.scenes SET idx = %s, caption = %s, label = %s, claim_ids = %s, "
+                             "visual_intent = %s, search_queries = %s WHERE id = %s",
+                             (position, draft.caption, draft.label, Jsonb(draft.claim_ids),
+                              getattr(draft, "visual_intent", "") or "",
+                              Jsonb(getattr(draft, "search_queries", []) or []), scene_id))
 
         for position, draft in enumerate(drafts):
             if position in assigned:
                 continue
-            conn.execute("INSERT INTO studio.scenes(id, video_id, idx, narration, caption, label, image_prompt, claim_ids) "
-                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            conn.execute("INSERT INTO studio.scenes(id, video_id, idx, narration, caption, label, "
+                         "image_prompt, claim_ids, visual_intent, search_queries) "
+                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                          (uuid.uuid4().hex, video_id, position, draft.narration, draft.caption, draft.label,
-                          draft.image_prompt, Jsonb(draft.claim_ids)))
+                          draft.image_prompt, Jsonb(draft.claim_ids),
+                          getattr(draft, "visual_intent", "") or "",
+                          Jsonb(getattr(draft, "search_queries", []) or [])))
 
     def _capture_revision(self, conn, video_id: str, version: int) -> None:
         """Grava (upsert) o snapshot de `version` a partir das cenas correntes.
@@ -216,21 +225,22 @@ class PostgresScriptRepository(_Base):
         """
         rows = conn.execute(
             "SELECT id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
-            "media_review_required, duration_s FROM studio.scenes WHERE video_id = %s ORDER BY idx",
+            "media_review_required, duration_s, visual_intent, search_queries FROM studio.scenes WHERE video_id = %s ORDER BY idx",
             (video_id,),
         ).fetchall()
         for row in rows:
             conn.execute(
                 "INSERT INTO studio.scene_revisions(video_id, version, scene_id, idx, narration, caption, "
-                "label, image_prompt, claim_ids, asset_id, media_review_required, duration_s) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "label, image_prompt, claim_ids, asset_id, media_review_required, duration_s, visual_intent, search_queries) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (video_id, version, scene_id) DO UPDATE SET idx = EXCLUDED.idx, "
                 "narration = EXCLUDED.narration, caption = EXCLUDED.caption, label = EXCLUDED.label, "
                 "image_prompt = EXCLUDED.image_prompt, claim_ids = EXCLUDED.claim_ids, "
                 "asset_id = EXCLUDED.asset_id, media_review_required = EXCLUDED.media_review_required, "
-                "duration_s = EXCLUDED.duration_s",
+                "duration_s = EXCLUDED.duration_s, visual_intent = EXCLUDED.visual_intent, "
+                "search_queries = EXCLUDED.search_queries",
                 (video_id, version, row[0], row[1], row[2], row[3], row[4], row[5], Jsonb(row[6]),
-                 row[7], row[8], row[9]),
+                 row[7], row[8], row[9], row[10] or "", Jsonb(row[11] if row[11] is not None else [])),
             )
         scene_ids = [row[0] for row in rows]
         if scene_ids:
@@ -257,7 +267,7 @@ class PostgresScriptRepository(_Base):
             if version == current:
                 rows = conn.execute(
                     "SELECT id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
-                    "media_review_required, duration_s FROM studio.scenes WHERE video_id = %s ORDER BY idx",
+                    "media_review_required, duration_s, visual_intent, search_queries FROM studio.scenes WHERE video_id = %s ORDER BY idx",
                     (video_id,),
                 ).fetchall()
             else:
@@ -367,24 +377,24 @@ class PostgresScriptRepository(_Base):
             conn.execute("UPDATE studio.scenes SET idx = idx + %s WHERE video_id = %s", (offset, video_id))
         for position, revision in enumerate(revisions):
             (scene_id, _idx, narration, caption, label, image_prompt, claim_ids, asset_id,
-             review_required, duration_s) = revision
+             review_required, duration_s, visual_intent, search_queries) = revision
             kept_asset = asset_id if asset_id in available else None
             needs_review = bool(review_required) or (asset_id is not None and kept_asset is None)
             if scene_id in existing_ids:
                 conn.execute(
                     "UPDATE studio.scenes SET idx = %s, narration = %s, caption = %s, label = %s, "
                     "image_prompt = %s, claim_ids = %s, asset_id = %s, media_review_required = %s, "
-                    "duration_s = %s WHERE id = %s AND video_id = %s",
+                    "duration_s = %s, visual_intent = %s, search_queries = %s WHERE id = %s AND video_id = %s",
                     (position, narration, caption, label, image_prompt, Jsonb(claim_ids), kept_asset,
-                     needs_review, duration_s, scene_id, video_id),
+                     needs_review, duration_s, visual_intent or "", Jsonb(search_queries or []), scene_id, video_id),
                 )
             else:
                 conn.execute(
                     "INSERT INTO studio.scenes(id, video_id, idx, narration, caption, label, image_prompt, "
-                    "claim_ids, asset_id, media_review_required, duration_s) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "claim_ids, asset_id, media_review_required, duration_s, visual_intent, search_queries) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (scene_id, video_id, position, narration, caption, label, image_prompt,
-                     Jsonb(claim_ids), kept_asset, needs_review, duration_s),
+                     Jsonb(claim_ids), kept_asset, needs_review, duration_s, visual_intent or "", Jsonb(search_queries or [])),
                 )
         if existing_ids:
             conn.execute("DELETE FROM studio.scenes WHERE video_id = %s AND id <> ALL(%s)",
@@ -579,15 +589,22 @@ def _read_scenes(conn, video_id: str) -> list[Scene]:
         for r in scene_rows:
             row_dict = dict(r)
             row_dict["assets"] = assets_by_scene.get(str(r["id"]), [])
+            if row_dict.get("search_queries") is None:
+                row_dict["search_queries"] = []
+            if row_dict.get("visual_intent") is None:
+                row_dict["visual_intent"] = ""
             result.append(Scene.model_validate(row_dict))
         return result
 
 
 def _scene_revision_from_row(row: tuple) -> SceneRevision:
     """Linha de `studio.scenes` (colunas `id...`) ou de `studio.scene_revisions` (`scene_id...`)."""
+    visual_intent = row[10] if len(row) > 10 and row[10] is not None else ""
+    search_queries = list(row[11]) if len(row) > 11 and row[11] is not None else []
     return SceneRevision(scene_id=row[0], idx=row[1], narration=row[2], caption=row[3], label=row[4],
                          image_prompt=row[5], claim_ids=list(row[6]), asset_id=row[7],
-                         media_review_required=bool(row[8]), duration_s=row[9])
+                         media_review_required=bool(row[8]), duration_s=row[9],
+                         visual_intent=visual_intent, search_queries=search_queries)
 
 
 def _outcome_to_json(outcome: ScriptEditOutcome) -> dict:

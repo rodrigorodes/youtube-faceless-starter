@@ -318,6 +318,8 @@ class SceneRevision:
     asset_id: str | None
     media_review_required: bool
     duration_s: float | None = None
+    visual_intent: str = ""
+    search_queries: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -373,6 +373,97 @@ def test_list_scene_candidates_aggregates_scene_search_queries_and_limits_per_pa
     assert any("extra" in cid for cid in cand_ids)
 
 
+def test_deduplication_resolves_asset_repo_model_id():
+    video = Video(
+        id="vid-dedup-repo",
+        project_id="proj-1",
+        topic="Deduplication with Asset Repo",
+        format=VideoFormat.short,
+        status=VideoStatus.STORYBOARDED,
+    )
+    # scene0 has an internal asset id
+    scene0 = Scene(
+        id="sc-0",
+        video_id="vid-dedup-repo",
+        idx=0,
+        narration="Primeira cena com asset interno.",
+        image_prompt="cena de teste 1",
+        asset_id="internal-uuid-123",
+    )
+    scene1 = Scene(
+        id="sc-1",
+        video_id="vid-dedup-repo",
+        idx=1,
+        narration="Segunda cena buscando candidatos.",
+        image_prompt="cena de teste 2",
+    )
+    cand1 = _sample_candidate("ext-cand-1", width=1920, height=1080)
+    cand2 = _sample_candidate("ext-cand-2", width=1920, height=1080)
+
+    # In asset repo, internal-uuid-123 has model="ext-cand-1"
+    asset = Asset(
+        id="internal-uuid-123",
+        kind=AssetKind.image,
+        cache_key="ck-1",
+        path="/tmp/1.jpg",
+        provider="pexels",
+        model="ext-cand-1",
+        license="CC0",
+    )
+
+    class SimpleAssetRepo:
+        def get(self, aid: str):
+            return asset if aid == "internal-uuid-123" else None
+
+    search = FakeSearchProvider("mock", [cand1, cand2])
+    use_case = ListSceneCandidates(
+        FakeVideoRepo(video),
+        FakeScriptRepo([scene0, scene1]),
+        search,
+        assets=SimpleAssetRepo(),
+    )
+
+    result = use_case.execute("vid-dedup-repo", "sc-1", per_page=10)
+    # ext-cand-1 was resolved via asset.model and penalized (-50), so ext-cand-2 wins!
+    assert len(result.candidates) == 2
+    assert result.candidates[0].media_id == "ext-cand-2"
+    assert result.candidates[1].media_id == "ext-cand-1"
+
+
+def test_list_scene_candidates_caps_complementary_queries_to_two():
+    video = Video(
+        id="vid-cap-q",
+        project_id="proj-1",
+        topic="Cap queries",
+        format=VideoFormat.short,
+        status=VideoStatus.STORYBOARDED,
+    )
+    scene = Scene(
+        id="sc-cap-q",
+        video_id="vid-cap-q",
+        idx=0,
+        narration="Cena com 4 termos extras.",
+        image_prompt="prompt principal longo",
+        search_queries=["extra 1", "extra 2", "extra 3", "extra 4"],
+    )
+
+    searched_queries = []
+
+    class TrackingSearch:
+        name = "tracking"
+
+        def search(self, query: str, *, media_type: str = "image", orientation: str = "landscape",
+                   per_page: int = 10) -> list[MediaCandidate]:
+            searched_queries.append(query)
+            return [_sample_candidate(f"cand-{query}", width=1080, height=1920)]
+
+    use_case = ListSceneCandidates(FakeVideoRepo(video), FakeScriptRepo([scene]), TrackingSearch())
+    use_case.execute("vid-cap-q", "sc-cap-q", per_page=10)
+
+    # Main query + at most 2 extra queries
+    assert searched_queries == ["prompt principal longo", "extra 1", "extra 2"]
+
+
 # ---------------------------------------------------------------------------
 # 7. PixabayMediaFetcher e MultiProviderMediaFetcher
 # ---------------------------------------------------------------------------

@@ -139,6 +139,15 @@ def test_create_creative_brief_sets_budget_cap_if_model_returns_none():
     assert brief.max_budget_usd == 25.0
 
 
+def test_create_creative_brief_enforces_budget_cap_ceiling():
+    raw_json = sample_brief_json(max_budget_usd=50.0)
+    model = FakeTextModel(raw_json)
+    use_case = CreateCreativeBrief(model)
+
+    brief = use_case.execute("History of the Printing Press", {}, budget_cap=20.0)
+    assert brief.max_budget_usd == 20.0
+
+
 def test_create_creative_brief_with_guard_uses_paid_key():
     raw_json = sample_brief_json()
     model = FakeTextModel(raw_json, cost=0.03)

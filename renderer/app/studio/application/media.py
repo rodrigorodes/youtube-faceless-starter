@@ -156,8 +156,10 @@ class ListSceneCandidates:
     vazia — o chamador mantém a mídia atual (fallback), sem cena sem imagem.
     """
 
-    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, search: MediaSearch):
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, search: MediaSearch,
+                 assets: AssetRepository | None = None):
         self.videos, self.scripts, self.search = videos, scripts, search
+        self.assets = assets
 
     def execute(self, video_id: str, scene_id: str, *, per_page: int = 10,
                 media_type: str = "image") -> SceneCandidates:
@@ -184,7 +186,7 @@ class ListSceneCandidates:
                     all_candidates.append(c)
 
         scene_queries = getattr(scene, "search_queries", None) or []
-        for extra_q in scene_queries:
+        for extra_q in scene_queries[:2]:
             clean_q = (extra_q or "").strip()
             if clean_q and clean_q.lower() != query.lower():
                 extra_found = self.search.search(clean_q, media_type=media_type, orientation=orientation, per_page=per_page)
@@ -204,7 +206,14 @@ class ListSceneCandidates:
             if sq and sq not in queries:
                 queries.append(sq)
 
-        used_media_ids = {s.asset_id for s in all_scenes if s.id != scene.id and s.asset_id}
+        used_media_ids = set()
+        for s in all_scenes:
+            if s.id != scene.id and s.asset_id:
+                used_media_ids.add(s.asset_id)
+                if self.assets is not None:
+                    asset = self.assets.get(s.asset_id)
+                    if asset is not None and asset.model:
+                        used_media_ids.add(asset.model)
 
         ranked = MediaRanker.rank(
             all_candidates,

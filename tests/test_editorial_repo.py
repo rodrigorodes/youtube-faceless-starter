@@ -313,3 +313,39 @@ def test_fact_check_refuses_when_the_script_changed_after_it_was_read(env):
     assert env["checks"].save(v, REPORT_OK, advance=True, script_version=2) is True
     env["conn"].commit()
     assert env["conn"].execute("SELECT script_version FROM studio.fact_checks WHERE video_id=%s", (v,)).fetchone()[0] == 2
+
+
+def test_scene_visual_intent_and_search_queries_persistence(env):
+    v = env["video"].id
+    drafts = [
+        SceneDraft(
+            narration="Narração com intenção e termos de busca.",
+            caption="Legenda 1",
+            label="C1",
+            image_prompt="Prompt visual para cena 1 detalhado.",
+            claim_ids=[],
+            visual_intent="cinematic drone shot over misty mountains",
+            search_queries=["mountain mist", "aerial alps"],
+        ),
+        SceneDraft(
+            narration="Segunda cena com termos de busca.",
+            caption="Legenda 2",
+            label="C2",
+            image_prompt="Prompt visual para cena 2 detalhado.",
+            claim_ids=[],
+            visual_intent="",
+            search_queries=[],
+        ),
+    ]
+    script = env["scripts"].save_and_advance(v, "texto com inteligencia visual", drafts, [], S.IDEA, S.SCRIPTED)
+    scenes = env["scripts"].scenes(v)
+    assert len(scenes) == 2
+    assert scenes[0].visual_intent == "cinematic drone shot over misty mountains"
+    assert scenes[0].search_queries == ["mountain mist", "aerial alps"]
+    assert scenes[1].visual_intent == ""
+    assert scenes[1].search_queries == []
+
+    rev_scenes = env["scripts"].revision_scenes(v, script.version)
+    assert len(rev_scenes) == 2
+    assert rev_scenes[0].visual_intent == "cinematic drone shot over misty mountains"
+    assert rev_scenes[0].search_queries == ["mountain mist", "aerial alps"]

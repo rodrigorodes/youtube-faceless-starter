@@ -114,6 +114,7 @@ from ..application.scene_narration import RegenerateSceneNarration, SceneNarrati
 from ..application.render_cache import PlanRegeneration
 from ..application.media import ListAssets, ListSceneCandidates, Media, PrepareStoryboard, ProduceAssets, SceneAssetFile, SetSceneBroll, SwapSceneMedia
 from ..application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
+from ..application.creative_director import CreateCreativeBrief
 from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
                                    GetScriptRevision, ListScriptRevisions, RemoveScriptScene, ReorderScriptScenes,
                                    RestoreScriptRevision)
@@ -559,7 +560,7 @@ class Studio:
                                   image_for=lambda project_id: provider_for("image", project_id),
                                   lock=PostgresProductionLock(self._connect_autocommit), paid=paid_guard),
             list_assets=ListAssets(repo, scripts, assets),
-            list_candidates=ListSceneCandidates(repo, scripts, media_search) if media_search else None,
+            list_candidates=ListSceneCandidates(repo, scripts, media_search, assets=assets) if media_search else None,
             swap=SwapSceneMedia(repo, scripts, assets, asset_store, fetcher=media_fetcher, guard=guard, usage=usage),
             broll=SetSceneBroll(repo, scripts, assets),
             asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root))
@@ -613,6 +614,13 @@ class Studio:
                                            lambda project_id: provider_for("voice", project_id),
                                            self._build_provider),
             files, scene_durations, paid=paid_guard)
+        creative_director = None
+        try:
+            text_model = text_for(None)
+            creative_director = CreateCreativeBrief(text_model, guard=paid_guard)
+        except Exception:
+            creative_director = None
+
         editorial = Editorial(
             ingest=IngestSource(self._fetcher, snaps, repo, s.source_allowlist),
             generate=GenerateScript(repo, snaps, scripts, None, guard, usage, model_for=text_for,
@@ -636,7 +644,8 @@ class Studio:
             restore_revision=RestoreScriptRevision(repo, snaps, scripts, scripts,
                                                    allow_names=frozenset(s.allow_names)),
             list_revisions=ListScriptRevisions(repo, scripts),
-            get_revision=GetScriptRevision(repo, scripts))
+            get_revision=GetScriptRevision(repo, scripts),
+            creative_director=creative_director)
         rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
                               get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)

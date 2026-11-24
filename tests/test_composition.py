@@ -765,6 +765,15 @@ def test_wiring_consumes_the_channel_profile_and_keeps_the_legacy_path_without_i
                for message in events)
 
 
+def test_studio_wires_creative_director_on_editorial(tmp_path, dsn):
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path),
+                    environ={"STUDIO_TEXT": "demo:mock"})
+    editorial = studio.use_cases().editorial
+    assert editorial.creative_director is not None
+    from app.studio.application.creative_director import CreateCreativeBrief
+    assert isinstance(editorial.creative_director, CreateCreativeBrief)
+
+
 def test_recovery_interval_setting_parsing():
     assert Settings().recovery_interval_seconds == 60.0
     assert Settings.from_env({}).recovery_interval_seconds == 60

@@ -267,6 +267,17 @@ def test_fetcher_returns_bytes_and_keeps_the_candidate_license():
     assert result.usage.cost_usd == 0
 
 
+def test_fetcher_allows_trusted_video_url():
+    def handler(request):
+        assert str(request.url) == "https://videos.pexels.com/video-files/42/video.mp4"
+        return httpx.Response(200, content=b"mp4-bytes", headers={"content-type": "video/mp4"})
+
+    result = PexelsMediaFetcher("pexels-video", transport=httpx.MockTransport(handler)).fetch(
+        _candidate(url="https://videos.pexels.com/video-files/42/video.mp4")
+    )
+    assert result.data == b"mp4-bytes" and result.mime == "video/mp4"
+
+
 def test_fetcher_refuses_an_untrusted_host():
     with pytest.raises(ModelUnavailable):
         PexelsMediaFetcher("m", transport=httpx.MockTransport(lambda request: httpx.Response(200))).fetch(

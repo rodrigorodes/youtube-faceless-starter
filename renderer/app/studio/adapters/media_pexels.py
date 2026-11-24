@@ -258,7 +258,7 @@ class PexelsMediaFetcher:
         self.model, self._transport, self._timeout = model, transport, timeout
 
     def fetch(self, candidate: MediaCandidate) -> ImageResult:
-        if not trusted_image_url(candidate.url):
+        if not (trusted_image_url(candidate.url) or trusted_video_url(candidate.url)):
             raise ModelUnavailable("candidate media url is not on a trusted host")
         try:
             buffer = bytearray()

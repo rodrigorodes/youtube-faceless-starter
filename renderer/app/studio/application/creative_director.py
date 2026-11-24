@@ -58,8 +58,11 @@ class CreateCreativeBrief:
             raise ValueError("model output is not valid JSON")
         json_str = raw[start:end + 1]
         brief = CreativeBrief.model_validate_json(json_str)
-        if budget_cap is not None and brief.max_budget_usd is None:
-            brief = brief.model_copy(update={"max_budget_usd": float(budget_cap)})
+        if budget_cap is not None:
+            if brief.max_budget_usd is not None and brief.max_budget_usd > budget_cap:
+                brief = brief.model_copy(update={"max_budget_usd": float(budget_cap)})
+            elif brief.max_budget_usd is None:
+                brief = brief.model_copy(update={"max_budget_usd": float(budget_cap)})
         return brief
 
     def execute(self, topic: str, channel_context: dict[str, Any], budget_cap: float | None = None) -> CreativeBrief:

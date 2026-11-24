@@ -136,6 +136,8 @@ def _scene_from_row(row: dict) -> Scene:
         duration_s=row.get("duration_s"),
         broll_enabled=bool(row.get("broll_enabled", False)),
         broll_note=row.get("broll_note"),
+        visual_intent=row.get("visual_intent") or "",
+        search_queries=row.get("search_queries") or [],
     )
 
 
@@ -144,7 +146,7 @@ def _load_scenes(conn, video_id: str) -> list[Scene]:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             "SELECT id, video_id, idx, narration, caption, label, image_prompt, claim_ids, "
-            "asset_id, duration_s, broll_enabled, broll_note "
+            "asset_id, duration_s, broll_enabled, broll_note, visual_intent, search_queries "
             "FROM studio.scenes WHERE video_id = %s ORDER BY idx",
             (check_id(video_id),),
         )
@@ -158,14 +160,15 @@ def save_scenes(conn, video_id: str, scenes: list[Scene]) -> None:
         for s in scenes:
             cur.execute(
                 "INSERT INTO studio.scenes (id, video_id, idx, narration, caption, label, "
-                "image_prompt, claim_ids, asset_id, duration_s, broll_enabled, broll_note) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "image_prompt, claim_ids, asset_id, duration_s, broll_enabled, broll_note, visual_intent, search_queries) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (id) DO UPDATE SET "
                 "idx = EXCLUDED.idx, narration = EXCLUDED.narration, caption = EXCLUDED.caption, "
                 "label = EXCLUDED.label, image_prompt = EXCLUDED.image_prompt, "
                 "claim_ids = EXCLUDED.claim_ids, asset_id = EXCLUDED.asset_id, "
                 "duration_s = EXCLUDED.duration_s, broll_enabled = EXCLUDED.broll_enabled, "
-                "broll_note = EXCLUDED.broll_note",
+                "broll_note = EXCLUDED.broll_note, visual_intent = EXCLUDED.visual_intent, "
+                "search_queries = EXCLUDED.search_queries",
                 (
                     s.id,
                     vid,
@@ -179,6 +182,8 @@ def save_scenes(conn, video_id: str, scenes: list[Scene]) -> None:
                     s.duration_s,
                     s.broll_enabled,
                     s.broll_note,
+                    getattr(s, "visual_intent", "") or "",
+                    Jsonb(getattr(s, "search_queries", []) or []),
                 ),
             )
 
