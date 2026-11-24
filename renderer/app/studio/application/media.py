@@ -7,6 +7,7 @@ from decimal import Decimal
 from ..domain.contracts import Asset, AssetKind, Scene, Video, VideoStatus
 from ..domain.ids import asset_cache_key
 from ..domain.media import ASPECT_FOR, build_image_prompt, strip_style
+from ..domain.media_ranker import MediaRanker
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import CostGuard, StateConflict, _require_video
 from .errors import ServiceUnavailable
@@ -169,7 +170,26 @@ class ListSceneCandidates:
             return SceneCandidates(scene_id=scene.id, query="", candidates=())
         orientation = "portrait" if ASPECT_FOR[video.format] == "9:16" else "landscape"
         found = self.search.search(query, media_type=media_type, orientation=orientation, per_page=per_page)
-        return SceneCandidates(scene_id=scene.id, query=query, candidates=tuple(found))
+        if not found:
+            return SceneCandidates(scene_id=scene.id, query=query, candidates=())
+
+        target_format = video.format.value if hasattr(video.format, "value") else str(video.format)
+        visual_intent = getattr(scene, "visual_intent", "")
+        queries = [query]
+        scene_queries = getattr(scene, "search_queries", None)
+        if scene_queries:
+            for sq in scene_queries:
+                if sq and sq not in queries:
+                    queries.append(sq)
+
+        ranked = MediaRanker.rank(
+            found,
+            visual_intent=visual_intent,
+            queries=queries,
+            target_format=target_format,
+        )
+        ranked_candidates = tuple(sc.candidate for sc in ranked)
+        return SceneCandidates(scene_id=scene.id, query=query, candidates=ranked_candidates)
 
 
 @dataclass(frozen=True)

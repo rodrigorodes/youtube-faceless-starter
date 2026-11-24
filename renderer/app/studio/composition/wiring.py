@@ -23,7 +23,9 @@ from ..adapters.image_opencode import OpenCodeImage
 from ..adapters.image_placeholder import PlaceholderImage
 from ..adapters.image_stock import PexelsImage
 from ..adapters.image_veo import VeoImage
+from ..adapters.media_multi import MultiProviderMediaSearch
 from ..adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
+from ..adapters.media_pixabay import PixabayMediaSearch
 from ..adapters.postgres.publish_repo import (PostgresApprovalRepository, PostgresPublicationIntentRepository,
                                              PostgresPublicationRepository, PostgresReopenRepository)
 from ..adapters.postgres.analytics_repo import PostgresAnalyticsRepository
@@ -314,6 +316,7 @@ class Studio:
         register("image", "stock", lambda model: PexelsImage(model, settings.pexels_key))
         register("image", "veo", lambda model: VeoImage(model, settings.veo_usd_per_second))
         register("search", "pexels", lambda model: PexelsMediaSearch(model, settings.pexels_key))
+        register("search", "pixabay", lambda model: PixabayMediaSearch(settings.pixabay_key))
         register("voice", "piper", PiperVoice)
         # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
         # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
@@ -525,7 +528,19 @@ class Studio:
         # W3.1/W4.4: a busca de mídia e a materialização de um candidato existem quando há chave do
         # provedor (a capacidade `search` não entra na config por projeto). Sem chave, `list_candidates`
         # fica desligado e o caminho de candidato do `swap` recusa — o vínculo por `asset_id` continua.
-        media_search = PexelsMediaSearch("pexels", s.pexels_key) if s.pexels_key else None
+        active_searches = []
+        if s.pexels_key:
+            active_searches.append(PexelsMediaSearch("pexels", s.pexels_key))
+        if s.pixabay_key:
+            active_searches.append(PixabayMediaSearch(s.pixabay_key))
+
+        if len(active_searches) > 1:
+            media_search = MultiProviderMediaSearch(active_searches)
+        elif len(active_searches) == 1:
+            media_search = active_searches[0]
+        else:
+            media_search = None
+
         media_fetcher = PexelsMediaFetcher("pexels") if s.pexels_key else None
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),

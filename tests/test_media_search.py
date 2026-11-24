@@ -219,9 +219,9 @@ def test_media_search_port_is_runtime_checkable():
 
 def test_catalog_registers_media_search_capability():
     implementations = _provider_implementations(Settings(pexels_key="key"))
-    search = [impl for impl in implementations if impl.kind is ProviderKind.SEARCH]
-    assert len(search) == 1
-    impl = search[0]
+    search = {impl.name: impl for impl in implementations if impl.kind is ProviderKind.SEARCH}
+    assert "pexels" in search
+    impl = search["pexels"]
     assert impl.name == "pexels"
     assert "search.media" in impl.capabilities
     assert impl.cost.kind is CostKind.FREE

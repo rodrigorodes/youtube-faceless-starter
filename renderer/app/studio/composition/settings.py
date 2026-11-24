@@ -53,6 +53,7 @@ class Settings:
     bridge_token: str = ""
     bridge_url: str = "http://host.docker.internal:8787"
     pexels_key: str = ""
+    pixabay_key: str = ""
     paid_image_usd: float = 0.05        # estimativa por imagem de modelo não ':free' (o guard decide)
     veo_usd_per_second: float = 0.40    # Veo 3.1 (conferido em out/2026); clipe de 8 s
     render_concurrency: int = 1         # renders simultâneos (1 não satura o Lenovo)
@@ -81,11 +82,12 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         env = os.environ if env is None else env
         secrets_root = env.get("STUDIO_SECRETS_ROOT") or None
+        pixabay_key = env.get("PIXABAY_API_KEY", "").strip()
         return cls(env.get("STUDIO_DATABASE_URL") or None, Path(env.get("STUDIO_STORAGE_ROOT", "/data")),
                    _csv(env.get("STUDIO_SOURCE_ALLOWLIST"), DEFAULT_ALLOWLIST), _csv(env.get("STUDIO_ALLOW_NAMES"), DEFAULT_ALLOW_NAMES),
                    _cap(env.get("MAX_COST_USD_PER_VIDEO"), 0.0), _cap(env.get("MAX_COST_USD_PER_MONTH"), 15.0),
                    env.get("OPENCODE_BRIDGE_TOKEN", ""), env.get("OPENCODE_BRIDGE_URL") or "http://host.docker.internal:8787",
-                   env.get("PEXELS_API_KEY", ""), _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
+                   env.get("PEXELS_API_KEY", ""), pixabay_key, _cap(env.get("STUDIO_PAID_IMAGE_USD"), 0.05), _cap(env.get("STUDIO_VEO_USD_PER_SECOND"), 0.40),
                    max(1, min(4, int(_cap(env.get("RENDER_CONCURRENCY"), 1)))),
                    _csv(env.get("STUDIO_TREND_SOURCES"), ("www.googleapis.com", "www.youtube.com")),
                    Path(env.get("STUDIO_TOKEN_ENV_PATH", "credentials/token.env")), _flag(env.get("STUDIO_BUDGET_GUARD")),

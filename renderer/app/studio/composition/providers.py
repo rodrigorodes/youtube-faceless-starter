@@ -146,6 +146,7 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
     """
     bridge_ok = bool(s.bridge_token)
     pexels_ok = bool(s.pexels_key)
+    pixabay_ok = bool(s.pixabay_key)
     return [
         ProviderImplementation(ProviderKind.TEXT, "opencode",
                                capabilities=("text.generate", "text.json"),
@@ -173,6 +174,9 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
         ProviderImplementation(ProviderKind.SEARCH, "pexels", capabilities=("search.media",),
                                cost=CostEstimate.free(note="busca de mídia gratuita"), quality=4,
                                validated=pexels_ok, reason=None if pexels_ok else "PEXELS_API_KEY ausente"),
+        ProviderImplementation(ProviderKind.SEARCH, "pixabay", capabilities=("search.media",),
+                               cost=CostEstimate.free(note="busca Pixabay gratuita"), quality=4,
+                               validated=pixabay_ok, reason=None if pixabay_ok else "PIXABAY_API_KEY ausente"),
     ]
 
 

@@ -56,6 +56,7 @@ EXPECTED_CATALOG = {
     ("voice", "piper"),
     ("renderer", "ffmpeg"),
     ("search", "pexels"),
+    ("search", "pixabay"),
 }
 
 
@@ -68,6 +69,7 @@ def registered_providers():
     produção faz — o teste não duplica a lista de providers.
     """
     studio = Studio(Settings(bridge_token="test-bridge-token", pexels_key="test-pexels-key",
+                             pixabay_key="test-pixabay-key",
                              storage_root=Path("/tmp/studio-port-contracts")))
     yield studio
     studio.shutdown()
