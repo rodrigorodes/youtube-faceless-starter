@@ -267,6 +267,9 @@ class SceneDraft:
     label: str
     image_prompt: str
     claim_ids: list[str]
+    visual_intent: str = ""
+    recommended_asset_kind: str = "image"
+    search_queries: list[str] = field(default_factory=list)
 
 
 class SourceFetcher(Protocol):

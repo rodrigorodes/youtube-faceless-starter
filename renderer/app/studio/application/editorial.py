@@ -15,6 +15,7 @@ from ..domain.claims import extract_claims
 from ..domain.contracts import (Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem,
                                 Video, VideoStatus)
 from ..domain.effective_config import EDITORIAL_DEFAULTS, EDITORIAL_FIELDS, EffectiveConfig
+from ..domain.creative_director import CreativeBrief
 from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
@@ -278,30 +279,52 @@ class ListSources:
 
 _SCHEMA = {"type": "object", "required": ["scenes"], "properties": {"scenes": {"type": "array", "items": {
     "type": "object", "required": ["narration", "image_prompt"],
-    "properties": {"narration": {"type": "string"}, "caption": {"type": "string"}, "label": {"type": "string"},
-                   "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}}}}}}}
+    "properties": {
+        "narration": {"type": "string"}, "caption": {"type": "string"}, "label": {"type": "string"},
+        "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}},
+        "visual_intent": {"type": "string"}, "recommended_asset_kind": {"type": "string"},
+        "search_queries": {"type": "array", "items": {"type": "string"}},
+    }}}}}
 
 
 def build_prompt(topic: str, claims: list[Claim], scene_count: int, *,
-                 context: EditorialContext | None = None) -> str:
+                 context: EditorialContext | None = None,
+                 brief: CreativeBrief | None = None) -> str:
     facts = "\n".join(f"[{c.id}] {c.text}" for c in claims)
     language = language_label(context.language if context is not None else DEFAULT_LANGUAGE)
+    if brief is not None:
+        brief_guidance = (
+            "DIRETRIZES DO DIRETOR CRIATIVO:\n"
+            f"- Gancho (Hook): {brief.hook}\n"
+            f"- Ritmo (Pacing): {brief.pacing}\n"
+            f"- Direção Visual: {brief.visual_direction}\n"
+        )
+        schema_desc = (
+            f"Responda apenas com JSON: {{\"scenes\": [{{\"narration\": str (5-400 caracteres), \"caption\": str (até 110), "
+            f"\"label\": str (até 32), \"image_prompt\": str (cena genérica, sem pessoas reais, 10-500 caracteres), "
+            f"\"claim_ids\": [ids dos fatos usados nesta cena], "
+            f"\"visual_intent\": str (intenção visual da cena), "
+            f"\"recommended_asset_kind\": \"image\" ou \"video\", "
+            f"\"search_queries\": [termos de busca concisos]}}]}} com {scene_count} cenas."
+        )
+    else:
+        brief_guidance = ""
+        schema_desc = (
+            f"Responda apenas com JSON: {{\"scenes\": [{{\"narration\": str (5-400 caracteres), \"caption\": str (até 110), "
+            f"\"label\": str (até 32), \"image_prompt\": str (cena genérica, sem pessoas reais, 10-500 caracteres), "
+            f"\"claim_ids\": [ids dos fatos usados nesta cena]}}]}} com {scene_count} cenas."
+        )
     return (
         f"Escreva o roteiro de um vídeo curto em {language} sobre: {topic}.\n"
         f"{context_guidance(context)}"
+        f"{brief_guidance}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares. Evento encerrado: escreva no passado.\n"
         f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n\nFATOS:\n{facts}\n\n"
-        f"Responda apenas com JSON: {{\"scenes\": [{{\"narration\": str (5-400 caracteres), \"caption\": str (até 110), "
-        f"\"label\": str (até 32), \"image_prompt\": str (cena genérica, sem pessoas reais, 10-500 caracteres), "
-        f"\"claim_ids\": [ids dos fatos usados nesta cena]}}]}} com {scene_count} cenas."
+        f"{schema_desc}"
     )
 
 
-def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
-    return parse_scene_drafts(raw, valid_ids, min_scenes=MIN_SCENES, max_scenes=MAX_SCENES)
-
-
-def parse_scene_drafts(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes: int) -> list[SceneDraft]:
+def _parse_scenes(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes: int) -> list[SceneDraft]:
     try:
         start, end = raw.find("{"), raw.rfind("}")  # tolera texto ou cerca ```json ao redor
         data = json.loads(raw[start:end + 1])
@@ -329,16 +352,46 @@ def parse_scene_drafts(raw: str, valid_ids: set[str], *, min_scenes: int, max_sc
         unknown = [c for c in cited if c not in valid_ids]
         if unknown:
             raise ScriptRejected(f"scene {i}: unknown claim ids {unknown}")
-        drafts.append(SceneDraft(narration.strip(), caption.strip()[:110], label.strip()[:32], prompt.strip(), list(dict.fromkeys(cited))))
+
+        visual_intent = str(scene.get("visual_intent") or "").strip()
+        recommended_asset_kind = str(scene.get("recommended_asset_kind") or "image").strip()
+        raw_queries = scene.get("search_queries") or []
+        search_queries = (
+            [str(q).strip() for q in raw_queries if isinstance(q, str) and q.strip()]
+            if isinstance(raw_queries, list)
+            else []
+        )
+
+        drafts.append(
+            SceneDraft(
+                narration.strip(),
+                caption.strip()[:110],
+                label.strip()[:32],
+                prompt.strip(),
+                list(dict.fromkeys(cited)),
+                visual_intent=visual_intent,
+                recommended_asset_kind=recommended_asset_kind,
+                search_queries=search_queries,
+            )
+        )
     return drafts
 
 
+def parse_scene_drafts(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes: int) -> list[SceneDraft]:
+    return _parse_scenes(raw, valid_ids, min_scenes=min_scenes, max_scenes=max_scenes)
+
+
+def parse_drafts(raw: str, valid_ids: set[str]) -> list[SceneDraft]:
+    return parse_scene_drafts(raw, valid_ids, min_scenes=MIN_SCENES, max_scenes=MAX_SCENES)
+
+
 def _fit_prompt(topic: str, claims: list[Claim], scene_count: int,
-                context: EditorialContext | None = None) -> list[Claim]:
+                context: EditorialContext | None = None,
+                brief: CreativeBrief | None = None) -> list[Claim]:
     """Mantém, na ordem, as claims que cabem no limite de prompt (só elas valem como claim_ids)."""
     kept: list[Claim] = []
     for claim in claims:
-        if len(build_prompt(topic, kept + [claim], scene_count, context=context)) > MAX_PROMPT_CHARS:
+        if len(build_prompt(topic, kept + [claim], scene_count, context=context, brief=brief)) > MAX_PROMPT_CHARS:
             break
         kept.append(claim)
     return kept
@@ -363,7 +416,7 @@ class GenerateScript:
             return None
         return context_for_video(self.editorial_for(video), video)
 
-    def execute(self, video_id: str, scene_count: int = 6) -> Script:
+    def execute(self, video_id: str, scene_count: int = 6, *, brief: CreativeBrief | None = None) -> Script:
         if not MIN_SCENES <= scene_count <= MAX_SCENES:
             raise ValueError(f"scene_count must be between {MIN_SCENES} and {MAX_SCENES}")
         video = _require_video(self.videos, video_id)
@@ -373,10 +426,10 @@ class GenerateScript:
         claims = _claims(self.snaps.list(video_id))
         if not claims:
             raise SourceRefused("no sources with checkable claims: add sources first")
-        claims = _fit_prompt(video.topic, claims, scene_count, context)
+        claims = _fit_prompt(video.topic, claims, scene_count, context, brief=brief)
         if not claims:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
-        prompt = build_prompt(video.topic, claims, scene_count, context=context)
+        prompt = build_prompt(video.topic, claims, scene_count, context=context, brief=brief)
         model = self.model_for(video.project_id) if self.model_for else self.text_model
         estimate = model.cost_estimate(prompt)
         if self.paid is None:
