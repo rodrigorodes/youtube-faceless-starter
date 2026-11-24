@@ -40,10 +40,12 @@ from pydantic import Field
 
 from .channel import ChannelProfile
 from .contracts import Asset, Scene as StoryboardRow, VideoFormat
+from .pacing import PacingEngine, PacingPreset
 from .render import FPS, LEAD, SIZE, make_cues, scene_length
 from .render_plan import (
     AssetMediaType,
     AssetReference,
+    AudioMix,
     Composition,
     ConfigSnapshot,
     Effects,
@@ -226,6 +228,8 @@ def build_render_plan(
     created_at: datetime | None = None,
     config_snapshot: ConfigSnapshot | None = None,
     overlays: Sequence[StoryboardOverlay] = (),
+    pacing_preset: PacingPreset | str | None = None,
+    audio_mix: AudioMix | None = None,
 ) -> RenderPlan:
     """Constrói um ``RenderPlan`` v1 válido a partir do storyboard medido.
 
@@ -253,6 +257,27 @@ def build_render_plan(
             style_snapshot = style.snapshot
         else:
             style_snapshot = StyleSnapshot(style_id="default", version=1)
+
+    if pacing_preset is None and style is not None:
+        if hasattr(style, "pacing") and style.pacing:
+            pacing_preset = style.pacing
+        elif hasattr(style, "params") and isinstance(style.params, Mapping):
+            pacing_preset = style.params.get("pacing")
+        elif isinstance(style, Mapping) and "pacing" in style:
+            pacing_preset = style.get("pacing")
+
+    if isinstance(pacing_preset, str) and pacing_preset.strip().lower() in ("none", ""):
+        pacing_preset = None
+
+    if audio_mix is None and style is not None:
+        if hasattr(style, "audio_mix") and style.audio_mix:
+            audio_mix = style.audio_mix
+        elif hasattr(style, "params") and isinstance(style.params, Mapping):
+            audio_mix = style.params.get("audio_mix")
+        elif isinstance(style, Mapping) and "audio_mix" in style:
+            audio_mix = style.get("audio_mix")
+        if isinstance(audio_mix, Mapping):
+            audio_mix = AudioMix(**audio_mix)
 
     if music_params is None and style is not None:
         if hasattr(style, "music") and style.music:
@@ -380,18 +405,65 @@ def build_render_plan(
                     f"scene {scene.scene_id!r} references asset {scene.asset_id!r} that is not in the manifest"
                 )
 
-            shot = Shot(
-                shot_id=f"shot:{scene.scene_id}",
-                track_id=VISUAL_TRACK,
-                start_tick=start_tick,
-                duration_ticks=duration_ticks,
-                asset_ref=scene.asset_id,
-                composition=Composition(fit="cover"),
-                effects=Effects(motion=motion_by_scene[scene.scene_id]),
-                transition=base_transition,
-                paid_operation_key=scene.paid_operation_key,
-            )
-            scene_shots = [shot]
+            pacing_plan = None
+            if pacing_preset is not None:
+                kind = getattr(reference, "kind", None) or reference.metadata.get("asset_kind") or reference.media_type
+                is_video = kind in ("clip", "video")
+                pacing_plan = PacingEngine.calculate(
+                    scene_id=scene.scene_id,
+                    total_duration_ticks=duration_ticks,
+                    ticks_per_second=tps,
+                    asset_count=1,
+                    preset=pacing_preset,
+                    is_video_asset=is_video,
+                )
+
+            if pacing_plan is not None and len(pacing_plan.shots) > 1:
+                base_shots: list[Shot] = []
+                num_pacing = len(pacing_plan.shots)
+                for s_idx, st in enumerate(pacing_plan.shots):
+                    if s_idx == num_pacing - 1:
+                        shot_tr = (
+                            base_transition
+                            if (base_transition is not None and base_transition.duration_ticks < st.duration_ticks)
+                            else None
+                        )
+                    else:
+                        shot_tr = Transition(kind="cut")
+
+                    base_shots.append(
+                        Shot(
+                            shot_id=f"{scene.scene_id}-shot-{st.shot_index}",
+                            track_id=VISUAL_TRACK,
+                            start_tick=start_tick + st.start_tick,
+                            duration_ticks=st.duration_ticks,
+                            asset_ref=scene.asset_id,
+                            role="base",
+                            z_index=0,
+                            composition=Composition(fit="cover"),
+                            effects=Effects(motion=st.motion),
+                            transition=shot_tr,
+                            paid_operation_key=scene.paid_operation_key,
+                        )
+                    )
+                scene_shots = base_shots
+            else:
+                shot_motion = motion_by_scene[scene.scene_id]
+                if shot_motion == "none" and pacing_plan is not None and pacing_plan.shots:
+                    shot_motion = pacing_plan.shots[0].motion
+
+                shot = Shot(
+                    shot_id=f"shot:{scene.scene_id}",
+                    track_id=VISUAL_TRACK,
+                    start_tick=start_tick,
+                    duration_ticks=duration_ticks,
+                    asset_ref=scene.asset_id,
+                    composition=Composition(fit="cover"),
+                    effects=Effects(motion=shot_motion),
+                    transition=base_transition,
+                    paid_operation_key=scene.paid_operation_key,
+                )
+                scene_shots = [shot]
 
         scene_shots.extend(
             _overlay_shots(
@@ -466,6 +538,7 @@ def build_render_plan(
         style_snapshot=style_snapshot,
         provenance=Provenance(builder_version=builder_version, created_at=created_at),
         config_snapshot=config_snapshot,
+        audio_mix=audio_mix or AudioMix(),
     )
 
 

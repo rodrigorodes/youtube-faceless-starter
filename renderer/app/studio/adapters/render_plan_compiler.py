@@ -24,6 +24,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from ..application.render_compiler import (
@@ -36,8 +37,11 @@ from ..application.render_compiler import (
     structure_render_plan,
 )
 from ..domain.asset_resolver import AssetDescriptor
+from ..domain.captions import CaptionLine, WordTiming
 from ..domain.render import FADE_S
 from ..domain.render_plan import AudioMix as DomainAudioMix, Motion, RenderPlan, Transition
+from .alignment import WordAlignmentService
+from .captions_ass import AssSubtitleRenderer
 
 # Mesmo grafo de mixagem do renderer legado (rich.py/render_ffmpeg.py): a trilha é
 # comprimida por sidechain com a narração e a mistura mira -16 LUFS.
@@ -140,6 +144,8 @@ class CompiledRender:
     audio: AudioMix
     final_output: str
     final_args: tuple[str, ...]
+    subtitles_ass_path: str | None = None
+    subtitles_ass_content: str | None = None
 
     def _body(self) -> dict:
         return {
@@ -174,6 +180,8 @@ class CompiledRender:
             },
             "final_output": self.final_output,
             "final_args": list(self.final_args),
+            "subtitles_ass_path": self.subtitles_ass_path,
+            "subtitles_ass_content": self.subtitles_ass_content,
         }
 
     def to_dict(self) -> dict:
@@ -228,6 +236,46 @@ def compile_render_plan(
             "-shortest", "-movflags", "+faststart", f"{work}/final.mp4",
         ),
     )
+
+    subtitles_ass_path: str | None = None
+    subtitles_ass_content: str | None = None
+
+    if plan.timeline.subtitles:
+        tps = plan.timeline.ticks_per_second
+        alignment_service = WordAlignmentService()
+        caption_lines: list[CaptionLine] = []
+
+        for cue in plan.timeline.subtitles:
+            start_ms = int(round(cue.start_tick / tps * 1000))
+            dur_ms = int(round(cue.duration_ticks / tps * 1000))
+            raw_words = alignment_service.align_words(cue.text, dur_ms)
+            words = tuple(
+                WordTiming(
+                    word=w.word,
+                    start_ms=start_ms + w.start_ms,
+                    duration_ms=w.duration_ms,
+                )
+                for w in raw_words
+            )
+            caption_lines.append(
+                CaptionLine(
+                    start_ms=start_ms,
+                    end_ms=start_ms + dur_ms,
+                    text=cue.text,
+                    words=words,
+                )
+            )
+
+        ass_content = AssSubtitleRenderer.render(caption_lines, format=plan.output.format)
+        subtitles_ass_content = ass_content
+        ass_path = Path(work) / "subtitles.ass"
+        subtitles_ass_path = str(ass_path)
+        try:
+            if Path(work).is_dir():
+                ass_path.write_text(ass_content, encoding="utf-8")
+        except OSError:
+            pass
+
     return CompiledRender(
         plan_id=structure.plan_id,
         revision=structure.revision,
@@ -243,6 +291,8 @@ def compile_render_plan(
         audio=audio,
         final_output=f"{work}/final.mp4",
         final_args=audio.args,
+        subtitles_ass_path=subtitles_ass_path,
+        subtitles_ass_content=subtitles_ass_content,
     )
 
 
