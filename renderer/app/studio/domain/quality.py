@@ -71,6 +71,10 @@ CHECK_MUSIC = "render.music"
 # explícita de que a avaliação semântica não foi verificada (sem provedor).
 CHECK_OVERLAY = "render.overlay"
 CHECK_SEMANTIC = "render.semantic"
+CHECK_TRUE_PEAK = "render.true_peak"
+CHECK_CODEC = "render.codec"
+CHECK_REPEATED_ASSETS = "render.repeated_assets"
+CHECK_FROZEN_FRAMES = "render.frozen_frames"
 
 # Fração mínima do quadro que a presença do overlay precisa alterar para não virar
 # aviso. VE-01 desenha o overlay em tela cheia; abaixo disto ele é imperceptível.
@@ -115,6 +119,10 @@ _ACTIONS = {
     CHECK_MUSIC: "Nenhuma ação: trilha silenciosa declarada no plano.",
     CHECK_OVERLAY: "Revisar a camada de overlay: janela, presença e tamanho no vídeo renderizado.",
     CHECK_SEMANTIC: "Configurar um provedor de verificação semântica ou revisar o conteúdo manualmente.",
+    CHECK_TRUE_PEAK: "Ajustar o limitador de áudio para respeitar -1.0 dBTP e evitar clipping.",
+    CHECK_CODEC: "Recodificar para vídeo H.264 e áudio AAC compatíveis com YouTube.",
+    CHECK_REPEATED_ASSETS: "Substituir mídia repetida por outro candidato do mesmo tom.",
+    CHECK_FROZEN_FRAMES: "Adicionar tomadas alternativas ou aplicar movimento Ken Burns para dinamizar a cena.",
 }
 
 # `expected_s` não vem do analisador: o avaliador o deriva do próprio plano.
@@ -234,6 +242,10 @@ def evaluate_quality(plan: RenderPlan, evidence: QualityEvidence) -> QaReport:
     gaps: list[str] = []
 
     _collect_media_checks(plan, evidence, checks, findings, gaps)
+    _collect_audio_checks_v2(evidence, checks, findings)
+    _collect_codec_checks_v2(evidence, checks, findings)
+    _collect_video_flow_checks_v2(evidence, checks, findings)
+    _collect_scene_asset_checks_v2(plan, checks, findings)
     _collect_asset_checks(plan, evidence, checks, findings, gaps)
     _collect_overlay_checks(plan, evidence, checks, findings, gaps)
     _collect_semantic_checks(evidence, checks, findings)
@@ -271,6 +283,73 @@ def _collect_media_checks(plan, evidence, checks, findings, gaps) -> None:
         check_id, severity = _classify(failure)
         checks.append(check_id)
         findings.append(_finding(f"media-{index}", check_id, severity, failure))
+
+
+def _collect_audio_checks_v2(evidence, checks, findings) -> None:
+    media = evidence.media or {}
+    if "true_peak_dbtp" in media and media["true_peak_dbtp"] is not None:
+        checks.append(CHECK_TRUE_PEAK)
+        peak = float(media["true_peak_dbtp"])
+        if peak > 0.0:
+            findings.append(_finding(
+                "peak-clipping", CHECK_TRUE_PEAK, BLOCKING,
+                f"True peak de {peak:.2f} dBTP excede 0.0 dBTP (clipping detectado)",
+            ))
+        elif peak > -1.0:
+            findings.append(_finding(
+                "peak-loudness", CHECK_TRUE_PEAK, WARNING,
+                f"True peak de {peak:.2f} dBTP excede -1.0 dBTP recomendado para streaming",
+            ))
+
+
+def _collect_codec_checks_v2(evidence, checks, findings) -> None:
+    media = evidence.media or {}
+    if "video_codec" in media or "audio_codec" in media:
+        checks.append(CHECK_CODEC)
+        v_codec = str(media.get("video_codec", "")).lower()
+        if v_codec and v_codec not in ("h264", "avc1"):
+            findings.append(_finding(
+                "codec-video", CHECK_CODEC, BLOCKING,
+                f"Codec de vídeo '{media['video_codec']}' incompatível; esperado h264",
+            ))
+        a_codec = str(media.get("audio_codec", "")).lower()
+        if a_codec and a_codec not in ("aac",):
+            findings.append(_finding(
+                "codec-audio", CHECK_CODEC, BLOCKING,
+                f"Codec de áudio '{media['audio_codec']}' incompatível; esperado aac",
+            ))
+
+
+def _collect_video_flow_checks_v2(evidence, checks, findings) -> None:
+    media = evidence.media or {}
+    if "frozen_ratio" in media and media["frozen_ratio"] is not None:
+        checks.append(CHECK_FROZEN_FRAMES)
+        ratio = float(media["frozen_ratio"])
+        if ratio > 0.20:
+            findings.append(_finding(
+                "frozen-frames", CHECK_FROZEN_FRAMES, WARNING,
+                f"Fração de quadros congelados de {ratio:.1%} excede 20%",
+            ))
+
+
+def _collect_scene_asset_checks_v2(plan: RenderPlan, checks, findings) -> None:
+    checks.append(CHECK_REPEATED_ASSETS)
+    scenes = plan.timeline.scenes
+    for i in range(1, len(scenes)):
+        prev_assets = {s.asset_ref for s in scenes[i - 1].shots if s.asset_ref}
+        curr_assets = {s.asset_ref for s in scenes[i].shots if s.asset_ref}
+        overlap = prev_assets & curr_assets
+        if overlap:
+            repeated_id = sorted(overlap)[0]
+            findings.append(_finding(
+                f"repeated-asset-{scenes[i].scene_id}",
+                CHECK_REPEATED_ASSETS,
+                WARNING,
+                f"Asset '{repeated_id}' repetido em cenas consecutivas ({scenes[i - 1].scene_id} -> {scenes[i].scene_id})",
+                category="editorial",
+                scene_id=scenes[i].scene_id,
+                auto_fixable=True,
+            ))
 
 
 def _collect_asset_checks(plan, evidence, checks, findings, gaps) -> None:
@@ -411,7 +490,9 @@ def _classify(failure: str) -> tuple[str, str]:
 
 
 def _finding(finding_id: str, check_id: str, severity: str, evidence: str,
-             category: str = "technical") -> QaFinding:
+             category: str = "technical", scene_id: str | None = None,
+             shot_id: str | None = None, auto_fixable: bool = False,
+             needs_human: bool = False) -> QaFinding:
     return QaFinding(
         finding_id=finding_id,
         check_id=check_id,
@@ -419,6 +500,10 @@ def _finding(finding_id: str, check_id: str, severity: str, evidence: str,
         severity=severity,
         evidence=evidence,
         suggested_action=_ACTIONS.get(check_id, "Revisar o render antes de publicar."),
+        scene_id=scene_id,
+        shot_id=shot_id,
+        auto_fixable=auto_fixable,
+        needs_human=needs_human,
     )
 
 
