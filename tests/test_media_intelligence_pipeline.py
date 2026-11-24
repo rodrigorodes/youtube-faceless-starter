@@ -16,11 +16,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "renderer"))
 
-from app.studio.adapters.media_multi import MultiProviderMediaSearch
-from app.studio.application.media import ListSceneCandidates, SceneCandidates
-from app.studio.application.ports import MediaCandidate, MediaSearch, ModelUnavailable
+from app.studio.adapters.media_multi import MultiProviderMediaFetcher, MultiProviderMediaSearch
+from app.studio.adapters.media_pexels import PexelsMediaFetcher
+from app.studio.adapters.media_pixabay import PixabayMediaFetcher, trusted_pixabay_url
+from app.studio.application.media import ListSceneCandidates, SceneCandidates, SwapSceneMedia
+from app.studio.application.ports import ImageResult, MediaCandidate, MediaFetcher, MediaSearch, ModelUnavailable
 from app.studio.composition import Settings, _provider_implementations
-from app.studio.domain.contracts import Scene, Video, VideoFormat, VideoStatus
+from app.studio.domain.contracts import Asset, AssetKind, Scene, Script, Video, VideoFormat, VideoStatus
 from app.studio.domain.provider import CostKind, ProviderKind
 
 
@@ -284,3 +286,203 @@ def test_docker_compose_declares_pixabay_api_key():
     assert compose_path.exists()
     content = compose_path.read_text(encoding="utf-8")
     assert "PIXABAY_API_KEY: ${PIXABAY_API_KEY:-}" in content
+
+
+# ---------------------------------------------------------------------------
+# 6. Deduplicação com used_media_ids e queries complementares
+# ---------------------------------------------------------------------------
+
+
+def test_list_scene_candidates_applies_repetition_penalty_for_used_media_ids():
+    video = Video(
+        id="vid-dedup",
+        project_id="proj-1",
+        topic="Dedup test",
+        format=VideoFormat.long,
+        status=VideoStatus.STORYBOARDED,
+    )
+    # Cena 0 já usa 'cand-1' como asset_id
+    scene0 = Scene(
+        id="sc-0",
+        video_id="vid-dedup",
+        idx=0,
+        narration="Primeira cena com asset vinculado.",
+        image_prompt="cena de teste 1",
+        asset_id="cand-1",
+    )
+    # Cena 1 sendo avaliada
+    scene1 = Scene(
+        id="sc-1",
+        video_id="vid-dedup",
+        idx=1,
+        narration="Segunda cena buscando candidatos.",
+        image_prompt="cena de teste 2",
+    )
+    cand1 = _sample_candidate("cand-1", width=1920, height=1080)
+    cand2 = _sample_candidate("cand-2", width=1920, height=1080)
+
+    # Fake provider devolve cand1 primeiro, depois cand2
+    search = FakeSearchProvider("mock", [cand1, cand2])
+    use_case = ListSceneCandidates(FakeVideoRepo(video), FakeScriptRepo([scene0, scene1]), search)
+
+    result = use_case.execute("vid-dedup", "sc-1", per_page=10)
+    # cand-1 deve receber penalidade de repetição (-50 pts), então cand-2 deve vir em 1º lugar!
+    assert len(result.candidates) == 2
+    assert result.candidates[0].media_id == "cand-2"
+    assert result.candidates[1].media_id == "cand-1"
+
+
+def test_list_scene_candidates_aggregates_scene_search_queries_and_limits_per_page():
+    video = Video(
+        id="vid-multi-q",
+        project_id="proj-1",
+        topic="Multi queries",
+        format=VideoFormat.short,
+        status=VideoStatus.STORYBOARDED,
+    )
+    scene = Scene(
+        id="sc-multi-q",
+        video_id="vid-multi-q",
+        idx=0,
+        narration="Cena com termos de busca múltiplos.",
+        image_prompt="prompt principal longo sem estilo",
+        search_queries=["termo extra 1", "termo extra 2"],
+    )
+
+    class QuerySpecificSearch:
+        name = "query-specific"
+
+        def search(self, query: str, *, media_type: str = "image", orientation: str = "landscape",
+                   per_page: int = 10) -> list[MediaCandidate]:
+            if "prompt principal" in query:
+                return [_sample_candidate(f"main-{i}", width=1080, height=1920) for i in range(3)]
+            if "termo extra 1" in query:
+                return [_sample_candidate(f"extra1-{i}", width=1080, height=1920) for i in range(3)]
+            if "termo extra 2" in query:
+                return [_sample_candidate(f"extra2-{i}", width=1080, height=1920) for i in range(3)]
+            return []
+
+    use_case = ListSceneCandidates(FakeVideoRepo(video), FakeScriptRepo([scene]), QuerySpecificSearch())
+
+    # Limitado a 5 por página (mesmo tendo 9 candidatos agregados no total)
+    result = use_case.execute("vid-multi-q", "sc-multi-q", per_page=5)
+    assert len(result.candidates) == 5
+    # Todos os candidatos retornados pertencem ao conjunto agregado
+    cand_ids = {c.media_id for c in result.candidates}
+    assert any("main" in cid for cid in cand_ids)
+    assert any("extra" in cid for cid in cand_ids)
+
+
+# ---------------------------------------------------------------------------
+# 7. PixabayMediaFetcher e MultiProviderMediaFetcher
+# ---------------------------------------------------------------------------
+
+
+def test_pixabay_media_fetcher_downloads_image_safely():
+    import httpx
+
+    transport = httpx.MockTransport(
+        lambda req: httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"pixabay-image-bytes")
+    )
+    fetcher = PixabayMediaFetcher(transport=transport)
+    candidate = _sample_candidate("pix-1", url="https://pixabay.com/get/test.jpg")
+
+    result = fetcher.fetch(candidate)
+    assert isinstance(result, ImageResult)
+    assert result.data == b"pixabay-image-bytes"
+    assert result.mime == "image/jpeg"
+    assert result.license == "Test License"
+
+
+def test_pixabay_media_fetcher_rejects_untrusted_host():
+    fetcher = PixabayMediaFetcher()
+    candidate = _sample_candidate("bad-1", url="https://malicious-site.com/evil.jpg")
+
+    with pytest.raises(ModelUnavailable, match="trusted Pixabay host"):
+        fetcher.fetch(candidate)
+
+
+def test_multi_provider_media_fetcher_dispatches_by_domain():
+    import httpx
+
+    p_pexels = PexelsMediaFetcher(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"pexels-data")
+        )
+    )
+
+    p_pixabay = PixabayMediaFetcher(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"pixabay-data")
+        )
+    )
+
+    multi_fetcher = MultiProviderMediaFetcher([p_pexels, p_pixabay])
+
+    cand_pix = _sample_candidate("pix-10", url="https://pixabay.com/get/10.jpg")
+    res_pix = multi_fetcher.fetch(cand_pix)
+    assert res_pix.data == b"pixabay-data"
+
+    cand_pex = _sample_candidate("pex-20", url="https://images.pexels.com/photos/20/p.jpg", source_url="https://www.pexels.com/photo/20/")
+    res_pex = multi_fetcher.fetch(cand_pex)
+    assert res_pex.data == b"pexels-data"
+
+
+def test_swap_scene_media_materializes_pixabay_candidate_via_multi_fetcher():
+    import httpx
+
+    class FakeAssetRepo:
+        def __init__(self):
+            self.by_id: dict[str, Asset] = {}
+            self.by_key: dict[str, Asset] = {}
+            self.links: dict[str, str] = {}
+
+        def add(self, asset: Asset) -> Asset:
+            self.by_key[asset.cache_key] = self.by_id[asset.id] = asset
+            return asset
+
+        def get(self, asset_id: str) -> Asset | None:
+            return self.by_id.get(asset_id)
+
+        def find(self, cache_key: str) -> Asset | None:
+            return self.by_key.get(cache_key)
+
+        def swap_scene_asset(self, video_id: str, scene_id: str, asset_id: str, expected_asset_id=None) -> bool:
+            self.links[scene_id] = asset_id
+            return True
+
+    class FakeAssetStore:
+        def put(self, key: str, data: bytes, aspect: str) -> str:
+            return f"storage/{key}.jpg"
+
+    class FakeScriptRepoForSwap:
+        def __init__(self, scenes: list[Scene]):
+            self._scenes = scenes
+
+        def scenes(self, video_id: str) -> list[Scene]:
+            return self._scenes
+
+        def latest(self, video_id: str) -> Script | None:
+            return Script(id="scr-1", video_id=video_id, version=1, text="roteiro")
+
+    video = Video(id="v1", project_id="p1", topic="Swap test", format=VideoFormat.short, status=VideoStatus.STORYBOARDED)
+    scene = Scene(id="s1", video_id="v1", idx=0, narration="Cena para swap de teste valida", image_prompt="prompt valido com mais de dez caracteres")
+
+    transport = httpx.MockTransport(
+        lambda req: httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"swap-pixabay-data")
+    )
+    pix_fetcher = PixabayMediaFetcher(transport=transport)
+    multi_fetcher = MultiProviderMediaFetcher([pix_fetcher])
+
+    assets = FakeAssetRepo()
+    store = FakeAssetStore()
+    scripts = FakeScriptRepoForSwap([scene])
+
+    swap_use_case = SwapSceneMedia(FakeVideoRepo(video), scripts, assets, store, fetcher=multi_fetcher)
+    cand = _sample_candidate("pix-swap-1", url="https://pixabay.com/get/swap.jpg")
+
+    result = swap_use_case.execute("v1", "s1", candidate=cand)
+    assert result.changed is True
+    assert result.asset is not None
+    assert assets.links["s1"] == result.asset.id
+

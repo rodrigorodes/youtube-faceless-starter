@@ -23,9 +23,9 @@ from ..adapters.image_opencode import OpenCodeImage
 from ..adapters.image_placeholder import PlaceholderImage
 from ..adapters.image_stock import PexelsImage
 from ..adapters.image_veo import VeoImage
-from ..adapters.media_multi import MultiProviderMediaSearch
+from ..adapters.media_multi import MultiProviderMediaFetcher, MultiProviderMediaSearch
 from ..adapters.media_pexels import PexelsMediaFetcher, PexelsMediaSearch
-from ..adapters.media_pixabay import PixabayMediaSearch
+from ..adapters.media_pixabay import PixabayMediaFetcher, PixabayMediaSearch
 from ..adapters.postgres.publish_repo import (PostgresApprovalRepository, PostgresPublicationIntentRepository,
                                              PostgresPublicationRepository, PostgresReopenRepository)
 from ..adapters.postgres.analytics_repo import PostgresAnalyticsRepository
@@ -541,7 +541,18 @@ class Studio:
         else:
             media_search = None
 
-        media_fetcher = PexelsMediaFetcher("pexels") if s.pexels_key else None
+        active_fetchers = []
+        if s.pexels_key:
+            active_fetchers.append(PexelsMediaFetcher("pexels"))
+        if s.pixabay_key:
+            active_fetchers.append(PixabayMediaFetcher("pixabay"))
+
+        if len(active_fetchers) > 1:
+            media_fetcher = MultiProviderMediaFetcher(active_fetchers)
+        elif len(active_fetchers) == 1:
+            media_fetcher = active_fetchers[0]
+        else:
+            media_fetcher = None
         media = Media(
             storyboard=PrepareStoryboard(repo, scripts),
             produce=ProduceAssets(repo, scripts, assets, asset_store, guard, usage,

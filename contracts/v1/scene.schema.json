@@ -170,8 +170,20 @@
       "title": "Schema Version",
       "type": "integer"
     },
+    "search_queries": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Search Queries",
+      "type": "array"
+    },
     "video_id": {
       "title": "Video Id",
+      "type": "string"
+    },
+    "visual_intent": {
+      "default": "",
+      "title": "Visual Intent",
       "type": "string"
     }
   },

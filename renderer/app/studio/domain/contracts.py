@@ -139,6 +139,8 @@ class Scene(_Model):
     broll_enabled: bool = False
     broll_note: str | None = None
     assets: list[SceneAsset] = Field(default_factory=list)
+    visual_intent: str = ""
+    search_queries: list[str] = Field(default_factory=list)
 
 
 class Asset(_Model):

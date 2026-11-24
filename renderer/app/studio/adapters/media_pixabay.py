@@ -10,7 +10,9 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..application.config import ProviderNotFound
-from ..application.ports import MediaCandidate, ModelUnavailable
+from ..application.ports import ImageResult, MediaCandidate, ModelUnavailable
+from ..domain.contracts import UsageEntry
+from .image_stock import MAX_BYTES
 
 DEFAULT_LICENSE = "Pixabay Content License"
 IMAGE_SEARCH_URL = "https://pixabay.com/api/"
@@ -227,3 +229,62 @@ class PixabayMediaSearch:
             if self._key:
                 msg = msg.replace(self._key, "[REDACTED]")
             raise ModelUnavailable(msg) from None
+
+
+def trusted_pixabay_url(url: object) -> bool:
+    """Valida se a URL é https em host confiável do Pixabay."""
+    if not isinstance(url, str):
+        return False
+    clean = url.strip()
+    if not clean.startswith("https://") or any(c in clean for c in " \t\r\n\\"):
+        return False
+    try:
+        parts = urlsplit(clean)
+        if parts.scheme != "https" or not parts.netloc:
+            return False
+        host = parts.netloc.split(":")[0].lower()
+        trusted_hosts = {"pixabay.com", "cdn.pixabay.com"}
+        return host in trusted_hosts or host.endswith(".pixabay.com")
+    except Exception:
+        return False
+
+
+class PixabayMediaFetcher:
+    """Materializa um candidato do Pixabay em bytes (adapter da porta ``MediaFetcher``).
+
+    Só baixa de host confiável do Pixabay (*.pixabay.com) e devolve ``ImageResult``
+    com a licença/atribuição/proveniência do candidato.
+    """
+
+    name = "pixabay"
+
+    def __init__(self, model: str = "", *, transport: httpx.BaseTransport | None = None, timeout: float = 20.0):
+        self.model, self._transport, self._timeout = model, transport, timeout
+
+    def fetch(self, candidate: MediaCandidate) -> ImageResult:
+        if not trusted_pixabay_url(candidate.url):
+            raise ModelUnavailable("candidate media url is not on a trusted Pixabay host")
+        try:
+            buffer = bytearray()
+            with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
+                with client.stream("GET", candidate.url) as image:
+                    image.raise_for_status()
+                    mime = image.headers.get("content-type", "").split(";")[0].strip().lower()
+                    for chunk in image.iter_bytes():
+                        buffer += chunk
+                        if len(buffer) > MAX_BYTES:
+                            raise ModelUnavailable("candidate media is larger than 20 MB")
+            return ImageResult(
+                data=bytes(buffer),
+                mime=mime,
+                license=candidate.license,
+                attribution=candidate.attribution,
+                source_url=candidate.source_url,
+                usage=UsageEntry(step="image", provider=self.name, model=self.model or candidate.media_id,
+                                 cost_usd=float(candidate.cost_usd or 0)),
+            )
+        except ModelUnavailable:
+            raise
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError, AttributeError) as exc:
+            status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
+            raise ModelUnavailable(f"Pixabay media fetch failed: {type(exc).__name__}{status}") from None

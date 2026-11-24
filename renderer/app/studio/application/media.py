@@ -162,33 +162,58 @@ class ListSceneCandidates:
     def execute(self, video_id: str, scene_id: str, *, per_page: int = 10,
                 media_type: str = "image") -> SceneCandidates:
         video = _require_video(self.videos, video_id)
-        scene = _scene(self.scripts, video_id, scene_id)
+        all_scenes = self.scripts.scenes(video_id)
+        scene = _scene_by_id(all_scenes, scene_id)
+        if scene is None:
+            raise SceneNotFound(scene_id)
         if self.search is None:
             raise ServiceUnavailable("media search is not configured")
+
         query = strip_style(scene.image_prompt).strip() or scene.caption.strip()
-        if not query:
-            return SceneCandidates(scene_id=scene.id, query="", candidates=())
         orientation = "portrait" if ASPECT_FOR[video.format] == "9:16" else "landscape"
-        found = self.search.search(query, media_type=media_type, orientation=orientation, per_page=per_page)
-        if not found:
+
+        all_candidates: list[MediaCandidate] = []
+        seen_keys: set[str] = set()
+
+        if query:
+            found = self.search.search(query, media_type=media_type, orientation=orientation, per_page=per_page)
+            for c in found:
+                key = c.media_id or c.url
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_candidates.append(c)
+
+        scene_queries = getattr(scene, "search_queries", None) or []
+        for extra_q in scene_queries:
+            clean_q = (extra_q or "").strip()
+            if clean_q and clean_q.lower() != query.lower():
+                extra_found = self.search.search(clean_q, media_type=media_type, orientation=orientation, per_page=per_page)
+                for c in extra_found:
+                    key = c.media_id or c.url
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        all_candidates.append(c)
+
+        if not all_candidates:
             return SceneCandidates(scene_id=scene.id, query=query, candidates=())
 
         target_format = video.format.value if hasattr(video.format, "value") else str(video.format)
         visual_intent = getattr(scene, "visual_intent", "")
-        queries = [query]
-        scene_queries = getattr(scene, "search_queries", None)
-        if scene_queries:
-            for sq in scene_queries:
-                if sq and sq not in queries:
-                    queries.append(sq)
+        queries = [query] if query else []
+        for sq in scene_queries:
+            if sq and sq not in queries:
+                queries.append(sq)
+
+        used_media_ids = {s.asset_id for s in all_scenes if s.id != scene.id and s.asset_id}
 
         ranked = MediaRanker.rank(
-            found,
+            all_candidates,
             visual_intent=visual_intent,
             queries=queries,
             target_format=target_format,
+            used_media_ids=used_media_ids,
         )
-        ranked_candidates = tuple(sc.candidate for sc in ranked)
+        ranked_candidates = tuple(sc.candidate for sc in ranked)[:per_page]
         return SceneCandidates(scene_id=scene.id, query=query, candidates=ranked_candidates)
 
 
