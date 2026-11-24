@@ -198,3 +198,59 @@ def test_resolve_ambiguous_only_retries_when_reconciliation_proved_absence(env):
     assert env["pubs"].resolve_ambiguous(retried.id, retry=False, error="session expired", failure_class="AMBIGUOUS")
     row = env["conn"].execute("SELECT status, dead_letter, remote_state FROM studio.publications WHERE id=%s", (pub.id,)).fetchone()
     assert row == ("FAILED", True, "UNKNOWN")
+
+
+def _expire(env, pub_id, interval="1 second"):
+    env["conn"].execute(f"UPDATE studio.publications SET lease_until = now() - interval '{interval}' WHERE id=%s", (pub_id,))
+    env["conn"].commit()
+
+
+def test_lease_state_reads_lease_and_remote_state_of_the_active_publication(env):
+    vid, _, _, _, pub = claimed(env)
+    assert env["pubs"].record_session(pub.id, pub.attempt, URI, 10)
+    state = env["pubs"].lease_state(vid)
+    assert state.publication_id == pub.id and state.status == PublicationStatus.UPLOADING
+    assert state.lease_until is not None and state.youtube_video_id is None
+    assert state.remote_state == "SESSION"
+    assert env["pubs"].lease_state(uuid.uuid4().hex) is None
+    env["conn"].execute("UPDATE studio.publications SET invalidated_at = now() WHERE id=%s", (pub.id,))
+    env["conn"].commit()
+    assert env["pubs"].lease_state(vid) is None
+
+
+def test_stale_uploading_becomes_ambiguous_and_is_not_retried(env):
+    vid, _, _, _, pub = claimed(env)
+    _expire(env, pub.id)
+    assert env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt, "lease expired") is True
+    row = env["conn"].execute("SELECT status, remote_state, failure_class, lease_until FROM studio.publications WHERE id=%s",
+                              (pub.id,)).fetchone()
+    assert row == ("PENDING", "UNKNOWN", "AMBIGUOUS", None)
+    assert env["pubs"].claim_retry(1800, 5) is None
+    assert env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt, "again") is False
+
+
+def test_stale_cas_refuses_live_lease_wrong_attempt_and_confirmed_id(env):
+    vid, _, _, _, pub = claimed(env)
+    assert env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt, "x") is False  # lease no futuro
+    _expire(env, pub.id)
+    assert env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt + 1, "x") is False
+    env["conn"].execute("UPDATE studio.publications SET youtube_video_id='abcdefghijk' WHERE id=%s", (pub.id,))
+    env["conn"].commit()
+    assert env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt, "x") is False
+    row = env["conn"].execute("SELECT status, remote_state FROM studio.publications WHERE id=%s", (pub.id,)).fetchone()
+    assert row[0] == "UPLOADING" and row[1] != "UNKNOWN"
+
+
+def test_stale_cas_concurrent_callers_have_exactly_one_winner(env):
+    vid, _, _, _, pub = claimed(env)
+    _expire(env, pub.id)
+    barrier, results = threading.Barrier(2), []
+
+    def run():
+        barrier.wait()
+        results.append(env["pubs"].mark_stale_ambiguous(pub.id, pub.attempt, "race"))
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert sorted(results) == [False, True]

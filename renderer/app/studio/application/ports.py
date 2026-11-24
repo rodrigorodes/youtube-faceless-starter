@@ -36,7 +36,8 @@ from ..domain.production_run import (AckResult, Checkpoint, LeaseResult, OutboxE
 from ..domain.run_config import StoredRunConfig
 from ..domain.longform import ScriptApproval, ScriptPlan
 
-if TYPE_CHECKING:  # só para a anotação da porta; evita ciclo `ports` ↔ `video_style`
+if TYPE_CHECKING:
+    from .reopen import PublicationLease  # só para a anotação da porta; evita ciclo `ports` ↔ `video_style`
     from .video_style import VideoStylePatch
 
 
@@ -997,6 +998,12 @@ class PublicationQueueRepository(Protocol):
 
     def mark_ambiguous(self, publication_id: str, attempt: int, error: str) -> bool:
         """Resultado externo desconhecido: marca UNKNOWN; exige reconciliação antes de retry."""
+
+    def lease_state(self, video_id: str) -> "PublicationLease | None":
+        """Lease e estado remoto da publicação ativa do vídeo (somente leitura)."""
+
+    def mark_stale_ambiguous(self, publication_id: str, attempt: int, error: str) -> bool:
+        """CAS: `UPLOADING` com lease vencido e sem id confirmado vira ambíguo (`UNKNOWN`); exige reconciliação."""
 
     def resolve_ambiguous(self, publication_id: str, *, retry: bool, error: str, failure_class: str) -> bool:
         """Reconciliação: `retry=True` só quando provou que não há vídeo; senão DLQ/humano."""
