@@ -6,6 +6,7 @@ import binascii
 import hashlib
 import hmac
 import os
+import re
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
 
@@ -2249,6 +2250,15 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.get("/videos/{video_id}/file")
     def video_file(video_id: str, output_asset_id: str | None = None):
         return served(video_id, "mp4", "video/mp4", f"{video_id}.mp4", output_asset_id)
+
+    @router.get("/videos/{video_id}/download")
+    def video_download(video_id: str, output_asset_id: str | None = None):
+        video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
+        if video is None:
+            raise HTTPException(404, "video not found")
+        title = video.title or video.topic or video_id
+        safe_title = re.sub(r'[^a-zA-Z0-9_\-]+', '_', title).strip('_') or video_id
+        return served(video_id, "mp4", "video/mp4", f"{safe_title}.mp4", output_asset_id)
 
     @router.get("/videos/{video_id}/subtitles")
     def video_subtitles(video_id: str):

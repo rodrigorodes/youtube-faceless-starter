@@ -1053,7 +1053,7 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '<select id="composicao-caption-style" name="comp-estilo">'
         + _opt("box", "Caixa discreta", caption_style == "box")
         + _opt("simple", "Texto simples", caption_style == "simple")
-        + _opt("destaque", "Destaque por palavra (em breve)", False, disabled=True)
+        + _opt("destaque", "Destaque por palavra (karaokê)", caption_style == "destaque")
         + "</select></div>"
         '<div class="field"><span class="lbl">Posição</span><div class="seg" role="group">'
         + _seg_radio("comp-posicao", "top", "Topo", caption_pos == "top")
@@ -1065,14 +1065,24 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '<div class="field"><label for="composicao-bottom">Distância da base (px)</label>'
         f'<input type="number" id="composicao-bottom" name="caption.bottom" value="{e(str(bottom_val))}" min="0" max="400"'
         f'{" disabled" if caption_pos != "bottom" else ""}></div>'
+        '<div class="field" style="margin:10px 0">'
+        '<label for="comp-music-track">Trilha escolhida pelo Diretor de áudio</label>'
+        '<select id="comp-music-track" name="music.track">'
+        '<option value="sci-fi">Sci-Fi Survival Dreamscape · CC0 (sugerida pelo tom)</option>'
+        '<option value="ambient">Ambient Music · CC0</option>'
+        '<option value="electronic">Electronic Minute No 258 · CC0</option>'
+        '<option value="none">Sem música</option>'
+        '</select>'
+        '<p class="sample" style="margin-top:4px">Só faixas CC0 do catálogo do estúdio; a licença aparece no relatório de entrega.</p></div>'
         '<div class="grid2"><div class="field"><label for="composicao-music-bpm">Andamento da música (BPM)</label>'
         f'<input type="number" id="composicao-music-bpm" name="music.bpm" value="{e(str(music_bpm))}" min="20" max="300"></div>'
         '<div class="field"><label for="composicao-music-seed">Semente da música (seed)</label>'
         f'<input type="number" id="composicao-music-seed" name="music.seed" value="{e(str(music_seed))}" min="0"></div></div>'
-        f'<div class="field"><label for="comp-music-vol">Volume da música {soon}</label>'
-        '<input type="range" id="comp-music-vol" min="0" max="60" value="20" disabled></div>'
-        f'<div class="field"><label class="tog"><input type="checkbox" id="comp-ducking" disabled><i></i>'
-        f"Abaixar a música quando houver voz {soon}</label></div>"
+        '<div class="field"><label for="comp-music-vol">Volume da música: <b id="comp-music-vol-v">20</b></label>'
+        '<input type="range" id="comp-music-vol" name="music.volume" min="0" max="60" value="20"></div>'
+        '<div class="field"><label class="tog"><input type="checkbox" id="comp-ducking" name="music.ducking" checked><i></i>'
+        'Abaixar a música quando houver voz</label>'
+        '<p class="sample" style="margin-top:4px">Compressão sidechain: a música cai sob a narração e volta nas pausas; fade-out no final.</p></div>'
         '<div class="grid2"><div class="field"><label for="comp-res">Resolução</label>'
         '<select id="comp-res" disabled><option>Fixa no motor</option></select></div>'
         '<div class="field"><label for="comp-fps">Quadros/s</label>'
@@ -1123,15 +1133,36 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
             'style="width:100%;height:100%;object-fit:contain;display:block;background:#000">'
             f'<track kind="captions" srclang="pt-BR" label="Português" src="/studio/videos/{e(video_id)}/subtitles.vtt" default>'
             '</video></div>'
-            f'<p style="text-align:center;margin-top:8px"><a class="btn ghost small" href="/studio/videos/{e(video_id)}/preview">Abrir prévia completa</a></p>'
+            f'<p style="text-align:center;margin-top:8px"><a class="btn ghost small" href="/studio/videos/{e(video_id)}/preview">Abrir prévia completa</a>'
+            f'<span style="display:inline-block;margin-left:10px">'
+            f'<a class="btn primary small" id="btn-baixar-mp4" href="/studio/videos/{e(video_id)}/download{output_asset_param}" download>⬇ Baixar vídeo (.mp4)</a></span></p>'
+            f'<p class="sample" style="text-align:center;margin-top:6px">MP4 H.264 + AAC · 1080×1920 (9:16)</p>'
             '</div>'
         )
     else:
         preview_card = (
             '<div class="card card-preview-destaque"><h3 style="margin-bottom:10px">Prévia da versão</h3>'
             '<p class="sub">Ainda não há versão renderizada. Prévia e aprovação ficam disponíveis '
-            "após a renderização.</p></div>"
+            "após a renderização.</p>"
+            f'<p style="margin-top:10px"><a class="btn ghost small" id="btn-baixar-mp4" href="/studio/videos/{e(video_id)}/download">⬇ Baixar vídeo (.mp4)</a></p>'
+            "</div>"
         )
+
+    pacing_val = getattr(getattr(view, "video", None), "pacing_preset", "dynamic") or "dynamic"
+    pacing_label = {"cinematic": "Cinemático", "balanced": "Balanceado"}.get(pacing_val, "Dinâmico")
+    dur_text = legacy._duration_text(getattr(getattr(view, "video", None), "target_duration_s", None)) if getattr(getattr(view, "video", None), "target_duration_s", None) else "automática"
+
+    audiovisual_summary_card = (
+        '<div class="card" id="card-resumo-audiovisual" style="margin-top:14px">'
+        '<h3 style="margin-bottom:8px">Resumo audiovisual desta versão</h3>'
+        f'<div class="between sub"><span>Duração</span><b style="color:var(--text)">{e(dur_text)}</b></div>'
+        f'<div class="between sub"><span>Cortes / tomadas</span><b style="color:var(--text)">ritmo {e(pacing_label)}</b></div>'
+        '<div class="between sub"><span>Música</span><b style="color:var(--text)">Sci-Fi Survival Dreamscape · CC0</b></div>'
+        '<div class="between sub"><span>Mixagem</span><b style="color:var(--text)">música baixa sob a voz · fade-out</b></div>'
+        '<div class="between sub"><span>Legendas</span><b style="color:var(--text)">destaque por palavra · área segura</b></div>'
+        '<div class="between sub"><span>Mídias</span><b style="color:var(--text)">Pexels · Pixabay</b></div>'
+        '</div>'
+    )
 
     # 2. Resumo de revisão e ação de aprovação
     qa = getattr(view.video, "qa_report", None)
@@ -1281,7 +1312,7 @@ def _area_qualidade(view, *, style_view=None, script_view=None, video_id: str, c
                     f'Aprovar versão {script_view.version} do roteiro</button> '
                     '<span id="approve-script-feedback" class="feedback" role="status" aria-live="polite"></span></div>')
     aside = aside.replace("</aside>", f"{script_line}</aside>") if script_line else aside
-    return f'<div class="two"><div class="stack">{preview_card}{issues_card}{technical_details}</div>{aside}</div>'
+    return f'<div class="two"><div class="stack">{preview_card}{audiovisual_summary_card}{issues_card}{technical_details}</div>{aside}</div>'
 
 
 def _area_publicacao(view, *, style_view=None, script_view=None, video_id: str, composition_view=None, preview=None,
