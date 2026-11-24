@@ -73,6 +73,9 @@ services:
       # paga é executada (403). Desligar: STUDIO_BUDGET_GUARD=0 no .env privado.
       STUDIO_BUDGET_GUARD: ${STUDIO_BUDGET_GUARD:-1}
       STUDIO_PRODUCTION_MODE: ${STUDIO_PRODUCTION_MODE:-BUDGET_GUARDED}
+      # R01: contingência de publicação. 1 = ligada (default seguro, igual ao código); 0 desliga o
+      # executor de upload (BLOCKED antes de claim/token/upload). NUNCA usar default vazio: vazio = desligado.
+      STUDIO_PUBLICATION_ENABLED: ${STUDIO_PUBLICATION_ENABLED:-1}
       # Achado 4 (W0B.1 deixou de fora): estas duas são lidas por `Settings.from_env` e NÃO
       # chegavam ao container. `STUDIO_PROVIDER_PRODUCTION` liga o roteamento de provider em modo
       # produção (exclui demo/placeholder); vazio = desligado (padrão seguro do código).
