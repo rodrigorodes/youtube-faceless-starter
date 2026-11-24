@@ -1407,6 +1407,22 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         run(lambda uc: uc.get_video.repo.update_video_creative_brief(check_id(video_id), brief))
         return {"ok": True, "brief": brief}
 
+    @router.get("/videos/{video_id}/cost-breakdown")
+    def video_cost_breakdown(video_id: str):
+        video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
+        if video is None:
+            raise HTTPException(404, "video not found")
+        def get_costs(uc):
+            repo = uc.usage_repo
+            if repo is None and uc.editorial and hasattr(uc.editorial, "generate"):
+                repo = getattr(uc.editorial.generate, "usage", None)
+            if repo is None:
+                return {"video_id": video_id, "total_usd": 0.0, "categories": {}}
+            total = repo.spent_video(video_id)
+            categories = repo.spent_by_category(video_id)
+            return {"video_id": video_id, "total_usd": round(total, 4), "categories": categories}
+        return run(get_costs)
+
     @router.post("/videos/{video_id}/transition")
     def transition(video_id: str, body: TransitionIn):
         if body.new in RESERVED_TARGETS or (body.expected == VideoStatus.FAILED and body.new in POST_GATE):

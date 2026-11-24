@@ -197,6 +197,7 @@ class UseCases:
     # W2.3: leitura do plano de composição persistido (só a porta `RenderPlanRepository`).
     composition_view: "BuildCompositionView | None" = None
     create_channel_transactional: CreateChannelTransactional | None = None
+    usage_repo: "UsageRepository | None" = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -264,7 +265,8 @@ class UseCases:
                   style_repo: "VisualStyleRepository | None" = None,
                   advanced_page: "BuildAdvancedView | None" = None,
                   composition_view: "BuildCompositionView | None" = None,
-                  create_channel_transactional: CreateChannelTransactional | None = None) -> "UseCases":
+                  create_channel_transactional: CreateChannelTransactional | None = None,
+                  usage_repo: "UsageRepository | None" = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo, style_repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -284,4 +286,4 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
                    archive_visual_style, visual_style_usage, styles_page, set_video_style, set_video_style_patch, video_style_view,
-                   advanced_page, composition_view, create_channel_transactional)
+                   advanced_page, composition_view, create_channel_transactional, usage_repo)

@@ -833,7 +833,8 @@ production=production, script_view=script_view,
                                   style_repo=style_repo,
                                   advanced_page=BuildAdvancedView(providers_service, panel_repo),
                                   composition_view=BuildCompositionView(PostgresRenderPlanRepository(connect)),
-                                  create_channel_transactional=CreateChannelTransactional(connect))
+                                  create_channel_transactional=CreateChannelTransactional(connect),
+                                   usage_repo=usage)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping
