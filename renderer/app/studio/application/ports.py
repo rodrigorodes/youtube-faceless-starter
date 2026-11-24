@@ -1141,6 +1141,11 @@ class ProductionRunInFlightReader(Protocol):
     def list_in_flight(self) -> tuple[tuple[ProductionRun, tuple[StageExecution, ...]], ...]:
         """Runs em voo com suas etapas, em ordem estável (mais antigos primeiro)."""
 
+    def list_orphan_candidates(
+        self, *, grace_seconds: int, limit: int, exclude_run_ids: Iterable[str] = (),
+    ) -> tuple[tuple[ProductionRun, tuple[StageExecution, ...]], ...]:
+        """Candidatos a órfão (relógio do banco), no máximo `limit`, sem `exclude_run_ids`."""
+
 
 @dataclass(frozen=True)
 class MemberRecord:

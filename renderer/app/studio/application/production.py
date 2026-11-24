@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Protocol
@@ -663,10 +664,16 @@ def has_live_lease(stages: Sequence[StageExecution], now: datetime) -> bool:
     return False
 
 
+def _latest_activity(run: ProductionRun, stages: Sequence[StageExecution]) -> datetime | None:
+    moments = [m for m in (run.updated_at, run.created_at, *(stage.updated_at for stage in stages)) if m is not None]
+    return max(moments) if moments else None
+
+
 def orphan_in_flight(
     in_flight: Iterable[tuple[ProductionRun, Sequence[StageExecution]]], now: datetime,
+    grace: timedelta = timedelta(0),
 ) -> tuple[str, ...]:
-    """Run ids **órfãos** entre os runs em voo: os que o boot deve re-dirigir.
+    """Run ids **órfãos** entre os runs em voo: os que a recuperação deve re-dirigir.
 
     Regra pura (sem I/O, `now` é parâmetro): um run é órfão quando nada o dirige agora.
 
@@ -677,15 +684,54 @@ def orphan_in_flight(
     - Qualquer outro estado (`FAILED`/`SUCCEEDED`/`CANCELLED`/`WAITING_HUMAN`/`PAUSED`) nunca entra,
       ainda que a leitura os traga: recuperar não é retomar nem retentar.
 
+    `grace` (recuperação periódica): além do acima, a última atividade conhecida (run e etapas,
+    ignorando `None`) precisa ser `<= now - grace`; sem nenhuma atividade conhecida o run é elegível.
+    Com `grace=0` (boot) o comportamento é o original.
+
     Devolve os ids na ordem de `in_flight` (ordem estável da porta), sem duplicar.
     """
     orphans: list[str] = []
     for run, stages in in_flight:
         if run.state is RunState.CREATED:
-            orphans.append(run.run_id)
-        elif run.state is RunState.RUNNING and not has_live_lease(stages, now):
+            eligible = True
+        elif run.state is RunState.RUNNING:
+            eligible = not has_live_lease(stages, now)
+        else:
+            eligible = False
+        if eligible and grace > timedelta(0):
+            latest = _latest_activity(run, stages)
+            eligible = latest is None or latest <= now - grace
+        if eligible:
             orphans.append(run.run_id)
     return tuple(orphans)
+
+
+class ActiveRuns:
+    """Runs despachados neste processo e ainda não terminados (contador por `run_id`, thread-safe).
+
+    Evita que a recuperação periódica re-despache um run que está na fila do executor (sem lease
+    ainda) ou entre duas etapas do worker. Entre réplicas a segurança vem do CAS de `claim_stage`.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+
+    def acquire(self, run_id: str) -> None:
+        with self._lock:
+            self._counts[run_id] = self._counts.get(run_id, 0) + 1
+
+    def release(self, run_id: str) -> None:
+        with self._lock:
+            remaining = self._counts.get(run_id, 0) - 1
+            if remaining > 0:
+                self._counts[run_id] = remaining
+            else:
+                self._counts.pop(run_id, None)
+
+    def snapshot(self) -> frozenset[str]:
+        with self._lock:
+            return frozenset(self._counts)
 
 
 # ---------------------------------------------------------------------------
@@ -1206,6 +1252,25 @@ class Production:
             return ()
         moment = now or datetime.now(timezone.utc)
         orphans = orphan_in_flight(self.in_flight.list_in_flight(), moment)
+        for run_id in orphans:
+            self._enqueue(run_id)
+        return orphans
+
+    def recover_orphans(self, *, now: datetime | None = None, grace_seconds: int = 30, limit: int = 50,
+                        active: ActiveRuns | None = None) -> tuple[str, ...]:
+        """Recuperação periódica: re-despacha órfãos com inatividade >= `grace_seconds`.
+
+        Pede à porta só os candidatos (limitados, sem os ids ativos neste processo), reaplica a
+        regra pura e usa o mesmo `submit`. Erro de leitura propaga (o laço chamador captura);
+        falha de `submit` fica isolada em `_enqueue`. Não escreve estado.
+        """
+        if self.in_flight is None:
+            return ()
+        moment = now or datetime.now(timezone.utc)
+        candidates = self.in_flight.list_orphan_candidates(
+            grace_seconds=grace_seconds, limit=limit,
+            exclude_run_ids=active.snapshot() if active is not None else frozenset())
+        orphans = orphan_in_flight(candidates, moment, timedelta(seconds=grace_seconds))
         for run_id in orphans:
             self._enqueue(run_id)
         return orphans
