@@ -94,3 +94,58 @@ def test_no_renew_after_lost():
     n = f.calls
     hb.stop()
     assert f.calls == n == 1
+
+
+def _blocked(late=LeaseResult.RENEWED):
+    import threading
+    f = Fake([])
+    entered, release = threading.Event(), threading.Event()
+
+    def renew():
+        entered.set()
+        release.wait(5)
+        return late
+
+    hb = LeaseHeartbeat(renew=renew, lease_seconds=30.0, clock=f.clock, wait=f.wait)
+    return f, hb, entered, release
+
+
+def test_blocked_renew_past_deadline_is_lost_and_ensure_held_raises():
+    f, hb, entered, release = _blocked()
+    hb.start()
+    try:
+        assert entered.wait(5)
+        assert hb.lost is False
+        f.now = 27.0
+        assert hb.lost is True
+        with pytest.raises(LeaseLost):
+            hb.ensure_held()
+    finally:
+        release.set()
+        hb.stop()
+
+
+def test_late_renewed_after_deadline_does_not_unlose():
+    f, hb, entered, release = _blocked(LeaseResult.RENEWED)
+    hb.start()
+    assert entered.wait(5)
+    f.now = 28.0
+    assert hb.lost is True
+    release.set()
+    hb._thread.join(5)
+    assert hb.lost is True
+    f.now = 0.0
+    assert hb.lost is True
+    with pytest.raises(LeaseLost):
+        hb.ensure_held()
+    hb.stop()
+
+
+def test_start_after_stop_raises_and_double_start_is_noop():
+    f = Fake([], max_waits=2)
+    hb = LeaseHeartbeat(renew=f.renew, lease_seconds=30, clock=f.clock, wait=f.wait)
+    hb.start()
+    hb.start()
+    hb.stop()
+    with pytest.raises(RuntimeError):
+        hb.start()

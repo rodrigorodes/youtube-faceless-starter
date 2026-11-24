@@ -30,6 +30,14 @@ class StageLease:
 
 
 class LeaseHeartbeat(StageLease):
+    """`last_ok` nasce na construção (o lease foi adquirido antes do objeto existir: escolha
+    conservadora). Construa imediatamente antes de `start()`.
+
+    `lost` é sensível ao tempo: também é True quando `clock() - last_ok >= 90%` do lease, mesmo que
+    um `renew()` bloqueado nunca retorne. Uma vez observado, o estado é preso (latch): resultado
+    tardio, inclusive RENEWED, não o desfaz.
+    """
+
     def __init__(
         self,
         renew: Callable[[], LeaseResult],
@@ -46,18 +54,27 @@ class LeaseHeartbeat(StageLease):
         self._wait = wait or self._stop.wait
         self._lost = threading.Event()
         self.last_ok = self._clock()
+        self._started = False
         self._thread = threading.Thread(target=self._run, name="lease-heartbeat", daemon=True)
 
     @property
     def lost(self) -> bool:
-        return self._lost.is_set()
+        if self._lost.is_set():
+            return True
+        if self._clock() - self.last_ok >= self._lease_seconds * _FENCE_RATIO:
+            self._mark_lost("sem renovação confirmada dentro de 90% do lease")
+            return True
+        return False
 
     def ensure_held(self) -> None:
         if self.lost:
             raise LeaseLost("lease da etapa perdido")
 
     def start(self) -> "LeaseHeartbeat":
-        if not self._thread.is_alive() and not self._stop.is_set():
+        if self._stop.is_set():
+            raise RuntimeError("LeaseHeartbeat já foi parado; crie outro")
+        if not self._started:
+            self._started = True
             self._thread.start()
         return self
 
@@ -87,12 +104,13 @@ class LeaseHeartbeat(StageLease):
                 delay = min(self._interval, _RETRY_CAP_SECONDS)
             else:
                 if result == LeaseResult.RENEWED:
+                    if self._lost.is_set():
+                        return
                     self.last_ok = base
                 else:
                     self._mark_lost(str(getattr(result, "value", result)))
                     return
-            if self._clock() - self.last_ok >= self._lease_seconds * _FENCE_RATIO:
-                self._mark_lost("sem renovação confirmada dentro de 90% do lease")
+            if self.lost:
                 return
             if self._wait(delay):
                 return
