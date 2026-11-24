@@ -1,6 +1,11 @@
 {
   "additionalProperties": false,
   "properties": {
+    "attempt": {
+      "default": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
     "cache_read_tokens": {
       "anyOf": [
         {
@@ -27,11 +32,28 @@
       "default": null,
       "title": "Cache Write Tokens"
     },
+    "category": {
+      "default": "other",
+      "title": "Category",
+      "type": "string"
+    },
     "cost_usd": {
       "default": 0.0,
       "minimum": 0,
       "title": "Cost Usd",
       "type": "number"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Ms"
     },
     "input_tokens": {
       "anyOf": [
