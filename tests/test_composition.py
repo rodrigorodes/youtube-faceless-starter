@@ -763,3 +763,17 @@ def test_wiring_consumes_the_channel_profile_and_keeps_the_legacy_path_without_i
                for message in events)
     assert any('"profile": null' in message and '"candidate": "opencode:gpt-legado"' in message
                for message in events)
+
+
+def test_recovery_interval_setting_parsing():
+    assert Settings().recovery_interval_seconds == 60.0
+    assert Settings.from_env({}).recovery_interval_seconds == 60
+
+    def parse(v):
+        return Settings.from_env({"STUDIO_RECOVERY_INTERVAL_SECONDS": v}).recovery_interval_seconds
+
+    assert parse("0") == 0
+    assert parse("2") == 5
+    assert parse("30") == 30
+    for bad in ("abc", "", "-1", "nan", "inf"):
+        assert parse(bad) == 60

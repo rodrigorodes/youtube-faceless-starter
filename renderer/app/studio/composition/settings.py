@@ -24,6 +24,13 @@ def _cap(value: str | None, default: float) -> float:
     return number if number == number and 0 <= number < float("inf") else default
 
 
+def _recovery_interval(value: str | None) -> float:
+    number = _cap(value, 60.0)
+    if number == float("inf") or (value or "").strip() == "":
+        return 60.0
+    return 0.0 if number == 0 else max(5.0, number)
+
+
 def _flag(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -67,6 +74,8 @@ class Settings:
     # Pesquisa automática do tema (Wikipédia) como 1ª etapa da produção. Desligar (STUDIO_AUTO_RESEARCH=0)
     # volta ao comportamento em que o humano adiciona a fonte antes de produzir.
     auto_research: bool = True
+    # R03: intervalo (s) da varredura periódica de órfãos; 0 desliga (STUDIO_RECOVERY_INTERVAL_SECONDS).
+    recovery_interval_seconds: float = 60.0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -87,7 +96,8 @@ class Settings:
                    _flag(env.get("STUDIO_RENDER_PLAN_ENABLED", "1")),
                    _flag(env.get("STUDIO_PUBLICATION_ENABLED", "1")),
                    _flag(env.get("STUDIO_PROVIDER_PRODUCTION")),
-                   _flag(env.get("STUDIO_AUTO_RESEARCH", "1")))
+                   _flag(env.get("STUDIO_AUTO_RESEARCH", "1")),
+                   _recovery_interval(env.get("STUDIO_RECOVERY_INTERVAL_SECONDS")))
 
 
 RETRY_SECONDS = 5.0

@@ -110,3 +110,15 @@ def test_env_zero_reaches_settings_through_compose_and_blocks_the_uploader(tmp_p
 def test_env_example_documents_the_publication_switch_enabled_by_default():
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert _re.search(r"^STUDIO_PUBLICATION_ENABLED=1$", text, flags=_re.M)
+
+
+def test_compose_forwards_the_recovery_interval_with_a_safe_default():
+    declared = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    assert declared["STUDIO_RECOVERY_INTERVAL_SECONDS"] == "${STUDIO_RECOVERY_INTERVAL_SECONDS:-60}"
+    assert _renderer_env({})["STUDIO_RECOVERY_INTERVAL_SECONDS"] == "60"
+    assert Settings.from_env(_renderer_env({})).recovery_interval_seconds == 60
+
+
+def test_env_example_documents_the_recovery_interval():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert _re.search(r"^STUDIO_RECOVERY_INTERVAL_SECONDS=60$", text, flags=_re.M)

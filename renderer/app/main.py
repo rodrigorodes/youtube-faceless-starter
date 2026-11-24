@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException
 
@@ -10,6 +10,18 @@ from .studio.composition import Settings, Studio
 logger = logging.getLogger("studio.boot")
 
 studio = Studio(Settings.from_env())  # estado de domínio (Postgres); sem banco o app sobe e /health indica indisponível
+
+
+async def _recovery_loop(studio, interval):
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            recovered = await asyncio.to_thread(studio.recover_orphans)
+            if recovered:
+                logger.warning("production: %d run(s) orfao(s) re-dirigido(s) pela varredura periodica",
+                               len(recovered))
+        except Exception:  # nunca derruba o laço; próxima rodada tenta de novo
+            logger.warning("production: varredura periodica indisponivel", exc_info=True)
 
 
 @asynccontextmanager
@@ -24,7 +36,13 @@ async def lifespan(_app):
                            len(recovered))
     except Exception:  # banco indisponível/erro na varredura nunca derruba a subida (no-op)
         logger.warning("production: recuperacao de runs em voo indisponivel no boot", exc_info=True)
+    interval = studio.settings.recovery_interval_seconds
+    task = asyncio.create_task(_recovery_loop(studio, interval)) if interval > 0 else None
     yield
+    if task is not None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     await asyncio.to_thread(studio.shutdown)
 
 
