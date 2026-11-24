@@ -85,7 +85,10 @@ def plan_with(scenes, assets=None, **overrides):
         builder_version="render-plan-builder/1",
     )
     data.update(overrides)
-    return build_render_plan(**data)
+    plan = build_render_plan(**data)
+    if "schema_version" not in overrides:
+        plan = plan.model_copy(update={"schema_version": 1})
+    return plan
 
 
 def simple_plan(**overrides):

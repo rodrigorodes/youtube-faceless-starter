@@ -37,7 +37,7 @@ from ..application.render_compiler import (
 )
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.render import FADE_S
-from ..domain.render_plan import Motion, RenderPlan, Transition
+from ..domain.render_plan import AudioMix as DomainAudioMix, Motion, RenderPlan, Transition
 
 # Mesmo grafo de mixagem do renderer legado (rich.py/render_ffmpeg.py): a trilha é
 # comprimida por sidechain com a narração e a mistura mira -16 LUFS.
@@ -47,6 +47,23 @@ MIX_FILTER = (
     "[mus][nsc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
     "[duck][nar]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
 )
+
+
+def _mix_filter(audio_mix: DomainAudioMix | None = None) -> str:
+    """Compila o grafo de mixagem de áudio consumindo os parâmetros do AudioMix."""
+    mix = audio_mix or DomainAudioMix()
+    vol = f"{mix.music_gain:.2f}"
+    thresh = f"{mix.ducking_threshold:.2f}"
+    ratio = f"{int(mix.ducking_ratio)}" if mix.ducking_ratio.is_integer() else f"{mix.ducking_ratio}"
+    norm_i = f"{int(mix.loudnorm_i)}" if mix.loudnorm_i.is_integer() else f"{mix.loudnorm_i}"
+    norm_tp = f"{int(mix.loudnorm_tp)}" if mix.loudnorm_tp.is_integer() else f"{mix.loudnorm_tp}"
+    norm_lra = f"{int(mix.loudnorm_lra)}" if mix.loudnorm_lra.is_integer() else f"{mix.loudnorm_lra}"
+    return (
+        f"[1:a]aresample=44100,pan=stereo|c0=c0|c1=c0,asplit=2[nar][nsc];"
+        f"[2:a]volume={vol},pan=stereo|c0=c0|c1=c0[mus];"
+        f"[mus][nsc]sidechaincompress=threshold={thresh}:ratio={ratio}:attack=15:release=350[duck];"
+        f"[duck][nar]amix=inputs=2:duration=longest:normalize=0,loudnorm=I={norm_i}:TP={norm_tp}:LRA={norm_lra}[a]"
+    )
 
 
 @dataclass(frozen=True)
@@ -197,15 +214,16 @@ def compile_render_plan(
             "-f", "concat", "-safe", "0", "-i", f"{work}/concat.txt", "-c", "copy", f"{work}/video_only.mp4",
         ),
     )
+    mix_filter = _mix_filter(getattr(plan, "audio_mix", None))
     audio = AudioMix(
         narration=structure.narration,
         music=structure.music,
         music_path=f"{work}/music.wav",
-        filter_complex=MIX_FILTER,
+        filter_complex=mix_filter,
         args=(
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-i", concat.output, "-i", structure.narration.output, "-i", f"{work}/music.wav",
-            "-filter_complex", MIX_FILTER,
+            "-filter_complex", mix_filter,
             "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
             "-shortest", "-movflags", "+faststart", f"{work}/final.mp4",
         ),
@@ -246,8 +264,9 @@ def _compile_shot(shot: ShotPlan, structure: PlanStructure) -> ShotExecution:
             f"{_zoompan(shot.motion, frames, width, height, rate)},format=yuv420p[b0]"
         )
     elif shot.media_type == "video":
+        offset_s = shot.asset_offset_ticks / tps
         parts.append(
-            f"[0:v]trim=start=0:duration={seconds:.6f},setpts=PTS-STARTPTS,"
+            f"[0:v]trim=start={offset_s:.6f}:duration={seconds:.6f},setpts=PTS-STARTPTS,"
             f"scale={width}:{height}:flags=lanczos,fps={rate},format=yuv420p[b0]"
         )
     elif shot.media_type == "text":
@@ -295,7 +314,17 @@ def _compile_shot(shot: ShotPlan, structure: PlanStructure) -> ShotExecution:
         parts.append(f"[{last}][{number}:v]overlay=0:0:format=auto:enable='{caption.enable}'[o{number}]")
         last = f"o{number}"
 
-    parts.append(f"[{last}]{_fade_filter(shot.transition, seconds, tps, shot.shot_id)}[v]")
+    fade = _fade_filter(
+        shot.transition,
+        seconds,
+        tps,
+        shot.shot_id,
+        schema_version=structure.schema_version,
+    )
+    if fade:
+        parts.append(f"[{last}]{fade}[v]")
+    else:
+        parts.append(f"[{last}]format=yuv420p[v]")
     filter_complex = ";".join(parts)
 
     output = shot.output
@@ -377,27 +406,43 @@ def _zoompan(motion: Motion, frames: int, width: int, height: int, rate: str) ->
     return f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={rate}"
 
 
-def _fade_filter(transition: Transition | None, seconds: float, tps: int, shot_id: str) -> str:
+def _fade_filter(
+    transition: Transition | None,
+    seconds: float,
+    tps: int,
+    shot_id: str,
+    schema_version: int = 2,
+) -> str:
     """Filtro de fade do segmento: entrada ``FADE_S`` e saída pela ``Shot.transition``.
 
-    ``Shot.transition`` é a transição **para o próximo shot**: um ``fade`` declarado de ``n``
-    ticks escurece este segmento em ``n / tps`` segundos; ausente ou ``none`` (o default do
-    contrato) mantém o fade legado de ``FADE_S`` — planos sem transição não mudam (paridade,
-    D4). O fade de **entrada** continua ``FADE_S``: a transição descreve a borda de saída.
-    Refusa (``CompileError``) um fade maior que o próprio shot, antes de qualquer FFmpeg.
+    Em v2 (schema_version >= 2):
+    - 'cut' ou 'none' (ou ausente) produzem corte seco (retornam "")
+    - 'fade' aplica fade out configurado
+
+    Em v1 (schema_version == 1):
+    - 'none' (ou ausente) preserva fade legado (entrada + saída FADE_S)
+    - 'fade' aplica fade out configurado
     """
-    declared = transition is not None and transition.kind == "fade"
-    if not declared:
-        # byte a byte igual ao renderer legado (`d=0.25`), para a paridade dos planos sem transição
-        return f"fade=t=in:st=0:d={FADE_S},fade=t=out:st={max(0.0, seconds - FADE_S):.3f}:d={FADE_S}"
-    fade = transition.duration_ticks / tps
-    if fade > seconds:
-        raise CompileError(
-            f"shot {shot_id!r} declares a {transition.duration_ticks}-tick fade "
-            f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
+    if transition is not None and transition.kind == "cut":
+        return ""
+    if transition is not None and transition.kind == "fade":
+        fade = transition.duration_ticks / tps
+        if fade > seconds:
+            raise CompileError(
+                f"shot {shot_id!r} declares a {transition.duration_ticks}-tick fade "
+                f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
+            )
+        return (
+            f"fade=t=in:st=0:d={FADE_S},"
+            f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}"
         )
-    return (f"fade=t=in:st=0:d={FADE_S},"
-            f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}")
+    # transition.kind == "none" ou transition is None
+    if schema_version >= 2:
+        return ""
+    return (
+        f"fade=t=in:st=0:d={FADE_S},"
+        f"fade=t=out:st={max(0.0, seconds - FADE_S):.3f}:d={FADE_S}"
+    )
 
 
 def _seconds(ticks: int, tps: int) -> float:

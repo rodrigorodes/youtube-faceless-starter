@@ -29,6 +29,7 @@ roda o comando — áudio, montagem e duração do vídeo não mudam.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -44,7 +45,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ... import rich
 from ..application.ports import RenderQaInputs, RenderSpec
 from ..application.render_cache import PlanRegeneration
-from ..domain.asset_resolver import IMAGE_CODECS, AssetDescriptor
+from ..domain.asset_resolver import IMAGE_CODECS, VIDEO_CODECS, AssetDescriptor
 from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
@@ -310,6 +311,50 @@ def _probe_image(path: Path, asset_id: str) -> tuple[str, int, int]:
     return codec, width, height
 
 
+def _probe_video(path: Path, reference: AssetReference, tps: int = 25000) -> tuple[str, int, int, int]:
+    meta = reference.metadata or {}
+    codec = meta.get("codec")
+    width = meta.get("width")
+    height = meta.get("height")
+    duration_ticks = meta.get("duration_ticks")
+
+    if codec and width and height and duration_ticks:
+        try:
+            return str(codec).strip().lower(), int(width), int(height), int(duration_ticks)
+        except (ValueError, TypeError):
+            pass
+
+    if shutil.which("ffprobe") and path.is_file() and path.stat().st_size > 0:
+        try:
+            res = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=codec_name,width,height:format=duration",
+                    "-of", "json", str(path),
+                ],
+                capture_output=True, text=True, check=True, timeout=10
+            )
+            data = json.loads(res.stdout)
+            streams = data.get("streams", [])
+            stream = streams[0] if streams else {}
+            c = (stream.get("codec_name") or codec or "h264").lower()
+            if c == "avc1":
+                c = "h264"
+            w = int(stream.get("width") or width or 1080)
+            h = int(stream.get("height") or height or 1920)
+            dur_s = float(data.get("format", {}).get("duration") or stream.get("duration") or 1.0)
+            d_ticks = int(duration_ticks) if duration_ticks else max(1, round(dur_s * tps))
+            return c, w, h, d_ticks
+        except Exception:
+            pass
+
+    c = str(codec or "h264").strip().lower()
+    w = int(width or 1080)
+    h = int(height or 1920)
+    d_ticks = int(duration_ticks or tps)
+    return c, w, h, d_ticks
+
+
 class PlanFfmpegRenderer:
     """Implementação de ``Renderer`` que executa **exclusivamente** o Render Plan.
 
@@ -497,12 +542,13 @@ class PlanFfmpegRenderer:
                 raise RuntimeError(f"asset {row.asset_id!r} is linked to two different files")
             asset_paths[row.asset_id] = path
             if row.asset_id not in manifest_by_id:  # o mesmo asset pode servir mais de uma cena
+                row_media_type = "video" if path.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv") else "image"
                 manifest_by_id[row.asset_id] = AssetReference(
                     asset_id=row.asset_id,
                     asset_version=1,
                     uri=path.as_posix(),
                     content_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-                    media_type="image",
+                    media_type=row_media_type,
                     license=GENERATED_LICENSE,
                 )
             scenes.append(StoryboardScene(
@@ -522,12 +568,13 @@ class PlanFfmpegRenderer:
                 raise RuntimeError(f"overlay layer {layer.asset_id!r} has no license")
             layer_path = Path(layer.image)
             if layer.asset_id not in manifest_by_id:
+                layer_media_type = "video" if layer_path.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv") else "image"
                 manifest_by_id[layer.asset_id] = AssetReference(
                     asset_id=layer.asset_id,
                     asset_version=1,
                     uri=layer_path.as_posix(),
                     content_sha256=hashlib.sha256(layer_path.read_bytes()).hexdigest(),
-                    media_type="image",
+                    media_type=layer_media_type,
                     license=layer.license,
                 )
             asset_paths.setdefault(layer.asset_id, layer_path)
@@ -582,24 +629,48 @@ class PlanFfmpegRenderer:
         for layer in spec.layers:  # VE-01: o asset do overlay também precisa de descriptor
             by_asset.setdefault(layer.asset_id, Path(layer.image))
         descriptors: dict[str, AssetDescriptor] = {}
+        tps = plan.timeline.ticks_per_second if hasattr(plan, "timeline") else 25000
         for reference in plan.asset_manifest:
             path = by_asset[reference.asset_id]
-            codec, width, height = _probe_image(path, reference.asset_id)
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            descriptors[reference.asset_id] = AssetDescriptor(
-                asset_id=reference.asset_id,
-                asset_version=reference.asset_version,
-                uri=reference.uri,
-                content_sha256=digest,
-                media_type="image",
-                license=reference.license,
-                location=path.as_posix(),
-                available=True,
-                codec=codec,
-                width=width,
-                height=height,
-                byte_size=path.stat().st_size,
+            is_video = (
+                path.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv")
+                or reference.media_type == "video"
+                or (reference.metadata and reference.metadata.get("media_type") == "video")
             )
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if is_video:
+                codec, width, height, duration_ticks = _probe_video(path, reference, tps)
+                descriptors[reference.asset_id] = AssetDescriptor(
+                    asset_id=reference.asset_id,
+                    asset_version=reference.asset_version,
+                    uri=reference.uri,
+                    content_sha256=digest,
+                    media_type="video",
+                    license=reference.license,
+                    location=path.as_posix(),
+                    available=True,
+                    codec=codec,
+                    width=width,
+                    height=height,
+                    duration_ticks=duration_ticks,
+                    byte_size=path.stat().st_size,
+                )
+            else:
+                codec, width, height = _probe_image(path, reference.asset_id)
+                descriptors[reference.asset_id] = AssetDescriptor(
+                    asset_id=reference.asset_id,
+                    asset_version=reference.asset_version,
+                    uri=reference.uri,
+                    content_sha256=digest,
+                    media_type="image",
+                    license=reference.license,
+                    location=path.as_posix(),
+                    available=True,
+                    codec=codec,
+                    width=width,
+                    height=height,
+                    byte_size=path.stat().st_size,
+                )
         return descriptors
 
     # ------------------------------------------------------------------ execução

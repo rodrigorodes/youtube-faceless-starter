@@ -134,6 +134,7 @@ class ShotPlan:
     text_card: TextCardPlan | None
     overlays: tuple[LayerExecution, ...]
     output: str
+    asset_offset_ticks: int = 0
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,7 @@ class PlanStructure:
     shots: tuple[ShotPlan, ...]
     narration: NarrationTrack
     music: MusicTrack
+    schema_version: int = 2
 
 
 def structure_render_plan(
@@ -226,6 +228,7 @@ def structure_render_plan(
         shots=tuple(shots),
         narration=narration,
         music=music,
+        schema_version=plan.schema_version,
     )
 
 
@@ -411,6 +414,7 @@ def _shot_plan(
         text_card=text_card,
         overlays=overlays,
         output=f"{work}/scene_{index:03d}.mp4",
+        asset_offset_ticks=shot.asset_offset_ticks,
     )
 
 
