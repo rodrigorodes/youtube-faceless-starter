@@ -1,5 +1,13 @@
 {
   "$defs": {
+    "ProductionMode": {
+      "enum": [
+        "piloto",
+        "diretor"
+      ],
+      "title": "ProductionMode",
+      "type": "string"
+    },
     "QaCoverage": {
       "additionalProperties": false,
       "description": "Cobertura declarada do QA: distingue \"não verificado\" de \"verificado sem problemas\".",
@@ -201,6 +209,10 @@
       ],
       "title": "Privacy",
       "type": "string"
+    },
+    "production_mode": {
+      "$ref": "#/$defs/ProductionMode",
+      "default": "piloto"
     },
     "project_id": {
       "title": "Project Id",

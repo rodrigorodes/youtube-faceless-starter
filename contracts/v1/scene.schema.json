@@ -13,6 +13,23 @@
       "default": null,
       "title": "Asset Id"
     },
+    "broll_enabled": {
+      "default": false,
+      "title": "Broll Enabled",
+      "type": "boolean"
+    },
+    "broll_note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Broll Note"
+    },
     "caption": {
       "default": "",
       "maxLength": 110,
