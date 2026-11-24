@@ -939,3 +939,68 @@ def test_a_new_run_with_a_new_key_adopts_the_current_revision_and_the_old_one_do
     decisions = [event.payload for event in repo.read_outbox(limit=1000, run_id=second.run.run_id)
                  if event.event_type is ProgressEventType.RUN_OPERATION]
     assert [(item["operation"], item["config_hash"]) for item in decisions] == [("new_run", second_hash)]
+
+
+# -- R02: lease renovado enquanto o handler síncrono executa --------------------------------
+
+
+class _SlowHandler:
+    available = True
+
+    def __init__(self, seconds):
+        self.seconds, self.lease = seconds, "unset"
+
+    def execute(self, context):
+        import time
+        self.lease = context.lease
+        time.sleep(self.seconds)
+        return StageOutcome(checkpoint=Checkpoint({"stage": "script"}, context.checkpoint_version))
+
+
+def _slow_script_coordinator(db, handler):
+    repo, _ = db
+    return ProductionCoordinator(repo, handlers=handlers(**{ProductionStage.SCRIPT: handler}), lease_seconds=3,
+                                 mode=ProductionMode.INTERACTIVE)
+
+
+def _script_row(conn, run_id):
+    return conn.execute("SELECT state, attempt, fencing_token FROM studio.stage_executions "
+                        "WHERE run_id = %s AND stage_id = 'script'", (run_id,)).fetchone()
+
+
+def test_a_handler_longer_than_the_lease_keeps_ownership_via_heartbeat(db):
+    _, conn = db
+    handler = _SlowHandler(7)
+    coordinator = _slow_script_coordinator(db, handler)
+    run = coordinator.start(VIDEO, "lease-1").run
+    step = coordinator.step(run.run_id, owner="w")
+    assert handler.lease is not None
+    assert step.result in (WorkerStepResult.COMPLETED, WorkerStepResult.COMPLETED_PAUSED)
+    state, attempt, token = _script_row(conn, run.run_id)
+    assert (state, attempt, token) == ("SUCCEEDED", 1, 1)
+
+
+def test_negative_control_without_heartbeat_the_completion_is_lost(db, monkeypatch):
+    from app.studio.application import production as production_module
+    _, conn = db
+
+    class NoHeartbeat:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        lost = False
+
+        def ensure_held(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(production_module, "LeaseHeartbeat", NoHeartbeat, raising=False)
+    coordinator = _slow_script_coordinator(db, _SlowHandler(7))
+    run = coordinator.start(VIDEO, "lease-2").run
+    step = coordinator.step(run.run_id, owner="w")
+    assert step.result is WorkerStepResult.LOST

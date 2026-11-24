@@ -496,3 +496,114 @@ def test_regenerate_revision_must_be_a_positive_integer(revision):
         _lifecycle(coordinator, store=_ConfigStore(_resolved()), resolver=_config).regenerate(
             RUN, revision=revision)
     assert coordinator.calls == []
+
+
+# -- R02: o coordenador renova o lease e nunca finaliza sem posse -------------------------
+
+
+def _lease_harness(monkeypatch, *, renew_result, handler_exc=None, lease_seconds=300):
+    from app.studio.application import production as production_module
+    from app.studio.application.production import (
+        ProductionCoordinator, StageExecutionFailed, StageOutcome, WorkerStepResult)
+    from app.studio.domain.production_run import (
+        Checkpoint, LeaseResult, StageClaim, StageClaimResult, StageDag, StageTransition, StageTransitionResult)
+
+    calls = []
+    run = ProductionRun(run_id=RUN, video_id=VIDEO, idempotency_key="k")
+    execution = StageExecution(run_id=RUN, stage_id=ProductionStage.SCRIPT, state=StageState.RUNNING, attempt=1,
+                               fencing_token=7, lease_owner="w", lease_expires_at=NOW)
+    renewed = __import__("threading").Event()
+
+    class Runs:
+        def get_run(self, run_id):
+            return run
+
+        def claim_stage(self, *args):
+            return StageClaim(StageClaimResult.CLAIMED, execution)
+
+        def renew_lease(self, *args):
+            calls.append(("renew", args))
+            renewed.set()
+            return renew_result
+
+        def complete_stage(self, *args, **kwargs):
+            calls.append(("complete", None))
+            return StageTransition(StageTransitionResult.APPLIED)
+
+        def fail_stage(self, *args, **kwargs):
+            calls.append(("fail", None))
+            return StageTransition(StageTransitionResult.APPLIED, execution)
+
+        def pause_run(self, *args, **kwargs):
+            calls.append(("pause", None))
+            return RunTransition(RunTransitionResult.NOT_ALLOWED)
+
+        def list_stages(self, run_id):
+            return ()
+
+    seen = {}
+
+    class Handler:
+        available = True
+
+        def execute(self, context):
+            seen["lease"] = context.lease
+            assert renewed.wait(5)
+            import time
+            deadline = time.monotonic() + 2
+            while renew_result != LeaseResult.RENEWED and not context.lease.lost and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if handler_exc is not None:
+                raise handler_exc
+            return StageOutcome(checkpoint=Checkpoint({"s": 1}, context.checkpoint_version))
+
+    real_stop = production_module.LeaseHeartbeat.stop
+
+    def stop(self):
+        calls.append(("stop", None))
+        real_stop(self)
+
+    monkeypatch.setattr(production_module.LeaseHeartbeat, "stop", stop, raising=False)
+    coordinator = ProductionCoordinator(Runs(), handlers={ProductionStage.SCRIPT: Handler()},
+                                        pipeline=StageDag({ProductionStage.SCRIPT: ()}), lease_seconds=lease_seconds)
+    return coordinator, calls, seen, StageExecutionFailed, WorkerStepResult
+
+
+def test_handler_runs_under_a_heartbeat_that_renews_with_the_exact_identity(monkeypatch):
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, seen, _, Result = _lease_harness(monkeypatch, renew_result=LeaseResult.RENEWED)
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.COMPLETED
+    assert seen["lease"] is not None
+    assert ("renew", (RUN, ProductionStage.SCRIPT, "w", 7, 300)) in calls
+    names = [name for name, _ in calls]
+    assert names.index("stop") < names.index("complete")
+
+
+def test_lease_lost_during_the_handler_never_completes(monkeypatch):
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(monkeypatch, renew_result=LeaseResult.LOST)
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert step.detail == "lease lost during stage execution"
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}
+
+
+def test_a_failure_after_losing_the_lease_never_fails_the_stage(monkeypatch):
+    from app.studio.application.production import StageExecutionFailed
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(
+        monkeypatch, renew_result=LeaseResult.LOST, handler_exc=StageExecutionFailed("boom"))
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}
+
+
+def test_a_lease_lost_exception_from_the_handler_maps_to_lost(monkeypatch):
+    from app.studio.application.lease_heartbeat import LeaseLost
+    from app.studio.domain.production_run import LeaseResult
+    coordinator, calls, _, _, Result = _lease_harness(
+        monkeypatch, renew_result=LeaseResult.RENEWED, handler_exc=LeaseLost("x"))
+    step = coordinator.step(RUN, owner="w")
+    assert step.result is Result.LOST
+    assert not {"complete", "fail", "pause"} & {name for name, _ in calls}

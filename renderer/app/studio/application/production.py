@@ -63,6 +63,7 @@ from ..domain.qa_report import (
     blocking_evidence,
 )
 from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
+from .lease_heartbeat import LeaseHeartbeat, LeaseLost, StageLease
 from .editorial import Editorial, SourceRefused, SourceUnavailable, StateConflict
 from .media import Media
 from .research import AutoResearch
@@ -215,6 +216,7 @@ class StageContext:
 
     run: ProductionRun
     execution: StageExecution
+    lease: StageLease | None = None
 
     @property
     def checkpoint_version(self) -> int:
@@ -905,16 +907,27 @@ class ProductionCoordinator:
         except Exception as exc:  # leitura do snapshot não pode derrubar o worker
             logger.warning("frozen selection read failed for %s: %s", run.run_id, type(exc).__name__)
             return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
-        with use_frozen_provider_selection(selection):
+        heartbeat = LeaseHeartbeat(
+            renew=lambda: self.runs.renew_lease(run.run_id, execution.stage_id, owner, execution.fencing_token,
+                                                self.lease_seconds),
+            lease_seconds=self.lease_seconds)
+        failure: Exception | None = None
+        outcome = None
+        # `lost` deriva com o relógio mesmo depois do stop: captura-se logo após o handler e só ele decide.
+        with heartbeat as lease, use_frozen_provider_selection(selection):
             try:
-                outcome = handler.execute(StageContext(run=run, execution=execution))
-            except StageExecutionFailed as exc:
-                return self._fail(run, execution, owner, str(exc))
-            except StageCapabilityUnavailable as exc:
-                return self._fail(run, execution, owner, str(exc))
-            except Exception as exc:  # o worker não pode derrubar o processo: a etapa vira FAILED com a causa
-                logger.warning("stage %s failed: %s", execution.stage_id.value, type(exc).__name__)
-                return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
+                outcome = handler.execute(StageContext(run=run, execution=execution, lease=lease))
+            except Exception as exc:
+                failure = exc
+            lost = lease.lost
+        if lost or isinstance(failure, LeaseLost):
+            return WorkerStep(WorkerStepResult.LOST, run=run, stage=execution.stage_id, execution=execution,
+                              detail="lease lost during stage execution")
+        if failure is not None:
+            if isinstance(failure, (StageExecutionFailed, StageCapabilityUnavailable)):
+                return self._fail(run, execution, owner, str(failure))
+            logger.warning("stage %s failed: %s", execution.stage_id.value, type(failure).__name__)
+            return self._fail(run, execution, owner, f"{type(failure).__name__}: {failure}")
         if outcome.request_human is not None:
             return self._pause(run, execution, owner, WorkerStepResult.PAUSED, outcome.request_human)
         transition = self.runs.complete_stage(run.run_id, execution.stage_id, owner, execution.fencing_token,
