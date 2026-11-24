@@ -199,12 +199,12 @@ def test_adapter_returns_empty_list_when_no_photo_is_found():
     assert _adapter(handler).search("Roma antiga") == []
 
 
-def test_adapter_rejects_non_image_media_type():
+def test_adapter_rejects_unsupported_media_type():
     def handler(request):  # pragma: no cover - não deve ser chamado
         raise AssertionError("HTTP não deveria ser chamado")
 
     with pytest.raises(ModelUnavailable):
-        _adapter(handler).search("Roma antiga", media_type="video")
+        _adapter(handler).search("Roma antiga", media_type="audio")
 
 
 # -- porta e catálogo ---------------------------------------------------------
