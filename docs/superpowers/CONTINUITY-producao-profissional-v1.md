@@ -18,13 +18,12 @@ Plano mestre: `docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-
 | 0 | Diagnóstico, matrizes, decisões | ✅ concluída |
 | 1 | Fundação: RenderPlan v2, multi-shot (`scene_assets`, migração `0050`) | ✅ concluída |
 | 2 | Inteligência: CreativeDirector + MediaIntelligence (Pexels/Pixabay, migração `0051`) | ✅ concluída |
-| 3 | Qualidade audiovisual: Pacing, AudioDirector/música CC0, legendas ASS, alinhamento por palavra | ✅ concluída (468 testes no contêiner) |
-| **4** | **UX Studio (sobre as telas existentes da UX V3)** | **mockups prontos, aguardando aprovação do usuário; nada implementado** |
+| 3 | Qualidade audiovisual: Pacing, AudioDirector/música CC0, legendas ASS, alinhamento por palavra | ✅ concluída |
+| **4** | **UX Studio (sobre as telas existentes da UX V3)** | **✅ concluída (482 testes no contêiner)** |
 | 5 | QaReport v2 (true-peak, clipping, duplicados, assets repetidos) | pendente |
 | 6 | Vídeo piloto 3–5 min, revisado | pendente |
 
-**Fase atual:** Onda 4, ainda em design. O usuário pediu mockups **fiéis às telas reais** antes de
-qualquer implementação. Foram gerados e commitados (ver §3). **Falta a aprovação explícita deles.**
+**Fase atual:** Onda 4 concluída de ponta a ponta. Entregues migração 0052, contratos, parâmetros ativos no formulário de criação, aba Direção criativa com rotas de briefing, bancada da cena com tomadas multishot, rota e botão de download do MP4, ativação de controles na Composição e snapshot atualizado de contratos. Próxima: Onda 5 (QaReport v2).
 
 **Estado do Git:** `main` = fast-forward da branch `feat/onda1-fundacao-renderplan-v2` (todas as
 Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked preexistente
@@ -89,19 +88,24 @@ Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked 
 - Voz por vídeo segue **indisponível** na tela («a troca por vídeo ainda não está disponível»):
   manter assim.
 
+**Entregas da Onda 4 (concluídas):**
+- Migração `0052_video_production_settings.sql` (adiciona `target_duration_s`, `pacing_preset`, `budget_cap_usd`, `creative_brief`).
+- Contratos `Video` e repositórios atualizados para persistência e recuperação.
+- Formulário Novo Vídeo com controles ativos de ritmo de cortes, duração alvo e teto de custo, sincronizados com o resumo lateral.
+- Aba Direção criativa no workspace com exibição/edição do `CreativeBrief` e endpoints dedicados (`GET/POST/PUT /studio/videos/{id}/direction`).
+- Bancada da cena com tomadas multishot, controle de ritmo por cena, botão de adicionar mídia e CRUD de `scene_assets` (`GET/POST/DELETE /studio/videos/{id}/scenes/{id}/assets`).
+- Rota de download direto do MP4 aprovado (`GET /studio/videos/{id}/download`), botão destacado e cartão de Resumo audiovisual na tela de Qualidade.
+- Ativação dos controles de Composição (Volume de música com valor em tempo real, switch de ducking com sidechain, estilo de legenda Destaque por palavra / karaokê e seletor de trilha CC0).
+- Snapshot atualizado de contratos (`contracts/v1/video.schema.json`).
+
 **Próximos passos:**
-1. Obter do usuário a aprovação (ou ajustes) dos mockups; decidir o teto de custo por vídeo.
-2. Escrever o plano da Onda 4 (`writing-plans`) e executar 4 módulos em paralelo com subagents:
-   A) Novo Vídeo (ritmo/duração/teto reais + persistência), B) aba Direção Criativa,
-   C) Bancada da Cena multi-asset, D) download + resumo audiovisual. **Atenção a arquivos
-   compartilhados** (`api/routes.py`, `panel_video_workspace.py`) para não colidir entre módulos.
-3. Onda 5 (QaReport v2) e Onda 6 (vídeo piloto 3–5 min); revisão final e relatório honesto.
+1. Onda 5: QaReport v2 (true-peak, clipping, duplicados de imagem, assets repetidos em cenas contíguas).
+2. Onda 6: Vídeo piloto 3–5 min, revisado de ponta a ponta.
 
 ## 4. Validação conhecida
-- Regressão ampla (468 passed no contêiner):
-  `TMPDIR=/tmp scripts/test-container.sh tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py -q`
-  (458 passed) + `tests/test_audio_director.py tests/test_script_revision_restore.py` (10 passed).
-- Depois do fast-forward para `main` **não foram rodados testes** (conteúdo idêntico ao da branch).
+- Regressão ampla completa (482 passed no contêiner com 0 falhas):
+  `TMPDIR=/tmp scripts/test-container.sh tests/test_video_production_persistence.py tests/test_panel_new_video_active.py tests/test_panel_direction_tab.py tests/test_panel_scene_multimedia.py tests/test_video_download_and_audiovisual_summary.py tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py tests/test_audio_director.py tests/test_script_revision_restore.py -q`
+  (482 passed em 37,5s).
 - Falhas **preexistentes**, fora do escopo (baseline tinha 40 no checkout compartilhado):
   `tests/test_schema_docs.py::test_committed_ddl_matches_migrations` (`docs/schema/studio.sql`
   desatualizado desde 0047) e `tests/test_script_page.py::test_roteiro_page_uses_the_shared_shell`.
