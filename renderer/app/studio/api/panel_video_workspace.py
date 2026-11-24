@@ -695,7 +695,15 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
         f'<button class="btn ghost small" aria-label="Mover cena para baixo" data-a="mv" data-d="1" data-sid="{sid}"'
         f'{off_move(i == total - 1)}>↓</button></span>'
         f'<button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="{sid}"{lock_text}>Excluir</button>'
-        '</div></div></div>'
+        '</div></div>'
+        f'<div class="card-shots" style="grid-column:1/-1;padding:12px;margin-top:8px;background:var(--panel2,#16181f);border-radius:10px;border:1px solid var(--line,#2a2d38)">'
+        f'<div class="between" style="margin-bottom:8px"><span class="lbl">TOMADAS DESTA CENA</span><span class="row">'
+        f'<span class="sample">Ritmo:</span><select style="width:auto" data-a="scene-pacing" data-sid="{sid}">'
+        f'<option value="inherit">Herdar do vídeo (Dinâmico)</option><option value="balanced">Balanceado</option><option value="cinematic">Cinemático</option></select>'
+        f'<button type="button" class="btn small ghost" style="margin-left:6px;border-style:dashed;white-space:nowrap" data-a="media" data-sid="{sid}">+ Adicionar mídia</button>'
+        f'</span></div>'
+        f'<p class="sample" style="margin:0">Sem tomadas ainda. Escolha a mídia da cena e o ritmo divide em tomadas.</p>'
+        f'</div></div>'
     )
 
 

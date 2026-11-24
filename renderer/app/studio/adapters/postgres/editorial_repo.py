@@ -493,6 +493,34 @@ class PostgresScriptRepository(_Base):
 
     list_scene_assets = get_scene_assets
 
+    def add_scene_asset(self, scene_id: str, asset: SceneAsset) -> SceneAsset:
+        with _translated(), self._connect() as conn:
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO studio.scene_assets "
+                    "(id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        str(asset.id),
+                        check_id(scene_id),
+                        str(asset.asset_id),
+                        asset.position,
+                        asset.start_s,
+                        asset.end_s,
+                        asset.role,
+                        asset.motion,
+                        asset.transition_kind,
+                        asset.transition_duration_s,
+                    ),
+                )
+            return asset
+
+    def delete_scene_asset(self, asset_id: str) -> bool:
+        with _translated(), self._connect() as conn:
+            with conn.transaction():
+                conn.execute("DELETE FROM studio.scene_assets WHERE id = %s", (str(asset_id),))
+            return True
+
     def scenes(self, video_id: str) -> list[Scene]:
         with _translated(), self._connect() as conn:
             return _read_scenes(conn, video_id)

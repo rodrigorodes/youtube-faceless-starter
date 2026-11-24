@@ -90,7 +90,7 @@ from ..application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUn
 from ..application.panel import cost_breakdown
 from ..application.ports import MediaCandidate, ModelUnavailable
 from ..application.use_cases import InvalidInput, ProjectNotFound, ServiceUnavailable, UseCases
-from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, ProductionMode, Scene, Script, Video, VideoFormat, VideoStatus
+from ..domain.contracts import Approval, Publication, Asset, FactCheckReport, RenderJob, Project, ProductionMode, Scene, SceneAsset, Script, Video, VideoFormat, VideoStatus
 from ..application.channel_creation import ChannelCreationPayload, IdempotencyConflict as ChannelIdempotencyConflict
 from ..domain.qa_report import QaReport
 from ..domain.analytics_learning import AnalyticsPeriod, DashboardQuery, ExperimentVariant
@@ -1678,6 +1678,39 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         if path is None:
             raise HTTPException(404, "scene media not available")
         return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
+
+    @router.get("/videos/{video_id}/scenes/{scene_id}/assets", response_model=list[SceneAsset])
+    def list_scene_assets(video_id: str, scene_id: str):
+        def go(uc):
+            ed = editorial(uc)
+            return ed.get_script.scripts.get_scene_assets(check_id(scene_id))
+        return run(go)
+
+    @router.post("/videos/{video_id}/scenes/{scene_id}/assets", status_code=201, response_model=SceneAsset)
+    def add_scene_asset(video_id: str, scene_id: str, body: dict):
+        def go(uc):
+            ed = editorial(uc)
+            asset = SceneAsset(
+                scene_id=check_id(scene_id),
+                asset_id=body["asset_id"],
+                position=int(body.get("position", 0)),
+                start_s=float(body.get("start_s", 0.0)),
+                end_s=float(body.get("end_s", 2.5)),
+                role=str(body.get("role", "base")),
+                motion=str(body.get("motion", "none")),
+                transition_kind=str(body.get("transition_kind", "none")),
+                transition_duration_s=float(body.get("transition_duration_s", 0.0)),
+            )
+            return ed.get_script.scripts.add_scene_asset(check_id(scene_id), asset)
+        return run(go)
+
+    @router.delete("/videos/{video_id}/scenes/{scene_id}/assets/{asset_id}")
+    def delete_scene_asset(video_id: str, scene_id: str, asset_id: str):
+        def go(uc):
+            ed = editorial(uc)
+            ed.get_script.scripts.delete_scene_asset(asset_id)
+            return {"ok": True}
+        return run(go)
 
     def rendering(uc: UseCases):
         if uc.rendering is None:
