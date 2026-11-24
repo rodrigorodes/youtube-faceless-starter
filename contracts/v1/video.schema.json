@@ -175,6 +175,18 @@
   },
   "additionalProperties": false,
   "properties": {
+    "budget_cap_usd": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Budget Cap Usd"
+    },
     "created_at": {
       "anyOf": [
         {
@@ -188,6 +200,19 @@
       "default": null,
       "title": "Created At"
     },
+    "creative_brief": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Creative Brief"
+    },
     "description": {
       "default": "",
       "title": "Description",
@@ -198,6 +223,11 @@
     },
     "id": {
       "title": "Id",
+      "type": "string"
+    },
+    "pacing_preset": {
+      "default": "dynamic",
+      "title": "Pacing Preset",
       "type": "string"
     },
     "privacy": {
@@ -256,6 +286,18 @@
       },
       "title": "Tags",
       "type": "array"
+    },
+    "target_duration_s": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Duration S"
     },
     "title": {
       "default": "",
