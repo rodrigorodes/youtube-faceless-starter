@@ -31,7 +31,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Protocol
 
-from ..domain.contracts import JobStatus, RenderJob, Video, VideoFormat, VideoStatus
+from ..domain.contracts import JobStatus, PublicationStatus, RenderJob, Video, VideoFormat, VideoStatus
 from ..domain.effective_config import EffectiveConfig
 from ..domain.ids import check_id
 from ..domain.production_run import (
@@ -67,11 +67,12 @@ from .lease_heartbeat import LeaseHeartbeat, LeaseLost, StageLease
 from .editorial import Editorial, SourceRefused, SourceUnavailable, StateConflict
 from .media import Media
 from .research import AutoResearch
-from .publication_execution import PublicationResult, RunPublication
+from .publication_execution import PublicationResult, ReconcilePublication, RunPublication
 from .ports import (
     ApprovalRepository,
     AssetRepository,
     ProductionRunConfigStore,
+    PublicationQueueRepository,
     ProductionRunInFlightReader,
     ProductionRunRepository,
     ProductionRunStageReader,
@@ -510,16 +511,63 @@ class PublishHandler(_AvailableHandler):
 
     stage = ProductionStage.PUBLISH
 
-    def __init__(self, publish: RunPublication):
-        self.publish = publish
+    def __init__(self, publish: RunPublication, reconcile: ReconcilePublication | None = None,
+                 pubs: PublicationQueueRepository | None = None,
+                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+        self.publish, self.reconcile, self.pubs, self.clock = publish, reconcile, pubs, clock
+
+    def _done(self, context: StageContext, youtube_video_id: str | None, publication_id: str | None) -> StageOutcome:
+        return StageOutcome(checkpoint=Checkpoint(
+            {"stage": self.stage.value, "youtube_video_id": youtube_video_id, "publication_id": publication_id},
+            context.checkpoint_version))
+
+    def _reconcile_first(self, context: StageContext) -> StageOutcome | None:
+        """D8: nunca reenvia sobre uma publicação ambígua/obsoleta; o CAS do banco decide a obsolescência."""
+        video_id = context.run.video_id
+        pub = self.pubs.get(video_id)
+        if pub is None:
+            return None
+        state = self.pubs.lease_state(video_id)
+        if pub.youtube_video_id:
+            return self._done(context, pub.youtube_video_id, pub.id)
+        if pub.status is PublicationStatus.UPLOADING:
+            for _ in range(2):
+                until = state.lease_until if state else None
+                if until is not None and until > self.clock():
+                    raise StageExecutionFailed("a previous upload attempt is still active; wait for its lease or reconcile")
+                if self.pubs.mark_stale_ambiguous(
+                        pub.id, pub.attempt,
+                        "stage re-claimed after the previous executor stopped; upload outcome unknown"):
+                    break
+                state = self.pubs.lease_state(video_id)
+                if state is not None and state.youtube_video_id:
+                    return self._done(context, state.youtube_video_id, pub.id)
+            else:
+                raise StageExecutionFailed("could not settle the previous upload attempt; try again later")
+            state = self.pubs.lease_state(video_id)
+        if state is not None and state.remote_state == "UNKNOWN":
+            if self.reconcile is None:
+                raise StageExecutionFailed("publication outcome is ambiguous; reconcile before retrying")
+            run = self.reconcile.execute(pub.id)
+            if run.result is PublicationResult.UPLOADED:
+                return self._done(context, run.youtube_video_id, pub.id)
+            if run.result is not PublicationResult.RETRY:
+                raise StageExecutionFailed(
+                    f"publication did not complete ({run.result.value}): {run.detail or 'no detail'}")
+        return None
 
     def execute(self, context: StageContext) -> StageOutcome:
+        if context.lease is not None:
+            context.lease.ensure_held()
+        if self.pubs is not None:
+            done = self._reconcile_first(context)
+            if done is not None:
+                return done
+            if context.lease is not None:
+                context.lease.ensure_held()
         outcome = self.publish.execute(video_id=context.run.video_id)
         if outcome.result is PublicationResult.UPLOADED:
-            return StageOutcome(checkpoint=Checkpoint(
-                {"stage": self.stage.value, "youtube_video_id": outcome.youtube_video_id,
-                 "publication_id": outcome.publication.id if outcome.publication else None},
-                context.checkpoint_version))
+            return self._done(context, outcome.youtube_video_id, outcome.publication.id if outcome.publication else None)
         if outcome.result is PublicationResult.IDLE:
             raise StageExecutionFailed("no approved publication is pending for this video")
         raise StageExecutionFailed(f"publication did not complete ({outcome.result.value}): {outcome.detail or 'no detail'}")
@@ -528,7 +576,8 @@ class PublishHandler(_AvailableHandler):
 def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: StartRender, run_render: RunRender,
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
                          approvals: ApprovalRepository, publish: RunPublication | None = None,
-                         research: AutoResearch | None = None
+                         research: AutoResearch | None = None, reconcile: ReconcilePublication | None = None,
+                         publications: PublicationQueueRepository | None = None
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     handlers: dict[ProductionStage, StageHandler] = {
@@ -542,7 +591,7 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
     }
     handlers[ProductionStage.RESEARCH] = (ResearchHandler(research) if research is not None
                                           else UnavailableStageHandler(ProductionStage.RESEARCH, RESEARCH_REASON))
-    handlers[ProductionStage.PUBLISH] = (PublishHandler(publish) if publish is not None
+    handlers[ProductionStage.PUBLISH] = (PublishHandler(publish, reconcile, publications) if publish is not None
                                          else UnavailableStageHandler(ProductionStage.PUBLISH, PUBLISH_REASON))
     return handlers
 

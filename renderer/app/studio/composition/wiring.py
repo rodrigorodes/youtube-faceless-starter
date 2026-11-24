@@ -660,7 +660,8 @@ class Studio:
         coordinator_start = StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: None)
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
-                                        publish=publish, research=auto_research)
+                                        publish=publish, research=auto_research,
+                                        reconcile=reconcile, publications=pubs)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
         # pode dispensar a pausa intermediária.
         # F01.T03: piso medido no ESCOPO DO CANAL (não no gasto global) e com o teto das settings
