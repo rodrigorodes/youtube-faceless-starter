@@ -696,6 +696,10 @@ class PlanFfmpegRenderer:
         if final_node in reuse:  # nada mudou: o MP4 final já existe como artefato físico
             return self._publish(Path(reuse[final_node]), Path(out_path))
         Path(compiled.final_output).parent.mkdir(parents=True, exist_ok=True)
+        if compiled.subtitles_ass_content and compiled.subtitles_ass_path:
+            sub_path = Path(compiled.subtitles_ass_path)
+            sub_path.parent.mkdir(parents=True, exist_ok=True)
+            sub_path.write_text(compiled.subtitles_ass_content, encoding="utf-8")
         fmt = VideoFormat(compiled.format)
         self._materialize(compiled, fmt, style)
         narration_inputs = self._narration_inputs(compiled, speech_wavs, reuse)
@@ -767,14 +771,23 @@ class PlanFfmpegRenderer:
         music = compiled.audio.music
         seconds = music.duration_ticks / compiled.ticks_per_second
         path = Path(compiled.audio.music_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         if music.silent:  # `music=False` mantém o grafo de mixagem com a trilha muda (C2)
             _write_silence(path, seconds)
         else:
-            # bpm/seed vêm do plano (canônico em DEFAULT_MUSIC_PARAMS); o fallback é o mesmo objeto
-            params = music.params
-            rich.synth_music(seconds, path,
-                             bpm=int(params.get("bpm", DEFAULT_MUSIC_PARAMS["bpm"])),
-                             seed=int(params.get("seed", DEFAULT_MUSIC_PARAMS["seed"])))
+            music_file = music.params.get("music_file")
+            if music_file and Path(music_file).is_file():
+                self._run([
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-stream_loop", "-1", "-i", str(music_file),
+                    "-t", f"{seconds:.3f}", "-ar", "44100", "-ac", "2", str(path),
+                ])
+            else:
+                # bpm/seed vêm do plano (canônico em DEFAULT_MUSIC_PARAMS); o fallback é o mesmo objeto
+                params = music.params
+                rich.synth_music(seconds, path,
+                                 bpm=int(params.get("bpm", DEFAULT_MUSIC_PARAMS["bpm"])),
+                                 seed=int(params.get("seed", DEFAULT_MUSIC_PARAMS["seed"])))
 
     @staticmethod
     def _publish(source: Path, out_path: Path) -> Path:

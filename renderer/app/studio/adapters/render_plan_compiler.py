@@ -53,18 +53,32 @@ MIX_FILTER = (
 )
 
 
-def _mix_filter(audio_mix: DomainAudioMix | None = None) -> str:
+def _mix_filter(
+    audio_mix: DomainAudioMix | RenderPlan | None = None,
+    total_s: float = 0.0,
+) -> str:
     """Compila o grafo de mixagem de áudio consumindo os parâmetros do AudioMix."""
-    mix = audio_mix or DomainAudioMix()
+    if isinstance(audio_mix, RenderPlan):
+        plan = audio_mix
+        mix = plan.audio_mix or DomainAudioMix()
+        if total_s <= 0 and hasattr(plan, "timeline") and plan.timeline.ticks_per_second:
+            total_s = plan.timeline.duration_ticks / plan.timeline.ticks_per_second
+    else:
+        mix = audio_mix or DomainAudioMix()
+
     vol = f"{mix.music_gain:.2f}"
     thresh = f"{mix.ducking_threshold:.2f}"
     ratio = f"{int(mix.ducking_ratio)}" if mix.ducking_ratio.is_integer() else f"{mix.ducking_ratio}"
     norm_i = f"{int(mix.loudnorm_i)}" if mix.loudnorm_i.is_integer() else f"{mix.loudnorm_i}"
     norm_tp = f"{int(mix.loudnorm_tp)}" if mix.loudnorm_tp.is_integer() else f"{mix.loudnorm_tp}"
     norm_lra = f"{int(mix.loudnorm_lra)}" if mix.loudnorm_lra.is_integer() else f"{mix.loudnorm_lra}"
+    fade_filter = ""
+    if getattr(mix, "afade_out_s", 0.0) > 0 and total_s > 0:
+        start_fade = max(0.0, total_s - mix.afade_out_s)
+        fade_filter = f",afade=t=out:st={start_fade:.2f}:d={mix.afade_out_s:.2f}"
     return (
         f"[1:a]aresample=44100,pan=stereo|c0=c0|c1=c0,asplit=2[nar][nsc];"
-        f"[2:a]volume={vol},pan=stereo|c0=c0|c1=c0[mus];"
+        f"[2:a]volume={vol},pan=stereo|c0=c0|c1=c0{fade_filter}[mus];"
         f"[mus][nsc]sidechaincompress=threshold={thresh}:ratio={ratio}:attack=15:release=350[duck];"
         f"[duck][nar]amix=inputs=2:duration=longest:normalize=0,loudnorm=I={norm_i}:TP={norm_tp}:LRA={norm_lra}[a]"
     )
@@ -222,21 +236,6 @@ def compile_render_plan(
             "-f", "concat", "-safe", "0", "-i", f"{work}/concat.txt", "-c", "copy", f"{work}/video_only.mp4",
         ),
     )
-    mix_filter = _mix_filter(getattr(plan, "audio_mix", None))
-    audio = AudioMix(
-        narration=structure.narration,
-        music=structure.music,
-        music_path=f"{work}/music.wav",
-        filter_complex=mix_filter,
-        args=(
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", concat.output, "-i", structure.narration.output, "-i", f"{work}/music.wav",
-            "-filter_complex", mix_filter,
-            "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-            "-shortest", "-movflags", "+faststart", f"{work}/final.mp4",
-        ),
-    )
-
     subtitles_ass_path: str | None = None
     subtitles_ass_content: str | None = None
 
@@ -275,6 +274,40 @@ def compile_render_plan(
                 ass_path.write_text(ass_content, encoding="utf-8")
         except OSError:
             pass
+
+    total_s = (
+        plan.timeline.duration_ticks / plan.timeline.ticks_per_second
+        if hasattr(plan, "timeline") and plan.timeline.ticks_per_second
+        else 0.0
+    )
+    mix_filter = _mix_filter(getattr(plan, "audio_mix", None), total_s=total_s)
+
+    if subtitles_ass_path:
+        video_codec_args = (
+            "-vf", f"subtitles={subtitles_ass_path}",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
+        )
+    else:
+        video_codec_args = ("-c:v", "copy")
+
+    audio_args = (
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", concat.output, "-i", structure.narration.output, "-i", f"{work}/music.wav",
+        "-filter_complex", mix_filter,
+        "-map", "0:v", "-map", "[a]",
+        *video_codec_args,
+        "-c:a", "aac", "-b:a", "160k",
+        "-shortest", "-movflags", "+faststart", f"{work}/final.mp4",
+    )
+    audio = AudioMix(
+        narration=structure.narration,
+        music=structure.music,
+        music_path=f"{work}/music.wav",
+        filter_complex=mix_filter,
+        args=audio_args,
+    )
 
     return CompiledRender(
         plan_id=structure.plan_id,
