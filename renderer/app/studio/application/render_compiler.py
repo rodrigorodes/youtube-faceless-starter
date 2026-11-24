@@ -395,6 +395,14 @@ def _shot_plan(
         # pragma: no cover - AssetMediaType é Literal fechado
         raise CompileError(f"unsupported media type {descriptor.media_type!r}")
 
+    if descriptor.media_type == "video" and descriptor.duration_ticks is not None:
+        if shot.asset_offset_ticks + shot.duration_ticks > descriptor.duration_ticks:
+            raise CompileError(
+                f"shot {shot.shot_id!r} requires {shot.asset_offset_ticks + shot.duration_ticks} ticks "
+                f"(offset {shot.asset_offset_ticks} + duration {shot.duration_ticks}), "
+                f"exceeding video asset duration {descriptor.duration_ticks} ticks"
+            )
+
     return ShotPlan(
         scene_id=scene.scene_id,
         shot_id=shot.shot_id,

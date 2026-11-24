@@ -423,6 +423,8 @@ def _fade_filter(
     - 'none' (ou ausente) preserva fade legado (entrada + saída FADE_S)
     - 'fade' aplica fade out configurado
     """
+    if transition is not None and transition.kind == "crossfade":
+        raise CompileError("transition kind 'crossfade' is not yet supported in the single-shot compiler")
     if transition is not None and transition.kind == "cut":
         return ""
     if transition is not None and transition.kind == "fade":

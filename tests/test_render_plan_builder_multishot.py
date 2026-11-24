@@ -443,3 +443,41 @@ def test_multishot_rejects_non_storyboard_shot():
     with pytest.raises(PlanBuildError, match="is not a StoryboardShot"):
         build(scenes=[scene], assets=[asset_ref("asset-01")])
 
+
+def test_multishot_rejects_shots_duration_sum_diverging_above_tolerance():
+    # speech=1.2 -> cena = 2.0s (50000 ticks). Shots somam 1.0s. Residuo = +1.000s (> 0.2s max allowed)
+    scene = StoryboardScene(
+        scene_id="scene-01",
+        asset_id="asset-01",
+        narration="Cena com shots muito mais curtos que a cena",
+        speech_seconds=1.2,
+        shots=[
+            StoryboardShot(shot_id="s1", asset_id="asset-01", duration_s=1.0),
+        ],
+    )
+    with pytest.raises(
+        PlanBuildError,
+        match=r"shots duration sum diverges from scene duration by 1\.000s; ensure shots sum matches scene duration",
+    ):
+        build(scenes=[scene], assets=[asset_ref("asset-01")])
+
+
+def test_multishot_rejects_shots_duration_sum_diverging_below_tolerance():
+    # speech=1.2 -> cena = 2.0s (50000 ticks). Shots somam 3.0s. Residuo = -1.000s (|residuo| > 0.2s max allowed)
+    scene = StoryboardScene(
+        scene_id="scene-01",
+        asset_id="asset-01",
+        narration="Cena com shots muito mais longos que a cena",
+        speech_seconds=1.2,
+        shots=[
+            StoryboardShot(shot_id="s1", asset_id="asset-01", duration_s=1.5),
+            StoryboardShot(shot_id="s2", asset_id="asset-01", duration_s=1.5),
+        ],
+    )
+    with pytest.raises(
+        PlanBuildError,
+        match=r"shots duration sum diverges from scene duration by -1\.000s; ensure shots sum matches scene duration",
+    ):
+        build(scenes=[scene], assets=[asset_ref("asset-01")])
+
+

@@ -24,6 +24,7 @@ from app.studio.adapters.render_plan_compiler import (
     compile_render_plan,
 )
 from app.studio.adapters.render_plan_ffmpeg import PlanFfmpegRenderer
+from app.studio.application.render_compiler import CompileError
 from app.studio.application.ports import RenderSpec
 from app.studio.domain.asset_resolver import AssetDescriptor
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat
@@ -145,6 +146,12 @@ def test_fade_filter_fade_applies_configured_fade_out():
     res = _fade_filter(fade_trans, 2.0, DEFAULT_TICKS_PER_SECOND, "shot-1")
     assert f"fade=t=in:st=0:d={FADE_S}" in res
     assert "fade=t=out:st=1.900:d=0.100" in res
+
+
+def test_fade_filter_crossfade_raises_compile_error():
+    trans = Transition(kind="crossfade", duration_ticks=2500)
+    with pytest.raises(CompileError, match="transition kind 'crossfade' is not yet supported in the single-shot compiler"):
+        _fade_filter(trans, 2.0, DEFAULT_TICKS_PER_SECOND, "shot-1")
 
 
 def test_cut_transition_in_compiled_plan_produces_clean_cut_without_fade():

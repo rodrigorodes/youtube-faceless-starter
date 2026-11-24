@@ -347,6 +347,43 @@ def test_video_asset_compiles_to_a_trimmed_segment_instead_of_ken_burns():
     assert "fps=25" in graph
 
 
+def test_video_asset_trim_exceeding_duration_raises_compile_error():
+    plan = plan_with(
+        [StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration="Primeira cena do vídeo.", speech_seconds=2.0)],
+        assets=[image_ref().model_copy(update={"media_type": "video", "metadata": {"codec": "h264", "width": "1920", "height": "1080", "duration_ticks": str(plan_with([]).timeline.duration_ticks if False else 70000)}})],
+    )
+    # Cenario 1: duration_ticks do asset é menor que a duração do shot
+    short_duration = 50000
+    video = descriptor_for("asset-01", media_type="video", codec="h264", duration_ticks=short_duration, uri="clip/1.mp4", location="/storage/1.mp4")
+    with pytest.raises(CompileError, match=r"exceeding video asset duration 50000 ticks"):
+        compile_simple(plan, assets={"asset-01": video})
+
+    # Cenario 2: duration_ticks do asset é suficiente para a duração pura mas não com offset
+    plan_with_offset = plan.model_copy(
+        update={
+            "timeline": plan.timeline.model_copy(
+                update={
+                    "scenes": (
+                        plan.timeline.scenes[0].model_copy(
+                            update={
+                                "shots": [
+                                    plan.timeline.scenes[0].shots[0].model_copy(
+                                        update={"asset_offset_ticks": 10000}
+                                    ),
+                                ]
+                            }
+                        ),
+                    )
+                }
+            )
+        }
+    )
+    video_just_enough = descriptor_for("asset-01", media_type="video", codec="h264", duration_ticks=70000, uri="clip/1.mp4", location="/storage/1.mp4")
+    # shot tem 70000 ticks + 10000 offset = 80000 ticks > 70000
+    with pytest.raises(CompileError, match=r"requires 80000 ticks \(offset 10000 \+ duration 70000\), exceeding video asset duration 70000 ticks"):
+        compile_simple(plan_with_offset, assets={"asset-01": video_just_enough})
+
+
 def test_text_asset_compiles_to_an_executor_rendered_card():
     plan = plan_with(
         [StoryboardScene(scene_id="scene-01", asset_id="asset-01", narration="Primeira cena do vídeo.", speech_seconds=2.0)],

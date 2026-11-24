@@ -322,6 +322,11 @@ def build_render_plan(
                         f"{s.duration_s!r}s is below one tick at {tps} ticks/s; use a finer timebase"
                     )
             residue = duration_ticks - sum(shot_durations)
+            max_allowed = max(2, int(0.2 * tps))
+            if abs(residue) > max_allowed:
+                raise PlanBuildError(
+                    f"shots duration sum diverges from scene duration by {residue/tps:.3f}s; ensure shots sum matches scene duration"
+                )
             if residue != 0:
                 shot_durations[-1] += residue
             if shot_durations[-1] < 1:

@@ -125,7 +125,7 @@ def test_render_plan_multishot_real_ffmpeg_e2e(tmp_path: Path):
             content_sha256=video_sha,
             media_type="video",
             license="CC0",
-            metadata={"codec": "h264", "width": "1080", "height": "1920", "duration_ticks": "100"},
+            metadata={"codec": "h264", "width": "1080", "height": "1920", "duration_ticks": "100000"},
         ),
         AssetReference(
             asset_id="asset-img-2",
@@ -164,7 +164,7 @@ def test_render_plan_multishot_real_ffmpeg_e2e(tmp_path: Path):
             codec="h264",
             width=1080,
             height=1920,
-            duration_ticks=100,
+            duration_ticks=100000,
             byte_size=video_path.stat().st_size,
         ),
         "asset-img-2": AssetDescriptor(
