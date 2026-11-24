@@ -51,7 +51,7 @@ import math
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from .contracts import VideoFormat, _Model
 from .render import FPS, MAX_SECONDS, MIN_SECONDS, SIZE
@@ -176,18 +176,31 @@ class Effects(_PlanModel):
     motion: Motion = "none"
 
 
-class Transition(_PlanModel):
-    """Transição para o próximo shot; só o fade existe no renderer atual."""
+class AudioMix(_PlanModel):
+    """Parâmetros declarativos da mixagem de áudio do plano."""
 
-    kind: Literal["none", "fade"] = "none"
+    music_gain: float = 0.40
+    ducking_threshold: float = 0.02
+    ducking_ratio: float = 10.0
+    afade_in_s: float = 0.25
+    afade_out_s: float = 0.25
+    loudnorm_i: float = -16.0
+    loudnorm_tp: float = -1.5
+    loudnorm_lra: float = 11.0
+
+
+class Transition(_PlanModel):
+    """Transição para o próximo shot."""
+
+    kind: Literal["none", "fade", "crossfade", "cut"] = "none"
     duration_ticks: Tick = 0
 
     @model_validator(mode="after")
     def _duration_matches_kind(self):
-        if self.kind == "none" and self.duration_ticks != 0:
-            raise ValueError("a 'none' transition has no duration")
-        if self.kind == "fade" and self.duration_ticks < 1:
-            raise ValueError("a 'fade' transition needs a positive duration")
+        if self.kind in ("none", "cut") and self.duration_ticks != 0:
+            raise ValueError(f"a {self.kind!r} transition has no duration")
+        if self.kind in ("fade", "crossfade") and self.duration_ticks < 1:
+            raise ValueError(f"a {self.kind!r} transition needs a positive duration")
         return self
 
 
@@ -204,6 +217,7 @@ class Shot(_PlanModel):
     start_tick: Tick
     duration_ticks: DurationTick
     asset_ref: NonBlank
+    asset_offset_ticks: Tick = 0
     role: Literal["base", "overlay"] = "base"
     z_index: Annotated[int, Field(ge=0, strict=True)] = 0
     composition: Composition | None = None
@@ -541,6 +555,15 @@ class RenderPlan(_Model):
     # F03.T03: identidade da configuração efetiva lida no início do render. Opcional para que
     # documentos versionados antes da fatia continuem legíveis (o campo tem default).
     config_snapshot: ConfigSnapshot | None = None
+    audio_mix: AudioMix = Field(default_factory=AudioMix)
+    schema_version: int = 2
+
+    @field_validator("schema_version")
+    @classmethod
+    def _known_version(cls, value: int) -> int:
+        if value not in (1, 2):
+            raise ValueError(f"unsupported schema_version {value!r}; expected 1 or 2")
+        return value
 
     @model_validator(mode="after")
     def _references_and_output(self):
@@ -581,3 +604,19 @@ class RenderPlan(_Model):
                 f"({minimum} ticks)"
             )
         return self
+
+
+def upconvert_v1_to_v2(data: dict) -> dict:
+    """Converte dicionário de plano v1 para v2.
+
+    Adiciona audio_mix default se ausente e define schema_version = 2.
+    """
+    version = data.get("schema_version", 1)
+    if version not in (1, 2):
+        raise ValueError(f"unsupported schema_version {version!r} for upconversion; expected 1 or 2")
+    converted = dict(data)
+    converted["schema_version"] = 2
+    if "audio_mix" not in converted or converted["audio_mix"] is None:
+        converted["audio_mix"] = AudioMix().model_dump(mode="json")
+    return converted
+

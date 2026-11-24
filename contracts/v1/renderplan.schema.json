@@ -75,6 +75,54 @@
       "title": "AssetReference",
       "type": "object"
     },
+    "AudioMix": {
+      "additionalProperties": false,
+      "description": "Parâmetros declarativos da mixagem de áudio do plano.",
+      "properties": {
+        "afade_in_s": {
+          "default": 0.25,
+          "title": "Afade In S",
+          "type": "number"
+        },
+        "afade_out_s": {
+          "default": 0.25,
+          "title": "Afade Out S",
+          "type": "number"
+        },
+        "ducking_ratio": {
+          "default": 10.0,
+          "title": "Ducking Ratio",
+          "type": "number"
+        },
+        "ducking_threshold": {
+          "default": 0.02,
+          "title": "Ducking Threshold",
+          "type": "number"
+        },
+        "loudnorm_i": {
+          "default": -16.0,
+          "title": "Loudnorm I",
+          "type": "number"
+        },
+        "loudnorm_lra": {
+          "default": 11.0,
+          "title": "Loudnorm Lra",
+          "type": "number"
+        },
+        "loudnorm_tp": {
+          "default": -1.5,
+          "title": "Loudnorm Tp",
+          "type": "number"
+        },
+        "music_gain": {
+          "default": 0.4,
+          "title": "Music Gain",
+          "type": "number"
+        }
+      },
+      "title": "AudioMix",
+      "type": "object"
+    },
     "Composition": {
       "additionalProperties": false,
       "description": "Como o conteúdo do shot preenche o quadro.",
@@ -352,6 +400,12 @@
       "additionalProperties": false,
       "description": "Elemento visual em uma faixa temporal, dentro de uma cena.\n\n``role`` distingue a base (que cobre a cena) do overlay de imagem (VE-01): o overlay\nvive dentro de um segmento base e não fecha lacuna. ``z_index`` ordena camadas; a base\nfica em 0 e o overlay em 1+.",
       "properties": {
+        "asset_offset_ticks": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Asset Offset Ticks",
+          "type": "integer"
+        },
         "asset_ref": {
           "minLength": 1,
           "title": "Asset Ref",
@@ -611,7 +665,7 @@
     },
     "Transition": {
       "additionalProperties": false,
-      "description": "Transição para o próximo shot; só o fade existe no renderer atual.",
+      "description": "Transição para o próximo shot.",
       "properties": {
         "duration_ticks": {
           "default": 0,
@@ -623,7 +677,9 @@
           "default": "none",
           "enum": [
             "none",
-            "fade"
+            "fade",
+            "crossfade",
+            "cut"
           ],
           "title": "Kind",
           "type": "string"
@@ -650,6 +706,9 @@
       },
       "title": "Asset Manifest",
       "type": "array"
+    },
+    "audio_mix": {
+      "$ref": "#/$defs/AudioMix"
     },
     "config_snapshot": {
       "anyOf": [
@@ -691,7 +750,7 @@
       "type": "integer"
     },
     "schema_version": {
-      "default": 1,
+      "default": 2,
       "title": "Schema Version",
       "type": "integer"
     },
