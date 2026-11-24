@@ -102,8 +102,9 @@ sequenceDiagram
   `lease heartbeat: posse perdida (...)`.
 - **Varredura periódica** (`main.py::_recovery_loop`, R03): a cada
   `STUDIO_RECOVERY_INTERVAL_SECONDS` (60 s; `0` desliga) chama `Studio.recover_orphans`
-  (grace 30 s, no máximo 50 runs por rodada). Não re-despacha run entre passos, enfileirado,
-  com lease vivo, ativo neste processo, terminal ou aguardando humano. Duas réplicas podem
+  (grace 30 s, no máximo 50 runs por rodada). Não re-despacha run entre passos (grace), enfileirado
+  neste processo (`ActiveRuns`; um run enfileirado em outra réplica pode ser re-despachado após o grace e
+  o claim neutraliza), com lease vivo, ativo neste processo, terminal ou aguardando humano. Duas réplicas podem
   despachar o mesmo run; o claim impede execução dupla (sem advisory lock). Log `warning`:
   `production: N run(s) orfao(s) re-dirigido(s) pela varredura periodica` (a contagem por
   rodada); falha: `production: varredura periodica indisponivel`.
@@ -112,6 +113,12 @@ sequenceDiagram
   manual; publicação `UPLOADING` com lease vivo ⇒ falha (aguardar); com lease vencido é marcada
   ambígua (`mark_stale_ambiguous`, por CAS na tentativa) e resultado `UNKNOWN` passa pela
   reconciliação antes de qualquer retry.
+- **Limitação conhecida (publish após queda):** o lease da etapa é de 300 s, mas o lease da
+  publicação é de 1800 s e não é renovado pelo heartbeat. Se o processo cair no meio do upload, a
+  varredura pode re-despachar a etapa enquanto o lease da publicação ainda está vivo; o handler
+  falha a etapa (nada é reenviado) e o run vira `FAILED`, exigindo retry manual após até ~30 min.
+  É seguro, mas não é recuperação automática; follow-up: devolver "ainda não" sem marcar `FAILED`
+  ou renovar também o lease da publicação.
 - **Limitação (D4):** handlers não são interrompíveis. Um render/upload em curso continua até
   terminar mesmo após perder o lease; só o estado fica protegido. Cancelamento cooperativo é
   trabalho futuro.
