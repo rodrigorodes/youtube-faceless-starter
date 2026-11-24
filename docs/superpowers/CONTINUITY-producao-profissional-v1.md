@@ -20,10 +20,10 @@ Plano mestre: `docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-
 | 2 | Inteligência: CreativeDirector + MediaIntelligence (Pexels/Pixabay, migração `0051`) | ✅ concluída |
 | 3 | Qualidade audiovisual: Pacing, AudioDirector/música CC0, legendas ASS, alinhamento por palavra | ✅ concluída |
 | 4 | UX Studio (sobre as telas existentes da UX V3) | ✅ concluída (482 testes no contêiner) |
-| **5** | **QaReport v2 (true-peak, clipping, congelamento, codecs, assets repetidos)** | **✅ concluída (496 testes no contêiner)** |
-| 6 | Vídeo piloto 3–5 min, revisado | pendente |
+| 5 | QaReport v2 (true-peak, clipping, congelamento, codecs, assets repetidos) | ✅ concluída (496 testes no contêiner) |
+| **6** | **Vídeo piloto 3–5 min, revisado e rastreabilidade de custos** | **✅ concluída (500 testes no contêiner)** |
 
-**Fase atual:** Onda 5 concluída de ponta a ponta. Entregues: contrato `QaFinding` v2 (`scene_id`, `shot_id`, `auto_fixable`, `needs_human`), novos checks determinísticos (`CHECK_TRUE_PEAK`, `CHECK_CODEC`, `CHECK_REPEATED_ASSETS`, `CHECK_FROZEN_FRAMES`), adaptador FFmpeg com True-Peak dBTP e detecção de freeze, verificador de coerência semântica textual com degradação graciosa, apresentação de achados por cena na aba de Qualidade, e snapshots de contratos atualizados (`qareport.schema.json` e `video.schema.json`). Próxima: Onda 6 (Vídeo piloto 3–5 min revisado).
+**Fase atual:** Todas as 6 Ondas concluídas de ponta a ponta com sucesso. Entregues: plano audiovisual canônico RenderPlan v2 multishot, motor de inteligência de mídia (CreativeDirector, Pexels, Pixabay), PacingEngine, AudioDirector com ducking automático de trilha CC0 e legendas ASS, evolução da UX Studio nas 5 telas existentes, motor determinístico QaReport v2 com findings estruturados por cena e análise True-Peak/freeze/codecs, rastreabilidade de custos por categoria (`usage_ledger.category` e `/studio/videos/{id}/cost-breakdown`), script de amostragem de frames e teste E2E do vídeo piloto longo (16:9, 180s, 12 cenas). Suíte final com 500 testes passando. Pronto para revisão e push do operador humano.
 
 **Estado do Git:** `main` = fast-forward da branch `feat/onda1-fundacao-renderplan-v2` (todas as
 Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked preexistente
@@ -106,13 +106,22 @@ Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked 
 - Interface da aba Qualidade no workspace (`_area_qualidade` em `panel_video_workspace.py`) apresentando achados identificados por cena (`Cena N`), badges operacionais (`⚡ Auto-correção`, `👤 Requer operador`) e ações sugeridas.
 - Snapshot de contratos atualizado (`contracts/v1/qareport.schema.json` e `contracts/v1/video.schema.json`).
 
-**Próximos passos:**
-1. Onda 6: Vídeo piloto 3–5 min, formato `long`, revisado de ponta a ponta com custos e relatório honesto.
+**Entregas da Onda 6 (concluídas):**
+- Migração `0053_usage_ledger_category.sql` adicionando `category`, `duration_ms` e `attempt` em `studio.usage_ledger`.
+- Agrupamento de custos por categoria no `PostgresUsageRepository` (`spent_by_category`) e rota REST `GET /studio/videos/{id}/cost-breakdown`.
+- Utilitário e validador de amostragem de frames `scripts/sample_pilot_frames.py` com checagem de integridade, resolução e ausência de quadros corrompidos.
+- Suíte E2E do Vídeo Piloto Longo (`tests/test_pilot_video_e2e.py`): produção completa de vídeo `long` (16:9, 1920x1080), 180s (3 minutos), 12 cenas com pacing balanceado (multishot de 35+ tomadas), trilha CC0 `29e51052.mp3` com ducking suave e loudnorm, render real via FFmpeg, QaReport v2 com cobertura `verified` e 0 achados bloqueantes, amostragem de 6 frames ao longo da timeline e registro de custos discriminados por categoria.
+- Snapshot atualizado de contratos (`contracts/v1/usageentry.schema.json`).
+- Relatório final emitido em `docs/superpowers/reports/2026-11-24-onda6-piloto-relatorio-final.md`.
+
+**Próximos passos (operador humano):**
+1. Revisão final dos relatórios e do código.
+2. Push remoto manual para o GitHub (`git push origin main`), respeitando o bloqueio de autonomia.
 
 ## 4. Validação conhecida
-- Regressão ampla completa (496 passed no contêiner com 0 falhas):
-  `TMPDIR=/tmp scripts/test-container.sh tests/test_video_production_persistence.py tests/test_panel_new_video_active.py tests/test_panel_direction_tab.py tests/test_panel_scene_multimedia.py tests/test_video_download_and_audiovisual_summary.py tests/test_qa_report_v2_contract.py tests/test_quality_v2_domain.py tests/test_quality_ffmpeg_v2.py tests/test_quality_semantic_v2.py tests/test_panel_quality_v2.py tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py tests/test_audio_director.py tests/test_script_revision_restore.py -q`
-  (496 passed em 44,78s).
+- Regressão ampla completa (500 passed no contêiner com 0 falhas):
+  `TMPDIR=/tmp scripts/test-container.sh tests/test_video_production_persistence.py tests/test_panel_new_video_active.py tests/test_panel_direction_tab.py tests/test_panel_scene_multimedia.py tests/test_video_download_and_audiovisual_summary.py tests/test_qa_report_v2_contract.py tests/test_quality_v2_domain.py tests/test_quality_ffmpeg_v2.py tests/test_quality_semantic_v2.py tests/test_panel_quality_v2.py tests/test_usage_ledger_category.py tests/test_cost_breakdown_api.py tests/test_pilot_video_e2e.py tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py tests/test_audio_director.py tests/test_script_revision_restore.py -q`
+  (500 passed no contêiner).
 - Falhas **preexistentes**, fora do escopo (baseline tinha 40 no checkout compartilhado):
   `tests/test_schema_docs.py::test_committed_ddl_matches_migrations` (`docs/schema/studio.sql`
   desatualizado desde 0047) e `tests/test_script_page.py::test_roteiro_page_uses_the_shared_shell`.
