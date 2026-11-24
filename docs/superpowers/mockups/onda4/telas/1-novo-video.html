@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Faceless Studio — Novo vídeo</title>
+  <style nonce="071tePdtw4Kt-3RYc9lxVg">
+/* =========================================================================
+   Tokens e CSS do Protótipo V4/V3 (docs/backlogs/faceless-visual-evolution 2/prototype-v4-v3/index.html)
+   Compatibilidade: light-dark(var(--txt-d), var(--txt-d))
+   ========================================================================= */
+:root {
+  color-scheme: dark;
+  --bg: #0c0d10;
+  --panel: #15171c;
+  --panel2: #111216;
+  --panel3: #1c1e24;
+  --line: #2c2e37;
+  --line2: #3b3353;
+  --text: #f3f3f7;
+  --txt: #f3f3f7;
+  --muted: #a3a6b4;
+  --sub: #90939f;
+  --accent: #8f6ef7;
+  --accent2: #b9a3ff;
+  --accentbg: #221d33;
+  --accentfill: #8f6ef7;
+  --onaccent: #14101f;
+  --ok: #7fd0a8;
+  --okbg: #1d6b48;
+  --good: #7fd0a8;
+  --warn: #ecc27a;
+  --bad: #f08a8a;
+  --err: #f08a8a;
+  --radius: 12px;
+  --hero: linear-gradient(120deg, #1e1b2d, #16161e 68%);
+  --soft: #221d33;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color-scheme: dark;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, h3, h4, p { margin: 0; }
+a { color: var(--accent2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Grid e Casca Principal */
+.app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+.side {
+  background: var(--panel2);
+  border-right: 1px solid var(--line);
+  padding: 18px 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.logo { display: flex; align-items: center; gap: 10px; padding: 4px 10px 16px; font-weight: 780; font-size: 16px; color: var(--text); }
+.logo i { font-style: normal; color: var(--accent2); font-size: 20px; }
+.side nav { display: flex; flex-direction: column; gap: 2px; }
+.side nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.side nav li { margin: 0; padding: 0; }
+.side nav a, .side nav button {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 560;
+  text-decoration: none;
+}
+.side nav a svg, .side nav button svg {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+.side nav a span[aria-hidden="true"], .side nav button span[aria-hidden="true"] {
+  font: inherit;
+}
+.side nav a:hover, .side nav button:hover { background: var(--panel3); color: var(--text); text-decoration: none; }
+.side nav a[aria-current=page], .side nav button[aria-current=page] {
+  background: var(--accentbg);
+  color: var(--accent2);
+  box-shadow: inset 0 0 0 1px var(--line2);
+}
+.side nav a:focus-visible, .side nav button:focus-visible, .btn:focus-visible, .tab:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+}
+.side .sp { flex: 1; }
+.budget {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: auto;
+}
+.bar { height: 6px; background: var(--panel3); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.bar > b { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+
+/* Topbar */
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: rgba(12, 13, 16, 0.92);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
+.top .l, .top .r { display: flex; align-items: center; gap: 10px; }
+.top .crumb { font-size: 13px; color: var(--muted); margin: 0; }
+.top .crumb b { color: var(--text); }
+.content { padding: 26px 28px 120px; max-width: 1240px; width: 100%; margin: 0 auto; }
+
+/* Tipografia e Títulos */
+.eyebrow { font-size: 11px; font-weight: 750; letter-spacing: 0.8px; text-transform: uppercase; color: var(--accent2); }
+h1 { font-size: 26px; font-weight: 780; letter-spacing: -0.3px; color: var(--text); }
+h2 { font-size: 19px; font-weight: 720; color: var(--text); }
+h3 { font-size: 15px; font-weight: 700; color: var(--text); }
+.sub { color: var(--muted); font-size: 13px; }
+.head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+
+/* Aliases das classes legadas: telas que ainda usam o vocabulário antigo herdam a tipografia do protótipo */
+.h1 { font-size: 26px; font-weight: 780; letter-spacing: -0.3px; color: var(--text); }
+.lead, .vazio { color: var(--muted); font-size: 13px; }
+.micro, .dica { font-size: 11.5px; color: var(--muted); }
+.secao-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.pilha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Cards, Grids e Layout */
+.hero {
+  background: var(--hero);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 26px;
+  margin-bottom: 24px;
+}
+.card, .painel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+.card.flat { background: var(--panel2); }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.between { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.two { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; }
+
+/* Botões */
+.btn {
+  cursor: pointer;
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.btn:hover { border-color: var(--accent); text-decoration: none; }
+.btn.primary, .btn-primary, .btn-primario {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #14101f !important;
+  font-weight: 760;
+  box-shadow: 0 4px 16px rgba(143, 110, 247, 0.28);
+}
+.btn.primary:hover, .btn-primary:hover, .btn-primario:hover { filter: brightness(1.08); }
+.btn.ok { background: var(--okbg); border-color: var(--okbg); color: #fff; font-weight: 740; }
+.btn.danger, .btn-danger { background: transparent; border-color: rgba(240, 138, 138, 0.45); color: var(--bad); font-weight: 650; }
+.btn.danger:hover, .btn-danger:hover { background: rgba(240, 138, 138, 0.12); border-color: var(--bad); }
+.acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 2px 0 14px; }
+.campo-rejeicao { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.btn.ghost, .btn-ghost { background: transparent; border-color: var(--line); }
+.btn.ghost:hover, .btn-ghost:hover { background: var(--panel3); }
+.btn.small, .btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 7px; }
+.btn.long { width: 100%; }
+.choice { cursor: pointer; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: left; display: block; width: 100%; color: var(--text); font: inherit; font-size: 14px; line-height: 1.5; }
+.choice[aria-pressed=true] { border: 2px solid var(--accent); background: var(--accentbg); padding: 13px; }
+.btn[disabled], .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; pointer-events: none; }
+
+/* Pílulas (Pills) e Badges */
+.pill {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 11px;
+  font-size: 12px;
+  color: var(--text);
+}
+.pill.accent { background: var(--accentbg); border-color: var(--accent); color: var(--accent2); font-weight: 650; }
+.pill.ok, .pill.good, .pill-good, .pill-ok { background: rgba(127, 208, 168, 0.13); border-color: rgba(127, 208, 168, 0.35); color: var(--ok); }
+.pill.warn, .pill.espera, .pill-espera, .pill-warn { background: rgba(236, 194, 122, 0.12); border-color: rgba(236, 194, 122, 0.35); color: var(--warn); }
+.pill.bad, .pill-bad, .pill-FAILED, .pill-REJECTED { background: rgba(240, 138, 138, 0.12); border-color: rgba(240, 138, 138, 0.35); color: var(--bad); }
+.pill.info, .pill-info { background: var(--accentbg); border-color: var(--line2); color: var(--accent2); }
+.pill.btnlike { cursor: pointer; }
+.pill.btnlike:hover { border-color: var(--accent); }
+
+/* Avisos e Notas */
+.note, .aviso {
+  background: rgba(236, 194, 122, 0.09);
+  border: 1px solid rgba(236, 194, 122, 0.28);
+  color: var(--warn);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+}
+.note.info, .aviso.info, .aviso-info { background: var(--accentbg); border-color: var(--line2); color: var(--accent2); }
+.note.okn, .aviso.ok, .aviso-ok { background: rgba(127, 208, 168, 0.1); border-color: rgba(127, 208, 168, 0.3); color: var(--ok); }
+
+/* Abas (Tabs) */
+.tabs, .abas-video {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+.tab, .aba, .aba-link {
+  all: unset;
+  cursor: pointer;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tab:hover, .aba:hover, .aba-link:hover { color: var(--text); text-decoration: none; }
+.tab[aria-current=page], .aba[aria-current=page], .aba.ativa, .tab.ativa {
+  color: var(--accent2);
+  border-bottom-color: var(--accent);
+}
+.tab .dot, .aba .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background: var(--warn);
+}
+
+/* Campos e Inputs */
+.field, .campo { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.field > label, .campo > label, .lbl, .rotulo { font-size: 12px; color: var(--muted); font-weight: 600; }
+input[type=text], input[type=url], input[type=datetime-local], input[type=number], input.input, select, textarea {
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+  outline: none;
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: vertical; line-height: 1.55; }
+input[type=range] { accent-color: var(--accent); width: 100%; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
+
+/* Segmented Controls (Pills selector) */
+.seg {
+  display: inline-flex;
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 2px;
+}
+.seg button, .seg .seg-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: 18px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.seg button[aria-pressed=true], .seg .seg-btn[aria-pressed=true], .seg button.on {
+  background: var(--accentbg);
+  color: var(--accent2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Cartões de Modo e Escolha */
+.modecard {
+  cursor: pointer;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  text-align: left;
+  display: block;
+  width: 100%;
+}
+.modecard[aria-pressed=true] {
+  border: 2px solid var(--accent);
+  background: var(--accentbg);
+  padding: 17px;
+}
+.modecard h3 { margin: 6px 0 4px; }
+
+/* Storyboard, Mídia e Cenas */
+.thumb {
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.thumb .tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.66);
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.thumb .time {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.66);
+  color: var(--accent2);
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.scene {
+  display: grid;
+  grid-template-columns: 230px 1fr 210px;
+  gap: 16px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  align-items: start;
+}
+.scene.active { border-color: var(--line2); }
+.scene .num { font-size: 11px; font-weight: 750; color: var(--accent2); letter-spacing: 0.5px; }
+.scene textarea { background: var(--bg); font-size: 13.5px; }
+.player { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 10px; }
+.prog { height: 4px; background: var(--panel3); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+.prog b { display: block; height: 100%; width: 0; background: var(--accent2); }
+
+/* Dock Flutuante */
+.dock {
+  position: fixed;
+  left: calc(232px + 28px);
+  right: 28px;
+  bottom: 18px;
+  max-width: 1184px;
+  margin: 0 auto;
+  background: rgba(21, 23, 28, 0.96);
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  z-index: 25;
+  backdrop-filter: blur(8px);
+  flex-wrap: wrap;
+}
+
+/* Gates e Verificações */
+.gate {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 14px;
+  align-items: center;
+}
+.gate small { display: block; color: var(--muted); font-size: 11.5px; }
+
+/* Tabela de Vídeos */
+.vtable, .tabela-lista { width: 100%; border-collapse: collapse; }
+.vtable th, .tabela-lista th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.vtable td, .tabela-lista td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.vtable tr.click { cursor: pointer; }
+.vtable tr.click:hover td { background: var(--panel); }
+
+/* Frame de Prévia e Composição */
+.frame {
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+}
+.frame.r169 { aspect-ratio: 16/9; width: 100%; }
+.frame.r916 { aspect-ratio: 9/16; width: 230px; }
+.frame .bg { position: absolute; inset: 0; animation: ken 12s ease-in-out infinite alternate; }
+@keyframes ken { from { transform: scale(1); } to { transform: scale(1.08); } }
+.frame.static .bg { animation: none; }
+.toast { position: fixed; right: 22px; top: 70px; background: var(--panel); border: 1px solid var(--accent); color: var(--text); padding: 10px 16px; border-radius: 10px; z-index: 80; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); font-size: 13px; max-width: 360px; }
+.chart { display: flex; align-items: flex-end; gap: 8px; height: 130px; padding-top: 10px; }
+.chart div { flex: 1; background: linear-gradient(180deg, var(--accent), #4a3a8a); border-radius: 5px 5px 0 0; min-height: 4px; position: relative; }
+.chart div span { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); }
+.cap {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  text-align: center;
+  font-weight: 750;
+  text-shadow: 0 2px 6px #000;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.track { display: flex; align-items: center; gap: 10px; font-size: 11.5px; margin-bottom: 6px; }
+.track > span { width: 70px; color: var(--muted); flex: none; }
+.track > div {
+  flex: 1;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  background: var(--panel3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Modais e Diálogos */
+dialog, dialog.modal, .modal {
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  padding: 22px;
+  width: min(560px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+dialog::backdrop { background: rgba(5, 5, 8, 0.72); overflow: hidden; overscroll-behavior: contain; }
+.modal-header, .dialogo-cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.modal-header h2, .modal-header h3, .dialogo-cab h2, .dialogo-cab h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 750;
+  color: var(--txt);
+}
+.modal-close, button[data-fechar-dialogo] {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close:hover, button[data-fechar-dialogo]:hover {
+  background: var(--panel2);
+  color: var(--txt);
+}
+.modal-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Utilitários */
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 12px; top: 12px; z-index: 100; background: var(--panel); padding: 10px; }
+.canal-select { width: auto; min-width: 210px; max-width: 100%; }
+.seg .seg-btn:has(input:checked) { background: var(--accentbg); color: var(--accent2); box-shadow: inset 0 0 0 1px var(--accent); }
+.seg .seg-btn:focus-within, .modecard:focus-within { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.tog { display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none; }
+.tog input { position:absolute;opacity:0; }
+.tog i { width:34px;height:20px;border-radius:12px;background:var(--panel3);border:1px solid var(--line);position:relative;flex:none;pointer-events:none;transition:0.15s; }
+.tog i:after { content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:0.15s; }
+.tog input:checked+i { background:var(--accentbg);border-color:var(--accent); }
+.tog input:checked+i:after { left:16px;background:var(--accent2); }
+.tog input:focus-visible+i { outline:2px solid var(--accent2);outline-offset:2px; }
+.feedback:empty { display: none; }
+.feedback.erro { color: var(--bad); }
+.hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.sr, .sr-only { position: absolute; left: -9999px; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+.sample { font-size: 11.5px; color: var(--muted); }
+.prog.run b { animation: fill var(--d, 4s) linear forwards; }
+@keyframes fill { to { width: 100%; } }
+.step { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.step:last-child { border: 0; }
+.ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; flex: none; background: var(--panel3); border: 1px solid var(--line); color: var(--muted); }
+.ic.ok { background: var(--okbg); border-color: var(--okbg); color: #fff; }
+.ic.run { border-color: var(--accent); color: var(--accent2); animation: pulse 1s infinite; }
+.ic.fail { background: #6b1d1d; border-color: #6b1d1d; color: #fff; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(143, 110, 247, 0.25); } }
+details.diag { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+details.diag summary { cursor: pointer; font-weight: 650; color: var(--muted); }
+
+/* Responsividade */
+@media (max-width: 1000px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .side nav, .side nav ul { flex-direction: row; flex-wrap: wrap; }
+  .grade, .grade-tendencias { grid-template-columns: minmax(0, 1fr); }
+  .pill { max-width:100%; }
+  .top .l, .top .r, .row, .between { min-width:0; }
+  .cartao-tendencia, .cartao-projeto { min-width:0; overflow-wrap:anywhere; }
+  .side .budget, .side .sp { display: none; }
+  .scene, .two, .grid2, .grid3, .grid4 { grid-template-columns: 1fr; }
+  .two > *, .scene > * { min-width: 0; }  /* o protótipo estoura a largura aqui (trilhas nowrap); não repetimos o defeito */
+  .dock { left: 12px; right: 12px; bottom: 64px; }
+  .content { padding: 18px 14px 150px; }
+  .top { padding: 12px 14px; flex-wrap: wrap; }
+  .top .l, .top .r { flex-wrap: wrap; }
+  #chstyle { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Utilitários específicos do produto */
+.nota-custo { font-size: 12px; color: var(--muted); padding: 4px 11px 8px; margin: 0; }
+.feedback { font-size: 12px; color: var(--muted); min-height: 18px; margin: 8px 0 0; }
+.feedback[data-tipo="erro"] { color: var(--warn); font-weight: 600; }
+.cartao-projeto, .cartao-tendencia {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+}
+.grade, .grade-tendencias {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.campo-tema { margin-top: 10px; }
+.tabela-lista, .tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-lista th, .tabela-lista td, .tabela th, .tabela td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tabela-lista th, .tabela th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+.tabela-kv { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabela-kv th, .tabela-kv td { padding: 8px 0; border-bottom: 1px solid var(--line); text-align: left; }
+.tabela-kv th { color: var(--muted); width: 35%; font-weight: normal; }
+.tabela-kv td { color: var(--text); font-weight: 600; }
+.kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.kv:last-child { border-bottom: 0; }
+.kv span:last-child { color: var(--text); font-weight: 600; }
+
+/* Spinner e barra de progresso */
+@keyframes spin { to { transform: rotate(1turn); } }
+.btn.carregando::before, .btn.is-loading::before {
+  content: ''; display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: spin 0.75s linear infinite; vertical-align: -2px;
+}
+#barra-progresso-topo {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+  background: var(--accent); z-index: 99999;
+  transition: width 0.25s ease, opacity 0.3s ease; pointer-events: none; opacity: 0;
+}
+#barra-progresso-topo.ativo { opacity: 1; }
+#barra-progresso-topo.finalizado { width: 100% !important; opacity: 0; }
+#indicador-carregando {
+  position: fixed; bottom: 24px; right: 24px; z-index: 99999;
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+  border-radius: 999px; padding: 8px 16px; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); pointer-events: none; opacity: 0;
+  transition: opacity 0.2s ease;
+}
+#indicador-carregando.ativo { opacity: 1; }
+.indicador-spinner {
+  width: 14px; height: 14px; border: 2px solid var(--accent);
+  border-right-color: transparent; border-radius: 50%;
+  animation: spin 0.75s linear infinite; flex-shrink: 0;
+}
+
+/* Modais e diálogos */
+.dialogo-corpo .campo input, .dialogo-corpo .campo select { width: 100%; }
+.modal-card { width: 100%; }
+.modal-close { background: transparent; border: 0; font-size: 18px; color: var(--muted); cursor: pointer; }
+.modal-close:hover { color: var(--text); }
+.modal-footer { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
+.form-feedback { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* Configurações grid */
+.grade-config { display: flex; flex-direction: column; gap: 0; }
+.grade-config > nav, .config-corpo { width:100%; min-width:0; }
+.menu-config { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); }
+.menu-config a {
+  display: block; padding: 10px 14px; color: var(--muted); font-weight: 600; text-decoration: none; border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.menu-config a:hover { background: var(--panel2); color: var(--text); }
+.menu-config a[aria-current=page] { color:var(--accent2); border-bottom-color:var(--accent); }
+.config-corpo { display: flex; flex-direction: column; gap: 18px; }
+
+/* Galeria de estilos (novo vídeo / biblioteca) */
+.galeria { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cartao-estilo {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel2);
+  padding: 14px; cursor: pointer; display: block; text-align: left;
+}
+.cartao-estilo:has(input:checked) { border: 2px solid var(--accent); background: var(--accentbg); padding: 13px; }
+.cartao-estilo:focus-within { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.cartao-estilo .amostra {
+  height: 54px; margin-bottom: 8px; border-radius: 9px; border: 1px solid var(--line);
+  background: linear-gradient(135deg, var(--panel3), var(--panel2)); display: grid; place-items: center;
+  font-weight: 700; font-size: 11px; letter-spacing: 0.5px; color: var(--accent2); text-align: center; padding: 0 8px;
+}
+.cartao-estilo .cartao-rodape { font-size: 12.5px; font-weight: 700; display: block; color: var(--text); }
+
+/* Linha de busca e filtros da biblioteca de vídeos */
+.linha-busca { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.filtros { border: 0; padding: 0; margin: 0; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pills .pill { cursor: pointer; }
+.pills .pill:has(input:checked) { background: var(--accentbg); border-color: var(--accent); color: var(--accent2); font-weight: 650; }
+.field[hidden] { display:none; }
+.between.sub b { color:var(--text); }
+@media(max-width:1000px) {
+  .grade, .grade-tendencias { grid-template-columns:minmax(0,1fr); }
+  .grade-config { grid-template-columns:minmax(0,1fr); }
+}
+</style>
+  
+<style>
+.mk-novo{outline:2px dashed #f5a524;outline-offset:4px;border-radius:10px;position:relative}
+.mk-tag{white-space:nowrap;display:inline-block;background:#f5a524;color:#1a1200;font:700 10px/1 system-ui;letter-spacing:.06em;padding:3px 6px;border-radius:4px;margin-left:6px;vertical-align:middle}
+.mk-tag.abs{position:absolute;top:-11px;right:10px;margin:0}
+.mk-chg{outline:2px dashed #38bdf8;outline-offset:4px;border-radius:10px;position:relative}
+.mk-tag.chg{background:#38bdf8}
+.mk-sw{width:56px;height:72px;border-radius:6px;flex:none;position:relative;overflow:hidden}
+.mk-sw i{position:absolute;left:4px;bottom:3px;font:600 9px system-ui;color:#fff;background:rgba(0,0,0,.55);padding:1px 4px;border-radius:3px;font-style:normal}
+.mk-shot{display:flex;gap:10px;align-items:center;background:var(--panel2,#16181f);border:1px solid var(--line,#2a2d38);border-radius:10px;padding:8px 10px;min-width:0}
+.mk-shots{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:10px;align-items:stretch}
+</style></head>
+<body>
+<div id="barra-progresso-topo" aria-hidden="true"></div>
+<div id="indicador-carregando" class="indicador-carregando" aria-live="polite" aria-hidden="true"><span class="indicador-spinner"></span><span id="indicador-texto">Carregando…</span></div>
+<a class="skip" href="#conteudo">Ir para o conteúdo</a>
+<div class="app">
+  <aside class="side" aria-label="Menu principal">
+    <div class="logo"><i>✦</i> Faceless Studio</div>
+    <nav aria-label="Principal">
+      <ul class="nav-list"><li><a href="/studio/panel?project_id=p1"><span aria-hidden="true">⌂</span>Início</a></li><li><a href="/studio/panel/novo-video?project_id=p1" aria-current="page"><span aria-hidden="true">✦</span>Criar vídeo</a></li><li><a href="/studio/panel/videos?project_id=p1"><span aria-hidden="true">▤</span>Vídeos</a></li><li><a href="/studio/panel/tendencias?project_id=p1"><span aria-hidden="true">◎</span>Tendências e ideias</a></li><li><a href="/studio/panel/analytics?project_id=p1"><span aria-hidden="true">▥</span>Desempenho</a></li><li><a href="/studio/panel/estilos?project_id=p1"><span aria-hidden="true">❖</span>Biblioteca</a></li><li><a href="/studio/configuracoes/canais?project_id=p1"><span aria-hidden="true">⚙</span>Configurações</a></li></ul>
+    </nav>
+    <div class="sp"></div>
+    <div class="budget" id="budget">
+      <b style="color:var(--text)">Orçamento do mês</b><br>
+      <span class="sub" style="font-size:11px">Não disponível: nenhuma chamada registrada neste mês.</span>
+      <span class="sample">Uso registrado no Studio</span>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="top">
+      <div class="l">
+        <label class="sr-only" for="canal-ativo">Canal ativo</label><select class="canal-select" id="canal-ativo"><option value="p1" selected>Mistérios do Mundo</option><option value="p2">Tech News</option><option value="__new">＋ Novo canal…</option></select>
+        
+        <span class="pill" id="chstyle">🎨 Padrão do canal · 🎙 Voz vinculada</span>
+      </div>
+      <div class="r">
+        <a class="btn primary" href="/studio/panel/novo-video?project_id=p1">✦ Criar vídeo</a>
+      </div>
+    </header>
+    <div class="content" id="conteudo">
+      <section class="pagina" id="pagina-novo-video" aria-labelledby="t-novo">
+        <div class="head">
+          <div>
+            <p class="eyebrow">CRIAR / NOVO VÍDEO</p>
+            <h1 id="t-novo">Novo vídeo do canal</h1>
+            <p class="sub">Tudo em uma tela. Voz e estilo vêm do canal e você pode trocar só para este vídeo.</p>
+          </div>
+        </div>
+        
+
+        <form id="form-novo-video" novalidate>
+          <div class="two">
+            <div class="stack">
+              <div class="card">
+                <h3 style="margin-bottom:10px">1 · Como você quer produzir?</h3>
+                <fieldset class="pills" style="border:0;padding:0;margin:0">
+                  <legend class="sr-only">Modo de produção</legend>
+                  <div class="grid2">
+                    <label class="modecard" id="card-modo-piloto" style="cursor:pointer" aria-pressed="true">
+                      <input type="radio" name="modo-producao" value="piloto" checked class="sr-only">
+                      <span class="pill ok">⚡ Rápido · 1 clique</span>
+                      <h3>Piloto automático</h3>
+                      <p class="sub">Gera roteiro, voz, imagens e composição de ponta a ponta com os padrões do canal. Você só aprova no final.</p>
+                    </label>
+                    <label class="modecard" id="card-modo-diretor" style="cursor:pointer" aria-pressed="false">
+                      <input type="radio" name="modo-producao" value="diretor" class="sr-only">
+                      <span class="pill accent">🎬 Controle total</span>
+                      <h3>Modo Diretor</h3>
+                      <p class="sub">Cria o roteiro em cenas e para. Você edita texto, mídia, voz e legendas antes de renderizar.</p>
+                    </label>
+                  </div>
+                </fieldset>
+              </div>
+
+              <div class="card">
+                <h3 style="margin-bottom:10px">2 · Tema ou roteiro</h3>
+                <div class="field">
+                  <label for="tema-novo">Tema do vídeo</label>
+                  <input type="text" id="tema-novo" name="topic" minlength="3" maxlength="300" required
+                            placeholder="Ex.: A cidade subterrânea de Derinkuyu">
+                  <p class="campo-erro" id="erro-tema" style="display:none;color:var(--bad)">Informe o tema do vídeo (mínimo de 3 caracteres).</p>
+                </div>
+                <div class="field"><label class="tog"><input type="checkbox" id="usar-roteiro"><i></i><span>Já tenho um roteiro pronto para colar</span></label></div>
+                <div id="campo-roteiro" hidden>
+                <div class="field">
+                  <label for="roteiro-pronto">Roteiro pronto (opcional)</label>
+                  <textarea id="roteiro-pronto" name="script" rows="4" maxlength="50000"
+                            placeholder="Cole seu roteiro ou escreva depois. Separe as cenas por uma linha em branco."></textarea>
+                  <p class="sub" style="font-size:11px;margin-top:4px">Seu texto será preservado nas fontes e usado na criação das cenas.</p>
+                </div>
+                <div class="field">
+                  <label for="roteiro-url">Link de referência do texto <span aria-hidden="true">*</span></label>
+                  <input type="url" id="roteiro-url" name="script-url" placeholder="https://..."
+                         aria-describedby="roteiro-url-regra">
+                  <p class="sample" id="roteiro-url-regra">De onde vem o texto (artigo, vídeo, documento). O Studio exige um link http(s)
+                    e ele aparece em «Fontes» na descrição do vídeo publicado.</p>
+                  <p class="campo-erro" id="erro-roteiro-url" style="display:none;color:var(--bad)">Informe um link http(s) válido para o texto colado.</p>
+                </div>
+                </div>
+                <div class="field" id="estrutura-roteiro">
+                  <label for="estrutura">Estrutura do roteiro</label>
+                  <select id="estrutura" disabled><option>Definida pelo perfil editorial do canal</option></select>
+                </div>
+              </div>
+
+              <details class="diag" id="video-custom" open>
+                <summary>Personalizar este vídeo · formato, voz e estilo</summary>
+              <div class="card">
+                <h3 style="margin-bottom:10px">3 · Formato, voz e estilo</h3>
+                <div class="row" style="margin-bottom:14px">
+                  <span class="lbl">Formato</span>
+                  <fieldset class="pills seg" id="seg-formato-novo" style="margin:0;padding:2px;gap:0;flex-wrap:nowrap">
+                    <legend class="sr-only">Formato</legend>
+                    <label class="seg-btn"><input type="radio" name="formato-novo" value="short" checked class="sr-only"><span>Short · 9:16</span></label>
+                    <label class="seg-btn"><input type="radio" name="formato-novo" value="long" class="sr-only"><span>Vídeo · 16:9</span></label>
+                  </fieldset>
+                  <label class="lbl" for="duracao-alvo" style="margin-left:10px">Duração alvo</label>
+                  <span class="mk-chg" style="display:inline-flex;align-items:center;gap:6px;padding:2px 4px"><select id="duracao-alvo" name="duration" style="width:auto"><option>30 s</option><option selected>60 s</option><option>3 min</option><option>5 min</option></select><span class="mk-tag chg ">AGORA É ENVIADO</span></span>
+                </div>
+                <div class="mk-novo" style="margin:0 0 14px;padding:10px 12px"><span class="mk-tag  abs">NOVO</span><p class="lbl" style="margin-bottom:6px">Ritmo de cortes</p><div class="seg" role="group" style="display:inline-flex"><label class="seg-btn"><input type="radio" class="sr-only" name="pacing" value="dynamic" checked>⚡ Dinâmico</label><label class="seg-btn"><input type="radio" class="sr-only" name="pacing" value="balanced">Balanceado</label><label class="seg-btn"><input type="radio" class="sr-only" name="pacing" value="cinematic">Cinemático</label></div><p class="sample" style="margin-top:6px">Dinâmico: um corte a cada ~2,5 s (1,5–3,5 s). Balanceado: ~3,5 s. Cinemático: ~5 s. Cena longa com uma só imagem é dividida em tomadas com zoom/pan alternados.</p></div><div class="mk-novo" style="margin:0 0 14px;padding:10px 12px"><span class="mk-tag  abs">NOVO</span><label class="lbl" for="teto-custo">Teto de custo deste vídeo (US$)</label><input type="text" id="teto-custo" value="" placeholder="Opcional · padrão do servidor" style="max-width:260px"><p class="sample" style="margin-top:6px">A produção para antes de ultrapassar este valor.</p></div><p class="lbl" style="margin-bottom:6px">Voz do narrador <span class="pill" style="margin-left:6px">padrão do canal</span></p>
+                <div class="row" style="margin-bottom:14px">
+                  <span class="pill accent">pt-BR · Fábio</span>
+                  <span class="sample">A voz vem do canal; a troca por vídeo ainda não está disponível.</span>
+                </div>
+                <p class="lbl" style="margin-bottom:6px">Estilo visual <span class="pill" style="margin-left:6px">vinculado ao canal</span></p>
+                <div role="radiogroup" aria-label="Estilo visual"><div class="grid3"><label class="choice" data-estilo-choice aria-pressed="true"><input type="radio" name="estilo-novo" value="" checked class="sr-only"><div class="thumb" style="height:54px;background:linear-gradient(135deg,#2b2540,#15171c);margin-bottom:8px"><span style="font-size:22px">🎨</span></div><b style="font-size:12.5px">Documentário Sombrio</b></label><label class="choice" data-estilo-choice aria-pressed="false"><input type="radio" name="estilo-novo" value="s2" class="sr-only"><div class="thumb" style="height:54px;background:linear-gradient(135deg,#2b2540,#15171c);margin-bottom:8px"><span style="font-size:22px">🎨</span></div><b style="font-size:12.5px">Neon Tech</b></label></div></div>
+              </div>
+              </details>
+            </div>
+
+            <aside class="stack" style="position:sticky;top:80px">
+              <div class="card" id="resumo-card" role="group" aria-labelledby="t-preset">
+                <h3 id="t-preset">Resumo</h3>
+                <p class="sub" style="margin:4px 0 12px">Mistérios do Mundo</p>
+                <div class="between sub"><span>Modo</span><b id="resumo-modo" style="color:var(--text)">Piloto automático</b></div>
+                <div class="between sub"><span>Formato</span><b id="resumo-formato" style="color:var(--text)">Short · 9:16</b></div>
+                <div class="between sub"><span>Voz</span><b style="color:var(--text)">pt-BR · Fábio</b></div>
+                <div class="between sub"><span>Estilo</span><b style="color:var(--text)">Documentário Sombrio</b></div>
+                <div class="mk-novo" style="margin:6px 0"><span class="mk-tag  abs">NOVO</span><div class="between sub"><span>Duração alvo</span><b style="color:var(--text)">60 s</b></div><div class="between sub"><span>Ritmo de cortes</span><b style="color:var(--text)">Dinâmico</b></div><div class="between sub"><span>Teto de custo</span><b style="color:var(--text)">padrão do servidor</b></div></div><div class="between sub"><span>Estimativa de custo</span><b style="color:var(--text)">Não disponível</b></div>
+                <div class="hr"></div>
+                <details class="diag" data-keep="providers-summary" id="providers-resumo">
+                  <summary>✓ Pronto para produzir</summary>
+                  <p class="lbl" style="margin-bottom:6px">Providers do canal</p>
+                  <div class="between sub" style="padding:2px 0"><span>Roteiro</span><span style="color:var(--ok)">✓ Disponível</span></div><div class="between sub" style="padding:2px 0"><span>Render</span><span style="color:var(--ok)">✓ Disponível</span></div>
+                  
+                  <div class="hr"></div>
+                </details>
+                <p class="sample" id="resumo-dica" style="margin-bottom:10px">Criar o rascunho prepara as cenas e fontes sem iniciar cobrança.</p>
+                <button class="btn primary long" type="submit" id="btn-criar-abrir">Criar e abrir vídeo →</button>
+                <p class="feedback" id="feedback-criar" role="status" style="margin-top:8px"></p>
+              </div>
+
+              <div class="note info">O canal tem estilo e voz vinculados. Mudar aqui vale só para este vídeo; para mudar o padrão, use Biblioteca ou Configurações.</div>
+            </aside>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+</div>
+
+
+</body>
+</html>
