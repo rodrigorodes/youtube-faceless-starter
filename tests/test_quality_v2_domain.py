@@ -148,14 +148,14 @@ def test_codec_check_fails_on_incompatible_video_codec():
 
 
 def test_repeated_assets_in_adjacent_scenes_generates_warning():
-    # Cena 0 e Cena 1 usam o mesmo asset 'ast1'
-    plan = _dummy_plan(["ast1", "ast1"])
-    media = _base_media()
+    # Cena 0 e Cena 1 usam o mesmo asset 'ast1' em um vídeo com outros assets no manifesto
+    plan = _dummy_plan(["ast1", "ast1", "ast2"])
+    media = _base_media(duration_s=7.5)
     evidence = QualityEvidence(
         render_id="r4",
         checksum=SHA,
         media=media,
-        assets=_descriptors(["ast1"]),
+        assets=_descriptors(["ast1", "ast2"]),
         generated_at=AT,
     )
     report = evaluate_quality(plan, evidence)

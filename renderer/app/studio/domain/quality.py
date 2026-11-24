@@ -334,6 +334,8 @@ def _collect_video_flow_checks_v2(evidence, checks, findings) -> None:
 
 def _collect_scene_asset_checks_v2(plan: RenderPlan, checks, findings) -> None:
     checks.append(CHECK_REPEATED_ASSETS)
+    if len(plan.asset_manifest) <= 1:
+        return
     scenes = plan.timeline.scenes
     for i in range(1, len(scenes)):
         prev_assets = {s.asset_ref for s in scenes[i - 1].shots if s.asset_ref}
