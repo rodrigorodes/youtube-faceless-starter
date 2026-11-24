@@ -44,6 +44,11 @@
       "additionalProperties": false,
       "description": "Achado de um check: categoria, severidade, evidência e ação sugerida (F6-06).\n\n``finding_id`` identifica o achado; ``check_id`` identifica o check que o\nproduziu. Dois achados do mesmo check são válidos desde que tenham\n``finding_id`` distintos. Evidência é obrigatória e não vazia: achado sem\nevidência não é verificável. ``suggested_action`` é a correção sugerida ao\noperador; é sempre uma sugestão, nunca aplicada por este contrato.",
       "properties": {
+        "auto_fixable": {
+          "default": false,
+          "title": "Auto Fixable",
+          "type": "boolean"
+        },
         "category": {
           "enum": [
             "technical",
@@ -67,6 +72,24 @@
           "title": "Finding Id",
           "type": "string"
         },
+        "needs_human": {
+          "default": false,
+          "title": "Needs Human",
+          "type": "boolean"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Id"
+        },
         "severity": {
           "enum": [
             "blocking",
@@ -75,6 +98,19 @@
           ],
           "title": "Severity",
           "type": "string"
+        },
+        "shot_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shot Id"
         },
         "suggested_action": {
           "minLength": 1,
