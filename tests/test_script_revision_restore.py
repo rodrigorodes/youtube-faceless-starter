@@ -224,7 +224,7 @@ def test_scene_revisions_migration_is_additive_and_backfills_the_current_version
     migrations = Path(__file__).resolve().parents[1] / "renderer/app/studio/adapters/postgres/migrations"
     target = "0046_scene_revisions.sql"
     for path in sorted(migrations.glob("*.sql")):
-        if path.name != target:
+        if path.name < target:
             shutil.copy(path, tmp_path / path.name)
     migrate(conn, tmp_path)
 
