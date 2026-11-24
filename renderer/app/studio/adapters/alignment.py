@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import string
 
 import httpx
 
@@ -12,6 +13,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_PUNCT_TO_STRIP = string.punctuation + ".,!?;:…\"'“”«»"
+
+
+def _normalize_word(w: str) -> str:
+    return w.strip(_PUNCT_TO_STRIP).lower()
 
 
 class WordAlignmentService:
@@ -45,7 +52,12 @@ class WordAlignmentService:
         path = Path(audio_path) if audio_path is not None else None
 
         if self.whisper_url and path and path.exists() and path.is_file():
-            whisper_timings = self._try_whisper_align(words=words, text=clean_text, audio_path=path)
+            whisper_timings = self._try_whisper_align(
+                words=words,
+                text=clean_text,
+                audio_path=path,
+                audio_duration_ms=audio_duration_ms,
+            )
             if whisper_timings is not None:
                 return whisper_timings
 
@@ -56,6 +68,7 @@ class WordAlignmentService:
         words: list[str],
         text: str,
         audio_path: Path,
+        audio_duration_ms: int,
     ) -> list[WordTiming] | None:
         url = f"{self.whisper_url}/align"
         try:
@@ -108,18 +121,49 @@ class WordAlignmentService:
                 return None
 
             timings: list[WordTiming] = []
-            for item in items:
+            previous_end = 0
+
+            for i, item in enumerate(items):
                 if not isinstance(item, dict):
                     return None
-                w = str(item.get("word", "")).strip()
-                if not w:
+                w_whisper = str(item.get("word", "")).strip()
+                if not w_whisper:
                     return None
+
+                # Valida similaridade textual básica com a palavra correspondente do script
+                script_word = words[i]
+                if _normalize_word(w_whisper) != _normalize_word(script_word):
+                    logger.warning(
+                        "Whisper textual divergence at word %d: whisper=%r vs script=%r",
+                        i,
+                        w_whisper,
+                        script_word,
+                    )
+                    return None
+
                 start_sec = float(item.get("start", 0.0))
                 end_sec = float(item.get("end", start_sec))
                 start_ms = max(0, int(round(start_sec * 1000)))
                 end_ms = max(start_ms, int(round(end_sec * 1000)))
+
+                # Valida monotonicidade dos intervalos (palavras fora de ordem caem no fallback)
+                if start_ms < previous_end:
+                    logger.warning(
+                        "Whisper non-monotonic timestamps at word %d: start %d < prev_end %d",
+                        i,
+                        start_ms,
+                        previous_end,
+                    )
+                    return None
+
+                # Clampa timestamps aos limites do áudio
+                end_ms = min(end_ms, audio_duration_ms)
+                start_ms = min(start_ms, end_ms)
                 duration_ms = max(0, end_ms - start_ms)
-                timings.append(WordTiming(word=w, start_ms=start_ms, duration_ms=duration_ms))
+                previous_end = end_ms
+
+                # Preserva a palavra original do script (incluindo pontuação para as legendas)
+                timings.append(WordTiming(word=script_word, start_ms=start_ms, duration_ms=duration_ms))
 
             return timings
         except Exception as exc:
@@ -149,21 +193,40 @@ class WordAlignmentService:
                 if durations[i] < 1:
                     durations[i] = 1
 
-        # Ajusta a última palavra para a soma bater exatamente audio_duration_ms
-        diff = audio_duration_ms - sum(durations)
-        durations[-1] += diff
+            # Ajusta a última palavra para a soma bater exatamente audio_duration_ms
+            diff = audio_duration_ms - sum(durations)
+            durations[-1] += diff
 
-        # Se a última palavra ficou <= 0 por ajuste negativo, redistribui de trás para frente
-        if durations[-1] <= 0 and audio_duration_ms >= len(words):
-            needed = 1 - durations[-1]
-            durations[-1] = 1
-            for i in range(len(durations) - 2, -1, -1):
-                can_reduce = durations[i] - 1
-                reduction = min(can_reduce, needed)
-                durations[i] -= reduction
-                needed -= reduction
-                if needed == 0:
-                    break
+            # Se a última palavra ficou <= 0 por ajuste negativo, redistribui de trás para frente
+            if durations[-1] <= 0:
+                needed = 1 - durations[-1]
+                durations[-1] = 1
+                for i in range(len(durations) - 2, -1, -1):
+                    can_reduce = durations[i] - 1
+                    reduction = min(can_reduce, needed)
+                    durations[i] -= reduction
+                    needed -= reduction
+                    if needed == 0:
+                        break
+        else:
+            # Caso extremo onde audio_duration_ms < len(words): garante duration_ms >= 0
+            for i in range(len(durations)):
+                if durations[i] < 0:
+                    durations[i] = 0
+
+            diff = audio_duration_ms - sum(durations)
+            durations[-1] += diff
+
+            if durations[-1] < 0:
+                needed = -durations[-1]
+                durations[-1] = 0
+                for i in range(len(durations) - 2, -1, -1):
+                    can_reduce = max(0, durations[i])
+                    reduction = min(can_reduce, needed)
+                    durations[i] -= reduction
+                    needed -= reduction
+                    if needed == 0:
+                        break
 
         result: list[WordTiming] = []
         current_start = 0

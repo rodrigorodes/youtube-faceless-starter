@@ -110,6 +110,23 @@ class TestNativeWordAlignment:
         assert [t.word for t in timings] == ["palavra", "com", "múltiplos", "espaços."]
         assert sum(t.duration_ms for t in timings) == 1500
 
+    def test_short_audio_duration_less_than_words_count_does_not_crash(self):
+        service = WordAlignmentService()
+        # 10 words with total duration of only 3 ms
+        text = "uma frase com muitas palavras para testar duracao muito curta"
+        words = text.split()
+        assert len(words) == 10
+
+        timings = service.align_words(text, 3)
+        assert len(timings) == 10
+        for t in timings:
+            assert t.start_ms >= 0
+            assert t.duration_ms >= 0
+            assert t.start_ms + t.duration_ms <= 3
+
+        assert sum(t.duration_ms for t in timings) == 3
+        assert timings[-1].start_ms + timings[-1].duration_ms == 3
+
 
 class TestWhisperWordAlignment:
     @pytest.fixture
@@ -290,6 +307,100 @@ class TestWhisperWordAlignment:
         timings = service.align_words("teste nativo", 1000, audio_path=nonexistent)
         assert not called
         assert len(timings) == 2
+
+    def test_whisper_timestamps_exceeding_audio_duration_are_clamped(self, sample_audio: Path):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {"word": "fim", "start": 0.5, "end": 1.8},
+                ],
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        service = WordAlignmentService(
+            whisper_url="http://whisper-sidecar:8000",
+            http_client=client,
+        )
+
+        timings = service.align_words("fim", 1000, audio_path=sample_audio)
+        assert len(timings) == 1
+        assert timings[0].word == "fim"
+        assert timings[0].start_ms == 500
+        assert timings[0].duration_ms == 500
+        assert timings[0].start_ms + timings[0].duration_ms <= 1000
+
+    def test_whisper_out_of_order_timestamps_fallback_to_native(self, sample_audio: Path):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {"word": "primeira", "start": 0.6, "end": 0.9},
+                    {"word": "segunda", "start": 0.2, "end": 0.5},
+                ],
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        service = WordAlignmentService(
+            whisper_url="http://whisper-sidecar:8000",
+            http_client=client,
+        )
+
+        # Non-monotonic timings: second word starts before first ends -> falls back to native
+        timings = service.align_words("primeira segunda", 1000, audio_path=sample_audio)
+        assert len(timings) == 2
+        assert timings[0].start_ms == 0
+        assert timings[1].start_ms == timings[0].duration_ms
+        assert sum(t.duration_ms for t in timings) == 1000
+
+    def test_whisper_preserves_original_script_punctuation(self, sample_audio: Path):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {"word": "olá", "start": 0.0, "end": 0.4},
+                    {"word": "mundo", "start": 0.4, "end": 1.0},
+                ],
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        service = WordAlignmentService(
+            whisper_url="http://whisper-sidecar:8000",
+            http_client=client,
+        )
+
+        # Script has punctuation "Olá, mundo!" while Whisper returned plain lowercase
+        timings = service.align_words("Olá, mundo!", 1000, audio_path=sample_audio)
+        assert len(timings) == 2
+        assert timings[0].word == "Olá,"
+        assert timings[1].word == "mundo!"
+        assert timings[0].start_ms == 0
+        assert timings[0].duration_ms == 400
+        assert timings[1].start_ms == 400
+        assert timings[1].duration_ms == 600
+
+    def test_whisper_textual_divergence_fallback_to_native(self, sample_audio: Path):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {"word": "inscreva-se", "start": 0.0, "end": 0.5},
+                    {"word": "canal", "start": 0.5, "end": 1.0},
+                ],
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        service = WordAlignmentService(
+            whisper_url="http://whisper-sidecar:8000",
+            http_client=client,
+        )
+
+        # Words completely diverge from "Olá mundo" -> fallback to native
+        timings = service.align_words("Olá mundo", 1000, audio_path=sample_audio)
+        assert len(timings) == 2
+        assert timings[0].word == "Olá"
+        assert timings[1].word == "mundo"
+        assert sum(t.duration_ms for t in timings) == 1000
 
     def test_whisper_accepts_audio_path_as_string(self, sample_audio: Path):
         def handler(request: httpx.Request) -> httpx.Response:
