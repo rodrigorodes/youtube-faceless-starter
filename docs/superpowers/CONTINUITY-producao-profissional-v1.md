@@ -19,11 +19,11 @@ Plano mestre: `docs/superpowers/plans/2026-11-24-producao-profissional-v1-onda0-
 | 1 | Fundação: RenderPlan v2, multi-shot (`scene_assets`, migração `0050`) | ✅ concluída |
 | 2 | Inteligência: CreativeDirector + MediaIntelligence (Pexels/Pixabay, migração `0051`) | ✅ concluída |
 | 3 | Qualidade audiovisual: Pacing, AudioDirector/música CC0, legendas ASS, alinhamento por palavra | ✅ concluída |
-| **4** | **UX Studio (sobre as telas existentes da UX V3)** | **✅ concluída (482 testes no contêiner)** |
-| 5 | QaReport v2 (true-peak, clipping, duplicados, assets repetidos) | pendente |
+| 4 | UX Studio (sobre as telas existentes da UX V3) | ✅ concluída (482 testes no contêiner) |
+| **5** | **QaReport v2 (true-peak, clipping, congelamento, codecs, assets repetidos)** | **✅ concluída (496 testes no contêiner)** |
 | 6 | Vídeo piloto 3–5 min, revisado | pendente |
 
-**Fase atual:** Onda 4 concluída de ponta a ponta. Entregues migração 0052, contratos, parâmetros ativos no formulário de criação, aba Direção criativa com rotas de briefing, bancada da cena com tomadas multishot, rota e botão de download do MP4, ativação de controles na Composição e snapshot atualizado de contratos. Próxima: Onda 5 (QaReport v2).
+**Fase atual:** Onda 5 concluída de ponta a ponta. Entregues: contrato `QaFinding` v2 (`scene_id`, `shot_id`, `auto_fixable`, `needs_human`), novos checks determinísticos (`CHECK_TRUE_PEAK`, `CHECK_CODEC`, `CHECK_REPEATED_ASSETS`, `CHECK_FROZEN_FRAMES`), adaptador FFmpeg com True-Peak dBTP e detecção de freeze, verificador de coerência semântica textual com degradação graciosa, apresentação de achados por cena na aba de Qualidade, e snapshots de contratos atualizados (`qareport.schema.json` e `video.schema.json`). Próxima: Onda 6 (Vídeo piloto 3–5 min revisado).
 
 **Estado do Git:** `main` = fast-forward da branch `feat/onda1-fundacao-renderplan-v2` (todas as
 Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked preexistente
@@ -98,14 +98,21 @@ Ondas 0–3 + spec da Onda 4 + mockups). Árvore limpa, exceto um zip untracked 
 - Ativação dos controles de Composição (Volume de música com valor em tempo real, switch de ducking com sidechain, estilo de legenda Destaque por palavra / karaokê e seletor de trilha CC0).
 - Snapshot atualizado de contratos (`contracts/v1/video.schema.json`).
 
+**Entregas da Onda 5 (concluídas):**
+- Contrato `QaFinding` v2 (`scene_id`, `shot_id`, `auto_fixable`, `needs_human`) retrocompatível.
+- Novos checks determinísticos: `CHECK_TRUE_PEAK` (avalia dBTP e clipping), `CHECK_CODEC` (valida H.264 e AAC), `CHECK_REPEATED_ASSETS` (alerta repetição de mídia em cenas adjacentes), `CHECK_FROZEN_FRAMES` (alerta congelamento excessivo de quadros).
+- Adaptador `FfmpegQa` atualizado com filtro `ebur128=peak=true:framelog=quiet` para medição de True Peak e `freezedetect` para análise de vídeo congelado.
+- Adaptador `TextCoherenceSemanticChecker` com verificação de integridade textual e degradação declarada na ausência de modelo.
+- Interface da aba Qualidade no workspace (`_area_qualidade` em `panel_video_workspace.py`) apresentando achados identificados por cena (`Cena N`), badges operacionais (`⚡ Auto-correção`, `👤 Requer operador`) e ações sugeridas.
+- Snapshot de contratos atualizado (`contracts/v1/qareport.schema.json` e `contracts/v1/video.schema.json`).
+
 **Próximos passos:**
-1. Onda 5: QaReport v2 (true-peak, clipping, duplicados de imagem, assets repetidos em cenas contíguas).
-2. Onda 6: Vídeo piloto 3–5 min, revisado de ponta a ponta.
+1. Onda 6: Vídeo piloto 3–5 min, formato `long`, revisado de ponta a ponta com custos e relatório honesto.
 
 ## 4. Validação conhecida
-- Regressão ampla completa (482 passed no contêiner com 0 falhas):
-  `TMPDIR=/tmp scripts/test-container.sh tests/test_video_production_persistence.py tests/test_panel_new_video_active.py tests/test_panel_direction_tab.py tests/test_panel_scene_multimedia.py tests/test_video_download_and_audiovisual_summary.py tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py tests/test_audio_director.py tests/test_script_revision_restore.py -q`
-  (482 passed em 37,5s).
+- Regressão ampla completa (496 passed no contêiner com 0 falhas):
+  `TMPDIR=/tmp scripts/test-container.sh tests/test_video_production_persistence.py tests/test_panel_new_video_active.py tests/test_panel_direction_tab.py tests/test_panel_scene_multimedia.py tests/test_video_download_and_audiovisual_summary.py tests/test_qa_report_v2_contract.py tests/test_quality_v2_domain.py tests/test_quality_ffmpeg_v2.py tests/test_quality_semantic_v2.py tests/test_panel_quality_v2.py tests/test_pacing_*.py tests/test_music_*.py tests/test_captions_*.py tests/test_word_alignment.py tests/test_render_plan_*.py tests/test_creative_director_*.py tests/test_media_*.py tests/test_contracts_snapshot.py tests/test_audio_director.py tests/test_script_revision_restore.py -q`
+  (496 passed em 44,78s).
 - Falhas **preexistentes**, fora do escopo (baseline tinha 40 no checkout compartilhado):
   `tests/test_schema_docs.py::test_committed_ddl_matches_migrations` (`docs/schema/studio.sql`
   desatualizado desde 0047) e `tests/test_script_page.py::test_roteiro_page_uses_the_shared_shell`.
