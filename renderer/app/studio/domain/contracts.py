@@ -2,6 +2,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, TypeVar
+import uuid
 
 from pydantic import Field, StringConstraints, model_validator
 
@@ -14,6 +15,12 @@ Cost = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Tokens = Annotated[int | None, Field(ge=0)]
 Privacy = Literal["private", "unlisted", "public"]
 License = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]  # licença em branco não é licença
+NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+UUIDStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+def new_id() -> str:
+    return str(uuid.uuid4())
 
 
 class VideoStatus(str, Enum):
@@ -99,6 +106,25 @@ class Script(_Model):
     claim_ids: list[str] = Field(default_factory=list)
 
 
+class SceneAsset(_Model):
+    id: UUIDStr = Field(default_factory=new_id)
+    scene_id: NonBlank
+    asset_id: NonBlank
+    position: int = Field(ge=0)
+    start_s: float = Field(ge=0.0)
+    end_s: float
+    role: Literal["base", "overlay"] = "base"
+    motion: str = "none"
+    transition_kind: str = "none"
+    transition_duration_s: float = Field(default=0.0, ge=0.0)
+
+    @model_validator(mode="after")
+    def _validate_timing(self) -> "SceneAsset":
+        if self.end_s <= self.start_s:
+            raise ValueError(f"end_s ({self.end_s}) must be greater than start_s ({self.start_s})")
+        return self
+
+
 class Scene(_Model):
     id: str
     video_id: str
@@ -112,6 +138,7 @@ class Scene(_Model):
     duration_s: float | None = Field(default=None, ge=0)
     broll_enabled: bool = False
     broll_note: str | None = None
+    assets: list[SceneAsset] = Field(default_factory=list)
 
 
 class Asset(_Model):

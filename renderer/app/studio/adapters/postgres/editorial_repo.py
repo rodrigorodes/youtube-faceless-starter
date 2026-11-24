@@ -1,5 +1,6 @@
 """Repositórios Postgres do fluxo editorial. O bloqueio da linha do vídeo (FOR UPDATE) serializa
 gerações e checagens concorrentes do mesmo vídeo: quem perde enxerga o estado novo e recebe None/False."""
+import collections
 import hashlib
 import uuid
 from collections.abc import Callable
@@ -11,7 +12,7 @@ from psycopg.types.json import Jsonb
 from ...application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUnavailable
 from ...application.ports import (FactCheckRecord, SceneDraft, SceneRevision, ScriptEditOutcome, ScriptEditRecord,
                                   ScriptRecord, ScriptRevisionSummary)
-from ...domain.contracts import FactCheckReport, Scene, Script, SourceSnapshot, UsageEntry, VideoStatus
+from ...domain.contracts import FactCheckReport, Scene, SceneAsset, Script, SourceSnapshot, UsageEntry, VideoStatus
 from ...domain.ids import check_id
 from ...domain.longform import ScriptApproval, ScriptPlan
 from ...domain.states import assert_transition
@@ -434,10 +435,57 @@ class PostgresScriptRepository(_Base):
                          (video_id, version, content_hash, decision, reason, approved_by, approved_at))
             return True
 
-    def scenes(self, video_id: str) -> list[Scene]:
+    def save_scene_assets(self, scene_id: str, assets: list[SceneAsset]) -> None:
+        with _translated(), self._connect() as conn:
+            with conn.transaction():
+                conn.execute("DELETE FROM studio.scene_assets WHERE scene_id = %s", (check_id(scene_id),))
+                for a in assets:
+                    conn.execute(
+                        "INSERT INTO studio.scene_assets "
+                        "(id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        (
+                            str(a.id),
+                            check_id(scene_id),
+                            a.asset_id,
+                            a.position,
+                            a.start_s,
+                            a.end_s,
+                            a.role,
+                            a.motion,
+                            a.transition_kind,
+                            a.transition_duration_s,
+                        ),
+                    )
+
+    def get_scene_assets(self, scene_id: str) -> list[SceneAsset]:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(f"SELECT {_SCENE} FROM studio.scenes WHERE video_id = %s ORDER BY idx", (check_id(video_id),))
-            return [Scene.model_validate(r) for r in cur.fetchall()]
+            cur.execute(
+                "SELECT id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s "
+                "FROM studio.scene_assets WHERE scene_id = %s ORDER BY position",
+                (check_id(scene_id),),
+            )
+            return [
+                SceneAsset(
+                    id=str(r["id"]),
+                    scene_id=str(r["scene_id"]),
+                    asset_id=str(r["asset_id"]),
+                    position=int(r["position"]),
+                    start_s=float(r["start_s"]),
+                    end_s=float(r["end_s"]),
+                    role=str(r["role"]),
+                    motion=str(r["motion"]),
+                    transition_kind=str(r["transition_kind"]),
+                    transition_duration_s=float(r["transition_duration_s"]),
+                )
+                for r in cur.fetchall()
+            ]
+
+    list_scene_assets = get_scene_assets
+
+    def scenes(self, video_id: str) -> list[Scene]:
+        with _translated(), self._connect() as conn:
+            return _read_scenes(conn, video_id)
 
     def latest(self, video_id: str) -> Script | None:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -445,6 +493,9 @@ class PostgresScriptRepository(_Base):
                         "ORDER BY version DESC LIMIT 1", (check_id(video_id),))
             row = cur.fetchone()
             return Script.model_validate(row) if row else None
+
+
+PostgresEditorialRepository = PostgresScriptRepository
 
 
 class PostgresFactCheckRepository(_Base):
@@ -498,7 +549,38 @@ def _read_scenes(conn, video_id: str) -> list[Scene]:
     """Cenas persistidas na transação corrente (visão do próprio escritor, sem commit intermediário)."""
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(f"SELECT {_SCENE} FROM studio.scenes WHERE video_id = %s ORDER BY idx", (check_id(video_id),))
-        return [Scene.model_validate(row) for row in cur.fetchall()]
+        scene_rows = cur.fetchall()
+        if not scene_rows:
+            return []
+        scene_ids = [r["id"] for r in scene_rows]
+        cur.execute(
+            "SELECT id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s "
+            "FROM studio.scene_assets WHERE scene_id = ANY(%s) ORDER BY position",
+            (scene_ids,),
+        )
+        asset_rows = cur.fetchall()
+        assets_by_scene: dict[str, list[SceneAsset]] = collections.defaultdict(list)
+        for r in asset_rows:
+            assets_by_scene[str(r["scene_id"])].append(
+                SceneAsset(
+                    id=str(r["id"]),
+                    scene_id=str(r["scene_id"]),
+                    asset_id=str(r["asset_id"]),
+                    position=int(r["position"]),
+                    start_s=float(r["start_s"]),
+                    end_s=float(r["end_s"]),
+                    role=str(r["role"]),
+                    motion=str(r["motion"]),
+                    transition_kind=str(r["transition_kind"]),
+                    transition_duration_s=float(r["transition_duration_s"]),
+                )
+            )
+        result = []
+        for r in scene_rows:
+            row_dict = dict(r)
+            row_dict["assets"] = assets_by_scene.get(str(r["id"]), [])
+            result.append(Scene.model_validate(row_dict))
+        return result
 
 
 def _scene_revision_from_row(row: tuple) -> SceneRevision:
