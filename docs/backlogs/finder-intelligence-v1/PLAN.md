@@ -15,3 +15,6 @@ Cada fase: reconciliar HEAD, testes existentes, delta mínimo, owner, custo, rol
 | FI-10 P2 | 10.01 contrato API; 10.02 extensão menor privilégio; 10.03 ações autorizadas; 10.04 segurança | sem scraping/segredo, aprovação distribuição |
 | FI-11 P0 | 11.01 benchmark 30 canais (ou sintéticos); 11.02 avaliação cega scanner; 11.03 tempo garimpo; 11.04 piloto integrado; 11.05 relatório | meta proposta reduzir tempo >=50%, medir precisão/cobertura/custo, GO/NO-GO |
 Dependências: 00→01→02→03; 01→04; 02/03/04→05; 05→07; 02→06; 04/05/06/07→08; 06→09; 08→10; 07 + fases aplicáveis→11. UX/testes incrementais. Dados reais somente após compliance específico; POC offline não comprova cobertura real. V4-00 e FI-00 podem avançar independentemente após autorização.
+
+## Pré-requisito compartilhado
+Reutilizar [Foundation](../foundation-stability/PLAN.md). Não duplicar testes/infraestrutura; completar somente lacunas FI-00, sem dispensar aprovação de dados derivados, armazenamento e providers. FS-03 CI/CD adiado.

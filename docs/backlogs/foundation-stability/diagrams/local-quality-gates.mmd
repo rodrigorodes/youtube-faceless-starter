@@ -1,0 +1,9 @@
+flowchart TD
+ A[Planejar delta minimo] --> B[Implementar e testar]
+ B --> C[Regressao local isolada]
+ C --> D[Review independente]
+ D --> E[Browser e render quando aplicavel]
+ E --> F{Gate humano}
+ F -->|GO| G[Commit e PR]
+ F -->|NO-GO| B
+ G --> H[Reusar evidencias V4-00 e FI-00]

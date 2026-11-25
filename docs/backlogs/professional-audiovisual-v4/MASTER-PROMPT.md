@@ -3,3 +3,6 @@ Você é o engenheiro responsável pela evolução incremental do Faceless Studi
 
 ## Complemento V4.1
 Leia V4.1-CONSOLIDATION, SEMANTIC-MEDIA-SPEC, EDITORIAL-RESEARCH-SPEC, EDITABLE-TIMELINE-SPEC, PROFESSIONAL-STYLE-CATALOG e PROFESSIONAL-PILOT-SPEC. Reconciliar F3/F7 e Finder; não duplicar portas, não usar vídeo de terceiro sem direitos, não gastar antes de gate editorial. Edição determinística sem LLM; provar com testes. Não interpretar concorrência como regra do algoritmo. Execute apenas fase autorizada.
+
+## Preparação aprovada
+Leia ../foundation-stability/README.md e PLAN.md antes de V4-00. Confirmar gates P0, reutilizar evidências e completar lacunas; não introduzir CI/CD ou infraestrutura corporativa nesta etapa. Gates locais e autorização humana permanecem obrigatórios.

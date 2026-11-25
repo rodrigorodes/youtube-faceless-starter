@@ -6,3 +6,6 @@ youtube_trends.py busca vídeos recentes com parâmetros PT/BR; trend_priority.p
 Relatos fornecidos pelo usuário (não verificados): garimpo de inglês para espanhol, scanner até 8 idiomas, pastas e recomendações, canais novos/rápidos, ações sobre vídeo, urgência de produção, ferramentas concorrentes. Não copiar conteúdo nem tratar heurísticas comerciais como fatos do algoritmo.
 ## Leitura
 [Plano e backlog](PLAN.md) · [Compliance](DATA-COMPLIANCE.md) · [Especificação](INTELLIGENCE-SPEC.md) · [Contrato Studio](STUDIO-INTEGRATION.md) · [Prompt](MASTER-PROMPT.md). Fases FI-00–11 propostas; FI-00 bloqueia coleta/métricas reais. POC com fixtures antes de aprovação. Chrome extension P2 após API. Gestão multicanal e SaaS não são pré-requisitos do piloto.
+
+## Fundação compartilhada
+A [Foundation & Stability](../foundation-stability/README.md) prepara a base atual sem CI/CD. FI-00 reutiliza as evidências, mantendo gate específico de conformidade de dados antes de coleta real.
