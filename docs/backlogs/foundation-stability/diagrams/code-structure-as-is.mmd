@@ -1,0 +1,13 @@
+flowchart TD
+ A[API routes.py] --> P[Application production and use cases]
+ A --> C[Application ports.py]
+ W[Composition wiring.py] --> A
+ W --> P
+ W --> C
+ W --> AD[Adapters and provider registry]
+ P --> C
+ P --> R[Render compiler]
+ R --> D[Domain RenderPlan]
+ P --> D
+ AD --> C
+ AD --> D

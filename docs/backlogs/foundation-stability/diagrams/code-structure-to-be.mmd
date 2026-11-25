@@ -1,0 +1,20 @@
+flowchart TD
+ A[make_router facade] --> AR[Context routers]
+ AR --> U[Application use cases]
+ W[Single Studio composition root] --> WM[Capability wiring functions]
+ WM --> U
+ WM --> AD[Existing adapters]
+ U --> PC[Production facade]
+ PC --> SH[Stage handlers and execution]
+ PC --> RE[Recovery and existing heartbeat]
+ U --> CP[Ports facade and capability contracts]
+ SH --> CP
+ RE --> CP
+ AD --> CP
+ U --> RC[structure_render_plan facade]
+ RC --> RV[Validation]
+ RC --> VS[Visual and captions]
+ RC --> AU[Audio]
+ RV --> D[Canonical domain RenderPlan]
+ VS --> D
+ AU --> D

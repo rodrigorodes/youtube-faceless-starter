@@ -47,3 +47,6 @@ Gate: baseline técnico reproduzível e referência audiovisual comparável. Se 
 
 ## Transição e gates
 Sequência: FS-01/02/04 → FS-07; FS-05/06 em paralelo quando possível. P1 deferível com decisão de risco, responsável e revisão. V4-00/FI-00 recebem evidências, completam apenas lacunas. Quality gate local por incremento: plano → código/testes → regressão → review → browser/render quando aplicável → aprovação → commit/PR. Sem CI/CD. Sem gasto ou publicação não autorizados. Não confundir estabilidade técnica com qualidade profissional. Reconciliar HEAD antes de executar.
+
+## Revisão 2 — execução e FS-08 (P1)
+O [backlog detalhado](EXECUTION-BACKLOG.md) identifica cada atividade e seu aceite; [Quality Gates](QUALITY-GATES.md) define evidência e parada. FS-02.01 (preflight) precede qualquer teste mutável de FS-01. Concluir FS-01/02/04 antes do piloto. [FS-08](phases/FS-08-modularization.md) mapeia cinco módulos após regressão (0,5–1d adicional estimado). Extrações P1 somente quando necessárias: API antes de Finder/UX, ports/wiring V4-01, compiler V4-04, production V4-12 ou necessidade comprovada FS-06. Não bloquear toda a V4/FI nem contabilizar duas vezes. Sem CI/CD e sem reescrita.
