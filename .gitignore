@@ -15,6 +15,7 @@ backups/*
 storage/cache/
 storage/render-cache/
 storage/projects/
+storage/test-reports/
 client_secret*.json
 credentials/
 *.credentials.json

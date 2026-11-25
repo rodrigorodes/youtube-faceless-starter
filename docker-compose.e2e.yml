@@ -22,7 +22,7 @@ services:
   renderer-e2e:
     build: ./renderer
     ports:
-      - "127.0.0.1:8100:8000"
+      - "127.0.0.1:${E2E_PORT:-8100}:8000"
     environment:
       OUTPUT_DIR: /data/output
       JOB_DIR: /data/jobs
@@ -38,6 +38,7 @@ services:
       STUDIO_RENDERER: ffmpeg
       STUDIO_AUTO_RESEARCH: "0"
       STUDIO_BUDGET_GUARD: "0"
+      STUDIO_PUBLICATION_ENABLED: "0"
       MAX_DURATION_SECONDS: "60"
     tmpfs:
       - /data

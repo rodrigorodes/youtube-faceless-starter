@@ -97,7 +97,11 @@ docker exec "$PG_NAME" pg_isready -U postgres >/dev/null
 # segundo, ~140 testes de banco são pulados em silêncio. Ambos exigem a prova de descartabilidade.
 echo "== pytest ($*)"
 ARGS=("$@")
-[ ${#ARGS[@]} -eq 0 ] && ARGS=(tests -q)
+[ ${#ARGS[@]} -eq 0 ] && ARGS=(tests --ignore=tests/e2e_full --ignore=tests/e2e_ux -q)
+
+REPORTS_DIR="${ROOT}/storage/test-reports"
+mkdir -p "$REPORTS_DIR"
+
 set +e
 docker run --rm --network "$NETWORK" \
   -e STUDIO_TEST_DSN="postgresql://postgres:${PG_PASSWORD}@${PG_NAME}:5432/postgres" \
@@ -105,7 +109,11 @@ docker run --rm --network "$NETWORK" \
   -e STUDIO_BUDGET_TEST_PROOF_FILE=/proof/proof \
   -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/w/renderer \
   ${PYTEST_ADDOPTS:+-e PYTEST_ADDOPTS="$PYTEST_ADDOPTS"} \
-  -v "$ROOT:/w:ro" -v "$TMP/proof:/proof:ro" -w /w \
+  -v "$ROOT:/w:ro" \
+  -v "$REPORTS_DIR:/w/storage/test-reports:rw" \
+  -v "$REPORTS_DIR:/test-reports:rw" \
+  -v "$TMP/proof:/proof:ro" \
+  -w /w \
   --entrypoint python "$PYTEST_IMAGE" -m pytest -p no:cacheprovider "${ARGS[@]}"
 STATUS=$?
 set -e

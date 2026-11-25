@@ -15,21 +15,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-COMPOSE=(docker compose -p faceless-e2e -f docker-compose.e2e.yml)
+RUN_ID="${E2E_RUN_ID:-$$}"
+PROJECT_NAME="${E2E_PROJECT_NAME:-faceless-e2e-${RUN_ID}}"
+E2E_PORT="${E2E_PORT:-8100}"
+export E2E_PORT
+
+COMPOSE=(docker compose -p "$PROJECT_NAME" -f docker-compose.e2e.yml)
 
 cleanup() {
   if [[ "${KEEP:-0}" != "1" ]]; then
     "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true
   else
-    echo "==> KEEP=1: stack mantida em http://127.0.0.1:8100 (derrube com: ${COMPOSE[*]} down -v)"
+    echo "==> KEEP=1: stack mantida em http://127.0.0.1:${E2E_PORT} (derrube com: ${COMPOSE[*]} down -v)"
   fi
 }
 trap cleanup EXIT
 
-echo "==> Recriando a stack isolada (banco e storage zerados)..."
+echo "==> Subindo a stack isolada $PROJECT_NAME na porta $E2E_PORT (banco e storage zerados)..."
 "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true
 "${COMPOSE[@]}" up -d --build --wait
 
 echo "==> Executando a jornada completa..."
-STUDIO_E2E_ISOLATED=1 STUDIO_E2E_BASE_URL="http://127.0.0.1:8100" \
+STUDIO_E2E_ISOLATED=1 STUDIO_E2E_BASE_URL="http://127.0.0.1:${E2E_PORT}" \
   python3 -m pytest tests/e2e_full -v -p no:cacheprovider "$@"

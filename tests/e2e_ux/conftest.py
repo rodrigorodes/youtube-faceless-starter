@@ -4,16 +4,38 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Generator
+from urllib.parse import urlparse
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Page
+try:
+    from playwright.sync_api import Browser, BrowserContext, Page
+except ImportError:
+    Browser = BrowserContext = Page = None
+
+
+def pytest_collection_modifyitems(config, items):
+    if Browser is None:
+        skip = pytest.mark.skip(reason="Playwright não instalado; suíte E2E UX pulada")
+        for item in items:
+            if "e2e_ux" in str(item.fspath):
+                item.add_marker(skip)
+
+
+def _validate_destination(base_url: str):
+    port = urlparse(base_url).port
+    if port == 8000 and os.environ.get("STUDIO_E2E_ALLOW_DEV") != "1":
+        raise ValueError(
+            "Destino recusado: STUDIO_BASE_URL aponta para a porta 8000 (stack de desenvolvimento em uso). "
+            "Para proteger seus dados, aponte para a stack isolada (ex: porta 8100) ou defina STUDIO_E2E_ALLOW_DEV=1."
+        )
 
 
 def _load_env_credentials() -> tuple[str, str, str]:
     """Lê as credenciais do Studio do ambiente ou do arquivo .env."""
     user = os.environ.get("STUDIO_BROWSER_USER", "")
     password = os.environ.get("STUDIO_BROWSER_PASSWORD", "")
-    base_url = os.environ.get("STUDIO_BASE_URL", "http://localhost:8000")
+    base_url = os.environ.get("STUDIO_BASE_URL", "http://localhost:8100")
+    _validate_destination(base_url)
 
     env_path = Path(__file__).resolve().parents[2] / ".env"
     if env_path.is_file() and (not user or not password):

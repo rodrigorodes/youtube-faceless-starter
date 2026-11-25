@@ -10,12 +10,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-BASE_URL="${STUDIO_BASE_URL:-http://localhost:8000}"
+BASE_URL="${STUDIO_BASE_URL:-http://localhost:8100}"
+
+# Guarda de destino (FS-02.03 / LAC-03): impede execução acidental contra a stack DEV (porta 8000)
+TARGET_PORT="$(echo "$BASE_URL" | sed -e 's,^.*:,,' -e 's,/.*$,,')"
+if [ "$TARGET_PORT" = "8000" ] && [ "${STUDIO_E2E_ALLOW_DEV:-0}" != "1" ]; then
+  echo "ERRO DE DESTINO: STUDIO_BASE_URL aponta para a porta 8000 (stack de desenvolvimento em uso)." >&2
+  echo "Para proteger seus dados, testes E2E devem apontar para a stack isolada (ex: porta 8100)." >&2
+  echo "Se você tem certeza de que deseja rodar contra a stack DEV, defina STUDIO_E2E_ALLOW_DEV=1." >&2
+  exit 1
+fi
 
 echo "==> Verificando disponibilidade do Faceless Studio em $BASE_URL/health..."
 if ! curl -fsS "$BASE_URL/health" >/dev/null 2>&1; then
   echo "ERRO: O servidor do Faceless Studio não está respondendo em $BASE_URL/health."
-  echo "Certifique-se de que o container do renderer está ativo (ex.: docker compose up -d renderer)."
+  echo "Certifique-se de que a stack isolada está ativa (ex.: scripts/run-e2e-full.sh ou docker compose -f docker-compose.e2e.yml up -d)."
   exit 1
 fi
 echo "==> Servidor operacional."

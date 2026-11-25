@@ -16,7 +16,10 @@ from typing import Callable, Generator
 from urllib.parse import urlparse
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Page, expect
+try:
+    from playwright.sync_api import Browser, BrowserContext, Page, expect
+except ImportError:
+    Browser = BrowserContext = Page = expect = None
 
 BASE_URL = os.environ.get("STUDIO_E2E_BASE_URL", "http://127.0.0.1:8100")
 USER = os.environ.get("STUDIO_E2E_USER", "e2e")
@@ -43,9 +46,11 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _guard_message() -> str:
+    if Browser is None:
+        return "Playwright não instalado: suíte E2E completa pulada."
     if os.environ.get("STUDIO_E2E_ISOLATED") != "1":
         return "E2E completo só roda pela stack isolada: use scripts/run-e2e-full.sh (STUDIO_E2E_ISOLATED=1)."
-    if urlparse(BASE_URL).port == 8000:
+    if urlparse(BASE_URL).port == 8000 and os.environ.get("STUDIO_E2E_ALLOW_DEV") != "1":
         return "STUDIO_E2E_BASE_URL aponta para a porta 8000 (stack de uso diário). Recusado."
     return ""
 
