@@ -3,12 +3,12 @@ Status inicial: todos os itens pendentes, salvo FS-03 adiado por decisão explí
 
 | ID | Atividade | Entrega / aceite | Status | Commit / Evidência |
 |---|---|---|---|---|
-| FS-01.01 | Preflight e inventário de falhas | Checkout limpo, runner isolado, registrar SHA e comparar RUN-08 | PASS | `4eba59c`, RUN-11 (4059 passed, 0 failed) |
-| FS-01.02 | Aprovar comportamento UI | Matriz 23 A2: cenário, esperado, observado, decisão teste/produto, evidência | PASS | `4eba59c`, casca V4/V3 alinhada |
-| FS-01.03 | Corrigir divergências aprovadas | Testes semânticos/behavior; preservar UX, guards e fluxos | PASS | `4eba59c`, asserções atualizadas |
-| FS-01.04 | Investigar flake TTS | Repetições controladas, duração medida e causa; não relaxar limiar sem evidência | PASS | `4eba59c`, delta empírico ~3,25s (15%) |
-| FS-01.05 | Classificar skips | Motivo, cobertura, criticidade, owner; crítico não coberto bloqueia | PASS | 20 skips (6 Node.js, 14 browser E2E) |
-| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | RUN-11 (0 falhas em 682s, exit 0) |
+| FS-01.01 | Preflight e inventário de falhas | Checkout limpo, runner isolado, registrar SHA e comparar RUN-08 | PASS | `4eba59c`, `FS-01-REVALIDATION.md` |
+| FS-01.02 | Aprovar comportamento UI | Matriz 23 A2: cenário, esperado, observado, decisão teste/produto, evidência | PASS | `FS-01-UI-RECONCILIATION.md`, 23 falhas mapeadas |
+| FS-01.03 | Corrigir divergências aprovadas | Testes semânticos/behavior; preservar UX, guards e fluxos | PASS | `4eba59c`, sem regressões funcionais |
+| FS-01.04 | Investigar flake TTS | Repetições controladas, duração medida e causa; não relaxar limiar sem evidência | PASS | `FS-01-TTS-STABILITY.md`, 5/5 aprovadas, média 3,20s |
+| FS-01.05 | Classificar skips | Motivo, cobertura, criticidade, owner; crítico não coberto bloqueia | PASS | `FS-01-SKIP-CLASSIFICATION.md`, 20 skips analisados |
+| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | `4eba59c` (4059 pass, 0 fail); bloqueio FS-06 em HEAD |
 | FS-02.01 | Preflight de isolamento | Antes de qualquer teste mutável: DB descartável, endpoint, credenciais fake, volumes e projeto exclusivos | PASS | DB descartável efêmero + tmpfs |
 | FS-02.02 | Separar suites | Unit/contract/DB, browser E2E e pilot; dependências Playwright/browser fixadas | PASS | `5793911`, imports protegidos |
 | FS-02.03 | Corrigir destino e exclusividade | E2E não usa DEV, unique project/porta ou lock exclusivo; cleanup own-only | PASS | `5793911`, guarda porta 8000 + PID RUN_ID |

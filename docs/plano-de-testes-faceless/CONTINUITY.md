@@ -19,11 +19,11 @@
   grupo A era majoritariamente drift de teste do WIP V4/V3. A2 foi resolvido na RUN-10
   com o WIP aprovado e os testes alinhados. Nenhuma falha restante foi confirmada como
   regressão de produto.
-- Cobertura 100% do plano: o capítulo 08 ganhou **PUB-13** (interruptor global de
-  publicação: padrão ligado e contingência desligada), fechando o ACH-09 no plano. O flake
-  de TTS foi corrigido na causa: a expectativa passou a ser a média de evidência (~3,25 s),
-  não `10 × 0,40 s`; a tolerância de 15% cobre a variância da diferença entre duas
-  sínteses estocásticas.
+- Cobertura de regras no plano: 100% das 88 regras de negócio mapeadas para ao menos um
+  cenário documentado (131 cenários no total, com a adição de **PUB-13** no capítulo 08
+  fechando o ACH-09 no modelo documental; todos permanecem estritamente `A_PROJETAR`,
+  sem inferir execução integral). O flake de TTS foi corrigido na causa e homologado
+  com 5 execuções consecutivas aprovadas (média 3,20 s, desvio 0,19 s, tolerância 15%).
 - Validação local no host: 19 falhas de render/subtitles por falta de libass no ffmpeg
   Homebrew; os mesmos arquivos passam no container (74 passed, 1 skipped nos arquivos de
   render).
