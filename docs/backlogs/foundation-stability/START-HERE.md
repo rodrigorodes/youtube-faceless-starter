@@ -1,4 +1,6 @@
 # Comece aqui — Foundation
+Para implementar com DeepSeek, abra o [guia por cartão e prompt inicial](DEEPSEEK-IMPLEMENTATION.md). Comece por FS-02.01 e registre o resultado do preflight por suíte.
+
 1. Leia [README](README.md), [AUDIT-AS-IS](AUDIT-AS-IS.md), [PLAN](PLAN.md) e [QUALITY-GATES](QUALITY-GATES.md).
 2. Confirme HEAD, leia [plano de testes](../../plano-de-testes-faceless/CONTINUITY.md), faça preflight FS-02.01 antes de qualquer execução mutável.
 3. Use [MASTER-PROMPT](MASTER-PROMPT.md) e [EXECUTION-BACKLOG](EXECUTION-BACKLOG.md); autorize FS-01 como primeiro recorte depois do preflight. Não autorize todos os itens juntos.
