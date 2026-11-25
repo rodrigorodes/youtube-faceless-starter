@@ -210,3 +210,63 @@ def test_build_render_plan_18_scenes_no_timeline_overlap():
         curr_cue = subtitles[i]
         next_cue = subtitles[i + 1]
         assert curr_cue.start_tick + curr_cue.duration_ticks <= next_cue.start_tick
+
+
+# --------------------------------------------------------------------------- #
+# 4. Teste Extremo de Densidade e Janela Temporal da Narração
+# --------------------------------------------------------------------------- #
+
+def test_subtitles_extreme_cues_prevented_from_exceeding_narration_window():
+    """Valida o caso extremo onde a densidade de cues ameaça ultrapassar a janela da narração.
+
+    Garante que:
+    1. Em make_cues, a última cue respeita matematicamente o limite superior (offset + LEAD + speech_seconds).
+    2. No domínio de ticks (RenderPlan), se a quantidade mínima de ticks requerida pelas cues
+       (>= 1 tick por chunk) ultrapassar a janela disponível da narração/cena, o build_render_plan
+       rejeita a montagem e impede que cues desincronizadas sejam aceitas.
+    """
+    text_extreme = "Palavra chave muito importante para ser testada em alta densidade. " * 30
+    speech_short = 0.4  # Janela de fala muito curta (0.4s)
+    offset = 1.0
+
+    # 1. make_cues não ultrapassa a janela contínua em float
+    cues_float = make_cues(text_extreme, start=offset, speech_seconds=speech_short)
+    assert len(cues_float) > 10
+    assert math.isclose(cues_float[-1].end, offset + LEAD + speech_short, abs_tol=1e-9)
+    assert cues_float[-1].end <= offset + LEAD + speech_short + 1e-9
+
+    # 2. Em ticks, múltiplos chunks a 1 tick cada exigiriam mais ticks que a narração/cena comportam
+    scene = StoryboardScene(
+        scene_id="scene_overflow",
+        asset_id="asset_test",
+        narration=text_extreme,
+        speech_seconds=speech_short,
+        label="CENA EXTREMA",
+    )
+    asset = AssetReference(
+        asset_id="asset_test",
+        asset_version=1,
+        uri="/data/assets/asset_test.png",
+        content_sha256="c" * 64,
+        media_type="image",
+        license="CC0",
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        build_render_plan(
+            plan_id="plan:extreme-subtitles",
+            revision=1,
+            project_id="c" * 32,
+            video_id="d" * 32,
+            format=VideoFormat.long,
+            scenes=[scene],
+            assets=[asset],
+            timebase=Timebase(ticks_per_second=25),
+            style_snapshot=StyleSnapshot(source="channel", style_id="default", version=1),
+            pacing_preset=PacingPreset.dynamic,
+            audio_mix=AudioMix(music_gain=0.3),
+        )
+
+    # Comprova mecanicamente que o sistema impediu o plano inválido
+    err_str = str(exc_info.value).lower()
+    assert any(term in err_str for term in ("out of sync with the narration", "outside the scene", "alignment tolerance"))

@@ -49,12 +49,12 @@ O monólito modular é composto por cinco módulos centrais mapeados no baseline
 - **Pillow:** `11.1.0` (geração de overlays estáticos de cena, disclosure e cards visuais).
 
 ### V4-00.03 — Validação de Regressão, Fluxo Real e Testes Pequenos
-- **Regressão Canônica Completa (RUN-13):** Executada sobre o checkout com o Core atualizado no container oficial `faceless-renderer-pytest:test`, garantindo zero regressões.
-- **Validação de Métricas Unitárias:** [`tests/test_v4_baseline_metrics.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_baseline_metrics.py) (11 testes) cobrindo validadores de duração, critérios de QA com falha fechada para métricas ausentes (`REQUIRED_QA_METRICS`), medições de CPU/RAM pai e filhos, e hashing SHA-256.
-- **Regressão de Ticks e Legendas:** [`tests/test_v4_subtitles_ticks_regression.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_subtitles_ticks_regression.py) (178 testes) comprovando continuidade exata de float em `make_cues`, não sobreposição de ticks em `_subtitle_cues`, respeito aos limites de narração/cena e validação da timeline de 18 cenas do piloto.
-- **Integração do Coordenador com Handlers Simulados:** [`tests/test_v4_production_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_production_flow_pilot.py) (1 teste) comprovando a máquina de estados, transições, leasing/fencing e persistência do `RenderPlan`.
-- **Jornada pelo Fluxo Real do Studio:** [`tests/test_v4_studio_real_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_studio_real_flow_pilot.py) (1 teste) comprovando a execução real da aplicação ponta a ponta: `Studio` real com FastAPI, banco PostgreSQL descartável, provedores locais gratuitos (`demo`, `placeholder`, `piper`), renderização real com `PlanFfmpegRenderer` (FFmpeg nativo), avaliação técnica real com `FfmpegQualityEvaluator` (EBU R128), persistência de `qa_report` aprovado em `video.qa_report`, gate de aprovação humana e bloqueio estrito de publicação externa por `STUDIO_PUBLICATION_ENABLED=0`.
-- **Resultado dos Módulos V4 no Container Oficial:** `191 passed in 10.45s` (exit code 0).
+- **Regressão Canônica Completa (RUN-13):** Executada sobre o checkout no container oficial `faceless-renderer-pytest:test`, garantindo zero regressões (4.262 aprovados, 20 skips, 0 falhas).
+- **Validação de Métricas Unitárias:** [`tests/test_v4_baseline_metrics.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_baseline_metrics.py) (12 testes) cobrindo validadores de duração, critérios de QA com falha fechada para métricas ausentes (`REQUIRED_QA_METRICS`), medições de CPU/RAM pai e filhos, hashing SHA-256 e geração de IDs estritamente exclusivos mesmo no mesmo segundo.
+- **Regressão de Ticks e Legendas:** [`tests/test_v4_subtitles_ticks_regression.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_subtitles_ticks_regression.py) (179 testes) comprovando continuidade exata de float em `make_cues`, não sobreposição de ticks em `_subtitle_cues`, respeito aos limites de narração/cena, teste extremo impedindo estouro da janela temporal da narração e validação da timeline de 18 cenas do piloto.
+- **Integração do coordenador: handlers simulados:** [`tests/test_v4_production_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_production_flow_pilot.py) (1 teste) comprovando a máquina de estados, transições, leasing/fencing e persistência do `RenderPlan`.
+- **Jornada real do Studio: Short:** [`tests/test_v4_studio_real_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_studio_real_flow_pilot.py) (1 teste) comprovando a execução real da aplicação ponta a ponta no formato Short (15s): `Studio` real com FastAPI, banco PostgreSQL descartável, provedores locais gratuitos (`demo`, `placeholder`, `piper`), renderização real com `PlanFfmpegRenderer` (FFmpeg nativo), avaliação técnica real com `FfmpegQualityEvaluator` (EBU R128), persistência de `qa_report` aprovado em `video.qa_report`, gate de aprovação humana e bloqueio estrito de publicação externa especificamente como `BLOCKED` pelo kill switch (`Settings.publication_enabled=False`).
+- **Resultado dos Módulos V4 no Container Oficial:** `193 passed in 11.20s` (exit code 0).
 
 ---
 
@@ -78,7 +78,7 @@ Foram produzidos no contêiner oficial, via [`scripts/render_v4_baseline.py`](fi
 - **Tempos de Processamento:** Síntese Piper TTS 6,96s | Renderização FFmpeg 46,92s | Análise QA 11,96s | Total: 65,83s
 - **Consumo de Disco:** Saída: 8,74 MB | Diretório Temporário de Trabalho: 25,08 MB
 
-#### 2. Piloto Audiovisual Original (5–8 min / 300–480s)
+#### 2. Benchmark audiovisual longo: 345,60 segundos (Piloto Original de 18 Cenas)
 - **Tema:** *"A História da Computação: Da Mecânica aos Cérebros de Silício"* (Roteiro histórico factual ampliado com 18 cenas documentais completas)
 - **Arquivo Gerado:** `storage/output/v4_piloto_audiovisual_5min.mp4`
 - **Formato:** 1920x1080 (16:9 widescreen)
@@ -124,11 +124,13 @@ Amostras de quadros extraídas via `scripts/render_v4_baseline.py` para inspeç�
 
 ---
 
-### V4-00.06 — Avaliação Humana e Comparação AS-IS vs TO-BE
+### V4-00.06 — Avaliação Humana (Status: Avaliação humana: pendente) e Comparação AS-IS vs TO-BE
+
+Status da Homologação Audiovisual: **Avaliação humana: pendente** (o sistema disponibiliza os arquivos e frames sem simular aprovação do operador).
 
 Os vídeos gerados estão disponíveis no repositório local para inspeção e avaliação humana do operador:
 - Fixture Técnica: [`storage/output/v4_fixture_tecnica_60s.mp4`](file:///Users/rodrigomendes/youtube-faceless-starter/storage/output/v4_fixture_tecnica_60s.mp4)
-- Piloto Audiovisual: [`storage/output/v4_piloto_audiovisual_5min.mp4`](file:///Users/rodrigomendes/youtube-faceless-starter/storage/output/v4_piloto_audiovisual_5min.mp4)
+- Benchmark audiovisual longo (345,60s): [`storage/output/v4_piloto_audiovisual_5min.mp4`](file:///Users/rodrigomendes/youtube-faceless-starter/storage/output/v4_piloto_audiovisual_5min.mp4)
 
 A análise crítica da qualidade evidencia os seguintes gaps entre o pipeline atual e a meta profissional V4.1:
 
@@ -185,13 +187,13 @@ Para habilitar a evolução para a **V4-01 (Provider Extensibility)** sem violar
 |---|---|---|:---:|
 | **AC-01** | Mapeamento completo dos 5 módulos centrais e seus invariantes | `FS-08-dependency-map.md` e Seção 2 deste relatório | **PASS** |
 | **AC-02** | Runtimes e dependências canônicas validadas sem segredos | Seção 2 e `secret_hygiene.py scan` (código 0) | **PASS** |
-| **AC-03** | Zero regressões críticas na suíte canônica e novos testes verdes | RUN-13 + `test_v4_baseline_metrics.py`, `test_v4_subtitles_ticks_regression.py`, `test_v4_production_flow_pilot.py` e `test_v4_studio_real_flow_pilot.py` (191 pass) | **PASS** |
+| **AC-03** | Zero regressões críticas na suíte canônica e novos testes verdes | RUN-13 + `test_v4_baseline_metrics.py`, `test_v4_subtitles_ticks_regression.py`, `test_v4_production_flow_pilot.py` e `test_v4_studio_real_flow_pilot.py` (193 pass) | **PASS** |
 | **AC-04** | Fixture técnica de 60–90s gerada e documentada com conformidade | `v4_fixture_tecnica_60s.mp4` (63,52s, -16,3 LUFS, SHA `904eb8c9...`) | **PASS** |
-| **AC-05** | Piloto audiovisual de 5–8 min original produzido no pipeline atual | `v4_piloto_audiovisual_5min.mp4` (**345,60s**, 18 cenas, -15,5 LUFS, SHA `9b20e2e7...`) | **PASS** |
+| **AC-05** | **Benchmark audiovisual longo: 345,60 segundos** original produzido no pipeline atual | `v4_piloto_audiovisual_5min.mp4` (**345,60s**, 18 cenas, -15,5 LUFS, SHA `9b20e2e7...`) | **PASS** |
 | **AC-06** | Métricas de CPU, RAM (desacoplada pai/filhos), tempo, custo e hashes catalogadas | `storage/output/v4_baseline_metrics.json` e `docs/.../v4_baseline_metrics.json` | **PASS** |
 | **AC-07** | Comparação AS-IS vs TO-BE e limitações do FFmpeg catalogadas | Seções 2.6 e 2.7 deste relatório | **PASS** |
 | **AC-08** | Proposta de contratos para V4-01 especificada sem acoplamento | Seção 2.8 deste relatório | **PASS** |
-| **AC-09** | **Revisão humana dos vídeos gerados** | Links e frames disponibilizados para o operador | **PENDENTE DE AVALIAÇÃO HUMANA** |
+| **AC-09** | **Revisão humana dos vídeos gerados** | Links e frames disponibilizados para o operador | **Avaliação humana: pendente** |
 
 ---
 
@@ -200,9 +202,16 @@ Para habilitar a evolução para a **V4-01 (Provider Extensibility)** sem violar
 > **DECISÃO: CONCLUÍDA TECNICAMENTE — CONDITIONAL GO (AGUARDANDO AVALIAÇÃO HUMANA DO OPERADOR)**
 >
 > Todas as pendências técnicas da fase V4-00 foram rigorosamente sanadas:
-> 1. A duração do piloto documental (345,60s) cumpre a faixa estrita de 300–480s sem artifícios.
-> 2. O teste com handlers simulados foi corretamente classificado como teste de integração do coordenador.
-> 3. Foi adicionada a jornada real completa pelo fluxo do Studio (`tests/test_v4_studio_real_flow_pilot.py`) com FFmpeg e QA reais.
+> 1. **Benchmark audiovisual longo: 345,60 segundos** cumpre a faixa estrita de 300–480s sem artifícios.
+> 2. **Integração do coordenador: handlers simulados** (`test_v4_production_flow_pilot.py`) validada contra o PostgreSQL descartável.
+> 3. **Jornada real do Studio: Short** (`test_v4_studio_real_flow_pilot.py`) executada ponta a ponta com FFmpeg e QA reais, aprovação e bloqueio BLOCKED pelo kill switch.
+> 4. Foram adicionados 179 testes específicos de ticks e legendas comprovando a ausência de overlaps, precisão do Core e impedimento mecânico de estouro temporal.
+> 5. A métrica de RAM foi corrigida, desacoplando pai e filhos e documentando a limitação técnica do kernel.
+> 6. As saídas históricas utilizam identificadores estritamente exclusivos mesmo em execuções concorrentes no mesmo segundo.
+> 7. Os critérios de QA rejeitam métricas essenciais ausentes em regime de falha fechada.
+> 8. O impedimento técnico de Node/Playwright foi formalmente auditado e registrado.
+> 
+> Em estrito cumprimento ao `MASTER-PROMPT.md` e `V4-00-baseline.md`, **o avanço para a V4-01 NÃO deve ocorrer de forma automática**, ficando sob **Avaliação humana: pendente** condicionada à revisão e homologação humana dos arquivos de vídeo disponibilizados.
 > 4. Foram adicionados 178 testes específicos de ticks e legendas comprovando a ausência de overlaps e a precisão do Core.
 > 5. A métrica de RAM foi corrigida, desacoplando pai e filhos e documentando a limitação técnica do kernel.
 > 6. As saídas históricas foram preservadas em diretórios exclusivos versionados.

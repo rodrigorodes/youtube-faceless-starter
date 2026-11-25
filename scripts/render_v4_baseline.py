@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -46,6 +47,13 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def generate_run_id() -> str:
+    """Gera um identificador de execução estritamente exclusivo mesmo no mesmo segundo."""
+    run_timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    unique_suffix = uuid.uuid4().hex[:8]
+    return f"run_{run_timestamp}_{unique_suffix}"
 
 
 def measure_resources_usage() -> dict:
@@ -700,8 +708,8 @@ def render_pilot_5min(voice: PiperVoice, target_dir: Path | None = None) -> dict
 
 def main() -> int:
     t0 = time.perf_counter()
-    run_timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
-    run_dir = OUTPUT_DIR / "runs" / f"run_{run_timestamp}"
+    run_id = generate_run_id()
+    run_dir = OUTPUT_DIR / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     voice = PiperVoice("pt_BR-faber-medium")
@@ -715,7 +723,7 @@ def main() -> int:
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "phase": "V4-00",
-        "run_id": f"run_{run_timestamp}",
+        "run_id": run_id,
         "run_dir": str(run_dir),
         "title": "Baseline Audiovisual AS-IS e Benchmark Técnico",
         "environment": {

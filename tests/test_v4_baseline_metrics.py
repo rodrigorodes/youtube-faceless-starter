@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "renderer"))
 
 from scripts.render_v4_baseline import (
     REQUIRED_QA_METRICS,
+    generate_run_id,
     measure_dir_size_bytes,
     measure_resources_usage,
     sha256_file,
@@ -131,3 +132,13 @@ def test_measure_dir_size_and_sha256(tmp_path):
     h = sha256_file(f1)
     # sha256 of "hello world" is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
     assert h == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+
+
+def test_generate_run_id_unique_even_same_second():
+    """Garante que IDs gerados consecutivamente são estritamente exclusivos."""
+    ids = [generate_run_id() for _ in range(100)]
+    assert len(ids) == len(set(ids)), "Colisão de ID detectada em execuções no mesmo segundo!"
+    for run_id in ids:
+        assert run_id.startswith("run_")
+        parts = run_id.split("_")
+        assert len(parts) >= 3, f"Formato de run_id inválido: {run_id}"

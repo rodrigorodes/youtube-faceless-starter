@@ -1,6 +1,6 @@
-"""Jornada pelo fluxo real do Faceless Studio (V4-00 / Homologação).
+"""Jornada real do Studio: Short (V4-00 / Homologação).
 
-Complementa a validação com uma execução real ponta a ponta:
+Complementa a validação com uma execução real ponta a ponta no formato Short:
 1. Studio Composition real (`Studio`) com rotas FastAPI e banco PostgreSQL descartável.
 2. Provedores locais gratuitos:
    - Texto: `demo` (offline, sem API)
@@ -14,7 +14,7 @@ Complementa a validação com uma execução real ponta a ponta:
    - Teto rígido com custo de API zero ($0.00).
 5. Gate de aprovação humana e bloqueio de publicação externa:
    - Render aprovado pelo operador no gate F6.
-   - Publicação externa estritamente desabilitada (STUDIO_PUBLICATION_ENABLED=0).
+   - Publicação externa estritamente desabilitada via kill switch (Settings.publication_enabled=False).
 """
 from __future__ import annotations
 
@@ -81,6 +81,7 @@ def test_v4_studio_real_flow_complete_journey(conn, dsn, tmp_path: Path):
         budget_guard=True,
         max_cost_video=0.00,
         max_cost_month=0.00,
+        publication_enabled=False,
     )
 
     executor = SyncExecutor()
@@ -153,14 +154,18 @@ def test_v4_studio_real_flow_complete_journey(conn, dsn, tmp_path: Path):
         assert v_approved["status"] == "APPROVED"
 
         # 10. Bloqueio Seguro de Publicação Externa
-        # Com STUDIO_PUBLICATION_ENABLED=0, o fluxo de publicação externa é bloqueado e nenhum upload ocorre
+        # Com publication_enabled=False configurado na Settings, o kill switch bloqueia especificamente
+        # o executor retornando PublicationResult.BLOCKED, garantindo isolamento total e ausência de chamadas externas.
         pub_resp = client.post(f"/studio/videos/{video_id}/publication/publish")
-        if pub_resp.status_code == 200:
-            pub_data = pub_resp.json()
-            assert pub_data.get("youtube_video_id") is None, "Upload externo efetuado indevidamente!"
-            assert pub_data.get("result") != "UPLOADED", "Publicação não deve concluir em UPLOADED com flag desligada!"
-        else:
-            assert pub_resp.status_code in (400, 403, 409, 422, 503)
+        assert pub_resp.status_code == 200, pub_resp.text
+        pub_data = pub_resp.json()
+        assert pub_data["result"] == "BLOCKED", (
+            f"Esperado resultado BLOCKED pelo kill switch, obtido: {pub_data.get('result')!r}"
+        )
+        assert pub_data.get("youtube_video_id") is None, "Upload externo efetuado indevidamente!"
+        assert "disabled by configuration" in (pub_data.get("detail") or ""), (
+            f"Mensagem de bloqueio esperada não encontrada no detail: {pub_data.get('detail')!r}"
+        )
 
         # 11. Governança de Custos (BudgetGuard)
         u_repo = PostgresUsageRepository(lambda: psycopg.connect(dsn))
