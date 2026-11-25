@@ -403,6 +403,34 @@
         "camada": "local-integrado",
         "referencia": "Existentes: tests/test_publication_execution.py:519-529; tests/test_publish_api.py:187-208."
       }
+    },
+    {
+      "id": "PUB-13",
+      "titulo": "Interruptor global de publicação: padrão ligado e contingência desligada",
+      "tipo": "erro/regressao",
+      "regras": [
+        "PUB.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Provar que o interruptor global bloqueia a publicação sem reivindicar, sem token e sem simular sucesso, e que o padrão continua ligado.",
+      "pre_condicoes": [
+        "Executor com repositórios e dublês; configuração lida do ambiente; intenção aprovada pronta para publicar."
+      ],
+      "exemplo": {
+        "dados": "STUDIO_PUBLICATION_ENABLED ausente (padrão), =0 e =1; um vídeo aprovado em cada caso.",
+        "passos": [
+          "Construir Settings com o ambiente padrão, com =0 e com =1.",
+          "Executar RunPublication.execute em cada configuração e contar claims, tokens e uploads.",
+          "No caso desabilitado, conferir o detalhe do bloqueio e que nada foi marcado como enviado."
+        ]
+      },
+      "esperado": "Padrão e =1 mantêm o fluxo e o upload; =0 devolve BLOCKED com detalhe STUDIO_PUBLICATION_ENABLED=0, sem claim, sem token e sem upload; nada vira UPLOADED nem é reconciliado.",
+      "limitacoes": "O teste prova o gate do executor, não o upload remoto. O padrão habilitado é decisão de produto (ACH-09) e a campanha deve exercitar o caminho desligado explicitamente.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_execution.py:620-645; tests/test_compose_env.py:100-110."
+      }
     }
   ],
   "prefixo": "PUB"

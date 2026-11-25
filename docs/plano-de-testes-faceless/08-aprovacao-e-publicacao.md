@@ -16,12 +16,12 @@ A aprovação registra a versão revisada e uma intenção. Claim e executor ver
 | `PUB.R02` | Intenção fixa metadados/destino; private é padrão e public exige confirmação adicional. | `renderer/app/studio/application/publication_gate.py:52-58`, `tests/test_publication_policy.py:55-99`, `tests/test_publication_api.py:94-108` | [PUB-03](#pub-03), [PUB-04](#pub-04), [PUB-05](#pub-05) |
 | `PUB.R03` | Claims concorrentes usam locks; retry preserva sessão e UNKNOWN não entra em retry automático. | `renderer/app/studio/adapters/postgres/publish_repo.py:115-178`, `renderer/app/studio/application/publication_execution.py:298-345` | [PUB-07](#pub-07), [PUB-08](#pub-08), [PUB-09](#pub-09), [PUB-12](#pub-12) |
 | `PUB.R04` | Rearm só aceita DLQ permanente sem sessão, ID remoto, offset, UNKNOWN ou lease vivo; reconciliação depende de resposta remota. | `renderer/app/studio/adapters/postgres/publish_repo.py:316-330`, `renderer/app/studio/application/publication_execution.py:361-395` | [PUB-09](#pub-09), [PUB-10](#pub-10), [PUB-11](#pub-11) |
-| `PUB.R05` | Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia. | `renderer/app/studio/application/publication_execution.py:205-242`, `renderer/app/studio/application/publication_execution.py:250-297` | [PUB-05](#pub-05), [PUB-06](#pub-06) |
+| `PUB.R05` | Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia. | `renderer/app/studio/application/publication_execution.py:205-242`, `renderer/app/studio/application/publication_execution.py:250-297` | [PUB-05](#pub-05), [PUB-06](#pub-06), [PUB-13](#pub-13) |
 | `PUB.R06` | Preview mostra versão revisada; pedir ajustes reabre edição e invalida aprovação anterior. | `tests/test_publish_api.py:215-292`, `tests/e2e_full/test_journey_piloto.py:115-158` | [PUB-01](#pub-01), [PUB-03](#pub-03) |
 
 ## Resumo dos cenários
 
-Total: 12 cenário(s), todos documentais nesta elaboração.
+Total: 13 cenário(s), todos documentais nesta elaboração.
 
 | ID | Cenário | Tipo | Regras | Status |
 |---|---|---|---|---|
@@ -37,6 +37,7 @@ Total: 12 cenário(s), todos documentais nesta elaboração.
 | [PUB-10](#pub-10) | Reconciliação confirma ou mantém ambiguidade | feliz/erro | PUB.R04 | `A_PROJETAR` |
 | [PUB-11](#pub-11) | Rearm somente antes de qualquer envio | borda/concorrencia | PUB.R04 | `A_PROJETAR` |
 | [PUB-12](#pub-12) | Duplo clique e rejeição não publicam novamente | regressao | PUB.R01, PUB.R03 | `A_PROJETAR` |
+| [PUB-13](#pub-13) | Interruptor global de publicação: padrão ligado e contingência desligada | erro/regressao | PUB.R05 | `A_PROJETAR` |
 
 ## Cenários
 
@@ -243,6 +244,23 @@ Total: 12 cenário(s), todos documentais nesta elaboração.
 - **Esperado:** Um efeito de upload; demais respostas não alegam novo envio; ID confirmado permanece; rejeitado não é elegível e não ganha intenção de aprovação.
 - **Limitações:** Proteção visual de clique não substitui idempotência backend; navegador é coberto em UX-05.
 - **Automação:** camada `local-integrado`; referência `Existentes: tests/test_publication_execution.py:519-529; tests/test_publish_api.py:187-208.`
+
+### PUB-13 — Interruptor global de publicação: padrão ligado e contingência desligada
+
+- **Tipo:** erro/regressao
+- **Regras:** PUB.R05
+- **Status:** A_PROJETAR
+- **Prioridade:** alta
+- **Objetivo:** Provar que o interruptor global bloqueia a publicação sem reivindicar, sem token e sem simular sucesso, e que o padrão continua ligado.
+- **Pré-condições:** Executor com repositórios e dublês; configuração lida do ambiente; intenção aprovada pronta para publicar.
+- **Dados:** STUDIO_PUBLICATION_ENABLED ausente (padrão), =0 e =1; um vídeo aprovado em cada caso.
+- **Passos:**
+  1. Construir Settings com o ambiente padrão, com =0 e com =1.
+  2. Executar RunPublication.execute em cada configuração e contar claims, tokens e uploads.
+  3. No caso desabilitado, conferir o detalhe do bloqueio e que nada foi marcado como enviado.
+- **Esperado:** Padrão e =1 mantêm o fluxo e o upload; =0 devolve BLOCKED com detalhe STUDIO_PUBLICATION_ENABLED=0, sem claim, sem token e sem upload; nada vira UPLOADED nem é reconciliado.
+- **Limitações:** O teste prova o gate do executor, não o upload remoto. O padrão habilitado é decisão de produto (ACH-09) e a campanha deve exercitar o caminho desligado explicitamente.
+- **Automação:** camada `mock`; referência `Existentes: tests/test_publication_execution.py:620-645; tests/test_compose_env.py:100-110.`
 
 ## Resumo do capítulo
 

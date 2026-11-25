@@ -59,7 +59,7 @@ from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, NoSearchTerms, YouTubeApiError
 from .preview import render_preview
-from .panel import render_panel, render_script, render_tendencias, render_video
+from .panel import render_panel, render_script, render_video
 from .panel_channels import render_channels
 from .panel_styles import render_styles
 from .panel_connections import render_connections

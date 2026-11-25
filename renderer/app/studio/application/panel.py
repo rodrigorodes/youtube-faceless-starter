@@ -207,6 +207,7 @@ class TrendItemView:
     channel_title: str | None = None
     published_text: str | None = None
     region: str | None = None
+    query: str | None = None
     velocity_text: str = ""
     niche_ratio_text: str = ""
     duration_text: str = ""
@@ -504,6 +505,7 @@ class BuildPanel:
                         channel_title=channel_title,
                         published_text=published_text,
                         region=region,
+                        query=r.query,
                         velocity_text=r.velocity_text,
                         niche_ratio_text=r.niche_ratio_text,
                         duration_text=r.duration_text,

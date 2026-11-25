@@ -37,14 +37,14 @@ Este plano de testes organiza a validação completa do **Faceless Studio** em 1
 | F05 | [Storyboard, mídia e licenças](05-storyboard-midia-e-licencas.md) | `05-storyboard-midia-e-licencas.md` | `MID` | 7 | 10 | 10 A_PROJETAR |
 | F06 | [Voz, render e qualidade](06-voz-render-e-qualidade.md) | `06-voz-render-e-qualidade.md` | `REN` | 9 | 12 | 12 A_PROJETAR |
 | F07 | [Produção assíncrona e custos](07-producao-assincrona-e-custos.md) | `07-producao-assincrona-e-custos.md` | `PRO` | 8 | 12 | 12 A_PROJETAR |
-| F08 | [Aprovação e publicação](08-aprovacao-e-publicacao.md) | `08-aprovacao-e-publicacao.md` | `PUB` | 6 | 12 | 12 A_PROJETAR |
+| F08 | [Aprovação e publicação](08-aprovacao-e-publicacao.md) | `08-aprovacao-e-publicacao.md` | `PUB` | 6 | 13 | 13 A_PROJETAR |
 | F09 | [Analytics e aprendizado](09-analytics-e-aprendizado.md) | `09-analytics-e-aprendizado.md` | `ANA` | 6 | 8 | 8 A_PROJETAR |
 | F10 | [Painel e experiência](10-painel-e-experiencia.md) | `10-painel-e-experiencia.md` | `UX` | 5 | 8 | 8 A_PROJETAR |
 | F11 | [Ponta a ponta e desempenho](11-ponta-a-ponta-e-desempenho.md) | `11-ponta-a-ponta-e-desempenho.md` | `E2E` | 5 | 8 | 8 A_PROJETAR |
 | F12 | [Operação, backup e n8n](12-operacao-backup-e-n8n.md) | `12-operacao-backup-e-n8n.md` | `OPS` | 7 | 8 | 8 A_PROJETAR |
 | F13 | [Direção criativa e composição](13-direcao-e-composicao.md) | `13-direcao-e-composicao.md` | `DRC` | 4 | 8 | 8 A_PROJETAR |
 | F14 | [Biblioteca e mídia compartilhada](14-biblioteca-e-midia.md) | `14-biblioteca-e-midia.md` | `BIB` | 6 | 10 | 10 A_PROJETAR |
-| | **Total** | | | **88** | **130** | **130 A_PROJETAR** |
+| | **Total** | | | **88** | **131** | **131 A_PROJETAR** |
 
 ---
 
@@ -105,7 +105,7 @@ Este plano de testes organiza a validação completa do **Faceless Studio** em 1
 | `PUB.R02` | Intenção fixa metadados/destino; private é padrão e public exige confirmação adicional. | `renderer/app/studio/application/publication_gate.py:52-58, tests/test_publication_policy.py:55-99, tests/test_publication_api.py:94-108` | [F08](08-aprovacao-e-publicacao.md) | [PUB-03](08-aprovacao-e-publicacao.md), [PUB-04](08-aprovacao-e-publicacao.md), [PUB-05](08-aprovacao-e-publicacao.md) |
 | `PUB.R03` | Claims concorrentes usam locks; retry preserva sessão e UNKNOWN não entra em retry automático. | `renderer/app/studio/adapters/postgres/publish_repo.py:115-178, renderer/app/studio/application/publication_execution.py:298-345` | [F08](08-aprovacao-e-publicacao.md) | [PUB-07](08-aprovacao-e-publicacao.md), [PUB-08](08-aprovacao-e-publicacao.md), [PUB-09](08-aprovacao-e-publicacao.md), [PUB-12](08-aprovacao-e-publicacao.md) |
 | `PUB.R04` | Rearm só aceita DLQ permanente sem sessão, ID remoto, offset, UNKNOWN ou lease vivo; reconciliação depende de resposta remota. | `renderer/app/studio/adapters/postgres/publish_repo.py:316-330, renderer/app/studio/application/publication_execution.py:361-395` | [F08](08-aprovacao-e-publicacao.md) | [PUB-09](08-aprovacao-e-publicacao.md), [PUB-10](08-aprovacao-e-publicacao.md), [PUB-11](08-aprovacao-e-publicacao.md) |
-| `PUB.R05` | Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia. | `renderer/app/studio/application/publication_execution.py:205-242, renderer/app/studio/application/publication_execution.py:250-297` | [F08](08-aprovacao-e-publicacao.md) | [PUB-05](08-aprovacao-e-publicacao.md), [PUB-06](08-aprovacao-e-publicacao.md) |
+| `PUB.R05` | Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia. | `renderer/app/studio/application/publication_execution.py:205-242, renderer/app/studio/application/publication_execution.py:250-297` | [F08](08-aprovacao-e-publicacao.md) | [PUB-05](08-aprovacao-e-publicacao.md), [PUB-06](08-aprovacao-e-publicacao.md), [PUB-13](08-aprovacao-e-publicacao.md) |
 | `PUB.R06` | Preview mostra versão revisada; pedir ajustes reabre edição e invalida aprovação anterior. | `tests/test_publish_api.py:215-292, tests/e2e_full/test_journey_piloto.py:115-158` | [F08](08-aprovacao-e-publicacao.md) | [PUB-01](08-aprovacao-e-publicacao.md), [PUB-03](08-aprovacao-e-publicacao.md) |
 | `ANA.R01` | Sem prontidão, coleta não chama provedor; ausência não equivale a zero. | `renderer/app/studio/application/analytics_collection.py:148-192, renderer/app/studio/application/analytics_collection.py:203-232` | [F09](09-analytics-e-aprendizado.md) | [ANA-01](09-analytics-e-aprendizado.md), [ANA-02](09-analytics-e-aprendizado.md), [ANA-05](09-analytics-e-aprendizado.md) |
 | `ANA.R02` | ID determinístico por vídeo/métrica/janela/ID remoto permite persistência idempotente; pilar deve pertencer ao projeto. | `renderer/app/studio/application/analytics_collection.py:165-173, renderer/app/studio/application/analytics_collection.py:207-230, tests/test_analytics_repo.py:121-144` | [F09](09-analytics-e-aprendizado.md) | [ANA-03](09-analytics-e-aprendizado.md), [ANA-04](09-analytics-e-aprendizado.md) |
@@ -147,7 +147,7 @@ Este plano de testes organiza a validação completa do **Faceless Studio** em 1
 
 - **Total de funcionalidades catalogadas:** 14
 - **Total de regras derivadas do código:** 88 (100% cobertas por ao menos 1 cenário)
-- **Total de cenários projetados:** 130 (todos em status `A_PROJETAR`)
+- **Total de cenários projetados:** 131 (todos em status `A_PROJETAR`)
 - **Plano de Execução Piloto:** Consulte [PLANO-EXECUCAO-PILOTO.md](PLANO-EXECUCAO-PILOTO.md) para os gates G0 a G4.
 - **Guia de Automação e Limites:** Consulte [98-automacao.md](98-automacao.md).
 - **Lacunas e Riscos de Infraestrutura:** Consulte [99-lacunas.md](99-lacunas.md).

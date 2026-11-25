@@ -31,7 +31,6 @@ TRENDS_JS = """
   // ---- Diálogo de Pilares ----
   var dlg = $('#dialog-pilares');
   var btnGerenciar = $('#btn-gerenciar-pilares');
-  var btnNovoPilar = $('#btn-novo-pilar');
 
   function abrirPilares() {
     if (dlg) {
@@ -41,7 +40,6 @@ TRENDS_JS = """
   }
 
   if (btnGerenciar) btnGerenciar.addEventListener('click', abrirPilares);
-  if (btnNovoPilar) btnNovoPilar.addEventListener('click', abrirPilares);
 
   if (dlg) {
     dlg.addEventListener('click', function (ev) {
@@ -520,9 +518,12 @@ def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
         )
 
     partes = [e(canal), e(data_relativa)]
+    if not trend.region:
+        partes.insert(0, e("Região não informada"))
     if link_referencia:
         partes.append(link_referencia)
     sub_line = " · ".join(partes)
+    busca_html = f'<p class="sample">Busca: {e(trend.query)}</p>' if trend.query else ""
 
     pillar = e(trend.category_name) if trend.category_name else ""
     reg_val = trend.region or "UNKNOWN"
@@ -539,8 +540,10 @@ def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
         origem_rotulo = f"{region} · Em alta"
     elif trend.category_name:
         origem_rotulo = f"Pilar · {trend.category_name}"
+    elif trend.query:
+        origem_rotulo = "Busca"
     else:
-        origem_rotulo = "Em alta"
+        origem_rotulo = "Região não informada"
 
     duracao = trend.duration_text or "--:--"
 
@@ -607,6 +610,7 @@ def _trend_card(trend: TrendItemView, project_id: str | None = None) -> str:
             </div>
             <h3 style="margin:8px 0 2px">{e(trend.topic)}</h3>
             <p class="sub">{sub_line}</p>
+            {busca_html}
             <div class="signals">
               <span class="sig"><b>{e(views_fmt)}</b> views <span class="src api">API</span></span>
               <span class="sig"><b class="up">{e(vel_fmt)}</b> velocidade <span class="src calc">Calc.</span></span>

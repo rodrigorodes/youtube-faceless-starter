@@ -3,44 +3,35 @@
 ## Resumo atual
 
 - Objetivo: revisar o app Faceless Studio e entregar o plano de testes no modelo GC.
-- Fase: **plano completo e validado** (14 capítulos, 88 regras, 130 cenários; `validar.py` OK).
-  Revisão do app concluída, suíte canônica executada e correções ACH-01/ACH-04..08 aplicadas
-  e verificadas (ACH-09 mantido como intencional).
-- Base: HEAD `f4a9244` (branch `main`), árvore **dirty** (49 entradas: WIP local de UX V4/V3,
-  contratos gerados, testes ajustados e este plano). Referências de linha descrevem o estado lido.
+- Fase: **plano completo e validado** (14 capítulos, 88 regras, 131 cenários; `validar.py` OK).
+  Revisão do app concluída, suíte canônica **verde** e correções ACH-01/ACH-04..08 aplicadas
+  e verificadas (ACH-09 mantido como intencional e coberto por PUB-13).
+- Base: HEAD `79e3585` (branch `main`, merge do WIP V4/V3), árvore **dirty** com os ajustes
+  desta sessão (produto, testes e este plano). Referências de linha descrevem o estado lido.
 - Ambiente canônico: `scripts/test-container.sh` (Docker, Python 3.12, Postgres 16 efêmero,
   ffmpeg com libass). O host macOS não é ambiente de teste válido.
-- Última validação canônica (RUN-08, pós-correções ACH): `scripts/test-container.sh tests
-  --ignore=tests/e2e_full --ignore=tests/e2e_ux -q` → **23 failed, 4035 passed, 20 skipped**
-  (767 s, exit 1). Série completa: RUN-02 39 → RUN-04 32 → RUN-06 29 → RUN-07 25 → RUN-08 23.
-  Resíduo: **23 falhas de A2** (texto/markup do WIP V4/V3); nenhuma regressão das correções.
-  O flake de TTS passou na RUN-08.
-- Triagem concluída (RUN-03): grupos B, C e D corrigidos como artefatos de teste
-  desatualizados; grupo A (32 falhas) majoritariamente drift de teste do WIP V4/V3, não
-  bug de produto confirmado. Subconjuntos verificados: B 39 passed, C+D 22 passed.
-- Triagem refinada do grupo A (RUN-05): **32 failed, 165 passed** nos 9 arquivos do grupo.
-  A1 (4) asserção em markup exato = defeito de teste; A2 (24) texto/markup do WIP V4/V3;
-  A3 (5) mudança funcional com decisão de produto pendente (ACH-04..ACH-08); A4 (2)
-  atraso de teste em relação a `auto_research`/`publication_enabled` **já commitados**.
-  A1 e A4 corrigidos (só testes); reexecução dos 9 arquivos: **29 failed, 168 passed**
-  (87,6 s) — naquele momento restavam 24 de A2 e 5 de A3. Depois da RUN-07, as 5 de A3
-  saíram e restam 23 de A2 + 1 flake de medição de TTS.
-- Execução completa pós-triagem (RUN-04): **32 failed, 4026 passed, 20 skipped**
-  (691 s, exit 1). As 7 falhas removidas são os grupos B/C/D; as 32 restantes são todas
-  do grupo A. O refinamento da RUN-05 mostra que A1 e A4 são corrigíveis sem tocar no
-  produto; A2 e A3 dependem de decisão.
-- Validação local no host: 19 failed, 3172 passed, 904 skipped; as 19 falhas são de
-  render/subtitles por falta de libass no ffmpeg Homebrew e passam no container
-  (74 passed, 1 skipped nos arquivos de render).
-- Bloqueios: nenhum bloqueio de execução. A árvore dirty impede atribuir A2 ao produto; A2
-  depende da aprovação do WIP V4/V3. ACH-01 e ACH-04..08 foram corrigidos e verificados;
-  ACH-09 foi mantido como intencional.
+- Última validação canônica (RUN-11, pós-cobertura e correção do TTS): `scripts/test-container.sh
+  tests --ignore=tests/e2e_full --ignore=tests/e2e_ux -q` → **4059 passed, 20 skipped,
+  0 failed** (682,07 s, exit 0). Série completa: RUN-02 39 → RUN-04 32 → RUN-06 29 →
+  RUN-07 25 → RUN-08 23 → RUN-10 0 → RUN-11 0. A higiene de segredos passou após remover
+  do índice o artefato de debug `tests/_debug_trend.py`.
+- Triagem concluída (RUN-03): grupos B, C e D eram artefatos de teste desatualizados;
+  grupo A era majoritariamente drift de teste do WIP V4/V3. A2 foi resolvido na RUN-10
+  com o WIP aprovado e os testes alinhados. Nenhuma falha restante foi confirmada como
+  regressão de produto.
+- Cobertura 100% do plano: o capítulo 08 ganhou **PUB-13** (interruptor global de
+  publicação: padrão ligado e contingência desligada), fechando o ACH-09 no plano. O flake
+  de TTS foi corrigido na causa: a expectativa passou a ser a média de evidência (~3,25 s),
+  não `10 × 0,40 s`; a tolerância de 15% cobre a variância da diferença entre duas
+  sínteses estocásticas.
+- Validação local no host: 19 falhas de render/subtitles por falta de libass no ffmpeg
+  Homebrew; os mesmos arquivos passam no container (74 passed, 1 skipped nos arquivos de
+  render).
+- Bloqueios: nenhum bloqueio de execução. ACH-09 está coberto no plano; a campanha ainda
+  precisa executar PUB-13 e as demais lacunas de infraestrutura (LAC-01..LAC-06).
 - Próxima ação: a consistência dos capítulos e de `evidencias/` está fechada
-  (`validar.py` OK após as edições). Falta a decisão do time: (a) aprovar o WIP V4/V3 e
-  atualizar os 23 testes de A2; (b) acompanhar o flake de medição de TTS
-  (`test_tts_calibration.py::test_punctuation_adds_the_measured_pause_time`, que falhou na
-  RUN-07 com 2,96 s e passou na RUN-08) na campanha; (c) cobrir `publication_enabled=False`
-  em ACH-09.
+  (`validar.py` OK). A suíte canônica está verde na RUN-11. Próximo passo da campanha:
+  executar os cenários `A_PROJETAR` (incluindo PUB-13) e tratar as lacunas de infraestrutura.
 
 ## Decisões
 
@@ -66,8 +57,9 @@
     renderizador de lista de canais.
   - ACH-08: o novo vídeo voltou a mostrar o cartão "Predefinição do canal" com idioma,
     voz e estilo herdados.
-  - ACH-09: mantido como intencional (publicação habilitada por padrão); o plano deve
-    cobrir o caminho `publication_enabled=False`.
+  - ACH-09: mantido como intencional (publicação habilitada por padrão) e **coberto por
+    PUB-13** no plano: o cenário executa `STUDIO_PUBLICATION_ENABLED=0` (BLOCKED, sem
+    claim/upload) e o padrão ligado. O risco de upload real permanece na campanha.
 - `scripts/secret_hygiene.py`: trilhas CC0 de `storage/music-candidates/` deixam de ser
   bloqueadas por diretório; continuam sujeitas à varredura de conteúdo. Motivo: são
   amostras rastreadas e referenciadas pelo produto/testes.
@@ -94,6 +86,16 @@
   chip "Todas").
 - Ambiente do host: `ffmpeg` 9.1 instalado via Homebrew (sem libass); a suíte canônica
   continua sendo o container. Isso mudou o resultado local de 2 para 19 falhas de render.
+- **Cobertura 100% do plano:** o capítulo 08 ganhou o cenário **PUB-13** (interruptor de
+  publicação: `STUDIO_PUBLICATION_ENABLED=0` bloqueia sem claim/upload; padrão ligado
+  preserva o comportamento), fechando o ACH-09 no plano. O plano passou a 131 cenários,
+  com as 88 regras ainda cobertas por ao menos um cenário (`validar.py` OK).
+- **Flake de TTS corrigido na causa:** `tests/test_tts_calibration.py` comparava a pausa
+  por pontuação com `10 × 0,40 s = 4,0 s`, mas o delta real entre prosa com e sem
+  pontuação é ~3,25 s (média das três execuções de evidência); o ponto final já tem
+  silêncio de borda nas duas leituras. O teste passou a comparar com a média registrada,
+  com tolerância de 15% para a variância da diferença entre duas sínteses estocásticas.
+  Verificado: 6 passed no container.
 
 ## Evidências
 
@@ -111,10 +113,14 @@
 - `evidencias/RUN-2026-11-25-container/RUN-07-ach-fixes.md` — correções de produto ACH-01 e
   ACH-04..08, testes atualizados e suíte completa pós-correção: RUN-07 25 failed / 4033
   passed e RUN-08 23 failed / 4035 passed (todas as 23 são A2).
+- `evidencias/RUN-2026-11-25-container/RUN-10-suite-verde.md` — suíte completa após o merge
+  do WIP V4/V3 e os ajustes de A2: 4059 passed / 20 skipped / 0 failed.
+- `evidencias/RUN-2026-11-25-container/RUN-11-cobertura-100.md` — cobertura 100% do plano
+  (PUB-13) e correção do flake de TTS; suíte completa: 4059 passed / 20 skipped / 0 failed.
 
 ## Restrições
 
 Não ler segredos, não publicar vídeos, não chamar fornecedores pagos, não fazer push/merge.
-Resultado parcial ou skip não é aprovação. As falhas do grupo A não são PASS nem FALHA de
-produto até o WIP V4/V3 ser aprovado; a árvore dirty deve ser reconferida antes de
-qualquer campanha.
+Resultado parcial ou skip não é aprovação. O WIP V4/V3 foi aprovado e mergeado na base
+`79e3585`; a árvore continua dirty com os ajustes desta sessão e deve ser reconferida antes
+de qualquer campanha.

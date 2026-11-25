@@ -67,7 +67,7 @@
     "prefixo": "PUB",
     "arquivo": "08-aprovacao-e-publicacao",
     "nome": "Aprovação e publicação",
-    "cenarios_count": 12,
+    "cenarios_count": 13,
     "regras_count": 6,
     "resumo": "A aprovação registra a versão revisada e uma intenção. Claim e executor verificam intenção, render, checksum e QA. O executor valida destino e autorização antes do upload; ambiguidade exige reconciliação. Aprovar não equivale a publicar."
   },

@@ -108,8 +108,8 @@ def test_every_settings_section_reaches_real_content(env, profile):
         "/studio/configuracoes/canais": ["Canal ativo", 'id="painel-perfil"'],
         "/studio/configuracoes/estrategia": ['id="painel-perfil"', 'id="channel-form"'],
         "/studio/configuracoes/marca": ['id="channel-form"', 'id="personalizar-estilo-canal"'],
-        "/studio/configuracoes/producao": ['id="painel-orcamento"', 'id="painel-providers"'],
-        "/studio/configuracoes/conexoes": ["configurações", "Conex"],
+        "/studio/configuracoes/producao": ['id="budget-form"', "Roteamento de providers"],
+        "/studio/configuracoes/conexoes": ["Configurações", "Conexões"],
         "/studio/configuracoes/equipe": ["Equipe"],
         "/studio/configuracoes/avancado": ["Diagnóstico"],
     }

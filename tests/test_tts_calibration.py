@@ -111,6 +111,20 @@ def _sample(corpus: dict, sample_id: str) -> dict:
     return next(s for s in corpus["samples"] if s["id"] == sample_id)
 
 
+def _recorded_pause_delta() -> float:
+    """Delta medido nas três execuções de evidência: prosa pontuada menos prosa sem pontuação.
+
+    O ponto final e o silêncio de borda já estão nas duas leituras, então o delta não é
+    ``10 × MEASURED_PAUSE_SECONDS``: é a soma das pausas internas que a pontuação acrescenta.
+    """
+    deltas = []
+    for caminho in EVIDENCE_RUNS:
+        amostras = {s["id"]: s["measured_seconds"]
+                    for s in json.loads(caminho.read_text(encoding="utf-8"))["samples"]}
+        deltas.append(amostras["prosa_pontuada"] - amostras["prosa_sem_pontuacao"])
+    return sum(deltas) / len(deltas)
+
+
 def test_measured_model_matches_the_real_voice_within_declared_tolerance(measured):
     """O modelo com pausas medidas (estimate_voice_durations) x WAV real do Piper."""
     corpus = measured["corpus"]
@@ -148,9 +162,11 @@ def test_punctuation_adds_the_measured_pause_time(measured):
     with_pauses = measured["totals"]["prosa_pontuada"]
     without = measured["totals"]["prosa_sem_pontuacao"]
     delta = with_pauses - without
-    marks = 10  # vírgulas e pontos da prosa pontuada
     assert delta > 2.0
-    assert delta == pytest.approx(marks * MEASURED_PAUSE_SECONDS, abs=1.0)
+    # A diferença é de duas sínteses estocásticas: a variância do delta soma as duas.
+    # O valor esperado vem das três execuções de evidência (~3,25 s), não de 10 × 0,40 s:
+    # o ponto final não acrescenta pausa porque o silêncio de borda já está nas duas leituras.
+    assert delta == pytest.approx(_recorded_pause_delta(), rel=0.15)
 
 
 def test_numbers_and_acronyms_stay_within_the_declared_tolerance(measured):

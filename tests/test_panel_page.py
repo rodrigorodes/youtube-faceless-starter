@@ -249,7 +249,7 @@ def test_panel_page_renders_trending_topics_block(client_env):
     assert "Tendências e ideias</h1>" in r.text
     assert "ADE Lineup 2026 Revelado" in r.text
     assert "YouTube Data API" in r.text
-    assert "Não informada" in r.text  # ausência de região é dita, não inventada
+    assert "Região não informada" in r.text  # ausência de região é dita, não inventada
 
 
 
@@ -306,7 +306,9 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     assert "Tecnologia" in r.text
     assert 'data-filtro="regiao:BR"' not in r.text
     assert f'data-filtro="pilar:{cat_id}"' in r.text
-    assert "+ Novo pilar" in r.text or 'id="btn-novo-pilar"' in r.text
+    # `pgIdeas` não tem "+ Novo pilar": o diálogo abre por "Gerenciar pilares".
+    assert 'id="btn-novo-pilar"' not in r.text
+    assert "+ Novo pilar" not in r.text
 
     # Botões de ação do painel
     assert "Buscar agora" in r.text
@@ -317,8 +319,8 @@ def test_panel_page_renders_category_pills_and_management_modal(client_env):
     assert 'id="form-pilar"' in r.text
     assert "btn-salvar-pilar" in r.text
 
-    # Badge de pilar no cartão de tendência associado
-    assert "Pilar: Tecnologia" in r.text
+    # Badge de pilar no cartão de tendência associado (o protótipo usa "Pilar · Nome").
+    assert "Pilar · Tecnologia" in r.text
     assert f'data-pilar="{cat_id}"' in r.text
 
 
@@ -432,7 +434,7 @@ def test_panel_renders_youtube_themed_cards_and_video_links(client_env):
     assert "Tech World" in r.text
 
     # Ação real de criar vídeo a partir do tema
-    assert "Criar com esta ideia" in r.text
+    assert "Criar com piloto" in r.text
     assert 'data-usar-tendencia="Hit do Carnaval 2026"' in r.text
 
     # XSS safety
@@ -533,19 +535,20 @@ def test_panel_page_has_loading_spinner_and_region_filters(client_env):
     assert 'Origem desconhecida' in r.text  # a tendência sem região continua visível
     assert f'data-filtro="pilar:{cat_id}"' in r.text
     assert '>Inovação</a>' in r.text
-    assert 'id="btn-novo-pilar"' in r.text
-    assert '+ Novo pilar' in r.text
+    # `pgIdeas` não tem "+ Novo pilar": o diálogo abre por "Gerenciar pilares".
+    assert 'id="btn-novo-pilar"' not in r.text
+    assert '+ Novo pilar' not in r.text
 
     # 2. Feedback de carregamento real (indicador da casca + texto do botão)
     assert 'id="indicador-carregando"' in r.text and 'aria-live="polite"' in r.text
     assert 'btn-refresh-trends' in r.text
     assert "↻ Buscando…" in r.text
 
-    # 3. «Criar com esta ideia» leva o tema (e o canal ativo) para o Início
+    # 3. «Criar com piloto» leva o tema (e o canal ativo) para o Início
     assert 'data-usar-tendencia="Tema Brasil Teste"' in r.text
-    assert "Criar com esta ideia" in r.text
+    assert "Criar com piloto" in r.text
     # KEEP-01 (A33): o link já carrega o canal ativo junto do tema, sem trocar de canal
-    assert re.search(r'href="/studio/panel\?project_id=[^"]+&amp;topic=Tema\+Brasil\+Teste"', r.text)
+    assert re.search(r'href="/studio/panel/novo-video\?project_id=[^"]+&amp;topic=Tema\+Brasil\+Teste', r.text)
 
     # 4. Strict CSP & XSS safety
     assert 'innerHTML' not in r.text
@@ -663,8 +666,8 @@ def test_preview_page_has_unified_sidebar_layout(client_env):
     assert 'href="/studio/panel/videos' in r.text
 
     # Conteúdo da prévia intacto.
-    assert "Prévia do corte final" in r.text
-    assert "Voltar ao vídeo" in r.text
+    assert "Prévia da versão" in r.text
+    assert "Voltar à Qualidade &amp; Aprovação" in r.text
 
     # O template antigo (marca, navegação e CTA) não pode voltar.
     for stale in ("FACELESS STUDIO", "Pipeline de Vídeos", "Temas em Alta", "+ Novo Vídeo"):
@@ -835,7 +838,7 @@ def test_panel_shell_preserves_sections_and_trend_filter_contract(client_env):
     # recorte no servidor para o próximo lote — filtrar só o lote atual seria enganoso.
     r_trend = client.get("/studio/panel/tendencias", headers=AUTH_HEADER)
     assert r_trend.status_code == 200
-    assert ('<a class="pill btnlike chip-filtro" href="/studio/panel/tendencias?filtro=todas&amp;project_id='
+    assert ('<a class="pill btnlike chip-filtro accent" href="/studio/panel/tendencias?filtro=todas&amp;project_id='
             in r_trend.text)
     assert 'data-filtro="todas" aria-current="true">Todos</a>' in r_trend.text
     assert 'data-filtro="regiao:BR"' not in r_trend.text
