@@ -11,3 +11,6 @@ FS-01 testes; FS-02 ambientes; FS-04 configurações e flags; FS-05 readiness; F
 
 ## Sequência
 [Auditoria](AUDIT-AS-IS.md) → [Plano e critérios](PLAN.md) → [Prompt de execução](MASTER-PROMPT.md). V4-00 e FI-00 reutilizam evidências da Foundation, sem repetir trabalho. P0 bloqueia evolução dependente; P1 pode ser entregue em paralelo ou deferido mediante decisão de risco documentada. Nenhuma implementação ou gasto começa automaticamente.
+
+## Detalhamento executável (revisão 2)
+[START-HERE](START-HERE.md) · [Backlog por atividade](EXECUTION-BACKLOG.md) · [Quality Gates e DoD](QUALITY-GATES.md) · [Evolução estrutural](STRUCTURAL-EVOLUTION.md) · [FS-08](phases/FS-08-modularization.md). FS-08 é P1, inventário/caracterização após regressão; extrações vinculadas às fases consumidoras, não refatoração generalizada. Sem CI/CD. A preparação original mantém 4–7 dias estimados, mapa FS-08 +0,5–1 dia se executado agora; extrações não incluídas e sem dupla contagem.

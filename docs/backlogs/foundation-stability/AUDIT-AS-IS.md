@@ -17,3 +17,6 @@ Método: leitura de arquivos e diff; nenhum teste/render executado nesta auditor
 | domain/trend_priority.py | VPH acumulada, concorrência fixa, aderência por categoria: transparência e conformidade em FI-00/03/05 |
 
 Host macOS sem libass não é ambiente canônico conforme relato. Publicação ligada por padrão é decisão ACH-09; manter, desligar explicitamente nas campanhas. Sem CI/CD. Backup integral, concorrência multiprocesso e isolamento tenant permanecem riscos para expansão/SaaS; proteger dados locais agora. Não refatorar módulos só por quantidade de linhas.
+
+## Concentração estrutural — confirmada em main 79e3585
+Contagens aproximadas por leitura: routes.py 3153, production.py 1313, wiring.py 856, ports.py 1183, render_compiler.py 486. routes.py contém 140 declarações @router (não necessariamente 140 operações únicas). Não é defeito isolado. [Evolução estrutural](STRUCTURAL-EVOLUTION.md) especifica responsabilidades, invariantes e recortes; FS-08 P1, sem refatoração geral. Baseline do código é posterior ao merge documental; RUN-08 continua evidência histórica, não teste deste SHA.
