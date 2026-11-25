@@ -1,0 +1,287 @@
+{
+  "capitulo": "10-painel-e-experiencia",
+  "titulo": "Painel e experiência",
+  "resumo": "Oito cenários documentais A_PROJETAR. Contratos encontrados e melhorias de cobertura propostas são explicitamente separados; nenhuma sessão de navegador foi executada.",
+  "como_funciona": "O painel usa navegação de servidor, contexto de canal e áreas do vídeo. Helpers traduzem erros da API e resultados de publicação. Suites de browser existentes cobrem navegação, DOM, aprovação e três larguras de tela.",
+  "limites_gerais": "Planejar browser sobre stack isolada, com respostas externas mockadas. Não confundir presença de atributo ARIA com acessibilidade comprovada; teclado/leitor de tela e estados reais precisam de verificação futura.",
+  "regras": [
+    {
+      "id": "UX.R01",
+      "natureza": "confirmada no código",
+      "resumo": "Links de páginas permitidas propagam canal; vídeo conserva projeto proprietário; área inválida normaliza para cenas e nav usa aria-current.",
+      "fontes": [
+        "renderer/app/studio/api/active_channel.py:22-69",
+        "renderer/app/studio/api/panel_video_nav.py:13-66"
+      ]
+    },
+    {
+      "id": "UX.R02",
+      "natureza": "confirmada no código",
+      "resumo": "Resultado de publicação só é sucesso quando UPLOADED; demais resultados explicam próximo passo em português.",
+      "fontes": [
+        "renderer/app/studio/api/publicacao_js.py:18-46",
+        "renderer/app/studio/api/publicacao_js.py:68-86"
+      ]
+    },
+    {
+      "id": "UX.R03",
+      "natureza": "confirmada no código com cobertura desejada",
+      "resumo": "Helper traduz 422/409/429/5xx; ações devem manter feedback legível e recuperável sem JSON cru ou sucesso falso.",
+      "fontes": [
+        "renderer/app/studio/api/erro_js.py:14-83",
+        "renderer/app/studio/api/panel_video.py:187"
+      ]
+    },
+    {
+      "id": "UX.R04",
+      "natureza": "critério desejado apoiado em testes existentes",
+      "resumo": "Garantir uso em 390/768/1280 px, navegação por teclado, foco e anúncio de erro; suites atuais não equivalem a auditoria completa.",
+      "fontes": [
+        "tests/e2e_ux/test_e2e_responsive.py:9-94",
+        "tests/e2e_ux/test_e2e_dom_behavior.py:23-37",
+        "renderer/app/studio/api/panel_video.py:59"
+      ]
+    },
+    {
+      "id": "UX.R05",
+      "natureza": "critério desejado apoiado em contrato backend",
+      "resumo": "Duplo clique não deve repetir efeito; ação pendente deve mostrar progresso e liberar interação após falha.",
+      "fontes": [
+        "tests/test_publication_execution.py:519-529",
+        "renderer/app/studio/api/panel_video.py:635-660"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "UX-01",
+      "titulo": "Navegação mantém contexto e área ativa",
+      "tipo": "feliz/regressao",
+      "regras": [
+        "UX.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar troca silenciosa de canal durante navegação.",
+      "pre_condicoes": [
+        "Canais A/B e um vídeo pertencente a A; página inicialmente em B."
+      ],
+      "exemplo": {
+        "dados": "project_id de B; links Início, Tendências, Desempenho, Configurações; vídeo de A.",
+        "passos": [
+          "Navegar pelos sete itens canônicos e usar voltar/avançar.",
+          "Abrir vídeo de A e percorrer áreas.",
+          "Abrir área inexistente e observar destino."
+        ]
+      },
+      "esperado": "Páginas de canal preservam B; vídeo permanece de A; área ativa é identificada uma vez no menu correspondente; área inválida cai em cenas; links externos/downloads não recebem project_id.",
+      "limitacoes": "Propagação de URL não é autorização; testar diretamente o dono retornado pela API.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existentes: tests/e2e_ux/test_e2e_shell_navigation.py:22-54; tests/test_active_channel.py; extensão multicanal proposta."
+      }
+    },
+    {
+      "id": "UX-02",
+      "titulo": "Estados vazio, produção e aprovação são distintos",
+      "tipo": "borda",
+      "regras": [
+        "UX.R01",
+        "UX.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não sugerir que aprovação significa publicação.",
+      "pre_condicoes": [
+        "Fixtures sem vídeos, em produção, awaiting_approval, failed e approved sem YouTube."
+      ],
+      "exemplo": {
+        "dados": "Cinco estados em projetos separados; publicação ausente.",
+        "passos": [
+          "Abrir lista e detalhe de cada fixture.",
+          "Seguir ação principal sugerida.",
+          "Recarregar estado approved sem destino."
+        ]
+      },
+      "esperado": "Vazio orienta criação; awaiting_approval abre qualidade; failed abre produção; approved mostra pendente e sem destino, sem ID/URL YouTube inventados.",
+      "limitacoes": "Texto e ordem visual podem evoluir; validar significado e ação real, não snapshot isolado.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existentes: tests/e2e_full/test_journey_piloto.py:74-85; tests/test_home_v3.py; proposta matriz de estados."
+      }
+    },
+    {
+      "id": "UX-03",
+      "titulo": "Falhas de formulário e transporte preservam feedback",
+      "tipo": "erro",
+      "regras": [
+        "UX.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Permitir recuperação compreensível após recusa.",
+      "pre_condicoes": [
+        "Browser isolado com interceptação das respostas; formulário preenchido com dados sintéticos."
+      ],
+      "exemplo": {
+        "dados": "422 com loc body/title; 409 stale; 429; 503; conexão interrompida.",
+        "passos": [
+          "Enviar formulário em cada variante.",
+          "Ler mensagem e observar indicador pendente.",
+          "Corrigir dado ou restabelecer resposta e reenviar."
+        ]
+      },
+      "esperado": "Erro conhecido orienta em português; 422 nomeia campo; 409 sugere atualizar; sem JSON cru; desejado: entrada editável preservada e indicador encerrado após falha, sem sucesso falso.",
+      "limitacoes": "Preservação e tratamento de conexão interrompida variam por tela e precisam de teste proposto; helper sozinho não garante renderização segura.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existente: tests/test_erro_js.py; proposta matriz browser em criação, edição e publicação."
+      }
+    },
+    {
+      "id": "UX-04",
+      "titulo": "Todos os resultados da publicação são honestos",
+      "tipo": "regressao",
+      "regras": [
+        "UX.R02",
+        "UX.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não chamar retry ou reconciliação de sucesso.",
+      "pre_condicoes": [
+        "Aba publicação com backend mock; nenhum envio real."
+      ],
+      "exemplo": {
+        "dados": "UPLOADED com ID; IDLE, RETRY, RECONCILE, BLOCKED, DEAD_LETTER e resultado desconhecido.",
+        "passos": [
+          "Acionar publicar com cada resposta.",
+          "Inspecionar mensagem e cor/semântica de feedback.",
+          "Recarregar com falha persistida."
+        ]
+      },
+      "esperado": "Só UPLOADED confirma publicação; RETRY diz tentativa agendada; RECONCILE orienta não reenviar; desconhecido não confirma; causa persistida e resultado do clique mantêm significado compatível.",
+      "limitacoes": "UPLOADED mockado não atesta existência remota; segredo/sessão não devem compor fixtures de mensagens.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existentes: tests/test_publicacao_acao.py; tests/test_publication_api.py:111-124; extensão browser proposta."
+      }
+    },
+    {
+      "id": "UX-05",
+      "titulo": "Duplo clique com latência e falha",
+      "tipo": "concorrencia",
+      "regras": [
+        "UX.R05",
+        "UX.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Proteger usuário de ações repetidas durante espera.",
+      "pre_condicoes": [
+        "API local instrumentada com efeito de upload fake; atraso controlado de 2 s."
+      ],
+      "exemplo": {
+        "dados": "Dois cliques rápidos em Publicar agora; variante 503; dois cliques em iniciar produção.",
+        "passos": [
+          "Disparar cliques e contar requests e efeitos.",
+          "Aguardar resposta e observar botão/feedback.",
+          "Repetir após falha conhecida e após sucesso."
+        ]
+      },
+      "esperado": "Desejado: pendência visível e controle indisponível enquanto aguarda; backend limita efeito único mesmo se receber repetição; falha permite ação apropriada; sucesso não gera outro upload.",
+      "limitacoes": "Não pressupor que todos os botões já implementam desabilitação; backend e UI são oráculos separados.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existentes: tests/test_publication_execution.py:529; proposta de browser com atraso e contador de efeitos."
+      }
+    },
+    {
+      "id": "UX-06",
+      "titulo": "Responsividade com conteúdo longo",
+      "tipo": "volume/borda",
+      "regras": [
+        "UX.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Manter controles acessíveis em telas estreitas.",
+      "pre_condicoes": [
+        "Browser local; lista com 50 vídeos e títulos longos sintéticos."
+      ],
+      "exemplo": {
+        "dados": "Viewports 390x844, 768x1024 e 1280x800; título com 100 caracteres e mensagem de erro longa.",
+        "passos": [
+          "Abrir início, criação, canais, storyboard e publicação em cada viewport.",
+          "Percorrer controles e abrir diálogo.",
+          "Verificar overflow, sobreposição, IDs e ação principal."
+        ]
+      },
+      "esperado": "Desejado: nenhum overflow horizontal global ou controle essencial oculto; texto quebra de forma legível; diálogo permite cancelar/confirmar; IDs únicos. Tabelas podem ter rolagem local identificável.",
+      "limitacoes": "Suites atuais cobrem início/criação/canais; storyboard e publicação com volume são ampliação. Não há medição visual nesta tarefa.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existente: tests/e2e_ux/test_e2e_responsive.py:16-94; extensão de telas e volume proposta."
+      }
+    },
+    {
+      "id": "UX-07",
+      "titulo": "Teclado, foco e anúncio de erros",
+      "tipo": "borda/regressao",
+      "regras": [
+        "UX.R04",
+        "UX.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Operar fluxos essenciais sem mouse e perceber feedback.",
+      "pre_condicoes": [
+        "Browser e leitor de tela local; diálogo de pilares e pedir ajustes disponíveis."
+      ],
+      "exemplo": {
+        "dados": "Tab/Shift+Tab/Enter/Escape; zoom 200%; erro 422 de campo obrigatório.",
+        "passos": [
+          "Percorrer navegação e abrir diálogo só por teclado.",
+          "Fechar com Escape e verificar retorno de foco.",
+          "Provocar erro e ouvir anúncio; revisar nomes e foco visível em zoom."
+        ]
+      },
+      "esperado": "Critério desejado: foco previsível, visível e contido no modal; retorno ao disparador; campos com nomes; erro anunciado sem depender apenas de cor; operação possível em zoom.",
+      "limitacoes": "ARIA encontrado é evidência estrutural apenas; compatibilidade real com leitor de tela exige execução manual; não declarar conformidade WCAG completa.",
+      "automacao": {
+        "camada": "manual",
+        "referencia": "Base existente: tests/e2e_ux/test_e2e_dom_behavior.py:23-37; roteiro manual e assertions de foco propostos."
+      }
+    },
+    {
+      "id": "UX-08",
+      "titulo": "Edição concorrente em duas abas",
+      "tipo": "concorrencia/erro",
+      "regras": [
+        "UX.R03",
+        "UX.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar sobrescrita silenciosa e contexto desatualizado.",
+      "pre_condicoes": [
+        "Duas abas do mesmo vídeo, versão de roteiro inicial compartilhada; banco local."
+      ],
+      "exemplo": {
+        "dados": "A edita cena para fato válido X; B mantém versão antiga e tenta fato válido Y.",
+        "passos": [
+          "Salvar em A.",
+          "Salvar em B sem recarregar.",
+          "Observar mensagem e recarregar B; verificar versão na API."
+        ]
+      },
+      "esperado": "Critério desejado apoiado no erro stale: alteração obsoleta é recusada ou exige resolução explícita; feedback informa atualizar; B não anuncia sucesso nem apaga X silenciosamente.",
+      "limitacoes": "Helper traduz conflito, mas não comprova proteção de todas as rotas de edição; testar contrato real antes de tratar como garantia implementada.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Base: renderer/app/studio/api/erro_js.py:33-35; teste multia ba proposto, complementar a tests/e2e_full/test_journey_diretor.py."
+      }
+    }
+  ],
+  "prefixo": "UX"
+}

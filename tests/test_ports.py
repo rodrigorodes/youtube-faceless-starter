@@ -26,7 +26,8 @@ class FakeRepo:
     def get_project(self, project_id):
         return self.projects.get(project_id)
 
-    def create_video(self, project_id, topic, fmt, style_id=None, production_mode=ProductionMode.piloto):
+    def create_video(self, project_id, topic, fmt, style_id=None, production_mode=ProductionMode.piloto,
+                     target_duration_s=None, pacing_preset="dynamic", budget_cap_usd=None):
         return Video(
             id="v" * 32,
             project_id=project_id,

@@ -1885,7 +1885,9 @@ def _headers(nonce: str) -> dict[str, str]:
     return {
         "Content-Security-Policy": (
             f"default-src 'none'; style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; script-src 'nonce-{nonce}'; "
-            "img-src 'self' data: https://i.ytimg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+            "img-src 'self' data: https://i.ytimg.com https://pixabay.com https://*.pixabay.com https://cdn.pixabay.com; "
+            "media-src 'self' data: https://pixabay.com https://*.pixabay.com https://cdn.pixabay.com; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         ),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",

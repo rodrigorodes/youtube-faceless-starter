@@ -164,7 +164,7 @@ def _area_direcao(view, *, style_view=None, script_view=None, video_id: str, com
             '<div class="between" style="margin:14px 14px 16px">'
             '<div><h2>Direção criativa</h2>'
             '<p class="sub">O briefing que guia roteiro, mídia, ritmo e música. Gerado a partir do tema; você pode ajustar antes de produzir.</p></div>'
-            f'<div class="row"><button class="btn primary small" type="button" id="btn-gerar-briefing" onclick="gerarBriefing(\'{e(video_id)}\')">⚡ Gerar briefing</button></div>'
+            f'<div class="row"><button class="btn primary small" type="button" id="btn-gerar-briefing" data-video-id="{e(video_id)}">⚡ Gerar briefing</button></div>'
             '</div>'
             '<div class="card" style="margin:14px"><p>Nenhum briefing criativo gerado ainda para este vídeo. '
             'Clique no botão acima para criar o briefing estruturado com gancho, estrutura, direção visual e orientações de áudio.</p></div>'
@@ -188,7 +188,7 @@ def _area_direcao(view, *, style_view=None, script_view=None, video_id: str, com
     return f"""
 <div class="between" style="margin:14px 14px 16px"><div><h2>Direção criativa</h2>
 <p class="sub">O briefing que guia roteiro, mídia, ritmo e música. Gerado a partir do tema; você pode ajustar antes de produzir.</p></div>
-<div class="row"><span class="pill ok">✓ Briefing gerado</span><button class="btn small" type="button" id="btn-regenerar-briefing" onclick="gerarBriefing('{e(video_id)}')">↻ Regenerar briefing</button></div></div>
+<div class="row"><span class="pill ok">✓ Briefing gerado</span><button class="btn small" type="button" id="btn-regenerar-briefing" data-video-id="{e(video_id)}">↻ Regenerar briefing</button></div></div>
 <div class="two" style="padding:0 14px 14px"><div class="stack">
  <div class="card"><h3 style="margin-bottom:8px">Gancho · primeiros 3 s</h3>
   <textarea id="brief-hook" rows="2" style="width:100%">{hook}</textarea>
@@ -215,7 +215,7 @@ def _area_direcao(view, *, style_view=None, script_view=None, video_id: str, com
  <div class="between sub"><span>Música</span><b style="color:var(--text)">orientação de áudio</b></div>
  <div class="between sub"><span>Teto de custo</span><b style="color:var(--text)">{budget_label}</b></div>
  <div class="hr"></div>
- <button class="btn primary long" type="button" id="btn-salvar-briefing" onclick="salvarBriefing('{e(video_id)}')">Salvar ajustes do briefing</button>
+ <button class="btn primary long" type="button" id="btn-salvar-briefing" data-video-id="{e(video_id)}">Salvar ajustes do briefing</button>
  <p class="sample" style="margin-top:8px">Salvar não refaz o que já foi renderizado; vale para as próximas gerações.</p>
  <div id="brief-feedback" class="form-feedback" role="status" style="margin-top:8px"></div>
 </aside></div>
@@ -223,49 +223,85 @@ def _area_direcao(view, *, style_view=None, script_view=None, video_id: str, com
 
 
 DIRECAO_JS = """
-window.gerarBriefing = function (vid) {
-  var btn = document.getElementById('btn-gerar-briefing') || document.getElementById('btn-regenerar-briefing');
-  if (btn) { btn.disabled = true; btn.textContent = 'Gerando briefing...'; }
-  fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  }).then(function (r) {
-    if (!r.ok) throw new Error('Falha ao gerar briefing');
-    return r.json();
-  }).then(function () {
-    window.location.reload();
-  }).catch(function (err) {
-    alert('Erro ao gerar briefing: ' + err.message);
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Regenerar briefing'; }
-  });
-};
+(function () {
+  function setupDirecao() {
+    var btnGerar = document.getElementById('btn-gerar-briefing');
+    var btnRegerar = document.getElementById('btn-regenerar-briefing');
+    var btnSalvar = document.getElementById('btn-salvar-briefing');
 
-window.salvarBriefing = function (vid) {
-  var b = {
-    hook: document.getElementById('brief-hook') ? document.getElementById('brief-hook').value : '',
-    narrative_goal: document.getElementById('brief-narrative-goal') ? document.getElementById('brief-narrative-goal').value : '',
-    tone: document.getElementById('brief-tone') ? document.getElementById('brief-tone').value : '',
-    pacing: document.getElementById('brief-pacing') ? document.getElementById('brief-pacing').value : '',
-    visual_direction: document.getElementById('brief-visual') ? document.getElementById('brief-visual').value : '',
-    audio_guidance: document.getElementById('brief-audio') ? document.getElementById('brief-audio').value : '',
-    caption_strategy: document.getElementById('brief-captions') ? document.getElementById('brief-captions').value : ''
-  };
-  var fb = document.getElementById('brief-feedback');
-  if (fb) { fb.textContent = 'Salvando ajustes...'; fb.className = 'form-feedback'; }
-  fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ brief: b })
-  }).then(function (r) {
-    if (!r.ok) throw new Error('Falha ao salvar ajustes');
-    return r.json();
-  }).then(function () {
-    if (fb) { fb.textContent = 'Ajustes salvos com sucesso!'; fb.className = 'form-feedback ok'; }
-  }).catch(function (err) {
-    if (fb) { fb.textContent = 'Erro ao salvar: ' + err.message; fb.className = 'form-feedback err'; }
-  });
-};
+    function executeGerar(btnEl) {
+      var vid = btnEl.getAttribute('data-video-id');
+      if (!vid) return;
+      btnEl.disabled = true;
+      btnEl.textContent = 'Gerando briefing...';
+      fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }).then(function (r) {
+        if (!r.ok) throw new Error('Falha ao gerar briefing (status ' + r.status + ')');
+        return r.json();
+      }).then(function () {
+        window.location.reload();
+      }).catch(function (err) {
+        alert('Erro ao gerar briefing: ' + err.message);
+        btnEl.disabled = false;
+        btnEl.textContent = btnRegerar ? '↻ Regenerar briefing' : '⚡ Gerar briefing';
+      });
+    }
+
+    if (btnGerar) {
+      btnGerar.addEventListener('click', function () { executeGerar(btnGerar); });
+    }
+    if (btnRegerar) {
+      btnRegerar.addEventListener('click', function () { executeGerar(btnRegerar); });
+    }
+
+    if (btnSalvar) {
+      btnSalvar.addEventListener('click', function () {
+        var vid = btnSalvar.getAttribute('data-video-id');
+        if (!vid) return;
+        var b = {
+          hook: document.getElementById('brief-hook') ? document.getElementById('brief-hook').value : '',
+          narrative_goal: document.getElementById('brief-narrative-goal') ? document.getElementById('brief-narrative-goal').value : '',
+          tone: document.getElementById('brief-tone') ? document.getElementById('brief-tone').value : '',
+          pacing: document.getElementById('brief-pacing') ? document.getElementById('brief-pacing').value : '',
+          visual_direction: document.getElementById('brief-visual') ? document.getElementById('brief-visual').value : '',
+          audio_guidance: document.getElementById('brief-audio') ? document.getElementById('brief-audio').value : '',
+          caption_strategy: document.getElementById('brief-captions') ? document.getElementById('brief-captions').value : ''
+        };
+        var fb = document.getElementById('brief-feedback');
+        if (fb) { fb.textContent = 'Salvando ajustes...'; fb.className = 'form-feedback'; }
+        btnSalvar.disabled = true;
+        fetch('/studio/videos/' + encodeURIComponent(vid) + '/direction', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brief: b })
+        }).then(function (r) {
+          btnSalvar.disabled = false;
+          if (!r.ok) throw new Error('Falha ao salvar ajustes (status ' + r.status + ')');
+          return r.json();
+        }).then(function () {
+          if (fb) { fb.textContent = 'Ajustes salvos com sucesso!'; fb.className = 'form-feedback ok'; }
+        }).catch(function (err) {
+          btnSalvar.disabled = false;
+          if (fb) { fb.textContent = 'Erro ao salvar: ' + err.message; fb.className = 'form-feedback err'; }
+        });
+      });
+    }
+
+    window.gerarBriefing = function (vid) {
+      var el = document.getElementById('btn-gerar-briefing') || document.getElementById('btn-regenerar-briefing');
+      if (el) executeGerar(el);
+    };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupDirecao);
+  } else {
+    setupDirecao();
+  }
+})();
 """
 
 
@@ -901,11 +937,11 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
                      scenes=None, script=None, scene_assets=None, channel_voice: str | None = None) -> str:
     style = _effective_style(style_view)
     if style is None:
-        head = ('<p class="aviso">Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de '
+        head = ('<p class="aviso" style="margin-bottom:8px">Nenhum estilo efetivo resolvido nesta leitura: os parâmetros de '
                 "composição não estão disponíveis.</p>")
         params: dict = {}
     else:
-        head = f'<p class="micro">Estilo efetivo: <strong>{e(style.name)}</strong></p>'
+        head = f'<p class="micro" style="margin-bottom:8px">Estilo efetivo: <strong>{e(style.name)}</strong></p>'
         params = dict(style.params)
 
     caption = _group(params, "caption")
@@ -954,9 +990,9 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
     )
 
     notes = (
-        '<p class="aviso"><strong>Resolução e FPS são fixos hoje</strong>: quem decide é o motor de '
+        '<p class="aviso" style="margin-top:8px"><strong>Resolução e FPS são fixos hoje</strong>: quem decide é o motor de '
         "render; esta tela não os configura.</p>"
-        '<p class="aviso"><strong>A transição é apenas declarada e ainda não é consumida pelo '
+        '<p class="aviso" style="margin-top:6px"><strong>A transição é apenas declarada e ainda não é consumida pelo '
         "compilador</strong> (renderer/app/studio/domain/visual_style.py:502-506): ela fica "
         "carregada no estilo, sem fingir suporte.</p>"
     )
@@ -1065,24 +1101,12 @@ def _area_composicao(view, *, style_view=None, script_view=None, video_id: str, 
         '<div class="field"><label for="composicao-bottom">Distância da base (px)</label>'
         f'<input type="number" id="composicao-bottom" name="caption.bottom" value="{e(str(bottom_val))}" min="0" max="400"'
         f'{" disabled" if caption_pos != "bottom" else ""}></div>'
-        '<div class="field" style="margin:10px 0">'
-        '<label for="comp-music-track">Trilha escolhida pelo Diretor de áudio</label>'
-        '<select id="comp-music-track" name="music.track">'
-        '<option value="sci-fi">Sci-Fi Survival Dreamscape · CC0 (sugerida pelo tom)</option>'
-        '<option value="ambient">Ambient Music · CC0</option>'
-        '<option value="electronic">Electronic Minute No 258 · CC0</option>'
-        '<option value="none">Sem música</option>'
-        '</select>'
-        '<p class="sample" style="margin-top:4px">Só faixas CC0 do catálogo do estúdio; a licença aparece no relatório de entrega.</p></div>'
         '<div class="grid2"><div class="field"><label for="composicao-music-bpm">Andamento da música (BPM)</label>'
         f'<input type="number" id="composicao-music-bpm" name="music.bpm" value="{e(str(music_bpm))}" min="20" max="300"></div>'
         '<div class="field"><label for="composicao-music-seed">Semente da música (seed)</label>'
         f'<input type="number" id="composicao-music-seed" name="music.seed" value="{e(str(music_seed))}" min="0"></div></div>'
-        '<div class="field"><label for="comp-music-vol">Volume da música: <b id="comp-music-vol-v">20</b></label>'
-        '<input type="range" id="comp-music-vol" name="music.volume" min="0" max="60" value="20"></div>'
-        '<div class="field"><label class="tog"><input type="checkbox" id="comp-ducking" name="music.ducking" checked><i></i>'
-        'Abaixar a música quando houver voz</label>'
-        '<p class="sample" style="margin-top:4px">Compressão sidechain: a música cai sob a narração e volta nas pausas; fade-out no final.</p></div>'
+        '<p class="sample" style="margin-top:4px">A trilha é sintetizada pelo motor a partir do BPM e da seed; '
+        'volume, ducking e fade são aplicados automaticamente na mixagem.</p>'
         '<div class="grid2"><div class="field"><label for="comp-res">Resolução</label>'
         '<select id="comp-res" disabled><option>Fixa no motor</option></select></div>'
         '<div class="field"><label for="comp-fps">Quadros/s</label>'
@@ -1698,7 +1722,7 @@ def _content(view, area: str, *, style_view, script_view, video_id, composition_
     )
 
 
-PAGE_JS = """
+PAGE_JS = r"""
 (function () {
   var runFeedback = document.getElementById('video-run-feedback');
   var dlgFonte = document.getElementById('dlg-fonte');

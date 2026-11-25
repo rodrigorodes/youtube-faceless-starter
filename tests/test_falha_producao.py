@@ -58,5 +58,9 @@ def test_research_that_found_nothing_and_settled_script_have_their_own_explanati
     nada = explicar_falha("SourceRefused: automatic research (wikipedia) found no source with checkable claims "
                           "for this topic: add a source manually")
     assert nada is not None and "grafia" in nada.texto and nada.destino == "fontes"
+    pt_pesquisa = explicar_falha("a pesquisa automática não achou uma fonte com fatos verificáveis para este tema; adicione uma fonte manualmente em Fontes e inicie de novo")
+    assert pt_pesquisa is not None and "grafia" in pt_pesquisa.texto and pt_pesquisa.destino == "fontes"
+    rej = explicar_falha("ScriptRejected: scene 0: claim_ids is required (cite the facts the scene uses)")
+    assert rej is not None and "roteiro gerado" in rej.texto and rej.destino == "fontes"
     pago = explicar_falha("OperationSettled: paid operation 806a905a99ff was already confirmed")
     assert pago is not None and "mesmas fontes" in pago.texto and pago.destino == "cenas"

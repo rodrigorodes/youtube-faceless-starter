@@ -23,6 +23,8 @@ def server():
         seen.append((prompt, model_ref))
         if prompt == "boom":
             raise RuntimeError("secret internals")
+        if prompt == "limit":
+            raise bridge.UpstreamRejected("subscription_sharing_usage_limit_exceeded: limit reached")
         return "resposta"
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), bridge.make_handler(TOKEN, "openai/gpt-6-luna", "opencode", fake_generate))
@@ -67,6 +69,36 @@ def test_invalid_body(server, body):
 def test_failure_does_not_leak(server):
     status, payload = call(server[0], "/generate", {"prompt": "boom"})
     assert status == 502 and "secret" not in json.dumps(payload)
+
+
+def test_upstream_rejection_is_reported_as_424_not_as_an_ambiguous_502(server):
+    status, payload = call(server[0], "/generate", {"prompt": "limit"})
+    assert status == 424 and "usage_limit_exceeded" in payload["detail"]
+
+
+def _fake_cli(monkeypatch, returncode, stdout):
+    class Proc:
+        pass
+
+    proc = Proc()
+    proc.returncode, proc.stdout, proc.stderr = returncode, stdout, ""
+    monkeypatch.setattr(bridge.subprocess, "run", lambda *a, **k: proc)
+
+
+def test_generate_maps_a_provider_request_error_to_upstream_rejected(monkeypatch):
+    _fake_cli(monkeypatch, 1, json.dumps({"_tag": "ProviderRequestError", "providerID": "openai", "reason": "invalid_request",
+                                          "message": "subscription_sharing_usage_limit_exceeded: wait", "status": 200}))
+    with pytest.raises(bridge.UpstreamRejected, match="usage_limit_exceeded"):
+        bridge.generate("p", "openai/gpt-6-luna", "opencode")
+
+
+@pytest.mark.parametrize("stdout", ["", "nao json", json.dumps({"_tag": "ProviderRequestError", "reason": "timeout", "message": "x"}),
+                                    json.dumps({"_tag": "Other"})])
+def test_generate_keeps_other_cli_failures_ambiguous(monkeypatch, stdout):
+    _fake_cli(monkeypatch, 1, stdout)
+    with pytest.raises(RuntimeError) as err:
+        bridge.generate("p", "openai/gpt-6-luna", "opencode")
+    assert not isinstance(err.value, bridge.UpstreamRejected)
 
 
 def test_unknown_path(server):

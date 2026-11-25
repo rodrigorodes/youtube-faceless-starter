@@ -1,0 +1,409 @@
+{
+  "capitulo": "08-aprovacao-e-publicacao",
+  "titulo": "Aprovação e publicação",
+  "resumo": "Plano documental; todos os cenários estão A_PROJETAR. Testes citados existem, mas não foram executados. Execução direta, sem runtime de workflow.",
+  "como_funciona": "A aprovação registra a versão revisada e uma intenção. Claim e executor verificam intenção, render, checksum e QA. O executor valida destino e autorização antes do upload; ambiguidade exige reconciliação. Aprovar não equivale a publicar.",
+  "limites_gerais": "Priorizar portas mockadas e banco descartável. Nenhum upload neste trabalho. Live somente em futura conta de teste, com destino e autorização explícitos; IDs UC_TEST_A/UC_TEST_B são símbolos de fixtures a substituir por IDs sintaticamente válidos.",
+  "regras": [
+    {
+      "id": "PUB.R01",
+      "natureza": "confirmada no código",
+      "resumo": "Aprovação exige revisão renderizada; gate compara intenção, output, checksum e QA ou override registrado.",
+      "fontes": [
+        "renderer/app/studio/application/publishing.py:42-69",
+        "renderer/app/studio/application/publication_gate.py:37-60"
+      ]
+    },
+    {
+      "id": "PUB.R02",
+      "natureza": "confirmada no código e testes declarados",
+      "resumo": "Intenção fixa metadados/destino; private é padrão e public exige confirmação adicional.",
+      "fontes": [
+        "renderer/app/studio/application/publication_gate.py:52-58",
+        "tests/test_publication_policy.py:55-99",
+        "tests/test_publication_api.py:94-108"
+      ]
+    },
+    {
+      "id": "PUB.R03",
+      "natureza": "confirmada no código",
+      "resumo": "Claims concorrentes usam locks; retry preserva sessão e UNKNOWN não entra em retry automático.",
+      "fontes": [
+        "renderer/app/studio/adapters/postgres/publish_repo.py:115-178",
+        "renderer/app/studio/application/publication_execution.py:298-345"
+      ]
+    },
+    {
+      "id": "PUB.R04",
+      "natureza": "confirmada no código",
+      "resumo": "Rearm só aceita DLQ permanente sem sessão, ID remoto, offset, UNKNOWN ou lease vivo; reconciliação depende de resposta remota.",
+      "fontes": [
+        "renderer/app/studio/adapters/postgres/publish_repo.py:316-330",
+        "renderer/app/studio/application/publication_execution.py:361-395"
+      ]
+    },
+    {
+      "id": "PUB.R05",
+      "natureza": "confirmada no código",
+      "resumo": "Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia.",
+      "fontes": [
+        "renderer/app/studio/application/publication_execution.py:205-242",
+        "renderer/app/studio/application/publication_execution.py:250-297"
+      ]
+    },
+    {
+      "id": "PUB.R06",
+      "natureza": "contrato existente a verificar",
+      "resumo": "Preview mostra versão revisada; pedir ajustes reabre edição e invalida aprovação anterior.",
+      "fontes": [
+        "tests/test_publish_api.py:215-292",
+        "tests/e2e_full/test_journey_piloto.py:115-158"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "PUB-01",
+      "titulo": "Preview e aprovação da versão exata",
+      "tipo": "feliz",
+      "regras": [
+        "PUB.R01",
+        "PUB.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Vincular decisão ao artefato realmente revisado.",
+      "pre_condicoes": [
+        "Banco descartável; vídeo AWAITING_APPROVAL; render r1 e output o1; QA aprovado."
+      ],
+      "exemplo": {
+        "dados": "Título História de teste; r1/o1 e checksum c1.",
+        "passos": [
+          "Abrir preview e conferir mídia e QA.",
+          "Aprovar informando o1.",
+          "Consultar decisão e intenção persistidas."
+        ]
+      },
+      "esperado": "Estado APPROVED; intenção referencia r1/c1/o1; preview identifica o mesmo artefato; nenhum upload ocorre pela aprovação.",
+      "limitacoes": "Verificação visual exige browser; leitura de teste não demonstra reprodução de mídia.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_publish_api.py:98,215; extensão proposta para comparar preview e intenção."
+      }
+    },
+    {
+      "id": "PUB-02",
+      "titulo": "QA falho, override e versão obsoleta",
+      "tipo": "erro/borda",
+      "regras": [
+        "PUB.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Impedir aprovação silenciosa de QA falho ou artefato antigo.",
+      "pre_condicoes": [
+        "Vídeo RENDERED com QA falho; outputs o1 e novo o2."
+      ],
+      "exemplo": {
+        "dados": "override_reason vazio e depois Revisão humana do achado X; output o1 obsoleto.",
+        "passos": [
+          "Aprovar o2 sem motivo.",
+          "Repetir o2 com motivo explícito.",
+          "Tentar aprovação com o1 após novo render."
+        ]
+      },
+      "esperado": "Sem motivo há recusa sem decisão; override válido fica registrado; revisão obsoleta é recusada mesmo com estado de vídeo semelhante.",
+      "limitacoes": "Override não comprova qualidade editorial; critérios humanos precisam ser definidos por achado.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_publish_api.py:59,196; tests/test_publication_execution.py:292-299."
+      }
+    },
+    {
+      "id": "PUB-03",
+      "titulo": "Ajuste e mudança posterior invalidam aprovação",
+      "tipo": "regressao",
+      "regras": [
+        "PUB.R01",
+        "PUB.R02",
+        "PUB.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não publicar decisão antiga após edição.",
+      "pre_condicoes": [
+        "Vídeo aprovado e ainda não enviado; uploader mock conta chamadas."
+      ],
+      "exemplo": {
+        "dados": "Alterar título de História A para História B; em variante pedir ajustes e trocar cena.",
+        "passos": [
+          "Alterar metadado após aprovação e executar publicação.",
+          "Reabrir outro vídeo aprovado para ajustes.",
+          "Editar cena, regerar e aprovar a nova revisão."
+        ]
+      },
+      "esperado": "Intenção antiga bloqueia upload; reabertura permite edição e exige nova aprovação; nova intenção corresponde ao novo render.",
+      "limitacoes": "Concorrência entre edição e upload é ampliada em PUB-07; não supor cancelamento remoto.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_publication_execution.py:659-682; tests/test_publish_api.py:263-292."
+      }
+    },
+    {
+      "id": "PUB-04",
+      "titulo": "Visibilidade privada, não listada e pública",
+      "tipo": "feliz/borda",
+      "regras": [
+        "PUB.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Preservar escolha explícita sem tornar público por omissão.",
+      "pre_condicoes": [
+        "Três vídeos elegíveis; transporte YouTube mockado."
+      ],
+      "exemplo": {
+        "dados": "visibility ausente, unlisted, public; public_confirmed false/true.",
+        "passos": [
+          "Aprovar sem visibilidade e com unlisted.",
+          "Tentar public sem confirmação.",
+          "Confirmar public e inspecionar corpos de upload."
+        ]
+      },
+      "esperado": "Omissão gera private; unlisted é preservado; public sem confirmação retorna 422 sem decisão; confirmação válida gera corpo public.",
+      "limitacoes": "Corpo mockado não prova visibilidade aplicada pelo YouTube; live futuro só em conta teste autorizada.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_api.py:94-108; tests/test_publication_execution.py:307."
+      }
+    },
+    {
+      "id": "PUB-05",
+      "titulo": "Agendamento e janela mínima",
+      "tipo": "borda",
+      "regras": [
+        "PUB.R02",
+        "PUB.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar envio com janela vencida ou próxima demais.",
+      "pre_condicoes": [
+        "Relógio fixo com timezone; uploader mock; intenção válida."
+      ],
+      "exemplo": {
+        "dados": "Agora 12:00 UTC; horários 11:59, 12:14:59, 12:15:00 e 13:00.",
+        "passos": [
+          "Avaliar fronteira da política para cada horário.",
+          "Executar publicação agendada elegível.",
+          "Inspecionar privacyStatus e publishAt."
+        ]
+      },
+      "esperado": "Vencido e abaixo da antecedência de 15 minutos bloqueiam; fronteira segue contrato da política; envio agendado usa private com publishAt correto, sem deslocamento de timezone.",
+      "limitacoes": "Processamento remoto não garante disponibilidade no horário; a fronteira exata deve ser afirmada pelo teste de domínio.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_policy.py:130-150; tests/test_publication_execution.py:313-322."
+      }
+    },
+    {
+      "id": "PUB-06",
+      "titulo": "Destinos YouTube e contingência desligada",
+      "tipo": "erro/regressao",
+      "regras": [
+        "PUB.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Falhar fechado para destino ausente ou autorização incompatível.",
+      "pre_condicoes": [
+        "Executor com repositórios de canal/autorizações injetados, como servidor."
+      ],
+      "exemplo": {
+        "dados": "Destino UC_TEST_A; token UC_TEST_B; variantes sem destino, grant revogado e enabled=false.",
+        "passos": [
+          "Executar cada variante e contar claims/uploads.",
+          "Corrigir token para UC_TEST_A e grant conectado.",
+          "Executar controle positivo."
+        ]
+      },
+      "esperado": "Incompatibilidades bloqueiam antes do upload; desabilitado nem reivindica; controle válido pode enviar ao mock; não há fallback cruzado para outro canal.",
+      "limitacoes": "Construção legada sem repositórios dispensa gate e não representa a garantia do servidor.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_execution.py:397-471,620-636."
+      }
+    },
+    {
+      "id": "PUB-07",
+      "titulo": "Claim concorrente e lease expirado",
+      "tipo": "concorrencia",
+      "regras": [
+        "PUB.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Uma tentativa dona do efeito e recuperação conservadora.",
+      "pre_condicoes": [
+        "Postgres descartável; dois workers sincronizados por barreira; upload mock bloqueável."
+      ],
+      "exemplo": {
+        "dados": "Uma publicação pendente; attempt 1; lease vivo e depois expirado.",
+        "passos": [
+          "Disparar dois claims simultâneos.",
+          "Tentar gravar sessão com tentativa antiga.",
+          "Simular expiração durante envio e duas recuperações concorrentes."
+        ]
+      },
+      "esperado": "Um vencedor por claim e CAS de recuperação; tentativa antiga não grava sessão; lease expirado em envio vira UNKNOWN, sem segundo upload automático.",
+      "limitacoes": "Não prova exatamente uma entrega remota; timeout local não é rollback do YouTube.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_publication_resilience_repo.py:152-186,221-244."
+      }
+    },
+    {
+      "id": "PUB-08",
+      "titulo": "Retry usa mesma sessão e respeita limite",
+      "tipo": "erro/volume",
+      "regras": [
+        "PUB.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Retomar envio sem abrir uploads duplicados.",
+      "pre_condicoes": [
+        "Relógio controlado; uploader retorna sessão incompleta; política de tentativas conhecida."
+      ],
+      "exemplo": {
+        "dados": "Sessão https://upload.example.test/session/1; offset 4096; falhas transitórias até max_attempts.",
+        "passos": [
+          "Responder INCOMPLETE com sessão e offset.",
+          "Avançar relógio até retry devido.",
+          "Repetir falhas até limite e tentar claim adicional."
+        ]
+      },
+      "esperado": "Sessão persistida é reutilizada; backoff impede antecipação; ao limite há DLQ e nenhum novo claim elegível; resultado confirmado não reenvia.",
+      "limitacoes": "Offset e retomada efetiva precisam de teste do adaptador, não apenas do executor.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_execution.py:331-354,519-550; tests/test_publication_resilience_repo.py:135."
+      }
+    },
+    {
+      "id": "PUB-09",
+      "titulo": "Timeout e sucesso remoto sem gravação local",
+      "tipo": "erro",
+      "regras": [
+        "PUB.R03",
+        "PUB.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não converter resposta desconhecida em sucesso ou retry cego.",
+      "pre_condicoes": [
+        "Uploader e repositório mockáveis; publicação sem ID confirmado."
+      ],
+      "exemplo": {
+        "dados": "TimeoutError; sucesso sem ID; sucesso com ID e falha de mark_uploaded.",
+        "passos": [
+          "Injetar cada falha separadamente.",
+          "Consultar estado persistido.",
+          "Tentar nova execução automática."
+        ]
+      },
+      "esperado": "RECONCILE/UNKNOWN ou DLQ ambígua conforme limite; nenhum sucesso inventado e nenhum reenvio automático; erro não expõe token ou sessão na API.",
+      "limitacoes": "Desconhecido não prova falha do upload; captura de sessão pelo adaptador tem cobertura própria.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_execution.py:564-590; tests/test_publication_api.py:111-124."
+      }
+    },
+    {
+      "id": "PUB-10",
+      "titulo": "Reconciliação confirma ou mantém ambiguidade",
+      "tipo": "feliz/erro",
+      "regras": [
+        "PUB.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Resolver efeito remoto apenas com resposta verificável.",
+      "pre_condicoes": [
+        "Publicação UNKNOWN com sessão; porta reconcile mockada."
+      ],
+      "exemplo": {
+        "dados": "Resultados UPLOADED com ID, INCOMPLETE e AMBIGUOUS em fixtures separadas.",
+        "passos": [
+          "Reconciliar cada fixture.",
+          "Consultar publicação.",
+          "Reconciliar novamente a já confirmada."
+        ]
+      },
+      "esperado": "ID confirmado é persistido; sessão comprovadamente incompleta libera retry; ambígua continua exigindo revisão; reconciliar não chama upload e ID já salvo torna repetição inócua.",
+      "limitacoes": "Comportamento com destino alterado durante reconciliação merece investigação adicional; não assumir o gate completo do upload.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_publication_execution.py:485-509,607."
+      }
+    },
+    {
+      "id": "PUB-11",
+      "titulo": "Rearm somente antes de qualquer envio",
+      "tipo": "borda/concorrencia",
+      "regras": [
+        "PUB.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Reenfileirar bloqueio seguro sem apagar ambiguidade.",
+      "pre_condicoes": [
+        "DLQ permanente; banco descartável; estado consultável."
+      ],
+      "exemplo": {
+        "dados": "Caso base sem sessão/ID/offset/lease; variantes offset=1, UNKNOWN, lease vivo ou sessão existente.",
+        "passos": [
+          "Solicitar rearm para todas as variantes.",
+          "Concorrer duas chamadas para o caso seguro.",
+          "Consultar attempt_base e estado."
+        ]
+      },
+      "esperado": "Somente caso seguro volta a PENDING; atualização atômica admite um vencedor; casos inseguros recusam; attempt_base assume tentativa atual sem apagar histórico.",
+      "limitacoes": "Concorrência do rearm é ampliação proposta; teste existente de serviço não prova atomicidade do SQL.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existente: tests/test_publication_rearm.py:34-46; proposta de concorrência sobre adapters/postgres/publish_repo.py:316-330."
+      }
+    },
+    {
+      "id": "PUB-12",
+      "titulo": "Duplo clique e rejeição não publicam novamente",
+      "tipo": "regressao",
+      "regras": [
+        "PUB.R01",
+        "PUB.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Manter resultado verdadeiro diante de repetição humana.",
+      "pre_condicoes": [
+        "API local com uploader mock; um vídeo aprovado e outro rejeitável."
+      ],
+      "exemplo": {
+        "dados": "Dois POSTs publish para mesmo vídeo; rejeição com motivo Revisar conteúdo.",
+        "passos": [
+          "Enviar os dois POSTs e consultar ID persistido.",
+          "Repetir depois de confirmado.",
+          "Rejeitar segundo vídeo e tentar publicar."
+        ]
+      },
+      "esperado": "Um efeito de upload; demais respostas não alegam novo envio; ID confirmado permanece; rejeitado não é elegível e não ganha intenção de aprovação.",
+      "limitacoes": "Proteção visual de clique não substitui idempotência backend; navegador é coberto em UX-05.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_publication_execution.py:519-529; tests/test_publish_api.py:187-208."
+      }
+    }
+  ],
+  "prefixo": "PUB"
+}

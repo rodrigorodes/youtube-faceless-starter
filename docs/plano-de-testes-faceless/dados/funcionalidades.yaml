@@ -1,0 +1,128 @@
+[
+  {
+    "id": "F01",
+    "prefixo": "AUT",
+    "arquivo": "01-acesso-e-seguranca",
+    "nome": "Acesso e segurança",
+    "cenarios_count": 8,
+    "regras_count": 5,
+    "resumo": "O roteador aplica guard de host/origem e autenticação Basic ou Bearer antes dos casos de uso. Não há sessão individual por canal. OAuth guarda tokens no cofre e devolve metadados; testes devem usar somente identidades e segredos sintéticos."
+  },
+  {
+    "id": "F02",
+    "prefixo": "CFG",
+    "arquivo": "02-canais-configuracao-e-conexoes",
+    "nome": "Canais, configuração e conexões",
+    "cenarios_count": 8,
+    "regras_count": 6,
+    "resumo": "A interface seleciona um projeto como canal ativo, enquanto produção preserva o dono do vídeo e congela configuração criativa por run. Conexões OAuth são entidades distintas do perfil editorial. Equipe possui vínculos organizacionais, mas o principal HTTP continua o operador configurado."
+  },
+  {
+    "id": "F03",
+    "prefixo": "TEN",
+    "arquivo": "03-tendencias-e-ideias",
+    "nome": "Tendências e ideias",
+    "cenarios_count": 8,
+    "regras_count": 6,
+    "resumo": "Tendências são observações persistidas com fonte, janela, métrica e evidências. A ingestão valida o lote antes da escrita; favoritos guardam snapshots separados. Ideias usam modelo para notas e domínio para ordenação, com validação e controle de custo. Coleta n8n é coberta em OPS.C08."
+  },
+  {
+    "id": "F04",
+    "prefixo": "EDT",
+    "arquivo": "04-editorial-e-roteiro",
+    "nome": "Editorial e roteiro",
+    "cenarios_count": 10,
+    "regras_count": 8,
+    "resumo": "ContentBrief valida entradas, sem pesquisar nem verificar referências. Fontes alimentam claims; o gerador curto cria cenas e o longform usa outline e cenas. Fact-check é lexical/determinístico. Edições idempotentes criam versões; restore exige plano longo e snapshot. Aprovação longa prende versão e hash."
+  },
+  {
+    "id": "F05",
+    "prefixo": "MID",
+    "arquivo": "05-storyboard-midia-e-licencas",
+    "nome": "Storyboard, mídia e licenças",
+    "cenarios_count": 10,
+    "regras_count": 7,
+    "resumo": "Storyboard exige FACT_CHECKED e cenas. ProduceAssets serializa por vídeo, gera somente cenas sem vínculo e consulta cache por conteúdo/aspecto. Busca combina prompt e até duas queries extras, deduplica e ranqueia candidatos. Swap usa id estável e CAS. RenderPlan admite múltiplos shots por cena, manifesto e duração em ticks."
+  },
+  {
+    "id": "F06",
+    "prefixo": "REN",
+    "arquivo": "06-voz-render-e-qualidade",
+    "nome": "Voz, render e qualidade",
+    "cenarios_count": 12,
+    "regras_count": 9,
+    "resumo": "StartRender cria/reutiliza job e despacha só o recém-criado. RunRender resolve configuração, narra ou reutiliza WAV íntegro, calcula durações, monta cues, renderiza e mede QA antes de publicar. RenderPlan separa plano, compilação e execução FFmpeg. Cache invalida dependentes e recompõe final quando alguma cena muda."
+  },
+  {
+    "id": "F07",
+    "prefixo": "PRO",
+    "arquivo": "07-producao-assincrona-e-custos",
+    "nome": "Produção assíncrona e custos",
+    "cenarios_count": 12,
+    "regras_count": 8,
+    "resumo": "O coordenador de produção orquestra a execução assíncrona das etapas do vídeo através de um DAG acíclico canônico (research -> script -> factcheck -> storyboard -> assets -> render -> qa -> approval -> publish). Cada execução é representada por um ProductionRun com máquina de estados fechada. A concorrência entre workers é regulada por leases com fencing tokens monótonos e batimentos periódicos (heartbeat). Operações de ciclo de vida (pause, resume, retry, regenerate) controlam se o snapshot de configuração é congelado ou reavaliado. O BudgetGuard intercepta operações pagas, exige reserva prévia contra tetos configurados no canal e reconcilia confirmações ou estornos no usage_ledger."
+  },
+  {
+    "id": "F08",
+    "prefixo": "PUB",
+    "arquivo": "08-aprovacao-e-publicacao",
+    "nome": "Aprovação e publicação",
+    "cenarios_count": 12,
+    "regras_count": 6,
+    "resumo": "A aprovação registra a versão revisada e uma intenção. Claim e executor verificam intenção, render, checksum e QA. O executor valida destino e autorização antes do upload; ambiguidade exige reconciliação. Aprovar não equivale a publicar."
+  },
+  {
+    "id": "F09",
+    "prefixo": "ANA",
+    "arquivo": "09-analytics-e-aprendizado",
+    "nome": "Analytics e aprendizado",
+    "cenarios_count": 8,
+    "regras_count": 6,
+    "resumo": "A coleta exige canal conectado, escopo de leitura e publicação com ID remoto. Observações têm origem, janela, unidade e vínculo de versão. Dashboard deduplica observações e separa formatos; recomendações são propostas humanas, não mudanças automáticas."
+  },
+  {
+    "id": "F10",
+    "prefixo": "UX",
+    "arquivo": "10-painel-e-experiencia",
+    "nome": "Painel e experiência",
+    "cenarios_count": 8,
+    "regras_count": 5,
+    "resumo": "O painel usa navegação de servidor, contexto de canal e áreas do vídeo. Helpers traduzem erros da API e resultados de publicação. Suites de browser existentes cobrem navegação, DOM, aprovação e três larguras de tela."
+  },
+  {
+    "id": "F11",
+    "prefixo": "E2E",
+    "arquivo": "11-ponta-a-ponta-e-desempenho",
+    "nome": "Ponta a ponta e desempenho",
+    "cenarios_count": 8,
+    "regras_count": 5,
+    "resumo": "Jornadas existentes atravessam UI e conferem estado pela API. Início distingue piloto de diretor; piloto produz até aprovação; diretor edita antes de produzir. Stack E2E usa texto demo, imagem placeholder, Piper e FFmpeg locais e termina pendente de publicar."
+  },
+  {
+    "id": "F12",
+    "prefixo": "OPS",
+    "arquivo": "12-operacao-backup-e-n8n",
+    "nome": "Operação, backup e n8n",
+    "cenarios_count": 8,
+    "regras_count": 7,
+    "resumo": "Renderer recupera trabalho no ciclo de vida; PostgreSQL mantém migrações versionadas. Backup cobre dump do banco, não os arquivos de mídia/cofre. n8n orquestra publicação, coleta analytics e ingestão de tendências; os três JSON são distribuídos inativos. Este plano usa dublês e instâncias descartáveis, sem iniciar serviços nesta revisão."
+  },
+  {
+    "id": "F13",
+    "prefixo": "DRC",
+    "arquivo": "13-direcao-e-composicao",
+    "nome": "Direção criativa e composição",
+    "cenarios_count": 8,
+    "regras_count": 4,
+    "resumo": "As seis áreas do workspace do vídeo (Direção criativa, Cenas & Storyboard, Composição & Legendas, Qualidade & Aprovação, Publicação YouTube, Fontes & Evidências) mais o diagnóstico de produção. A Direção criativa lê e grava o briefing por GET/POST/PUT em /direction; a Composição grava override por PATCH /style-patch com controle otimista. Achados de honestidade da tela de composição estão registrados como limitação."
+  },
+  {
+    "id": "F14",
+    "prefixo": "BIB",
+    "arquivo": "14-biblioteca-e-midia",
+    "nome": "Biblioteca e mídia compartilhada",
+    "cenarios_count": 10,
+    "regras_count": 6,
+    "resumo": "A Biblioteca reúne cinco abas (Estilos visuais, Vozes, Músicas, Mídias & Stock, Modelos de roteiro). Estilos são a biblioteca compartilhada com criação, edição versionada, arquivamento e contagem de uso. Vozes e modelos são catálogo de referência; músicas vêm do manifest CC0 local; a busca Pixabay é opcional e responde honestamente sem chave."
+  }
+]

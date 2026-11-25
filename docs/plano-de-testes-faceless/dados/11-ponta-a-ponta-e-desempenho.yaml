@@ -1,0 +1,293 @@
+{
+  "capitulo": "11-ponta-a-ponta-e-desempenho",
+  "titulo": "Ponta a ponta e desempenho",
+  "resumo": "Oito cenários A_PROJETAR. Nenhum teste, serviço, publicação ou benchmark foi executado; execução documental direta sem workflow.",
+  "como_funciona": "Jornadas existentes atravessam UI e conferem estado pela API. Início distingue piloto de diretor; piloto produz até aprovação; diretor edita antes de produzir. Stack E2E usa texto demo, imagem placeholder, Piper e FFmpeg locais e termina pendente de publicar.",
+  "limites_gerais": "Futura execução exige banco/arquivos descartáveis e destino local verificado, sem montar dados de uso. Publicação e analytics externos são mocks. Live só com autorização específica e conta teste. Tempos abaixo são propostas de triagem/calibração, não SLA nem desempenho medido.",
+  "regras": [
+    {
+      "id": "E2E.R01",
+      "natureza": "contrato existente em teste",
+      "resumo": "Início piloto cria e inicia produção; diretor cria storyboard sem iniciar produção.",
+      "fontes": [
+        "tests/e2e_full/test_journey_inicio.py:26-57"
+      ]
+    },
+    {
+      "id": "E2E.R02",
+      "natureza": "contrato existente em teste",
+      "resumo": "Piloto percorre produção, QA, aprovação e ajustes; diretor preserva edição, citações, ordem e desfazer antes da produção.",
+      "fontes": [
+        "tests/e2e_full/test_journey_piloto.py:88-158",
+        "tests/e2e_full/test_journey_diretor.py:29-92"
+      ]
+    },
+    {
+      "id": "E2E.R03",
+      "natureza": "confirmada no harness de teste",
+      "resumo": "Suite completa requer flag de isolamento, recusa porta 8000 e coleta erros JS/5xx; não publica no YouTube.",
+      "fontes": [
+        "tests/e2e_full/conftest.py:1-8",
+        "tests/e2e_full/conftest.py:36-50",
+        "tests/e2e_full/conftest.py:66-78"
+      ]
+    },
+    {
+      "id": "E2E.R04",
+      "natureza": "contrato existente e ampliação proposta",
+      "resumo": "Coordenador tem testes de idempotência, pausa, falha, cancelamento e lease; jornada integrada deve preservar essas transições.",
+      "fontes": [
+        "tests/test_production_coordinator.py:133-198",
+        "tests/test_production_coordinator.py:258-331",
+        "renderer/app/studio/application/observability.py:101-128"
+      ]
+    },
+    {
+      "id": "E2E.R05",
+      "natureza": "critério proposto, não SLA",
+      "resumo": "Medir cenários pequenos repetíveis antes de volume: Short local e long de 180 s/12 cenas; calibrar por hardware e comparar baseline equivalente.",
+      "fontes": [
+        "tests/e2e_full/test_journey_piloto.py:19",
+        "tests/test_pilot_video_e2e.py:68-113",
+        "tests/test_longform_480s.py:1-24"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "E2E-01",
+      "titulo": "Início escolhe corretamente piloto ou diretor",
+      "tipo": "feliz/regressao",
+      "regras": [
+        "E2E.R01",
+        "E2E.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Preservar semântica das duas ações iniciais.",
+      "pre_condicoes": [
+        "Stack isolada sem pesquisa automática; canal sintético; coletor de requests ativo."
+      ],
+      "exemplo": {
+        "dados": "Tema A queda de Constantinopla; um vídeo por modo.",
+        "passos": [
+          "No início selecionar piloto e gerar vídeo completo.",
+          "Repetir em diretor com Abrir storyboard.",
+          "Conferir production_mode e requests de production-runs."
+        ]
+      },
+      "esperado": "Piloto inicia produção com resposta 202 e abre cenas; diretor abre cenas sem POST de produção; alternar modo restaura rótulos corretos; nenhum upload externo.",
+      "limitacoes": "Com pesquisa desligada e sem fonte, piloto pode parar no primeiro passo; não chamar isso de render concluído.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existente: tests/e2e_full/test_journey_inicio.py:26-57."
+      }
+    },
+    {
+      "id": "E2E-02",
+      "titulo": "Piloto até aprovação e ciclo de ajustes",
+      "tipo": "feliz/regressao",
+      "regras": [
+        "E2E.R02",
+        "E2E.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Conectar criação, artefato, QA e invalidação de aprovação.",
+      "pre_condicoes": [
+        "Stack isolada com Piper/FFmpeg locais e roteiro/fonte de fixture; sem destino YouTube."
+      ],
+      "exemplo": {
+        "dados": "Short de Constantinopla com pelo menos três cenas; edição para fato já presente na fonte.",
+        "passos": [
+          "Criar canal e vídeo piloto com roteiro colado.",
+          "Continuar execução até QA e revisar preview.",
+          "Aprovar, pedir ajustes, editar/reordenar, regerar e aprovar de novo."
+        ]
+      },
+      "esperado": "Render SUCCEEDED e QA correspondente; aprovado permanece pendente sem publicação; ajustes retornam SCRIPTED, persistem após reload e exigem revisão nova; nenhum erro JS inesperado.",
+      "limitacoes": "Provider demo/placeholder não comprova qualidade de produção com modelos pagos; tempo humano excluído da medição.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existente: tests/e2e_full/test_journey_piloto.py:88-158."
+      }
+    },
+    {
+      "id": "E2E-03",
+      "titulo": "Diretor edita, desfaz e só então produz",
+      "tipo": "feliz/borda",
+      "regras": [
+        "E2E.R01",
+        "E2E.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Garantir controle editorial e persistência coerente.",
+      "pre_condicoes": [
+        "Vídeo diretor com roteiro lastreado; execução ainda não iniciada."
+      ],
+      "exemplo": {
+        "dados": "Incluir uma cena, excluir a criada, editar fato sobre Mehmed II, mover e desfazer.",
+        "passos": [
+          "Editar storyboard e conferir cenas pela API.",
+          "Recarregar para conferir persistência; mover/desfazer sem reload entre essas duas ações.",
+          "Confirmar geração, continuar, revisar QA e aprovar."
+        ]
+      },
+      "esperado": "Mudanças sobrevivem reload; citação acompanha texto alterado; demais citações preservadas; desfazer restaura ordem na API; produção começa somente após ação explícita; termina aprovado pendente.",
+      "limitacoes": "Desfazer atual é histórico da sessão da página, não promessa após reload.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Existente: tests/e2e_full/test_journey_diretor.py:29-92."
+      }
+    },
+    {
+      "id": "E2E-04",
+      "titulo": "Fato sem lastro, falha e retomada controlada",
+      "tipo": "erro/regressao",
+      "regras": [
+        "E2E.R02",
+        "E2E.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não propagar conteúdo recusado nem repetir etapas concluídas indevidamente.",
+      "pre_condicoes": [
+        "Vídeo com fontes; fake de etapa que falha uma vez; snapshot de configuração persistido."
+      ],
+      "exemplo": {
+        "dados": "Texto O cerco durou 987654 dias; falha transitória de imagem antes do render.",
+        "passos": [
+          "Tentar salvar texto sem lastro e recarregar.",
+          "Produzir texto válido com falha injetada.",
+          "Repetir etapa pelo comando apropriado e comparar artefatos/configuração."
+        ]
+      },
+      "esperado": "Texto recusado não persiste; erro fica visível; retry mantém snapshot e retoma etapa permitida; nenhuma aprovação/publicação automática; não mascarar recusa conhecida como sucesso.",
+      "limitacoes": "Jornada atual aceita 409/422/502 para recusa editorial; o plano não inventa um status único. Reuso de artefato depende do hash e contrato da etapa.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/e2e_full/test_journey_piloto.py:140-148; tests/test_production_coordinator.py:274,564-580; integração proposta."
+      }
+    },
+    {
+      "id": "E2E-05",
+      "titulo": "Início repetido, lease e cancelamento",
+      "tipo": "concorrencia/erro",
+      "regras": [
+        "E2E.R04",
+        "E2E.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar duas execuções efetivas do mesmo pedido e conclusão por dono obsoleto.",
+      "pre_condicoes": [
+        "Dois clientes locais; barreiras determinísticas; relógio/worker controlados."
+      ],
+      "exemplo": {
+        "dados": "Mesma chave idempotente em dois starts; lease expirado; cancelamento durante etapa mock bloqueada.",
+        "passos": [
+          "Enviar starts concorrentes com mesma configuração.",
+          "Simular worker antigo e recuperação após expiração.",
+          "Cancelar variante independente e liberar resposta tardia."
+        ]
+      },
+      "esperado": "Desejado na jornada: mesmo run para replay; fence impede conclusão de dono antigo; cancelamento mantém estado terminal e não aciona próxima etapa; efeitos externos ambíguos não são assumidos revertidos.",
+      "limitacoes": "Cancelamento de processo/FFmpeg real merece verificação separada; teste de coordenador não comprova interrupção física imediata.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_production_coordinator.py:133,198,290,331,521-534; concorrência de jornada proposta."
+      }
+    },
+    {
+      "id": "E2E-06",
+      "titulo": "Publicação e aprendizado em circuito mockado",
+      "tipo": "feliz/erro",
+      "regras": [
+        "E2E.R02",
+        "E2E.R03",
+        "E2E.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Validar integração após aprovação sem tocar no YouTube.",
+      "pre_condicoes": [
+        "Jornada concluída com intenção privada; canal/token sintéticos coerentes; portas de upload/analytics fake."
+      ],
+      "exemplo": {
+        "dados": "ID remoto de fixture com 11 caracteres; views=100.0; variante upload ambíguo.",
+        "passos": [
+          "Executar publicação local com fake confirmando ID.",
+          "Coletar métricas e abrir desempenho.",
+          "Repetir coleta; em outro vídeo simular ambiguidade e tentar coleta."
+        ]
+      },
+      "esperado": "Confirmado chega a PUBLISHED e medidas referenciam publicação/versão; retry não duplica observação; ambíguo não ganha ID fictício nem métricas autorizadas sem publicação confirmada.",
+      "limitacoes": "Extensão proposta: suite E2E atual termina antes de publicar. Nenhuma validação de quota, OAuth real ou distribuição pública.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Bases: tests/test_publication_execution.py:266,363; tests/test_analytics_collection.py:133,205; circuito integrado proposto."
+      }
+    },
+    {
+      "id": "E2E-07",
+      "titulo": "Baseline de Short e long local",
+      "tipo": "volume/desempenho",
+      "regras": [
+        "E2E.R05",
+        "E2E.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Medir custo temporal e recursos sem confundir timeout com SLA.",
+      "pre_condicoes": [
+        "Máquina dedicada descrita por CPU/RAM; versões fixas; Postgres/arquivos descartáveis; sem concorrência externa."
+      ],
+      "exemplo": {
+        "dados": "Short de seis cenas e long 180 s/12 cenas/1920x1080; uma execução fria e três aquecidas por perfil.",
+        "passos": [
+          "Medir geração, render e QA separadamente excluindo espera humana.",
+          "Registrar wall-clock, CPU, pico RSS e bytes por execução.",
+          "Comparar artefatos e tempos com baseline do mesmo hardware."
+        ]
+      },
+      "esperado": "Saídas mantêm duração/resolução/QA; propostas iniciais de triagem: Short até 150 s de processamento, long até 900 s; degradação mediana acima de 25% pede investigação, não flexibilização automática do QA.",
+      "limitacoes": "150 s é timeout de teste existente, não garantia do produto; 900 s e 25% são propostas a calibrar. Três amostras não sustentam p95 confiável; áudio sintético não prova qualidade de locução.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Bases: tests/e2e_full/test_journey_piloto.py:19,50-58; tests/test_pilot_video_e2e.py:51-68,112-113; instrumentação proposta."
+      }
+    },
+    {
+      "id": "E2E-08",
+      "titulo": "Volume moderado sem bloquear navegação",
+      "tipo": "volume/concorrencia",
+      "regras": [
+        "E2E.R05",
+        "E2E.R04",
+        "E2E.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Detectar contenção, crescimento de recursos e duplicação sob carga local realista.",
+      "pre_condicoes": [
+        "Baseline E2E-07 disponível; limite de dois renders simultâneos no ensaio; 100 vídeos sintéticos, sem rede."
+      ],
+      "exemplo": {
+        "dados": "Fila de dez Shorts; dois workers; 30 leituras de lista/detalhe durante processamento após cinco aquecimentos.",
+        "passos": [
+          "Submeter fila com chaves únicas e uma repetida.",
+          "Navegar/listar enquanto dois renders trabalham.",
+          "Comparar p50/p95 das leituras, memória, fila final e IDs de saída."
+        ]
+      },
+      "esperado": "Desejado: nenhuma duplicação ou perda; fila termina ou aponta falhas recuperáveis; proposta p95 das leituras até 2 s; após esvaziar, memória estabiliza sem crescimento monotônico a cada vídeo.",
+      "limitacoes": "Dois workers é perfil do ensaio, não capacidade garantida; medir tempo em fila separado do render; limites precisam de calibração por hardware e não valem como SLA.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto; base funcional tests/test_production_coordinator.py:133-198 e tests/e2e_full/conftest.py:66-97."
+      }
+    }
+  ],
+  "prefixo": "E2E"
+}

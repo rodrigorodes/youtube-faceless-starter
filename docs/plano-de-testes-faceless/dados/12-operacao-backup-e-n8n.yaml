@@ -1,0 +1,262 @@
+{
+  "titulo": "12 — Operação, backup e n8n",
+  "regras": [
+    {
+      "id": "OPS.R01",
+      "fontes": [
+        "renderer/app/main.py:15-54"
+      ],
+      "resumo": "Startup solicita migração, recupera runs em voo e inicia recuperação periódica quando intervalo > 0; shutdown cancela o laço. Health informa banco indisponível sem necessariamente retornar erro HTTP."
+    },
+    {
+      "id": "OPS.R02",
+      "fontes": [
+        "renderer/app/studio/adapters/postgres/db.py:15-30"
+      ],
+      "resumo": "Migrações numeradas são ordenadas; cada arquivo e registro de versão compartilham transação com advisory lock e verificação de versão dentro dela."
+    },
+    {
+      "id": "OPS.R03",
+      "fontes": [
+        "scripts/backup.py:16-45",
+        "scripts/backup.py:48-76"
+      ],
+      "resumo": "Backup recusa dump vazio e escreve gzip com checksum; nome tem precisão de segundos. Restore exige --yes e arquivo verificado; usa docker compose no ROOT e não fornece transação única de restauração."
+    },
+    {
+      "id": "OPS.R04",
+      "fontes": [
+        "tests/conftest.py:10-46",
+        "tests/conftest.py:78-107"
+      ],
+      "resumo": "Testes de banco precisam de prova descartável antes de escrita; fixture conn remove schema studio. Conexão é validada fisicamente e rejeita redirecionamentos de DSN."
+    },
+    {
+      "id": "OPS.R05",
+      "fontes": [
+        "workflows/03-publish-approved.json:4-77",
+        "workflows/03-publish-approved.json:328",
+        "tests/test_workflow_publish.py:51-98"
+      ],
+      "resumo": "Workflow 03 entrega execução ao Core com lease=5400 e max_attempts=3, tem webhook e chega inativo; não deve carregar credenciais YouTube. JSON não provisiona autenticação funcional do worker nem agenda explícita de dois minutos."
+    },
+    {
+      "id": "OPS.R06",
+      "fontes": [
+        "workflows/04-analytics-daily.json:13-35",
+        "workflows/04-analytics-daily.json:105-136",
+        "workflows/04-analytics-daily.json:187"
+      ],
+      "resumo": "Workflow 04 chega inativo, usa mappings vazio até configuração e credenciais separadas; normaliza por nome de coluna e não inventa datas ausentes."
+    },
+    {
+      "id": "OPS.R07",
+      "fontes": [
+        "workflows/05-trends-daily.json:23-45",
+        "workflows/05-trends-daily.json:70",
+        "workflows/05-trends-daily.json:154"
+      ],
+      "resumo": "Workflow 05 chega inativo, com projectId vazio e queries vazio; busca não contém parâmetro q. Format Trends usa query recebida ou fallback ADE Lineup 2026 e métrica search_relevance=1, não total de views."
+    }
+  ],
+  "como_funciona": "Renderer recupera trabalho no ciclo de vida; PostgreSQL mantém migrações versionadas. Backup cobre dump do banco, não os arquivos de mídia/cofre. n8n orquestra publicação, coleta analytics e ingestão de tendências; os três JSON são distribuídos inativos. Este plano usa dublês e instâncias descartáveis, sem iniciar serviços nesta revisão.",
+  "resumo": "8 cenários GC, todos A_PROJETAR e não executados. Inclui startup, migração concorrente, backup/restore, segurança da suíte e os três workflows. Restore real só em clone descartável explicitamente isolado; o script atual aponta para a stack do ROOT.",
+  "cenarios": [
+    {
+      "id": "OPS.C01",
+      "titulo": "Startup degradado e recuperação sem sobreposição",
+      "tipo": "erro",
+      "regras": [
+        "OPS.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Manter diagnóstico e recuperação periódica quando o banco falha.",
+      "pre_condicoes": [
+        "Studio fake injetado antes da importação; recuperação que falha uma vez e depois conclui; sem serviços."
+      ],
+      "exemplo": [
+        "Entrar no lifespan com recover_in_flight lançando erro; consultar /health com ping falso.",
+        "Simular duas rodadas de recover_orphans mais lentas que intervalo; encerrar lifespan; repetir com intervalo=0."
+      ],
+      "esperado": "Falha de recuperação não derruba subida; studio_db=unavailable; chamadas periódicas não se sobrepõem no mesmo laço; shutdown é chamado; intervalo zero não agenda varredura.",
+      "limitacoes": "Não comprova recuperação entre processos ou execução real de run.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_main_boot.py:92-147"
+      }
+    },
+    {
+      "id": "OPS.C02",
+      "titulo": "Migração concorrente e rollback por arquivo",
+      "tipo": "concorrencia",
+      "regras": [
+        "OPS.R02",
+        "OPS.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Aplicar cada versão uma vez e não registrar migração falha.",
+      "pre_condicoes": [
+        "Postgres descartável comprovado; diretório temporário com 0001_criar.sql e 0002_falhar.sql sintéticos; duas conexões."
+      ],
+      "exemplo": [
+        "Executar migrate simultaneamente nas duas conexões para 0001_criar.sql que cria tabela marcador.",
+        "Em uma execução seguinte, incluir 0002_falhar.sql que cria tabela transitória e lança erro SQL; inspecionar catálogo e versões."
+      ],
+      "esperado": "Versão 0001 aparece uma vez; segunda execução não a reaplica. Falha 0002 reverte sua tabela e sua versão; 0001 permanece aplicada.",
+      "limitacoes": "Não executar migrations no banco configurado do usuário; lock pode aguardar, não há fail-fast neste código.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Automação proposta sobre renderer/app/studio/adapters/postgres/db.py:15-30; base tests/test_db.py"
+      }
+    },
+    {
+      "id": "OPS.C03",
+      "titulo": "Backup íntegro, vazio e colisão de nome",
+      "tipo": "concorrencia",
+      "regras": [
+        "OPS.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar integridade e caracterizar risco de duas gravações no mesmo segundo.",
+      "pre_condicoes": [
+        "Somente write_backup em diretório temporário; dumps sintéticos SELECT 1 e SELECT 2; instante fixo."
+      ],
+      "exemplo": [
+        "Gravar b'SELECT 1;' e verificar gzip/checksum; tentar dump vazio e adulterar arquivo.",
+        "Gravar dois dumps no mesmo diretório com now=2026-11-19T10:00:00, primeiro sequencialmente e depois com barreira concorrente."
+      ],
+      "esperado": "Roundtrip recupera bytes; vazio é recusado; corrupção falha na verificação. Código atual gera o mesmo caminho nas duas gravações, com sobrescrita sequencial; registrar se concorrência deixa checksum incompatível, sem presumir integridade atômica do par.",
+      "limitacoes": "Nome colidente é confirmado por leitura; efeito da corrida é hipótese não reproduzida. Não ler backups existentes.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "tests/test_backup.py:14-37; extensão concorrente proposta"
+      }
+    },
+    {
+      "id": "OPS.C04",
+      "titulo": "Restore recusado e recuperação em clone isolado",
+      "tipo": "borda",
+      "regras": [
+        "OPS.R03",
+        "OPS.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar restauração acidental na stack atual e validar retorno de falha.",
+      "pre_condicoes": [
+        "Primeira etapa com _compose_exec fake e arquivo SQL sintético temporário; etapa integrada somente em cópia descartável com ROOT/Compose isolados e banco confirmado vazio."
+      ],
+      "exemplo": [
+        "Chamar main restore sem --yes e depois com arquivo corrompido; contar chamadas ao subprocesso.",
+        "Com backup sintético íntegro, simular retorno psql=1 e verificar mensagem; no clone, restaurar tabela marcador com uma linha e conferir SELECT."
+      ],
+      "esperado": "Sem confirmação/corrompido não chama psql. Retorno 1 não anuncia sucesso. No clone bem-sucedido, linha é restaurada; falha SQL não autoriza inferir rollback integral, pois não há single-transaction.",
+      "limitacoes": "O script real usa cwd=ROOT e docker compose; executar direto no checkout atingiria a stack atual. Checksum válido não prova completude do backup, e dump não inclui mídia/cofre.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "tests/test_backup.py:40-51 cobrem recusas; restore isolado e falha psql são automações propostas"
+      }
+    },
+    {
+      "id": "OPS.C05",
+      "titulo": "Barrar banco sem prova antes do DROP SCHEMA",
+      "tipo": "erro",
+      "regras": [
+        "OPS.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Validar segurança da própria execução dos testes.",
+      "pre_condicoes": [
+        "Connection fake com log de SQL; provas sintéticas temporárias; sem DSN do usuário."
+      ],
+      "exemplo": [
+        "Fornecer prova ausente, divergente e DSN com múltiplos hosts ou hostaddr.",
+        "Repetir com prova válida de 64 hex igual à devolvida pelo fake; examinar ordem de verificação, rollback e liberação."
+      ],
+      "esperado": "Entradas inseguras geram erro/fechamento sem DDL destrutivo. Conexão válida verifica prova antes de disponibilizar escrita e ajusta autocommit somente depois do rollback.",
+      "limitacoes": "Não autoriza rodar a suíte completa; fixture conn contém DROP SCHEMA CASCADE.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/conftest.py:25-46,96-107; base tests/test_disposable_db_guard.py"
+      }
+    },
+    {
+      "id": "OPS.C06",
+      "titulo": "Workflow 03 entrega ao Core e trata resultados sem publicar de verdade",
+      "tipo": "feliz",
+      "regras": [
+        "OPS.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Validar orquestração, bloqueio e configuração necessária antes da ativação.",
+      "pre_condicoes": [
+        "JSON lido offline; runtime de nós com HTTP fake ou n8n descartável sem saída externa; nenhuma credencial real."
+      ],
+      "exemplo": [
+        "Confirmar active=false e alimentar Config com lease_seconds=20,max_attempts=99.",
+        "Simular Core retornando UPLOADED, IDLE, RECONCILE e erro desconhecido; simular falha de thumbnail.",
+        "Inspecionar Schedule Trigger e HTTP Execute/thumbnail para agenda e credencial worker."
+      ],
+      "esperado": "Config produz 5400/3; switch direciona upload/ocioso/reconciliação e fallback bloqueado; thumbnail não reclassifica upload como novo envio. Identificar pendências do JSON: agenda vazia e autenticação genérica sem associação worker completa; não declarar importação pronta.",
+      "limitacoes": "Nome Every 2 minutes não prova agenda. Webhook não tem autenticação explícita no JSON; não testar em n8n compartilhado nem fazer upload.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_workflow_publish.py:39-118; proposta para validação de agenda/credenciais"
+      }
+    },
+    {
+      "id": "OPS.C07",
+      "titulo": "Workflow 04 preserva lacunas e rejeita relatório inválido",
+      "tipo": "borda",
+      "regras": [
+        "OPS.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Normalizar analytics sem fabricar métricas ausentes.",
+      "pre_condicoes": [
+        "Nó de código offline; video_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; youtube_id=oNQ2KN37sfQ; janela 2026-11-01 a 2026-11-14."
+      ],
+      "exemplo": [
+        "Entregar headers views,day,likes e linha [7,2026-11-03,2].",
+        "Entregar rows vazio e depois linha de 2026-10-31; confirmar mappings vazio e active=false na distribuição."
+      ],
+      "esperado": "Primeiro caso produz views=7, likes=2 somente para 03/11; vazio produz zero linhas; fora da janela gera erro. Nenhuma chamada externa com configuração ainda vazia; credenciais readonly e studio_worker são referências separadas.",
+      "limitacoes": "Runner de código não comprova execução n8n nem acesso Google; views desconhecidas não viram zero.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_workflow_analytics.py:17-58"
+      }
+    },
+    {
+      "id": "OPS.C08",
+      "titulo": "Workflow 05 associa termo de busca à tendência",
+      "tipo": "regressao",
+      "regras": [
+        "OPS.R07"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Expor diferença entre configuração de termos e requisição HTTP real.",
+      "pre_condicoes": [
+        "Cópia em memória do JSON; projectId sintético; queries=[Energia solar]; fake de resposta YouTube sem campo query."
+      ],
+      "exemplo": [
+        "Inspecionar parâmetros do nó Search YouTube e executar Format Trends com um resultado de vídeo abcdefghijk.",
+        "Repetir com projectId vazio e com items vazio; conferir até cinco evidências e metric_value."
+      ],
+      "esperado": "Caracterização atual: requisição não contém q e Format Trends usa ADE Lineup 2026 quando query não vem na resposta; metric_value=1 representa search_relevance, não views. Projeto vazio/sem itens não produz ingestão. Critério funcional pendente: termo configurado deve chegar à busca e ao tópico, sem fallback indevido.",
+      "limitacoes": "Falha funcional deduzida do JSON, não reproduzida live. Teste existente injeta query na resposta fake e não cobre montagem da busca.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_workflow_trends.py:17-25,40-73; ampliação proposta para requisição completa"
+      }
+    }
+  ],
+  "prefixo": "OPS"
+}

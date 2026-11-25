@@ -43,13 +43,11 @@ class BasePage:
         select = self.get_channel_select()
         return select.evaluate("el => el.options[el.selectedIndex]?.text || ''")
 
-    def open_new_channel_dialog(self) -> Locator:
-        btn = self.page.locator("#btn-novo-canal")
-        expect(btn).to_be_visible()
-        btn.click()
-        dialog = self.page.locator("#dlg-canal")
-        expect(dialog).to_be_visible()
-        return dialog
+    def open_new_channel_wizard(self) -> None:
+        """O V4 troca o diálogo modal pelo assistente em 6 passos, aberto pelo seletor."""
+        select = self.get_channel_select()
+        select.select_option("__new")
+        self.page.wait_for_load_state("domcontentloaded")
 
     def toggle_theme(self) -> None:
         btn = self.page.locator("#btn-tema")

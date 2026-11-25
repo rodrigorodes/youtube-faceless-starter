@@ -1,0 +1,270 @@
+{
+  "capitulo": "13-direcao-e-composicao",
+  "titulo": "Direção criativa e composição",
+  "prefixo": "DRC",
+  "como_funciona": "O workspace do vídeo tem seis áreas canônicas (Direção criativa, Cenas & Storyboard, Composição & Legendas, Qualidade & Aprovação, Publicação YouTube, Fontes & Evidências) e o diagnóstico de produção. A área Direção criativa lê e grava o briefing criativo por GET/POST/PUT /studio/videos/{id}/direction. A área Composição & Legendas grava o override tipado por PATCH /studio/videos/{id}/style-patch com controle otimista de revisão. A navegação usa links de servidor com aria-current e normaliza área desconhecida para cenas.",
+  "resumo": "8 cenários documentais, todos A_PROJETAR. Execução direta, sem workflow. Os testes citados são referências existentes, não comprovação de aprovação. Os achados de honestidade da tela de composição estão registrados como limitações e em 99-lacunas.",
+  "regras": [
+    {
+      "id": "DRC.R01",
+      "resumo": "GET/POST/PUT /studio/videos/{id}/direction: 404 para vídeo inexistente; POST sem brief gera briefing pelo diretor criativo ou fallback determinístico e persiste; PUT exige brief (422) e faz merge raso; GET devolve o brief persistido.",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:1358-1405",
+        "renderer/app/studio/application/creative_director.py:15-95"
+      ]
+    },
+    {
+      "id": "DRC.R02",
+      "resumo": "Composição & Legendas salva PATCH /studio/videos/{id}/style-patch com expected_revision otimista; conflito de revisão é 409; grupo ou chave fora da allowlist e valor inválido são 422; patch nulo ou None herda o canal.",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:2997-3020",
+        "renderer/app/studio/domain/visual_style.py:462-520"
+      ]
+    },
+    {
+      "id": "DRC.R03",
+      "resumo": "Allowlist de composição: caption (font_size 8-400, bottom >= 0, position top/middle/bottom, font_family dejavu/roboto/georgia/inter, style_kind box/simple/word_highlight); transition (none/fade, fade exige duration_ticks > 0); palette (hex #RRGGBB ou #RRGGBBAA); motion (none/zoom_in/zoom_out/pan_left/pan_right); music (bpm e seed).",
+      "fontes": [
+        "renderer/app/studio/domain/visual_style.py:179-300",
+        "renderer/app/studio/domain/visual_style.py:56-79"
+      ]
+    },
+    {
+      "id": "DRC.R04",
+      "resumo": "O workspace do vídeo expõe as seis áreas canônicas na ordem do protótipo; produção é área de diagnóstico; área desconhecida normaliza para cenas; a nav usa aria-current na área ativa.",
+      "fontes": [
+        "renderer/app/studio/api/panel_video_nav.py:13-27",
+        "renderer/app/studio/api/panel_video_nav.py:40-66"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "DRC-01",
+      "titulo": "Gerar briefing sem brief explícito",
+      "tipo": "feliz",
+      "regras": [
+        "DRC.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar que o POST sem corpo gera e persiste um briefing válido.",
+      "pre_condicoes": [
+        "Vídeo IDEA com tema e orçamento; caso de uso com diretor criativo dublê.",
+        "Repositório espião que registra update_video_creative_brief."
+      ],
+      "exemplo": {
+        "dados": "POST /studio/videos/{id}/direction com corpo vazio ou {}; tema 'Energia solar'.",
+        "passos": [
+          "Chamar o POST sem brief.",
+          "Ler o brief com GET /direction.",
+          "Repetir com o diretor criativo ausente do wiring."
+        ]
+      },
+      "esperado": "Resposta 200 com ok=true e brief com schema_version, topic, narrative_goal, hook, content_structure, tone, pacing, visual_direction, recommended_media, caption, audio_guidance, max_budget_usd e quality_criteria; o GET devolve o mesmo brief; sem diretor, o fallback determinístico é persistido.",
+      "limitacoes": "Não comprova qualidade editorial do briefing nem custo da chamada paga; o fallback é determinístico e não consulta modelo.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Proposto: tests/test_direction_api.py (novo) com TestClient e repositório dublê."
+      }
+    },
+    {
+      "id": "DRC-02",
+      "titulo": "Brief explícito e merge do PUT",
+      "tipo": "feliz/borda",
+      "regras": [
+        "DRC.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar que o brief enviado é persistido e que o PUT faz merge raso.",
+      "pre_condicoes": [
+        "Vídeo com brief existente de 3 campos.",
+        "Repositório espião."
+      ],
+      "exemplo": {
+        "dados": "POST com {\"brief\": {\"hook\": \"Gancho X\"}}; PUT com {\"brief\": {\"tone\": \"Calmo\"}}.",
+        "passos": [
+          "Enviar brief explícito no POST.",
+          "Enviar PUT com apenas um campo.",
+          "Ler o brief final."
+        ]
+      },
+      "esperado": "O POST grava exatamente o brief enviado; o PUT preserva os campos anteriores e substitui apenas os informados; o GET devolve o resultado do merge.",
+      "limitacoes": "O merge é raso: listas e objetos aninhados são substituídos inteiros, não mesclados.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Proposto: tests/test_direction_api.py."
+      }
+    },
+    {
+      "id": "DRC-03",
+      "titulo": "Vídeo inexistente e brief ausente no PUT",
+      "tipo": "erro",
+      "regras": [
+        "DRC.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar os erros 404 e 422 da área de direção.",
+      "pre_condicoes": [
+        "Repositório sem o vídeo alvo."
+      ],
+      "exemplo": {
+        "dados": "GET, POST e PUT em /videos/{id}/direction com id desconhecido; PUT com body vazio.",
+        "passos": [
+          "Chamar GET, POST e PUT com id inexistente.",
+          "Chamar PUT com {\"brief\": {}} e sem body."
+        ]
+      },
+      "esperado": "Vídeo inexistente devolve 404 nas três rotas; PUT sem brief devolve 422 sem gravar nada.",
+      "limitacoes": "O erro 404 é HTTPException simples; não há mensagem de domínio padronizada.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Proposto: tests/test_direction_api.py."
+      }
+    },
+    {
+      "id": "DRC-04",
+      "titulo": "Salvar composição com revisão otimista",
+      "tipo": "feliz",
+      "regras": [
+        "DRC.R02",
+        "DRC.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar que o patch de composição é validado, persistido e devolve a revisão.",
+      "pre_condicoes": [
+        "Vídeo com style_patch_revision 0; repositório real ou dublê transacional."
+      ],
+      "exemplo": {
+        "dados": "PATCH com expected_revision 0 e patch contendo caption, transition, palette, motion e music.",
+        "passos": [
+          "Enviar o patch válido.",
+          "Ler o vídeo e conferir o patch persistido.",
+          "Repetir com expected_revision 1."
+        ]
+      },
+      "esperado": "Resposta 200 com a nova revisão e o patch normalizado; o segundo PATCH usa a revisão 1 e também é aceito.",
+      "limitacoes": "A leitura efetiva da composição depende da resolução do estilo; este cenário verifica o patch, não o render.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_video_style_patch_api.py."
+      }
+    },
+    {
+      "id": "DRC-05",
+      "titulo": "Conflito de revisão e allowlist",
+      "tipo": "erro/concorrencia",
+      "regras": [
+        "DRC.R02",
+        "DRC.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Recusar patch perdedor e conteúdo fora da allowlist.",
+      "pre_condicoes": [
+        "Vídeo com revisão 2.",
+        "Duas chamadas concorrentes com a mesma revisão."
+      ],
+      "exemplo": {
+        "dados": "expected_revision 1 com revisão atual 2; patch com chave desconhecida; caption.font_size 500; transition fade com duration_ticks 0; palette com cor inválida.",
+        "passos": [
+          "Enviar cada variante inválida.",
+          "Disparar duas chamadas concorrentes com a mesma revisão."
+        ]
+      },
+      "esperado": "Revisão defasada devolve 409; chave ou valor inválido devolve 422 com a chave nomeada; apenas uma chamada concorrente vence e a outra recebe 409.",
+      "limitacoes": "O 409 depende do controle otimista do repositório; não há bloqueio pessimista.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_video_style_patch_api.py."
+      }
+    },
+    {
+      "id": "DRC-06",
+      "titulo": "Reset de grupo e herança do canal",
+      "tipo": "borda",
+      "regras": [
+        "DRC.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Confirmar que patch nulo ou grupo None devolve a herança.",
+      "pre_condicoes": [
+        "Vídeo com override de caption e music; canal com estilo próprio."
+      ],
+      "exemplo": {
+        "dados": "PATCH com {\"caption\": null} e depois com patch vazio.",
+        "passos": [
+          "Enviar caption null.",
+          "Enviar patch vazio.",
+          "Ler o patch e o estilo efetivo."
+        ]
+      },
+      "esperado": "caption null remove o grupo e o vídeo herda a legenda do canal; patch vazio remove o override inteiro; o estilo efetivo volta a ser o do canal.",
+      "limitacoes": "A resolução efetiva é de outro caso de uso; aqui se verifica o patch persistido e a ausência de override.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_video_style_patch_api.py."
+      }
+    },
+    {
+      "id": "DRC-07",
+      "titulo": "Controles de composição sem efeito",
+      "tipo": "erro",
+      "regras": [
+        "DRC.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Caracterizar controles renderizados que não entram no patch salvo.",
+      "pre_condicoes": [
+        "Workspace na área composicao com estilo efetivo."
+      ],
+      "exemplo": {
+        "dados": "Formulário com trilha, volume e ducking preenchidos; resolução e FPS visíveis; opção Deslizar presente.",
+        "passos": [
+          "Alterar trilha, volume e ducking e salvar.",
+          "Conferir o payload enviado pelo formulário.",
+          "Inspecionar o patch persistido."
+        ]
+      },
+      "esperado": "Caracterização atual: trilha, volume e ducking são exibidos mas não fazem parte do patch; resolução e FPS ficam disabled; Deslizar fica disabled. Critério de correção: remover ou ligar esses controles ao patch e nunca apresentá-los como salvos.",
+      "limitacoes": "Achado de honestidade da UI, não reproduzido em navegador nesta tarefa; registrado em 99-lacunas.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "Proposto: tests/ve08/test_video_composition_form.py (novo) com Playwright."
+      }
+    },
+    {
+      "id": "DRC-08",
+      "titulo": "Seis áreas e área desconhecida",
+      "tipo": "regressao",
+      "regras": [
+        "DRC.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Confirmar a navegação canônica do workspace.",
+      "pre_condicoes": [
+        "Vídeo em qualquer estágio."
+      ],
+      "exemplo": {
+        "dados": "GET /studio/panel/videos/{id}/areas com área inválida 'xyz'.",
+        "passos": [
+          "Abrir cada uma das seis áreas.",
+          "Abrir uma área desconhecida.",
+          "Conferir aria-current."
+        ]
+      },
+      "esperado": "Seis links na ordem do protótipo; a área ativa recebe aria-current; área desconhecida abre cenas; produção não aparece na nav primária.",
+      "limitacoes": "O teste existente cobre a estrutura; o comportamento de área inválida precisa de teste dedicado.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Existente: tests/test_video_workspace_v3_nav.py:48-90; área inválida proposta."
+      }
+    }
+  ]
+}

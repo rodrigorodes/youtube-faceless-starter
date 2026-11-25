@@ -40,7 +40,11 @@ class _NoopExecutor:
 def studio(conn, dsn, tmp_path):
     from app.studio.adapters.postgres.db import migrate
     migrate(conn)
-    return Studio(Settings(database_url=dsn, storage_root=tmp_path), executor=_NoopExecutor())
+    # A pesquisa automática é o padrão de produção (settings.auto_research=True), mas este fluxo
+    # testa a pipeline clássica de forma determinística: sem rede e com "research" indisponível.
+    # A pipeline com pesquisa tem cobertura própria em tests/test_pesquisa_automatica.py.
+    return Studio(Settings(database_url=dsn, storage_root=tmp_path, auto_research=False),
+                  executor=_NoopExecutor())
 
 
 @pytest.fixture()

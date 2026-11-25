@@ -150,7 +150,7 @@ def test_page_is_reached_through_the_approved_shell(env):
     create_project(env, videos=VIDEOS[:1])
     r = page(env)
     # UX V3: a casca aprovada é `<aside class="side">` + `<main class="main">`.
-    assert '<aside class="side">' in r.text and '<main class="main">' in r.text
+    assert '<aside class="side"' in r.text and '<main class="main">' in r.text
     nav = _main_nav(r.text)
     assert nav.count('aria-current="page"') == 1
     active = re.search(r'<a href="/studio/panel/analytics[^"]*" aria-current="page">(.*?)</a>',
@@ -281,12 +281,28 @@ def test_channel_selector_lists_real_projects_and_switches(env):
                         ("6" * 32,))
     env["conn"].commit()
     r = page(env)
-    assert 'id="analytics-project"' in r.text
+    # O seletor de canal é o da casca (`#canal-ativo`), não um segundo seletor dentro da página.
+    assert 'id="canal-ativo"' in r.text
+    assert 'id="analytics-project"' not in r.text
     assert "Canal Real" in r.text and "Outro Canal" in r.text
-    other = page(env, project="6" * 32)
+    # A casca troca o canal por `project_id`; a tela aceita o parâmetro e o endereço antigo.
+    other = page(env, project_id="6" * 32)
     assert other.status_code == 200
     assert "Outro Canal" in other.text
     assert "Nenhum vídeo" in other.text or "Nenhuma publicação" in other.text
+
+
+def test_filters_form_lets_the_user_narrow_by_video_and_pillar(env):
+    """ACH-05: os filtros de vídeo/pilar voltaram a ser renderizados e o servidor os aplica."""
+    create_project(env, videos=VIDEOS[:2])
+    r = page(env)
+    assert 'aria-label="Filtrar o dashboard"' in r.text
+    assert 'id="analytics-video"' in r.text and 'id="analytics-pillar"' in r.text
+    assert 'name="project"' in r.text
+    filtered = page(env, video=VIDEOS[0], pillar=CATEGORY)
+    assert filtered.status_code == 200
+    assert f'<option value="{VIDEOS[0]}" selected>' in filtered.text
+    assert f'<option value="{CATEGORY}" selected>' in filtered.text
 
 
 def test_collect_with_publication_but_no_token_is_refused_by_the_adapter(env):

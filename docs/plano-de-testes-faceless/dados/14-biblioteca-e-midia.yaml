@@ -1,0 +1,337 @@
+{
+  "capitulo": "14-biblioteca-e-midia",
+  "titulo": "Biblioteca e mídia compartilhada",
+  "prefixo": "BIB",
+  "como_funciona": "A Biblioteca (pgLibrary) tem cinco abas: Estilos visuais, Vozes, Músicas, Mídias & Stock (Pixabay) e Modelos de roteiro. Estilos são a biblioteca compartilhada com criação, edição versionada, arquivamento com limpeza de vínculos e contagem de uso. Vozes e modelos são catálogos locais exibidos sem síntese. Músicas vêm do manifest CC0 em storage/music-candidates e são servidas por rota dedicada. Mídias & Stock consulta a API Pixabay quando há chave configurada.",
+  "resumo": "10 cenários documentais, todos A_PROJETAR. Execução direta, sem workflow. Os testes citados são referências existentes, não comprovação de aprovação. Nenhuma chamada paga à Pixabay é executada nesta rodada.",
+  "regras": [
+    {
+      "id": "BIB.R01",
+      "resumo": "A Biblioteca renderiza cinco abas na ordem Estilos visuais, Vozes, Músicas, Mídias & Stock (Pixabay) e Modelos de roteiro; a aba ativa usa aria-selected; a lista de estilos mostra estilos reais e um vazio honesto quando não há catálogo; nenhum item de mockup é inventado.",
+      "fontes": [
+        "renderer/app/studio/api/panel_styles.py:881-935"
+      ]
+    },
+    {
+      "id": "BIB.R02",
+      "resumo": "Estilos: criar valida nome e params; nome ativo duplicado é recusado; editar exige expected_version e campos da allowlist; arquivar mantém histórico, libera o nome e devolve links_cleared; a contagem de uso é medida.",
+      "fontes": [
+        "renderer/app/studio/application/styles.py:1-120",
+        "renderer/app/studio/api/routes.py:2834-2878"
+      ]
+    },
+    {
+      "id": "BIB.R03",
+      "resumo": "Músicas: o manifest é lido de storage/music-candidates/manifest.json; a rota /studio/music/{file} serve apenas .mp3 de candidatos e devolve 404 fora; basename bloqueia path traversal; Accept-Ranges e cache são anunciados.",
+      "fontes": [
+        "renderer/app/studio/api/panel_styles.py:808-830",
+        "renderer/app/studio/api/routes.py:2880-2893"
+      ]
+    },
+    {
+      "id": "BIB.R04",
+      "resumo": "Mídias & Stock: GET /studio/media/search exige PIXABAY_API_KEY; sem chave devolve ok=false com erro legível e lista vazia; com chave delega ao adapter PixabayMediaSearch pela camada de composição, sem import de adapters na API.",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:2895-2925",
+        "renderer/app/studio/composition/providers.py:1-40"
+      ]
+    },
+    {
+      "id": "BIB.R05",
+      "resumo": "Vozes: a página exibe o catálogo local (Piper Faber pt-BR como padrão do estúdio, Jeff) e a voz herdada do canal; não sintetiza áudio nem promete voz de provider não configurado.",
+      "fontes": [
+        "renderer/app/studio/api/panel_styles.py:644-700"
+      ]
+    },
+    {
+      "id": "BIB.R06",
+      "resumo": "Modelos de roteiro: três arquétipos são exibidos como referência; não há persistência, seleção por vídeo nem geração a partir do modelo.",
+      "fontes": [
+        "renderer/app/studio/api/panel_styles.py:700-810"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "BIB-01",
+      "titulo": "Abas da Biblioteca e aba ativa",
+      "tipo": "feliz",
+      "regras": [
+        "BIB.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar a estrutura de cinco abas e o estado ativo.",
+      "pre_condicoes": [
+        "render_styles com canal ativo e sem estilos."
+      ],
+      "exemplo": {
+        "dados": "StylesPageView vazio; channel_name 'Canal H'; channel_voice 'Rodrigo'.",
+        "passos": [
+          "Renderizar a página.",
+          "Coletar os botões de aba.",
+          "Conferir aria-selected e aria-current."
+        ]
+      },
+      "esperado": "Cinco abas na ordem esperada; Estilos visuais é a aba ativa; o menu e a aba ativa usam aria-current; o cabeçalho diz 'Canal ativo: Canal H'.",
+      "limitacoes": "O teste verifica HTML de servidor; o comportamento de troca de aba depende do JavaScript da página.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Existente: tests/test_library_v3.py:27-40."
+      }
+    },
+    {
+      "id": "BIB-02",
+      "titulo": "Vazio honesto da biblioteca",
+      "tipo": "borda",
+      "regras": [
+        "BIB.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Confirmar que a ausência de estilos não vira mockup.",
+      "pre_condicoes": [
+        "StylesPageView sem itens."
+      ],
+      "exemplo": {
+        "dados": "Sem estilos; com um estilo ativo depois.",
+        "passos": [
+          "Renderizar sem estilos.",
+          "Renderizar com um estilo.",
+          "Procurar nomes fictícios."
+        ]
+      },
+      "esperado": "Sem estilos, a página informa o vazio e não cria cards; com estilo, o card real aparece; nenhum nome fictício do protótipo é usado.",
+      "limitacoes": "Nomes fictícios do protótipo podem existir em outros pontos da UI; este cenário cobre a Biblioteca.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Existente: tests/test_library_v3.py:41-60."
+      }
+    },
+    {
+      "id": "BIB-03",
+      "titulo": "Criar estilo válido e duplicado",
+      "tipo": "feliz/erro",
+      "regras": [
+        "BIB.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Validar criação e recusa de nome ativo duplicado.",
+      "pre_condicoes": [
+        "Repositório de estilos com um estilo 'Cinemático'."
+      ],
+      "exemplo": {
+        "dados": "POST /styles com name 'Documentário' e params válidos; repetir com 'Cinemático'.",
+        "passos": [
+          "Criar o estilo novo.",
+          "Tentar criar o duplicado.",
+          "Criar com params inválidos."
+        ]
+      },
+      "esperado": "O estilo novo é criado com versão 1; o duplicado devolve erro de domínio; params inválidos devolvem 422.",
+      "limitacoes": "O erro de duplicado é mapeado pelo guard global; a mensagem exata depende do handler.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_styles_api.py."
+      }
+    },
+    {
+      "id": "BIB-04",
+      "titulo": "Editar estilo com controle de versão",
+      "tipo": "erro/concorrencia",
+      "regras": [
+        "BIB.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Recusar edição perdedora e campo fora da allowlist.",
+      "pre_condicoes": [
+        "Estilo com versão 2."
+      ],
+      "exemplo": {
+        "dados": "PATCH com expected_version 1; PATCH com campo 'organization_id'; PATCH válido com expected_version 2.",
+        "passos": [
+          "Enviar a versão defasada.",
+          "Enviar campo desconhecido.",
+          "Enviar a versão correta."
+        ]
+      },
+      "esperado": "Versão defasada devolve conflito; campo desconhecido devolve 422; a versão correta atualiza e incrementa a versão.",
+      "limitacoes": "A concorrência real depende do repositório; o cenário descreve o contrato de versão.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_styles_api.py."
+      }
+    },
+    {
+      "id": "BIB-05",
+      "titulo": "Arquivar estilo e limpar vínculos",
+      "tipo": "feliz",
+      "regras": [
+        "BIB.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar soft delete com limpeza de vínculos e contagem.",
+      "pre_condicoes": [
+        "Estilo usado por um canal e um vídeo."
+      ],
+      "exemplo": {
+        "dados": "POST /styles/{id}/archive; depois listar com e sem include_archived.",
+        "passos": [
+          "Arquivar o estilo.",
+          "Conferir links_cleared.",
+          "Listar com e sem arquivados."
+        ]
+      },
+      "esperado": "O estilo sai da lista padrão; links_cleared reflete os vínculos limpos; o canal volta ao padrão e o vídeo herda do canal; include_archived mostra o estilo arquivado.",
+      "limitacoes": "A limpeza de vínculos é transacional no repositório; o teste precisa de banco descartável.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_styles_archive.py."
+      }
+    },
+    {
+      "id": "BIB-06",
+      "titulo": "Uso por estilo medido",
+      "tipo": "feliz",
+      "regras": [
+        "BIB.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Confirmar que a contagem de uso vem do repositório.",
+      "pre_condicoes": [
+        "Dois canais usando o mesmo estilo."
+      ],
+      "exemplo": {
+        "dados": "GET /styles e leitura de usage_counts.",
+        "passos": [
+          "Criar dois canais com o estilo.",
+          "Listar estilos.",
+          "Comparar a contagem."
+        ]
+      },
+      "esperado": "A contagem é 2, sem estimativa; estilo sem uso mostra 0.",
+      "limitacoes": "A contagem é por canal; uso por vídeo não é contabilizado nesta leitura.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Proposto: tests/test_styles_usage.py."
+      }
+    },
+    {
+      "id": "BIB-07",
+      "titulo": "Catálogo de vozes herdado do canal",
+      "tipo": "feliz",
+      "regras": [
+        "BIB.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Confirmar que a voz do canal aparece e não há síntese.",
+      "pre_condicoes": [
+        "channel_voice 'Rodrigo' e depois vazio."
+      ],
+      "exemplo": {
+        "dados": "render_styles com channel_voice 'Rodrigo' e com ''.",
+        "passos": [
+          "Renderizar com voz definida.",
+          "Renderizar sem voz.",
+          "Procurar indicadores de síntese."
+        ]
+      },
+      "esperado": "Com voz definida, o card correspondente é destacado como ativo; sem voz, o padrão do estúdio é indicado; nenhum áudio é gerado na página.",
+      "limitacoes": "A voz é herdada do canal; a página não valida se o provider de voz está disponível.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Existente: tests/test_styles_page.py (parcial)."
+      }
+    },
+    {
+      "id": "BIB-08",
+      "titulo": "Manifest de músicas e rota de áudio",
+      "tipo": "feliz/erro",
+      "regras": [
+        "BIB.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar a leitura do manifest e a proteção da rota de áudio.",
+      "pre_condicoes": [
+        "storage/music-candidates/manifest.json com 6 trilhas; um MP3 presente."
+      ],
+      "exemplo": {
+        "dados": "GET /studio/music/<arquivo>.mp3; GET com ../; GET com .wav; GET de arquivo ausente.",
+        "passos": [
+          "Baixar um MP3 do manifest.",
+          "Tentar path traversal.",
+          "Tentar extensão inválida.",
+          "Tentar arquivo ausente."
+        ]
+      },
+      "esperado": "O MP3 é servido com Accept-Ranges e cache; path traversal e extensão inválida devolvem 400; arquivo ausente devolve 404; a página mostra as 6 trilhas.",
+      "limitacoes": "O manifest é lido do disco local; em container o caminho /data/music-candidates tem precedência.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Proposto: tests/test_music_route.py."
+      }
+    },
+    {
+      "id": "BIB-09",
+      "titulo": "Busca Pixabay sem chave e com chave",
+      "tipo": "erro/feliz",
+      "regras": [
+        "BIB.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Confirmar a resposta honesta sem chave e o caminho com chave.",
+      "pre_condicoes": [
+        "Ambiente sem PIXABAY_API_KEY; depois com chave de teste e adapter dublê."
+      ],
+      "exemplo": {
+        "dados": "GET /studio/media/search?q=tecnologia&type=image.",
+        "passos": [
+          "Chamar sem chave.",
+          "Chamar com chave e adapter dublê.",
+          "Conferir o import do adapter na API."
+        ]
+      },
+      "esperado": "Sem chave: ok=false, erro 'PIXABAY_API_KEY não configurada no servidor' e candidates vazio; com chave: adapter devolve candidatos; a API não importa adapters diretamente (guard de arquitetura).",
+      "limitacoes": "Nenhuma chamada real à Pixabay é feita; o adapter dublê substitui a rede.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existente: tests/test_architecture.py:45; rota proposta em tests/test_media_search_api.py."
+      }
+    },
+    {
+      "id": "BIB-10",
+      "titulo": "Modelos de roteiro como referência",
+      "tipo": "feliz",
+      "regras": [
+        "BIB.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "baixa",
+      "objetivo": "Confirmar que os três modelos são exibidos sem persistência.",
+      "pre_condicoes": [
+        "render_styles padrão."
+      ],
+      "exemplo": {
+        "dados": "Aba Modelos de roteiro.",
+        "passos": [
+          "Renderizar a página.",
+          "Coletar os cards de modelo.",
+          "Procurar ação de salvar ou aplicar."
+        ]
+      },
+      "esperado": "Três modelos são exibidos; não há ação de persistir ou aplicar modelo; o texto descreve o arquétipo sem prometer geração.",
+      "limitacoes": "Modelos são conteúdo estático da página; não há API de modelos.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Proposto: tests/test_library_models.py."
+      }
+    }
+  ]
+}

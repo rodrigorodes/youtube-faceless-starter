@@ -6,6 +6,7 @@ import binascii
 import hashlib
 import hmac
 import os
+from pathlib import Path
 import re
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
@@ -1897,20 +1898,6 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/configuracoes/{section}")
     def settings_section_redirect(section: str, project_id: str | None = None):
-        if section == "canais":
-            def channel_list(uc):
-                if uc.channels_page is None:
-                    raise HTTPException(503, "channel services unavailable")
-                view = uc.channels_page.execute(_active_channel(uc, project_id))
-                profiles = {}
-                for pid, _name in view.projects:
-                    try:
-                        profiles[pid] = uc.channels_page.get_profile.execute(pid)
-                    except Exception:  # canal sem perfil legível: o cartão diz isso em vez de inventar
-                        profiles[pid] = None
-                return panel_settings.render_channel_list(view, profiles)
-            page, headers = run(channel_list)
-            return HTMLResponse(page, headers=headers)
         if section in panel_settings.SECTIONS:
             def get_page(uc):
                 if uc.channels_page is None:
@@ -2159,16 +2146,20 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/panel/analytics", response_class=HTMLResponse)
     def panel_analytics_html(project: str | None = None, video: str | None = None,
-                             pillar: str | None = None, days: int = 7):
+                             pillar: str | None = None, days: int = 7,
+                             project_id: str | None = None):
+        # A casca troca o canal pelo parâmetro global `project_id`; a tela aceita `project`
+        # (endereço antigo dos filtros) e `project_id` (seletor do topo), sem trocar o canal.
         period = _analytics_period(days)
 
         def get_page(uc):
             if uc.analytics_repo is None or uc.analytics_dashboard is None:
                 raise HTTPException(503, "analytics services unavailable")
-            project_id = check_id(project) if project else None
+            chosen_project = project or project_id
+            project_id_value = check_id(chosen_project) if chosen_project else None
             video_id = check_id(video) if video else None
             pillar_id = check_id(pillar) if pillar else None
-            chosen = project_id
+            chosen = project_id_value
             if chosen is None:
                 projects = uc.analytics_repo.projects()
                 if not projects:
@@ -2875,6 +2866,56 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             out["links_cleared"] = result.cleared_links
             return out
         return run(go)
+
+    @router.get("/music/{file_name}")
+    def get_studio_music_file(file_name: str):
+        clean_name = os.path.basename(file_name)
+        if not clean_name.endswith(".mp3"):
+            raise HTTPException(400, "invalid music file extension")
+        candidates = [
+            Path("/data/music-candidates") / clean_name,
+            Path("storage/music-candidates") / clean_name,
+            Path(__file__).resolve().parents[4] / "storage" / "music-candidates" / clean_name,
+        ]
+        for p in candidates:
+            if p.is_file():
+                return FileResponse(p, media_type="audio/mpeg", headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"})
+        raise HTTPException(404, "music file not found")
+
+    @router.get("/media/search")
+    def search_pixabay_media(q: str = "tecnologia", type: str = "image", orientation: str = "landscape", per_page: int = 12):
+        clean_q = (q or "").strip() or "tecnologia"
+        pixabay_key = os.getenv("PIXABAY_API_KEY", "").strip()
+        if not pixabay_key:
+            return {"ok": False, "error": "PIXABAY_API_KEY não configurada no servidor", "candidates": []}
+        from ..composition.providers import pixabay_media_search
+
+        try:
+            searcher = pixabay_media_search(pixabay_key)
+            results = searcher.search(clean_q, media_type=type, orientation=orientation, per_page=min(max(per_page, 3), 40))
+            return {
+                "ok": True,
+                "query": clean_q,
+                "type": type,
+                "count": len(results),
+                "candidates": [
+                    {
+                        "media_id": c.media_id,
+                        "url": c.url,
+                        "thumbnail_url": c.url,
+                        "width": c.width,
+                        "height": c.height,
+                        "media_type": c.media_type,
+                        "license": c.license,
+                        "attribution": c.attribution,
+                        "source_url": c.source_url,
+                        "author": c.author,
+                    }
+                    for c in results
+                ],
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "candidates": []}
 
     @router.get("/panel/estilos", response_class=HTMLResponse)
     def styles_page_html(project_id: str | None = None):

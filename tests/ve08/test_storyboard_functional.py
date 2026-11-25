@@ -150,15 +150,18 @@ def test_delete_and_reorder_are_undoable_and_keep_media(ctx):
 def test_media_modal_changes_only_the_target_scene(ctx):
     st = FakeStudio()
     page = open_page(ctx, st)
-    page.locator('[data-a=media]').nth(2).click()
+    # Cada cena tem dois botões de mídia (o do polegar e o de "TOMADAS DESTA CENA"), então
+    # indexar `[data-a=media]` globalmente atinge a cena errada. Escopar pela cena alvo.
+    third = page.locator('.scene').nth(2)
+    third.locator('[data-a=media]').first.click()
     page.wait_for_selector('#dlg-media[open]')
     assert page.inner_text('#t-media') == 'Mídia para esta cena'
     assert page.locator('#media-tabs button').all_inner_texts() == ['Deste vídeo', 'Do canal', 'Meus arquivos', 'Stock', 'Gerar']
     page.locator('[data-a=pickmedia]').first.click(); settle(page)
     assert st.scenes[2]['asset_id'] == 'asset-0' and st.scenes[1]['asset_id'] is None
     assert page.locator('.scene').nth(2).locator('img').count() == 1
-    assert page.locator('[data-a=media]').nth(2).inner_text() == 'Trocar mídia'
-    assert page.locator('[data-a=media]').nth(1).inner_text() == 'Escolher mídia'
+    assert page.locator('.scene').nth(2).locator('[data-a=media]').first.inner_text() == 'Trocar mídia'
+    assert page.locator('.scene').nth(1).locator('[data-a=media]').first.inner_text() == 'Escolher mídia'
 
 
 def test_failed_save_rolls_back_to_the_last_saved_state(ctx):

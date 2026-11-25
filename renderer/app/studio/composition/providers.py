@@ -180,6 +180,17 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
     ]
 
 
+def pixabay_media_search(api_key: str):
+    """Fábrica do buscador Pixabay para a camada de composição.
+
+    Mantém o import do adapter fora de ``app.studio.api``: a rota de busca recebe o
+    buscador pronto, sem tocar em ``adapters`` (guardado por ``tests/test_architecture.py``).
+    """
+    from ..adapters.media_pixabay import PixabayMediaSearch
+
+    return PixabayMediaSearch(api_key)
+
+
 def _provider_probes(s: "Settings", implementations) -> dict[tuple[str, str], object]:
     probes: dict[tuple[str, str], object] = {}
     local = {"demo", "placeholder", "piper", "ffmpeg"}
@@ -189,6 +200,13 @@ def _provider_probes(s: "Settings", implementations) -> dict[tuple[str, str], ob
         if impl.name == "opencode":
             probes[(impl.kind.value, impl.name)] = HttpReachableProbe(
                 f"{s.bridge_url.rstrip('/')}/health", timeout=3.0)
+        elif impl.name == "pixabay":
+            probes[(impl.kind.value, impl.name)] = HttpReachableProbe(
+                f"https://pixabay.com/api/?key={s.pixabay_key}&per_page=3", timeout=5.0)
+        elif impl.name == "pexels":
+            probes[(impl.kind.value, impl.name)] = HttpReachableProbe(
+                "https://api.pexels.com/v1/search?query=test&per_page=1",
+                headers={"Authorization": s.pexels_key}, timeout=5.0)
         elif impl.name in local:
             probes[(impl.kind.value, impl.name)] = LocalProviderProbe()
     return probes

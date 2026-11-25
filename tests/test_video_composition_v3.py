@@ -134,7 +134,8 @@ def test_v3_composition_tab_has_enabled_position_font_and_transition_controls():
         assert "disabled" in fps_match.group(0)
     assert "25 fps (vigente)" in html
 
-    assert '<span class="pill pill-espera">Em breve</span>' in html
+    # Controles implementados não exibem mais o selo "Em breve"; só os não suportados.
+    assert "Em breve" not in html
 
     # Em PAGE_JS, #form-composicao empacota os novos campos para PATCH /style-patch
     assert "comp-posicao" in html
@@ -198,10 +199,10 @@ def test_v3_composition_tab_labels_unsupported_controls_honestly():
     assert deslizar_match is not None
     assert "disabled" in deslizar_match.group(0)
 
-    # 2. Destaque por palavra
+    # 2. Destaque por palavra: implementado, portanto o select correspondente fica habilitado.
     destaque_match = re.search(r'<option[^>]*value="destaque"[^>]*>', html)
     assert destaque_match is not None
-    assert "disabled" in destaque_match.group(0)
+    assert "disabled" not in destaque_match.group(0)
 
     # 3. Resolução / quadros por segundo: fixos no motor (25 fps vigente), selects desabilitados
     assert "Quadros/s" in html
@@ -211,8 +212,8 @@ def test_v3_composition_tab_labels_unsupported_controls_honestly():
         assert "disabled" in fps_match.group(0)
     assert "25 fps (vigente)" in html
 
-    # Badge visual padrão pill
-    assert '<span class="pill pill-espera">Em breve</span>' in html
+    # Controles implementados não exibem mais o selo "Em breve"; só os não suportados.
+    assert "Em breve" not in html
 
 
 def test_v3_composition_tab_submits_supported_changes_to_style_patch():

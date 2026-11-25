@@ -5,7 +5,7 @@
 -- As migrações aparecem em ordem de aplicação e VERBATIM: este é o SQL que cria o
 -- schema, na mesma ordem em que db.migrate() o executa (uma transação por arquivo).
 --
--- Migrações: 41 (0001_init … 0046_scene_revisions)
+-- Migrações: 48 (0001_init … 0053_usage_ledger_category)
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -1557,3 +1557,104 @@ FROM studio.scenes s
 JOIN (SELECT video_id, MAX(version) AS version FROM studio.scripts GROUP BY video_id) latest
   ON latest.video_id = s.video_id
 ON CONFLICT (video_id, version, scene_id) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 0047_channel_preferences_and_production_mode.sql
+-- ---------------------------------------------------------------------------
+-- 0047: Preferências padrão do canal (modo de produção e formato) e modo de produção registrado no vídeo.
+-- Transacionalidade e idempotência de criação de canal completo.
+
+ALTER TABLE studio.channel_profiles
+    ADD COLUMN default_mode text NOT NULL DEFAULT 'piloto' CHECK (default_mode IN ('piloto', 'diretor')),
+    ADD COLUMN default_format text NOT NULL DEFAULT 'short' CHECK (default_format IN ('short', 'long'));
+
+ALTER TABLE studio.videos
+    ADD COLUMN production_mode text NOT NULL DEFAULT 'piloto' CHECK (production_mode IN ('piloto', 'diretor'));
+
+CREATE TABLE studio.channel_creation_requests (
+    idempotency_key text PRIMARY KEY CHECK (idempotency_key ~ '^[a-z0-9._:-]{1,200}$'),
+    project_id text NOT NULL REFERENCES studio.projects(id) ON DELETE CASCADE,
+    request_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
+-- 0048_scene_broll.sql
+-- ---------------------------------------------------------------------------
+-- 0048_scene_broll.sql: Metadados de B-roll por cena (F02/V3)
+ALTER TABLE studio.scenes ADD COLUMN IF NOT EXISTS broll_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE studio.scenes ADD COLUMN IF NOT EXISTS broll_note text NULL;
+
+-- ---------------------------------------------------------------------------
+-- 0049_saved_trends.sql
+-- ---------------------------------------------------------------------------
+-- 0049_saved_trends.sql: Ideias guardadas (saved_trends) por projeto e vídeo.
+CREATE TABLE IF NOT EXISTS studio.saved_trends (
+    project_id text NOT NULL,
+    video_id text NOT NULL,
+    title text NOT NULL,
+    channel_title text,
+    thumbnail_url text,
+    video_url text,
+    duration text NOT NULL DEFAULT '',
+    views bigint NOT NULL DEFAULT 0,
+    category_name text,
+    score int NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, video_id)
+);
+
+CREATE INDEX IF NOT EXISTS saved_trends_project_idx ON studio.saved_trends (project_id, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 0050_scene_assets.sql
+-- ---------------------------------------------------------------------------
+-- 0050_scene_assets.sql: Persistência de múltiplos assets por cena (F01/Onda 1)
+CREATE TABLE IF NOT EXISTS studio.scene_assets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scene_id VARCHAR(64) NOT NULL REFERENCES studio.scenes(id) ON DELETE CASCADE,
+    asset_id VARCHAR(64) REFERENCES studio.assets(id) ON DELETE SET NULL,
+    position INT NOT NULL CHECK (position >= 0),
+    start_s NUMERIC(8,3) NOT NULL CHECK (start_s >= 0),
+    end_s NUMERIC(8,3) NOT NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'base',
+    motion VARCHAR(16) NOT NULL DEFAULT 'none',
+    transition_kind VARCHAR(16) NOT NULL DEFAULT 'none',
+    transition_duration_s NUMERIC(8,3) NOT NULL DEFAULT 0.0 CHECK (transition_duration_s >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_scene_asset_pos UNIQUE (scene_id, position),
+    CONSTRAINT ck_scene_asset_timing CHECK (end_s > start_s)
+);
+
+CREATE INDEX IF NOT EXISTS ix_scene_assets_scene_id ON studio.scene_assets (scene_id);
+CREATE INDEX IF NOT EXISTS ix_scene_assets_asset_id ON studio.scene_assets (asset_id);
+
+-- ---------------------------------------------------------------------------
+-- 0051_scene_media_intelligence.sql
+-- ---------------------------------------------------------------------------
+ALTER TABLE studio.scenes ADD COLUMN IF NOT EXISTS visual_intent TEXT DEFAULT '';
+ALTER TABLE studio.scenes ADD COLUMN IF NOT EXISTS search_queries JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE studio.scene_revisions ADD COLUMN IF NOT EXISTS visual_intent TEXT DEFAULT '';
+ALTER TABLE studio.scene_revisions ADD COLUMN IF NOT EXISTS search_queries JSONB DEFAULT '[]'::jsonb;
+
+-- ---------------------------------------------------------------------------
+-- 0052_video_production_settings.sql
+-- ---------------------------------------------------------------------------
+-- 0052_video_production_settings.sql: Parâmetros de produção e briefing criativo em studio.videos (Onda 4)
+ALTER TABLE studio.videos
+    ADD COLUMN IF NOT EXISTS target_duration_s integer DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS pacing_preset text NOT NULL DEFAULT 'dynamic',
+    ADD COLUMN IF NOT EXISTS budget_cap_usd numeric(8,2) DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS creative_brief jsonb DEFAULT NULL;
+
+-- ---------------------------------------------------------------------------
+-- 0053_usage_ledger_category.sql
+-- ---------------------------------------------------------------------------
+-- 0053_usage_ledger_category.sql: Rastreabilidade de custos por categoria no usage_ledger (Onda 6)
+ALTER TABLE studio.usage_ledger
+    ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'other',
+    ADD COLUMN IF NOT EXISTS duration_ms integer DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS attempt integer NOT NULL DEFAULT 1;
+
+CREATE INDEX IF NOT EXISTS usage_ledger_category_idx ON studio.usage_ledger(category);
+CREATE INDEX IF NOT EXISTS usage_ledger_video_category_idx ON studio.usage_ledger(video_id, category);

@@ -615,7 +615,7 @@ def _team_card(team) -> str:
             f'<div style="margin-top:8px">{linhas}</div></div>')
 
 
-_KINDS = (("TEXT", "Roteiro (texto)"), ("VOICE", "Narração (voz)"), ("IMAGE", "Imagens por IA"), ("RENDERER", "Render"))
+_KINDS = (("TEXT", "Roteiro (texto)"), ("VOICE", "Narração (voz)"), ("IMAGE", "Imagens por IA"), ("RENDERER", "Render"), ("SEARCH", "Banco de mídias stock"))
 
 
 def _prov_card(card, project_id: str) -> str:
@@ -679,6 +679,7 @@ def render_connections(board: dict, profiles: list[ChannelProfile], *,
       {_providers_card(channel_view, project_id)}
       <details class="diag" style="margin-top:16px"><summary>Avançado e diagnóstico</summary>
         <p class="mono" style="margin-top:8px">chaves: não exibidas<br>configuração pública do canal: {e(project_id)}</p>
+        <div style="margin:12px 0"><a class="btn small" href="/studio/panel/avancado">Ver tela completa de diagnóstico e saúde dos provedores →</a></div>
         <div class="stack" style="margin-top:12px">{body}{_scopes_card()}</div>
       </details>
       {_confirm_dialog()}

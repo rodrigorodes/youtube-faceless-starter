@@ -357,7 +357,7 @@ def test_execution_header_matches_workspace_with_no_active_tab():
     assert '<h1 id="t-video">Tópico real do operador</h1>' in page
     assert f'href="/studio/panel/videos/{VIDEO}/producao">Ver progresso / Diagnóstico</a>' in page
     nav = page.split('aria-label="Áreas do vídeo"', 1)[1].split("</nav>", 1)[0]
-    assert nav.count("<a ") == 5 and "aria-current" not in nav
+    assert nav.count("<a ") == 6 and "aria-current" not in nav
 
 
 def test_progress_card_only_while_active_and_counts_real_stages():

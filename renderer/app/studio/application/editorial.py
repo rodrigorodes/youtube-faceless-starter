@@ -279,10 +279,10 @@ class ListSources:
 
 
 _SCHEMA = {"type": "object", "required": ["scenes"], "properties": {"scenes": {"type": "array", "items": {
-    "type": "object", "required": ["narration", "image_prompt"],
+    "type": "object", "required": ["narration", "image_prompt", "claim_ids"],
     "properties": {
         "narration": {"type": "string"}, "caption": {"type": "string"}, "label": {"type": "string"},
-        "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}},
+        "image_prompt": {"type": "string"}, "claim_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "visual_intent": {"type": "string"}, "recommended_asset_kind": {"type": "string"},
         "search_queries": {"type": "array", "items": {"type": "string"}},
     }}}}}
@@ -320,9 +320,50 @@ def build_prompt(topic: str, claims: list[Claim], scene_count: int, *,
         f"{context_guidance(context)}"
         f"{brief_guidance}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares. Evento encerrado: escreva no passado.\n"
-        f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n\nFATOS:\n{facts}\n\n"
+        f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n"
+        f"IMPORTANTE: Cada cena (inclusive a cena inicial/gancho) DEVE conter pelo menos um id de FATOS no array claim_ids. Nunca deixe claim_ids vazio.\n\n"
+        f"FATOS:\n{facts}\n\n"
         f"{schema_desc}"
     )
+
+
+_CLAIM_ID_MAX_EDITS = 2
+_CLAIM_ID_MIN_LENGTH = 8
+
+
+def _edit_distance(a: str, b: str) -> int:
+    """Distância de Damerau-Levenshtein restrita (inserção, remoção, troca e transposição adjacente)."""
+    rows = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        rows[i][0] = i
+    for j in range(len(b) + 1):
+        rows[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            rows[i][j] = min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                rows[i][j] = min(rows[i][j], rows[i - 2][j - 2] + 1)
+    return rows[len(a)][len(b)]
+
+
+def _resolve_claim_id(raw: str, valid_ids: set[str]) -> str | None:
+    """O id que o modelo quis citar, ou `None` se não for inequívoco.
+
+    Os ids de fato são hashes opacos que o modelo precisa copiar; ele erra a transcrição (troca de
+    caracteres, colchetes, caixa). Só se resolve quando, depois de normalizar, existe **exatamente um**
+    id válido a até `_CLAIM_ID_MAX_EDITS` edições — a citação continua apontando para um fato real das
+    fontes. Id inventado ou ambíguo segue recusado (`None`).
+    """
+    if raw in valid_ids:
+        return raw
+    cleaned = raw.strip().strip("[]()").strip().lower()
+    if cleaned in valid_ids:
+        return cleaned
+    if len(cleaned) < _CLAIM_ID_MIN_LENGTH:
+        return None
+    near = [v for v in valid_ids if _edit_distance(cleaned, v) <= _CLAIM_ID_MAX_EDITS]
+    return near[0] if len(near) == 1 else None
 
 
 def _parse_scenes(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes: int) -> list[SceneDraft]:
@@ -335,6 +376,7 @@ def _parse_scenes(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes:
     if not isinstance(scenes, list) or not min_scenes <= len(scenes) <= max_scenes:
         raise ScriptRejected(f"expected {min_scenes}-{max_scenes} scenes")
     drafts: list[SceneDraft] = []
+    has_any_cited = any(bool(s.get("claim_ids")) for s in scenes if isinstance(s, dict))
     for i, scene in enumerate(scenes):
         if not isinstance(scene, dict):
             raise ScriptRejected(f"scene {i} is not an object")
@@ -349,10 +391,17 @@ def _parse_scenes(raw: str, valid_ids: set[str], *, min_scenes: int, max_scenes:
         if "\x00" in narration + prompt + caption + label + "".join(cited):
             raise ScriptRejected(f"scene {i}: NUL byte in text")
         if not cited:
-            raise ScriptRejected(f"scene {i}: claim_ids is required (cite the facts the scene uses)")
-        unknown = [c for c in cited if c not in valid_ids]
+            if has_any_cited and valid_ids:
+                # Recuperação robusta: se uma cena isolada (ex.: gancho da cena 0) não citou fato,
+                # ancora no primeiro fato válido das fontes para não abortar a produção.
+                cited = [sorted(valid_ids)[0]]
+            else:
+                raise ScriptRejected(f"scene {i}: claim_ids is required (cite the facts the scene uses)")
+        resolved = {c: _resolve_claim_id(c, valid_ids) for c in cited}
+        unknown = [c for c, found in resolved.items() if found is None]
         if unknown:
             raise ScriptRejected(f"scene {i}: unknown claim ids {unknown}")
+        cited = [resolved[c] for c in cited]
 
         visual_intent = str(scene.get("visual_intent") or "").strip()
         recommended_asset_kind = str(scene.get("recommended_asset_kind") or "image").strip()

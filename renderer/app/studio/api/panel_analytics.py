@@ -313,11 +313,6 @@ def _filter_url(view: AnalyticsDashboardView, **changes) -> str:
 
 
 def _filters_html(view: AnalyticsDashboardView) -> str:
-    project_options = "".join(
-        f'<option value="{e(item.id)}"{" selected" if item.id == view.project_id else ""}>'
-        f'{e(item.label)}</option>'
-        for item in view.projects
-    )
     video_options = '<option value="">Todos os vídeos</option>' + "".join(
         f'<option value="{e(item.id)}"{" selected" if item.id == view.selected_video_id else ""}>'
         f'{e(item.label)}</option>'
@@ -334,9 +329,8 @@ def _filters_html(view: AnalyticsDashboardView) -> str:
         chips.append(f'<a class="chip"{current} href="{e(_filter_url(view, days=days))}">{label}</a>')
     return f"""
       <form class="filter-form" method="get" action="/studio/panel/analytics" aria-label="Filtrar o dashboard">
+        <input type="hidden" name="project" value="{e(view.project_id)}">
         <input type="hidden" name="days" value="{view.period.days}">
-        <div class="field"><label for="analytics-project">Canal</label>
-          <select id="analytics-project" name="project">{project_options}</select></div>
         <div class="field"><label for="analytics-video">Vídeo</label>
           <select id="analytics-video" name="video">{video_options}</select></div>
         <div class="field"><label for="analytics-pillar">Pilar</label>
@@ -361,11 +355,6 @@ def render_analytics(view: AnalyticsDashboardView,
         f"Custo do mês: {month.text}"
         if month is not None and month.breakdown.calls > 0
         else "Não disponível: nenhuma chamada registrada neste mês."
-    )
-
-    project_options = "".join(
-        f'<option value="{e(pid)}"{" selected" if pid == view.project_id else ""}>{e(name)}</option>'
-        for pid, name in proj_list
     )
 
     period_options = "".join(
@@ -476,6 +465,7 @@ def render_analytics(view: AnalyticsDashboardView,
             <ul class="sub" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px">{funcionou}</ul></div>
         </div>
         <div style="margin-top:20px">
+        {_filters_html(view)}
         {content_html}
         </div>
         <script id="analytics-data" type="application/json">{json.dumps(view.project_id)}</script>
@@ -483,14 +473,6 @@ def render_analytics(view: AnalyticsDashboardView,
 
     page_js = """
 (function () {
-  var selCanal = document.getElementById('analytics-project');
-  if (selCanal) {
-    selCanal.addEventListener('change', function () {
-      var u = new URL(location.href);
-      u.searchParams.set('project', selCanal.value);
-      location.href = u.toString();
-    });
-  }
   var sel = document.getElementById('periodo');
   if (sel) {
     sel.addEventListener('change', function () {

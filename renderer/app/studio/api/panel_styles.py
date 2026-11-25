@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import html
 import json
+import os
+from pathlib import Path
 import re
 import secrets
 
@@ -298,12 +300,97 @@ abas.forEach((aba) => {
   aba.addEventListener('click', () => {
     abas.forEach((o) => {
       const on = o === aba;
-      if (on) o.setAttribute('aria-current', 'page'); else o.removeAttribute('aria-current');
+      if (on) { o.classList.add('ativa'); o.setAttribute('aria-selected', 'true'); }
+      else { o.classList.remove('ativa'); o.setAttribute('aria-selected', 'false'); }
       const painel = document.getElementById('painel-' + o.getAttribute('data-aba-biblioteca'));
       if (painel) painel.hidden = !on;
     });
   });
 });
+
+(function () {
+  var form = document.getElementById('pixabay-search-form');
+  var qInput = document.getElementById('pixabay-query');
+  var typeSel = document.getElementById('pixabay-type');
+  var fb = document.getElementById('pixabay-feedback');
+  var resultsEl = document.getElementById('pixabay-results');
+  var quickTags = document.getElementById('pixabay-quick-tags');
+
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function doSearch(q, type) {
+    if (!resultsEl) return;
+    resultsEl.innerHTML = '<p class="sub">Buscando mídias no Pixabay...</p>';
+    if (fb) fb.textContent = 'Carregando mídias para "' + q + '"...';
+    fetch('/studio/media/search?q=' + encodeURIComponent(q) + '&type=' + encodeURIComponent(type) + '&per_page=12')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ok) {
+          resultsEl.innerHTML = '<p class="sub" style="color:var(--bad)">' + esc(data.error || 'Falha ao buscar mídias') + '</p>';
+          if (fb) fb.textContent = '';
+          return;
+        }
+        var cands = data.candidates || [];
+        if (!cands.length) {
+          resultsEl.innerHTML = '<p class="sub">Nenhuma mídia encontrada para "' + esc(q) + '". Tente outra palavra-chave.</p>';
+          if (fb) fb.textContent = '';
+          return;
+        }
+        if (fb) fb.textContent = cands.length + ' resultado(s) encontrados para "' + q + '" (' + (type === 'video' ? 'Vídeos' : 'Fotos') + '):';
+        resultsEl.innerHTML = cands.map(function (c) {
+          var isVid = c.media_type === 'video';
+          var mediaBlock = isVid
+            ? '<video controls preload="metadata" style="width:100%;height:150px;object-fit:cover;border-radius:8px;background:#000" src="' + esc(c.url) + '"></video>'
+            : '<img src="' + esc(c.url) + '" alt="' + esc(c.attribution) + '" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:8px;background:var(--panel2)">';
+          var dim = (c.width && c.height) ? (c.width + '×' + c.height) : (isVid ? 'Vídeo HD' : 'Foto HD');
+          var user = c.author ? 'Por ' + esc(c.author) : 'Pixabay';
+          return '<div class="card" style="padding:10px;display:flex;flex-direction:column;gap:8px">'
+            + mediaBlock
+            + '<div class="between" style="font-size:12px"><span>' + user + '</span><span class="pill small ok">' + esc(dim) + '</span></div>'
+            + '<div class="between sub" style="font-size:11px"><span>' + esc(c.license) + '</span>'
+            + '<a class="btn ghost small" href="' + esc(c.source_url || c.url) + '" target="_blank" rel="noopener">Ver original ↗</a>'
+            + '</div></div>';
+        }).join('');
+      })
+      .catch(function (err) {
+        resultsEl.innerHTML = '<p class="sub" style="color:var(--bad)">Erro ao conectar: ' + esc(err.message) + '</p>';
+        if (fb) fb.textContent = '';
+      });
+  }
+
+  if (form) {
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var q = qInput ? qInput.value.trim() : 'tecnologia';
+      var t = typeSel ? typeSel.value : 'image';
+      doSearch(q, t);
+    });
+  }
+
+  if (quickTags) {
+    quickTags.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('[data-q]');
+      if (!btn) return;
+      var q = btn.getAttribute('data-q');
+      if (qInput) qInput.value = q;
+      var t = typeSel ? typeSel.value : 'image';
+      doSearch(q, t);
+    });
+  }
+
+  var tabMidias = document.querySelector('[data-aba-biblioteca="midias"]');
+  if (tabMidias) {
+    tabMidias.addEventListener('click', function () {
+      if (resultsEl && resultsEl.children.length === 0) {
+        var q = qInput ? qInput.value.trim() : 'tecnologia';
+        var t = typeSel ? typeSel.value : 'image';
+        doSearch(q, t);
+      }
+    });
+  }
+})();
 """
 
 
@@ -554,6 +641,223 @@ def _dialog(dialog_id: str, form_html: str, *, wide: bool = False) -> str:
             f'{form_html}</dialog>')
 
 
+def _render_voice_cards(channel_voice: str, project_id: str) -> str:
+    is_faber_active = (channel_voice in ("piper:pt_BR-faber-medium", "pt_BR-faber-medium") or not channel_voice)
+    is_jeff_active = (channel_voice in ("piper:pt_BR-jeff-medium", "pt_BR-jeff-medium"))
+    is_demo_active = (channel_voice in ("demo", "demo:"))
+
+    faber_pill = '<span class="pill accent">✓ Ativa no canal</span>' if is_faber_active else '<span class="pill ok">✓ Instalada</span>'
+    jeff_pill = '<span class="pill accent">✓ Ativa no canal</span>' if is_jeff_active else '<span class="pill">Compatível</span>'
+    demo_pill = '<span class="pill accent">✓ Ativa no canal</span>' if is_demo_active else '<span class="pill">Desenvolvimento</span>'
+
+    config_link = f'/studio/configuracoes/canais?project_id={e(project_id)}' if project_id else '/studio/configuracoes/canais'
+
+    return f"""
+      <div class="between" style="margin-bottom:14px">
+        <div>
+          <p class="sub">Catálogo de vozes neurais locais e integradas para narração. A voz é herdada em todos os novos vídeos do canal ativo.</p>
+        </div>
+        <a class="btn ghost small" href="{config_link}">⚙ Configurar voz no canal</a>
+      </div>
+      <div class="grid3">
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px{' ;border:2px solid var(--accent);background:var(--accentbg)' if is_faber_active else ''}">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Piper Faber (pt-BR)</b>
+                <p class="sub" style="margin:2px 0 0">Voz neural oficial (Padrão do Studio)</p>
+              </div>
+              {faber_pill}
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Narração masculina natural em português brasileiro, com baixa latência e síntese totalmente offline via CPU.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Motor</span><b>Piper Neural ONNX</b></div>
+              <div class="between"><span class="sub">Idioma</span><b>Português (Brasil)</b></div>
+              <div class="between"><span class="sub">Ritmo medido</span><b>~172 palavras/min</b></div>
+              <div class="between"><span class="sub">Custo de API</span><span class="pill ok" style="padding:1px 8px;font-size:11px">Gratuito (Local)</span></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px" class="between">
+            <code class="mono" style="font-size:11px">piper:pt_BR-faber-medium</code>
+            <span class="sub" style="font-size:11px">Voz padrão</span>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px{' ;border:2px solid var(--accent);background:var(--accentbg)' if is_jeff_active else ''}">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Piper Jeff (pt-BR)</b>
+                <p class="sub" style="margin:2px 0 0">Voz neural alternativa</p>
+              </div>
+              {jeff_pill}
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Voz masculina alternativa para estilo documental e ritmo pausado em português.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Motor</span><b>Piper Neural ONNX</b></div>
+              <div class="between"><span class="sub">Idioma</span><b>Português (Brasil)</b></div>
+              <div class="between"><span class="sub">Ritmo medido</span><b>~165 palavras/min</b></div>
+              <div class="between"><span class="sub">Custo de API</span><span class="pill ok" style="padding:1px 8px;font-size:11px">Gratuito (Local)</span></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px" class="between">
+            <code class="mono" style="font-size:11px">piper:pt_BR-jeff-medium</code>
+            <span class="sub" style="font-size:11px">Suporte nativo</span>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px{' ;border:2px solid var(--accent);background:var(--accentbg)' if is_demo_active else ''}">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Demo Tone (Sintético)</b>
+                <p class="sub" style="margin:2px 0 0">Ambiente de teste e dev</p>
+              </div>
+              {demo_pill}
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Modo sintético instantâneo para testes de ponta a ponta sem geração de áudio neural.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Motor</span><b>Gerador de tom sintético</b></div>
+              <div class="between"><span class="sub">Idioma</span><b>Neutro</b></div>
+              <div class="between"><span class="sub">Tempo de síntese</span><b>Instantâneo (&lt; 0.1s)</b></div>
+              <div class="between"><span class="sub">Custo de API</span><span class="pill ok" style="padding:1px 8px;font-size:11px">Sem custo</span></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px" class="between">
+            <code class="mono" style="font-size:11px">demo:</code>
+            <span class="sub" style="font-size:11px">Desenvolvimento</span>
+          </div>
+        </div>
+      </div>
+    """
+
+
+def _render_script_template_cards() -> str:
+    return """
+      <div class="between" style="margin-bottom:14px">
+        <div>
+          <p class="sub">Arquétipos e estruturas de roteiro comprovadas para retenção de audiência, engajamento e validação editorial estrita.</p>
+        </div>
+        <span class="pill ok">3 modelos disponíveis</span>
+      </div>
+      <div class="grid3">
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Shorts Viral de Alta Retenção</b>
+                <p class="sub" style="margin:2px 0 0">Fatos rápidos &amp; Curiosidades</p>
+              </div>
+              <span class="pill accent">Short 9:16</span>
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Gancho magnético obrigatório nos primeiros 3 segundos, cortes a cada 5–10s e foco total em retenção inicial.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Cenas</span><b>4 a 6 cenas rápidas</b></div>
+              <div class="between"><span class="sub">Duração estimada</span><b>~35 a 58 segundos</b></div>
+              <div class="between"><span class="sub">Regra editorial</span><b>1 fato auditado por cena</b></div>
+              <div class="between"><span class="sub">Ritmo de fala</span><b>170–180 palavras/min</b></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px">
+            <span class="sub" style="font-size:11.5px">💡 Ideal para YouTube Shorts, TikTok e Reels</span>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Documentário em 3 Atos</b>
+                <p class="sub" style="margin:2px 0 0">Narrativa aprofundada</p>
+              </div>
+              <span class="pill">Vídeo 16:9</span>
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Estrutura em capítulos com gancho contextual, desenvolvimento gradual dos fatos e clímax conclusivo com chamada para ação.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Estrutura</span><b>Capítulos com ScriptPlan</b></div>
+              <div class="between"><span class="sub">Duração estimada</span><b>3 a 10+ minutos</b></div>
+              <div class="between"><span class="sub">Regra editorial</span><b>Fact-check de claims com zero alucinação</b></div>
+              <div class="between"><span class="sub">Ritmo de fala</span><b>150–165 palavras/min</b></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px">
+            <span class="sub" style="font-size:11.5px">💡 Ideal para vídeo-ensaios, história, ciência e mistérios</span>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px">
+          <div>
+            <div class="between" style="align-items:flex-start;margin-bottom:8px">
+              <div>
+                <b style="font-size:15px">Fato Histórico do Dia</b>
+                <p class="sub" style="margin:2px 0 0">Conteúdo do calendário &amp; Notícias</p>
+              </div>
+              <span class="pill">Híbrido 9:16 / 16:9</span>
+            </div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:12px">Acontecimentos marcantes da data corrente, integrando pesquisa automática na Wikipédia e validação de datas e nomes.</p>
+            <div class="stack" style="gap:6px;font-size:12px;margin-bottom:14px">
+              <div class="between"><span class="sub">Estrutura</span><b>Gancho temporal → Fato → Impacto</b></div>
+              <div class="between"><span class="sub">Pesquisa</span><b>Wikipedia Research API</b></div>
+              <div class="between"><span class="sub">Regra editorial</span><b>Datas e números conferidos</b></div>
+              <div class="between"><span class="sub">Automação</span><b>Apto para piloto automático diário</b></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--line);padding-top:10px">
+            <span class="sub" style="font-size:11.5px">💡 Ideal para canais 'Hoje na História' e notícias</span>
+          </div>
+        </div>
+      </div>
+    """
+
+
+def _load_music_tracks() -> list[dict]:
+    paths = [
+        Path("/data/music-candidates/manifest.json"),
+        Path("storage/music-candidates/manifest.json"),
+        Path(__file__).resolve().parents[4] / "storage" / "music-candidates" / "manifest.json",
+    ]
+    for p in paths:
+        if p.is_file():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+    return []
+
+
+def _render_music_card(m: dict) -> str:
+    title = str(m.get("title") or "Trilha sonora")
+    creator = str(m.get("creator") or "Estúdio")
+    dur_ms = m.get("duration_ms") or 0
+    mins, secs = divmod(int(round(dur_ms / 1000)), 60)
+    dur_str = f"{mins} min {secs:02d} s" if mins else f"{secs} s"
+    license_str = str(m.get("license") or "CC0").upper()
+    file_name = str(m.get("file") or "")
+    from ..domain.music import infer_mood_tags
+    tags = infer_mood_tags(title, str(m.get("note") or ""))
+    tag_pills = "".join(f'<span class="pill accent" style="margin-right:4px">{e(t)}</span>' for t in tags[:2])
+    return f"""<div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:14px">
+      <div>
+        <div class="between" style="align-items:flex-start">
+          <div>
+            <b style="font-size:14.5px">{e(title)}</b>
+            <p class="sub" style="margin:2px 0 6px">Por <b>{e(creator)}</b> · {dur_str}</p>
+          </div>
+          <span class="pill ok">✓ {e(license_str)}</span>
+        </div>
+        <div class="row" style="margin:6px 0 10px;gap:4px">
+          {tag_pills}
+          <span class="pill ok">Local (Storage)</span>
+        </div>
+      </div>
+      <div style="margin-top:6px">
+        <audio controls preload="none" style="width:100%;height:36px" src="/studio/music/{e(file_name)}"></audio>
+      </div>
+    </div>"""
+
+
 def _archive_dialog() -> str:
     """Confirmação de "Arquivar" no tema (a antiga `window.confirm` era um modal nativo do navegador)."""
     return (
@@ -591,12 +895,72 @@ def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | Non
     dialogs = _dialog("novo-estilo-dialog", _style_form("novo-estilo")) + "".join(
         _dialog(f"editar-{item.style.id}", _style_form(f"editar-{item.style.id}", style=item.style), wide=True)
         for item in view.items) + _archive_dialog()
-    voz = (f'Ainda não há catálogo de vozes na biblioteca. A voz do canal ativo é "{e(channel_voice)}" e é definida no perfil do canal.'
-           if channel_voice else "Ainda não há catálogo de vozes na biblioteca. A voz é definida no perfil de cada canal.")
-    abas = (("estilos", "Estilos visuais"), ("vozes", "Vozes"), ("musicas", "Músicas"), ("modelos", "Modelos de roteiro"))
-    atual = ' aria-current="page"'
-    tabs = "".join(f'<button class="tab" type="button" data-aba-biblioteca="{k}"{atual if k == "estilos" else ""}>{l}</button>'
-                   for k, l in abas)
+    vozes_html = _render_voice_cards(channel_voice, project_id)
+    modelos_html = _render_script_template_cards()
+    abas = (
+        ("estilos", "Estilos visuais"),
+        ("vozes", "Vozes"),
+        ("musicas", "Músicas"),
+        ("midias", "Mídias & Stock (Pixabay)"),
+        ("modelos", "Modelos de roteiro"),
+    )
+    tabs = "".join(
+        f'<button class="tab{" ativa" if k == "estilos" else ""}" type="button" data-aba-biblioteca="{k}" aria-selected="{"true" if k == "estilos" else "false"}">{l}</button>'
+        for k, l in abas
+    )
+
+    music_items = _load_music_tracks()
+    if music_items:
+        musicas_html = f"""
+          <div class="between" style="margin-bottom:14px">
+            <div>
+              <p class="sub">Trilhas sonoras livres de royalties (CC0) armazenadas no Studio, prontas para mixagem na composição com ducking automático.</p>
+            </div>
+            <span class="pill ok">{len(music_items)} trilhas disponíveis</span>
+          </div>
+          <div class="grid3">{"".join(_render_music_card(m) for m in music_items)}</div>
+        """
+    else:
+        musicas_html = '<p class="sub">Nenhuma trilha encontrada em storage/music-candidates.</p>'
+
+    has_pixabay = bool(os.getenv("PIXABAY_API_KEY", "").strip())
+    pixabay_badge = '<span class="pill ok">✓ Pixabay API conectada</span>' if has_pixabay else '<span class="pill warn">PIXABAY_API_KEY ausente no .env</span>'
+    midias_html = f"""
+      <div class="between" style="margin-bottom:14px">
+        <div>
+          <p class="sub">Busque fotos e vídeos em alta resolução para ilustrar temas, cenas e capas do canal ativo.</p>
+        </div>
+        {pixabay_badge}
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <form id="pixabay-search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field" style="flex:1;min-width:240px;margin:0">
+            <label for="pixabay-query">Palavra-chave de busca</label>
+            <input class="input" type="text" id="pixabay-query" placeholder="Ex.: tecnologia, inteligência artificial, robótica, natureza..." value="tecnologia">
+          </div>
+          <div class="field" style="width:160px;margin:0">
+            <label for="pixabay-type">Tipo de mídia</label>
+            <select class="input" id="pixabay-type">
+              <option value="image">Fotos &amp; Imagens</option>
+              <option value="video">Vídeos stock</option>
+            </select>
+          </div>
+          <button class="btn primary small" type="submit" id="btn-pixabay-buscar" style="height:38px;padding:0 18px">🔍 Buscar</button>
+        </form>
+        <div class="row" style="margin-top:10px;gap:6px" id="pixabay-quick-tags">
+          <span class="sub" style="font-size:12px;margin-right:4px">Sugestões:</span>
+          <button type="button" class="pill" data-q="tecnologia">Tecnologia</button>
+          <button type="button" class="pill" data-q="inteligencia artificial">IA</button>
+          <button type="button" class="pill" data-q="negocios">Negócios</button>
+          <button type="button" class="pill" data-q="natureza">Natureza</button>
+          <button type="button" class="pill" data-q="cidade futurista">Cidade</button>
+          <button type="button" class="pill" data-q="espaco sideral">Espaço</button>
+        </div>
+      </div>
+      <div id="pixabay-feedback" class="sample" style="margin-bottom:12px"></div>
+      <div id="pixabay-results" class="grid3"></div>
+    """
+
     body_page = f"""      <section class="pagina" id="pagina-biblioteca" aria-labelledby="t-biblioteca" data-canal="{e(project_id)}" data-canal-versao="{e(channel_version or 0)}">
         <div class="head"><div><p class="eyebrow">Recursos reutilizáveis</p><h1 id="t-biblioteca">Biblioteca</h1><p class="sub">Canal ativo: {e(nome_canal)}</p></div></div>
         <nav class="tabs" aria-label="Biblioteca">{tabs}</nav>
@@ -605,9 +969,10 @@ def render_styles(view: StylesPageView, *, projects: list[tuple[str, str]] | Non
           {cards}
           <p class="sample" id="biblioteca-status" role="status" aria-live="polite"></p>
         </div>
-        <div id="painel-vozes" hidden><p class="sub">{voz}</p></div>
-        <div id="painel-musicas" hidden><p class="sub">Ainda não há biblioteca de músicas. O ritmo (bpm) é um parâmetro de cada estilo visual.</p></div>
-        <div id="painel-modelos" hidden><p class="sub">Ainda não há modelos de roteiro cadastrados.</p></div>
+        <div id="painel-vozes" hidden>{vozes_html}</div>
+        <div id="painel-musicas" hidden>{musicas_html}</div>
+        <div id="painel-midias" hidden>{midias_html}</div>
+        <div id="painel-modelos" hidden>{modelos_html}</div>
         {dialogs}
       </section>"""
     html = shell_v3.render_document(

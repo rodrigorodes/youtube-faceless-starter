@@ -176,6 +176,7 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .two { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; }
+.two > * { min-width: 0; }
 
 /* Botões */
 .btn {
@@ -243,9 +244,10 @@ h3 { font-size: 15px; font-weight: 700; color: var(--text); }
   background: rgba(236, 194, 122, 0.09);
   border: 1px solid rgba(236, 194, 122, 0.28);
   color: var(--warn);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 12.5px;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 .note.info, .aviso.info, .aviso-info { background: var(--accentbg); border-color: var(--line2); color: var(--accent2); }
 .note.okn, .aviso.ok, .aviso-ok { background: rgba(127, 208, 168, 0.1); border-color: rgba(127, 208, 168, 0.3); color: var(--ok); }
@@ -467,10 +469,11 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   padding: 4px 8px;
   border-radius: 6px;
 }
-.track { display: flex; align-items: center; gap: 10px; font-size: 11.5px; margin-bottom: 6px; }
+.track { display: flex; align-items: center; gap: 10px; font-size: 11.5px; margin-bottom: 6px; min-width: 0; }
 .track > span { width: 70px; color: var(--muted); flex: none; }
 .track > div {
   flex: 1;
+  min-width: 0;
   height: 22px;
   border-radius: 5px;
   border: 1px solid var(--line);
@@ -480,6 +483,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   background: var(--panel3);
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* Modais e Diálogos */

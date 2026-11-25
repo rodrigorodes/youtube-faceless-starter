@@ -1,4 +1,4 @@
-"""Testes da reestruturação da navegação do workspace V3 (5 áreas canônicas + diagnóstico)."""
+"""Testes da reestruturação da navegação do workspace V3 (6 áreas canônicas + diagnóstico)."""
 from __future__ import annotations
 
 import re
@@ -43,13 +43,14 @@ def _sample_view(video_id: str = "vid1234567890abcdef") -> VideoDetailView:
     )
 
 
-def test_v3_video_nav_has_five_primary_areas():
+def test_v3_video_nav_has_six_primary_areas():
     area_ids = [aid for aid, _ in VIDEO_AREAS]
-    assert area_ids == ["cenas", "composicao", "qualidade", "publicacao", "fontes"]
+    assert area_ids == ["direcao", "cenas", "composicao", "qualidade", "publicacao", "fontes"]
     assert "producao" not in area_ids
 
     labels = [label for _, label in VIDEO_AREAS]
     assert labels == [
+        "Direção criativa",
         "Cenas & Storyboard",
         "Composição & Legendas",
         "Qualidade & Aprovação",
@@ -72,18 +73,19 @@ def test_v3_video_nav_normalizes_legacy_and_unknown_areas_to_cenas():
     assert normalize_area("desconhecida") == "cenas"
     assert normalize_area(None) == "cenas"
 
-    for area_id in ["cenas", "composicao", "qualidade", "publicacao", "fontes"]:
+    for area_id in ["direcao", "cenas", "composicao", "qualidade", "publicacao", "fontes"]:
         assert normalize_area(area_id) == area_id
 
 
-def test_video_area_nav_renders_exactly_five_tab_links():
+def test_video_area_nav_renders_exactly_six_tab_links():
     video_id = "testvideo123"
     nav = video_area_nav(video_id, "cenas")
 
     anchors = re.findall(r'<a[^>]*href="([^"]+)"[^>]*>([^<]+)</a>', nav)
-    assert len(anchors) == 5
+    assert len(anchors) == 6
 
     expected_links = [
+        (f"/studio/panel/videos/{video_id}/direcao", "Direção criativa"),
         (f"/studio/panel/videos/{video_id}/cenas", "Cenas &amp; Storyboard"),
         (f"/studio/panel/videos/{video_id}/composicao", "Composição &amp; Legendas"),
         (f"/studio/panel/videos/{video_id}/qualidade", "Qualidade &amp; Aprovação"),

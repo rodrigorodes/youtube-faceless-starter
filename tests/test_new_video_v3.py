@@ -159,7 +159,9 @@ def test_without_styles_only_the_channel_default_is_offered_and_nothing_is_faked
     html, _ = render_new_video_v3(_view(styles=(), inherited_style_name="Cinema Noturno"))
     bloco = _bloco_estilo(html)
     assert bloco.count('class="choice"') == 1 and "Cinema Noturno" in bloco
-    for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
+    # "Cinemático" é um ritmo de corte legítimo fora do bloco de estilos; no bloco, não pode existir.
+    assert "Cinemático" not in bloco
+    for ficticio in ("Documentário", "Tech Clean"):
         assert ficticio not in html
     assert "Gerenciar estilos" not in html  # o protótipo não tem esse link; a Biblioteca está no menu
 

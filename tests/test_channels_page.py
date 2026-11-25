@@ -5,6 +5,7 @@ de UX vivem em `test_ux_contract.assert_ux_contract` e são aplicadas à tela in
 mostra dado ilustrativo, a tela renderiza dado real do Studio ou estado vazio explícito.
 """
 import base64
+import html
 import json
 import re
 import sys
@@ -101,7 +102,8 @@ def settings_nav_items(html: str):
 
 
 def _nav_text(item: str) -> str:
-    return " ".join(re.sub(r"<[^>]+>", " ", item).split())
+    # Os glifos do protótipo são `aria-hidden`: não fazem parte do rótulo acessível.
+    return " ".join(html.unescape(re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", " ", item)).split())
 
 
 def _seed_profile(env, **changes):
@@ -189,9 +191,9 @@ def test_channels_page_uses_the_approved_shell(env):
     assert len(section_active) == 1 and "Canais" in _nav_text(section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
     assert html.count("<h1") == 1
-    # UX: o h1 é o do protótipo (`prototype/index.html:622`); "CONFIGURAÇÕES" fica no eyebrow.
-    assert re.search(r'<p class="eyebrow">\s*CONFIGURAÇÕES\s*</p>', html)
-    assert re.search(r'<h1[^>]*>\s*Seu estúdio, do seu jeito\s*</h1>', html)
+    # UX: o h1 é o do protótipo V4/V3; "Ajustes" fica no eyebrow.
+    assert re.search(r'<p class="eyebrow">\s*Ajustes\s*</p>', html)
+    assert re.search(r'<h1[^>]*>\s*Configurações\s*</h1>', html)
 
 
 def test_settings_pages_never_repeat_an_element_id(env):
@@ -354,8 +356,8 @@ def test_settings_menu_matches_the_prototype_and_keeps_the_active_channel(env):
     """
     html = page(env).text
     labels = [_nav_text(item) for item in settings_nav_items(html)]
-    assert labels == ["Canais", "Estratégia editorial", "Marca e estilo", "Produção e orçamento",
-                      "Conexões e providers", "Conta e equipe", "Avançado e diagnóstico"]
+    assert labels == ["Canais", "Marca & Editorial", "Produção & Orçamento",
+                      "Conexões & Equipe"]
     for item in settings_nav_items(html):
         assert f"project_id={env['project'].id}" in item, item
 
@@ -624,12 +626,16 @@ def test_oauth_callback_page_carries_the_project_and_closes_the_loop(env_oauth):
 
 def test_oauth_callback_page_refuses_an_unknown_state_without_dead_end(env):
     r = env["client"].get("/studio/oauth/callback?code=SYNTHETIC-code&state=not-a-real-state",
-                          headers=AUTH_HEADER)
-    assert r.status_code == 200, r.text
-    visible = page_text(r.text)
-    assert "Não foi possível identificar o canal" in visible
-    assert "youtube-oauth/callback" not in r.text
-    assert 'href="/studio/canais"' in r.text
+                          headers=AUTH_HEADER, follow_redirects=False)
+    assert r.status_code == 303
+    location = r.headers["location"]
+    assert location.startswith("/studio/panel/conexoes?")
+    assert "state=not-a-real-state" in location
+    # A tela de Conexões conclui o consentimento pelo browser e explica o erro; nada de beco sem saída.
+    page = env["client"].get(location, headers=AUTH_HEADER)
+    assert page.status_code == 200
+    assert "connections/oauth/callback" in page.text
+    assert "youtube-oauth/callback" not in page.text
 
 
 def test_oauth_callback_page_renders_denied_consent_without_javascript(env):

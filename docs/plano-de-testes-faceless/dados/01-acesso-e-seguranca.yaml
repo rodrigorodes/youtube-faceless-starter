@@ -1,0 +1,243 @@
+{
+  "titulo": "01 — Acesso e segurança",
+  "regras": [
+    {
+      "id": "AUT.R01",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:160-184"
+      ],
+      "resumo": "Studio exige usuário, senha e token distintos e não vazios; usuário não contém dois-pontos. Configuração inválida retorna 503; credencial ausente/incorreta retorna 401."
+    },
+    {
+      "id": "AUT.R02",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:117-131",
+        "renderer/app/studio/api/routes.py:176-184",
+        "renderer/app/studio/api/routes.py:1111"
+      ],
+      "resumo": "Host deve estar permitido. Basic em mutação exige Origin da mesma origem; Bearer rejeita qualquer cabeçalho Origin. O worker não representa um tenant nem um papel de menor privilégio."
+    },
+    {
+      "id": "AUT.R03",
+      "fontes": [
+        "renderer/app/studio/application/youtube_oauth.py:153-196",
+        "renderer/app/studio/application/connections.py:171-224"
+      ],
+      "resumo": "Consentimento verifica state, validade e PKCE antes da troca; respostas públicas não incluem tokens. O state é removido após a conclusão, sem consumo atômico visível no caso de uso."
+    },
+    {
+      "id": "AUT.R04",
+      "fontes": [
+        "renderer/app/studio/adapters/secret_store.py:24-108"
+      ],
+      "resumo": "Cofre de arquivos valida escopo/chave, grava via replace com diretório 0700 e arquivo 0600; lock é por instância. Listagem externa deve conter nomes/metadados, nunca valores."
+    },
+    {
+      "id": "AUT.R05",
+      "fontes": [
+        "renderer/app/main.py:52-60"
+      ],
+      "resumo": "Rotas legadas /videos retornam 410; /health é independente da autenticação Studio e informa studio_db."
+    }
+  ],
+  "como_funciona": "O roteador aplica guard de host/origem e autenticação Basic ou Bearer antes dos casos de uso. Não há sessão individual por canal. OAuth guarda tokens no cofre e devolve metadados; testes devem usar somente identidades e segredos sintéticos.",
+  "resumo": "8 cenários GC, todos A_PROJETAR e não executados. Cobertura: acesso feliz, configuração inválida, CSRF, rebinding, cofre e callback concorrente. Mock não comprova proteção de proxy/TLS nem integração Google.",
+  "cenarios": [
+    {
+      "id": "AUT.C01",
+      "titulo": "Basic e worker válidos permanecem independentes",
+      "tipo": "feliz",
+      "regras": [
+        "AUT.R01",
+        "AUT.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Distinguir autenticação aceita de indisponibilidade do serviço.",
+      "pre_condicoes": [
+        "Aplicação de teste com make_router(lambda: None, lambda: False), host localhost:8000 e credenciais sintéticas do conftest."
+      ],
+      "exemplo": [
+        "GET /studio/videos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa com Basic test-user:test-browser-password e depois Bearer test-worker-token, sem Origin.",
+        "Trocar senha pelo token e token pela senha."
+      ],
+      "esperado": "As duas credenciais válidas chegam ao serviço e retornam 503 neste dublê; trocadas retornam 401 com desafio Basic.",
+      "limitacoes": "503 neste arranjo não significa autenticação recusada; não testa banco.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_studio_auth.py:32-37"
+      }
+    },
+    {
+      "id": "AUT.C02",
+      "titulo": "Configuração incompleta falha fechada",
+      "tipo": "erro",
+      "regras": [
+        "AUT.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Impedir acesso quando o operador não provisionou autenticação válida.",
+      "pre_condicoes": [
+        "Ambiente isolado via monkeypatch; nenhuma leitura de .env."
+      ],
+      "exemplo": [
+        "Remover individualmente STUDIO_BROWSER_USER, STUDIO_BROWSER_PASSWORD e STUDIO_WORKER_TOKEN.",
+        "Repetir com senha igual ao token e com usuário teste:operador; fazer GET Studio."
+      ],
+      "esperado": "503 de configuração em todas as variantes; caso de uso não é chamado.",
+      "limitacoes": "Não valida entrega de variáveis pelo ambiente real.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_studio_auth.py:40-48; proposta adicional para usuário contendo dois-pontos"
+      }
+    },
+    {
+      "id": "AUT.C03",
+      "titulo": "CSRF de mutação e separação browser/worker",
+      "tipo": "borda",
+      "regras": [
+        "AUT.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar a obrigatoriedade e igualdade exata de origem.",
+      "pre_condicoes": [
+        "Cliente localhost:8000 com serviço indisponível simulado."
+      ],
+      "exemplo": [
+        "POST /studio/videos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/approve usando Basic sem Origin, com http://localhost:8000 e com http://localhost:8001.",
+        "Repetir com Bearer sem Origin, com Origin correto e com Origin vazio."
+      ],
+      "esperado": "Basic sem origem ou com outra porta retorna 403; mesma origem alcança 503 do dublê. Bearer sem cabeçalho alcança o serviço; presença do cabeçalho, inclusive vazio, retorna 403.",
+      "limitacoes": "Não exercita comportamento de proxy; Origin vazio exige teste adicional.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_studio_auth.py:51-56; proposta para porta diferente e Origin vazio"
+      }
+    },
+    {
+      "id": "AUT.C04",
+      "titulo": "Host malicioso e Basic malformado",
+      "tipo": "erro",
+      "regras": [
+        "AUT.R01",
+        "AUT.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Recusar rebinding e entrada inválida sem erro interno.",
+      "pre_condicoes": [
+        "Allowlist contém localhost e não attacker.example."
+      ],
+      "exemplo": [
+        "Enviar credencial válida com Host attacker.example:8000 e Origin correspondente.",
+        "Enviar Authorization Basic !!! para Host localhost:8000."
+      ],
+      "esperado": "Host não permitido retorna 403; Basic malformado retorna 401, sem 500 nem eco de credencial.",
+      "limitacoes": "Não é teste de DNS/rede real.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_studio_auth.py:59-62; proposta para Base64 inválido"
+      }
+    },
+    {
+      "id": "AUT.C05",
+      "titulo": "Saúde pública e remoção do legado",
+      "tipo": "regressao",
+      "regras": [
+        "AUT.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Evitar interpretar rotas independentes como bypass de Studio.",
+      "pre_condicoes": [
+        "Studio substituído por dublê com ping falso antes de importar main."
+      ],
+      "exemplo": [
+        "Sem Authorization, consultar /health e GET/POST /videos e /videos/qualquer.",
+        "Comparar com GET /studio/videos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+      ],
+      "esperado": "/health contém studio_db=unavailable; legado retorna 410; Studio sem autenticação retorna 401.",
+      "limitacoes": "Saúde responde status=ok mesmo sem banco; não equivale a readiness integral.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_main_boot.py:20-35; tests/test_studio_auth.py:28-29"
+      }
+    },
+    {
+      "id": "AUT.C06",
+      "titulo": "Cofre sintético valida caminho e protege valores",
+      "tipo": "feliz",
+      "regras": [
+        "AUT.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar armazenamento e rejeição de traversal sem tocar segredos reais.",
+      "pre_condicoes": [
+        "Diretório temporário novo, FileSecretStore exclusivo; dados artificiais."
+      ],
+      "exemplo": [
+        "Gravar chave access_token com valor ficticio-123 no escopo youtube:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; consultar names e get.",
+        "Tentar escopo ../fora e chave inválida contendo barra; inspecionar permissões e arquivos temporários."
+      ],
+      "esperado": "names contém só access_token, get recupera o valor sintético, modos são 0700/0600 em POSIX; traversal gera SecretStoreError e não cria arquivo externo.",
+      "limitacoes": "Não comprova criptografia em repouso; não usar raiz credentials existente.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Automação proposta sobre renderer/app/studio/adapters/secret_store.py:24-108"
+      }
+    },
+    {
+      "id": "AUT.C07",
+      "titulo": "Callback inválido não troca código nem revela token",
+      "tipo": "erro",
+      "regras": [
+        "AUT.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Garantir falha antes do OAuth para state inválido e resposta pública mínima no sucesso.",
+      "pre_condicoes": [
+        "Relógio congelado; cofre em memória; cliente OAuth fake com contador."
+      ],
+      "exemplo": [
+        "Iniciar consentimento de conta; enviar state diferente e depois state válido no instante exato da expiração.",
+        "Reiniciar e concluir com code=code-fake, identidade teste@example.test e tokens fictícios."
+      ],
+      "esperado": "Inválidos geram erro de state e zero chamadas exchange_code; sucesso devolve conta/canal/grant, sem access_token, refresh_token ou verifier.",
+      "limitacoes": "Não confirma consent screen nem revogação Google; nunca usar provedor configurado.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_connections_service.py:238-258,272-284"
+      }
+    },
+    {
+      "id": "AUT.C08",
+      "titulo": "Dois callbacks para o mesmo state",
+      "tipo": "concorrencia",
+      "regras": [
+        "AUT.R03",
+        "AUT.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Investigar replay concorrente sem transformar hipótese em garantia existente.",
+      "pre_condicoes": [
+        "OAuth fake; barreira após leitura do state; dois executores; cofre temporário ou em memória."
+      ],
+      "exemplo": [
+        "Iniciar um consentimento; disparar duas conclusões com o mesmo code-fake e state antes de qualquer exclusão.",
+        "Contar trocas OAuth, grants criados e respostas; repetir sequencialmente após sucesso."
+      ],
+      "esperado": "Critério de segurança proposto: no máximo uma conclusão efetiva e rejeição do replay; registrar divergência se ambos atravessarem a validação. Replay sequencial após limpeza deve falhar antes da troca.",
+      "limitacoes": "Consumo atômico não foi identificado; concorrência não reproduzida. Lock por método do cofre não cobre toda a operação OAuth.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Automação proposta; renderer/app/studio/application/connections.py:174-219"
+      }
+    }
+  ],
+  "prefixo": "AUT"
+}

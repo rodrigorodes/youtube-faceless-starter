@@ -33,7 +33,12 @@ def env(conn, dsn, tmp_path):
     connect = lambda: psycopg.connect(dsn)
     videos = PostgresVideoRepository(connect)
     project = videos.create_project("Canal Produção", niche="Finanças", language="pt-BR")
-    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path))
+    # A pesquisa automática é o padrão de produção (settings.auto_research=True), mas estas telas
+    # descrevem a pipeline clássica de 8 etapas e o estado "estágio indisponível" (Fontes).
+    # Sem a pesquisa, o DAG volta a COORDINATOR_DAG e a etapa de pesquisa fica explicitamente
+    # indisponível — que é o que as asserções de stepper e de etapas indisponíveis exercitam.
+    # A pipeline com pesquisa continua coberta em tests/test_pesquisa_automatica.py.
+    studio = Studio(Settings(database_url=dsn, storage_root=tmp_path, auto_research=False))
     app = FastAPI()
     app.include_router(make_router(studio.use_cases, studio.ping))
     client = TestClient(app)
@@ -67,11 +72,13 @@ def test_wizard_page_renders_real_channel_and_honest_fields(env):
     # UX V3: o canal real aparece na topbar e na predefinição; o formulário é o do conceito.
     assert "Canal Produção" in r.text
     assert "Predefinição do canal" in r.text
-    assert 'id="tema-novo"' in r.text and 'id="btn-para-revisao"' in r.text
+    assert 'id="tema-novo"' in r.text and 'id="btn-criar-abrir"' in r.text
     assert 'name="estilo-novo"' in r.text and 'name="formato-novo"' in r.text
-    # O que o canal não define é dito como ausência, não inventado nem oferecido como controle morto.
-    assert "canal sem perfil" in r.text and "nenhum idioma definido" in r.text
-    assert " disabled" not in r.text
+    # O que o canal não define é dito como ausência, não inventado.
+    assert "Canal sem perfil" in r.text and "nenhum idioma definido" in r.text
+    # O único controle desabilitado é o "Estrutura do roteiro", que declara vir do perfil
+    # editorial; tema e criação continuam habilitados.
+    assert "Definida pelo perfil editorial do canal" in r.text
 
 
 def test_wizard_page_marks_its_nav_as_the_production_screen(env):

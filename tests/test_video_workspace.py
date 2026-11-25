@@ -56,6 +56,7 @@ STYLE = VisualStyle(
 
 # Ordem e hrefs exatos da tabela de áreas.
 EXPECTED_HREFS = {
+    "direcao": f"/studio/panel/videos/{VIDEO}/direcao",
     "cenas": f"/studio/panel/videos/{VIDEO}/cenas",
     "composicao": f"/studio/panel/videos/{VIDEO}/composicao",
     "qualidade": f"/studio/panel/videos/{VIDEO}/qualidade",
@@ -190,11 +191,11 @@ def _active_label(nav_block: str) -> str:
 
 # --------------------------------------------------------------------------- 1) navegação
 
-def test_five_areas_are_links_with_expected_labels_and_hrefs():
+def test_six_areas_are_links_with_expected_labels_and_hrefs():
     nav = _area_nav(_render(DEFAULT_AREA))
 
-    assert len(VIDEO_AREAS) == 5
-    assert [area for area, _ in VIDEO_AREAS] == ["cenas", "composicao", "qualidade", "publicacao", "fontes"]
+    assert len(VIDEO_AREAS) == 6
+    assert [area for area, _ in VIDEO_AREAS] == ["direcao", "cenas", "composicao", "qualidade", "publicacao", "fontes"]
     for area, label in VIDEO_AREAS:
         href = EXPECTED_HREFS[area]
         assert f'href="{href}"' in nav, (area, href)
@@ -205,7 +206,7 @@ def test_five_areas_are_links_with_expected_labels_and_hrefs():
 
 
 def test_only_the_active_area_has_aria_current_page():
-    for area in ("cenas", "composicao", "qualidade", "publicacao", "fontes"):
+    for area in ("direcao", "cenas", "composicao", "qualidade", "publicacao", "fontes"):
         nav = _area_nav(_render(area))
         assert nav.count('aria-current="page"') == 1, area
         assert _active_label(nav) == e(dict(VIDEO_AREAS)[area])

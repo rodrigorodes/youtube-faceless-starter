@@ -1,0 +1,253 @@
+{
+  "titulo": "03 — Tendências e ideias",
+  "regras": [
+    {
+      "id": "TEN.R01",
+      "fontes": [
+        "renderer/app/studio/application/trends.py:13-17",
+        "renderer/app/studio/domain/trends.py:25-50"
+      ],
+      "resumo": "Ingestão exige projeto existente e lote de 1 a 50 itens; valida todo o lote antes do upsert. Fonte usa HTTPS e host permitido."
+    },
+    {
+      "id": "TEN.R02",
+      "fontes": [
+        "renderer/app/studio/domain/trends.py:52-62"
+      ],
+      "resumo": "Datas exigem timezone; observed_at admite até 300 segundos futuros; janela não pode inverter. Código compara timedelta.days > 31, portanto a fronteira efetiva difere de um máximo estrito de 31 dias."
+    },
+    {
+      "id": "TEN.R03",
+      "fontes": [
+        "renderer/app/studio/adapters/postgres/trend_repo.py:106-149",
+        "renderer/app/studio/adapters/postgres/trend_repo.py:197-245"
+      ],
+      "resumo": "Upsert identifica projeto, tópico normalizado, fonte e fim de janela; atualiza métricas/evidências mas não source_url no conflito. Favoritos têm chave projeto e video_id."
+    },
+    {
+      "id": "TEN.R04",
+      "fontes": [
+        "renderer/app/studio/application/ideas.py:45-60",
+        "renderer/app/studio/application/ideas.py:69-96"
+      ],
+      "resumo": "Pontuação aceita 1 a 20 tópicos únicos, não vazios, de até 150 caracteres; resposta cobre exatamente todos os tópicos. Ordem é decrescente e empate preserva ordem de entrada."
+    },
+    {
+      "id": "TEN.R05",
+      "fontes": [
+        "renderer/app/studio/application/ideas.py:81-94"
+      ],
+      "resumo": "Guard de custo antecede chamada paga; saída inválida não vira ranking parcial. Com PaidOperationGuard, validação antecede settlement; sem ele, uso já é registrado antes do parse."
+    },
+    {
+      "id": "TEN.R06",
+      "fontes": [
+        "renderer/app/studio/domain/trends.py:13-36",
+        "renderer/app/studio/domain/trends.py:47-50"
+      ],
+      "resumo": "Evidência admite URL HTTP e até 10 entradas; a allowlist de source_url não valida o host de cada evidence.url. Ingestão não prova veracidade da fonte."
+    }
+  ],
+  "como_funciona": "Tendências são observações persistidas com fonte, janela, métrica e evidências. A ingestão valida o lote antes da escrita; favoritos guardam snapshots separados. Ideias usam modelo para notas e domínio para ordenação, com validação e controle de custo. Coleta n8n é coberta em OPS.C08.",
+  "resumo": "8 cenários GC, todos A_PROJETAR e não executados. Inclui fonte e lote inválidos, fronteiras temporais, deduplicação concorrente, favoritos, ranking e orçamento; não comprova relevância editorial nem fonte live.",
+  "cenarios": [
+    {
+      "id": "TEN.C01",
+      "titulo": "Ingerir tendência com fonte e evidência",
+      "tipo": "feliz",
+      "regras": [
+        "TEN.R01",
+        "TEN.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Persistir observação rastreável sem inventar métricas.",
+      "pre_condicoes": [
+        "Projeto aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa existente em repositório fake; host www.googleapis.com permitido; relógio 2026-11-20T10:00:00Z."
+      ],
+      "exemplo": [
+        "Ingerir tópico Energia solar, source_name=YouTube Data API, source_url=https://www.googleapis.com/youtube/v3/search, observed_at=2026-11-20T10:00:00Z, janela de 2026-11-13T10:00:00Z a 2026-11-20T10:00:00Z, metric_value=10.",
+        "Anexar evidência title=Introdução, url=https://youtube.com/watch?v=abcdefghijk, views=null; reler resultado."
+      ],
+      "esperado": "Um item aceito e fonte/janela/evidência preservadas; views desconhecido permanece null, não zero fabricado.",
+      "limitacoes": "Não busca nem confirma conteúdo das URLs.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_trends_domain.py:12-31; proposta de releitura com repositório fake"
+      }
+    },
+    {
+      "id": "TEN.C02",
+      "titulo": "Recusar lote inteiro com fonte inválida",
+      "tipo": "erro",
+      "regras": [
+        "TEN.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar persistência parcial de lote inválido.",
+      "pre_condicoes": [
+        "Projeto existente; spy no upsert; item válido de TEN.C01."
+      ],
+      "exemplo": [
+        "Enviar lote com item válido e outro de source_url=https://evil.example/trends.",
+        "Repetir com fonte http://www.googleapis.com/youtube/v3/search e depois projeto inexistente."
+      ],
+      "esperado": "Host proibido, esquema inválido e projeto ausente são recusados; upsert não recebe lote parcial nem é chamado no erro.",
+      "limitacoes": "Não testa SSRF de fetcher; ingestão apenas valida e persiste.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_trends_domain.py:34-42,71-76; renderer/app/studio/application/trends.py:13-17"
+      }
+    },
+    {
+      "id": "TEN.C03",
+      "titulo": "Fronteiras de lote, evidências e datas",
+      "tipo": "borda",
+      "regras": [
+        "TEN.R01",
+        "TEN.R02",
+        "TEN.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Documentar limites reais, inclusive truncamento de dias.",
+      "pre_condicoes": [
+        "Relógio fixo em 2026-11-20T10:00:00Z; itens sintéticos válidos."
+      ],
+      "exemplo": [
+        "Validar lotes de 0, 1, 50 e 51 itens; evidências com 10 e 11 entradas.",
+        "Variar observed_at entre agora+300s, agora+301s e data sem timezone.",
+        "Comparar janelas de 31 dias, 31 dias e 23 horas, 32 dias e janela invertida."
+      ],
+      "esperado": "Aceita 1/50 itens e 10 evidências; recusa 0/51 e 11. Aceita +300s, recusa +301s/sem timezone. Código atual aceita 31d23h e recusa 32d/inversão; registrar diferença frente ao texto de máximo 31 dias.",
+      "limitacoes": "Aceitação de 31d23h é caracterização de código, não regra de negócio aprovada.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "tests/test_trends_domain.py:45-68; extensão proposta para limites exatos"
+      }
+    },
+    {
+      "id": "TEN.C04",
+      "titulo": "Dois upserts da mesma tendência",
+      "tipo": "concorrencia",
+      "regras": [
+        "TEN.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar unicidade sem presumir ordenação por observação mais nova.",
+      "pre_condicoes": [
+        "Postgres descartável comprovado; duas conexões; mesma chave projeto/tópico/fonte/window_end."
+      ],
+      "exemplo": [
+        "Disparar simultaneamente item Energia solar com metric_value=10 e outro com metric_value=20.",
+        "Reenviar a chave com source_url diferente no mesmo host; consultar quantidade, métricas e URL."
+      ],
+      "esperado": "Uma linha por chave; métrica final corresponde a uma escrita concluída, sem garantia de maior observed_at. source_url permanece o original no caminho de conflito, pois não participa do UPDATE.",
+      "limitacoes": "Não há proteção de frescor no SQL lido; ordem final depende de concorrência.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Automação proposta; renderer/app/studio/adapters/postgres/trend_repo.py:118-131; base tests/test_trend_repo.py"
+      }
+    },
+    {
+      "id": "TEN.C05",
+      "titulo": "Favorito isolado por projeto e atualizado por replay",
+      "tipo": "regressao",
+      "regras": [
+        "TEN.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Preservar favoritos de outro canal sem tratar canal como tenant.",
+      "pre_condicoes": [
+        "Projetos A e B em banco descartável; snapshot video_id=abcdefghijk."
+      ],
+      "exemplo": [
+        "Salvar snapshot título Solar, views=10 em A; salvar novamente com views=20.",
+        "Salvar o mesmo video_id em B; remover de A; listar favoritos de ambos."
+      ],
+      "esperado": "A tem no máximo um favorito por vídeo antes da remoção; replay atualiza views e preserva created_at. Após remoção A não tem o item e B ainda o possui.",
+      "limitacoes": "Isolamento de consulta não representa autorização entre usuários.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Automação proposta sobre renderer/app/studio/adapters/postgres/trend_repo.py:197-245"
+      }
+    },
+    {
+      "id": "TEN.C06",
+      "titulo": "Ranking estável com notas válidas",
+      "tipo": "feliz",
+      "regras": [
+        "TEN.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Garantir ordem calculada pelo domínio e empate estável.",
+      "pre_condicoes": [
+        "TextModel fake e usage em memória; nenhum provider real."
+      ],
+      "exemplo": [
+        "Enviar tópicos B, A, C nessa ordem.",
+        "Fake retorna todas as quatro notas de A=5, B=3 e C=3."
+      ],
+      "esperado": "Ranking A, B, C; A tem score 5; B permanece antes de C no empate; todas as ideias cobertas.",
+      "limitacoes": "Notas do fake não comprovam qualidade editorial do modelo.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "tests/test_ideas.py:74-77"
+      }
+    },
+    {
+      "id": "TEN.C07",
+      "titulo": "Limite de tópicos e resposta inválida",
+      "tipo": "erro",
+      "regras": [
+        "TEN.R04",
+        "TEN.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Recusar entrada e saída inválidas sem ranking parcial.",
+      "pre_condicoes": [
+        "Modelo fake com contador; guard liberado para saída inválida."
+      ],
+      "exemplo": [
+        "Enviar 20 tópicos distintos de 150 caracteres; depois 21 tópicos, um de 151 e duplicados após trim.",
+        "Com entrada A,B válida, retornar apenas A; depois retornar nota 9 e JSON malformado."
+      ],
+      "esperado": "Caso limite válido produz 20 resultados; entradas inválidas não chamam modelo. Saídas inválidas geram IdeasRejected sem ranking parcial; no caminho sem PaidOperationGuard, uso da chamada realizada permanece registrado.",
+      "limitacoes": "PaidOperationGuard tem settlement distinto; não extrapolar contabilização do caminho legado.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "tests/test_ideas.py:80-119"
+      }
+    },
+    {
+      "id": "TEN.C08",
+      "titulo": "Budget bloqueia modelo e falha não confirma gasto válido",
+      "tipo": "erro",
+      "regras": [
+        "TEN.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Separar recusa antes da chamada de resultado pago inválido.",
+      "pre_condicoes": [
+        "Guard e modelo fake; ledger de teste; PaidOperationGuard no segundo caso."
+      ],
+      "exemplo": [
+        "Configurar estimate=0.50 USD e orçamento já esgotado; pontuar A.",
+        "Com reserva permitida, retornar rubric incompleta e observar estado do ledger."
+      ],
+      "esperado": "Orçamento esgotado gera CostRefused com zero chamadas e zero uso novo. Saída inválida com guarda paga não confirma settlement bem-sucedido; verificar estado UNCERTAIN conforme contrato da operação paga.",
+      "limitacoes": "Não executar cobrança nem provedor; concorrência de reservas pertence à suíte de budget.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_ideas.py:115-119; extensão proposta para renderer/app/studio/application/ideas.py:88-94"
+      }
+    }
+  ],
+  "prefixo": "TEN"
+}

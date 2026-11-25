@@ -90,17 +90,18 @@ def test_composicao_and_qualidade_html_controls(conn, dsn, tmp_path):
     app.include_router(make_router(studio.use_cases, studio.ping))
     client = TestClient(app, headers={"Authorization": "Bearer test-worker-token"})
 
-    # 1. Composição: volume, ducking e estilo ativo
+    # 1. Composição: BPM/seed da música e estilo ativo. Trilha, volume e ducking não são
+    #    editáveis pelo usuário: o motor sintetiza a música e aplica a mixagem; os controles
+    #    antigos pareciam salvar sem alterar o patch.
     res_comp = client.get(f"/studio/panel/videos/{video.id}/composicao")
     assert res_comp.status_code == 200, res_comp.text
     html_comp = res_comp.text
-    assert 'id="comp-music-vol"' in html_comp
-    assert '<input type="range" id="comp-music-vol"' in html_comp
-    assert 'disabled' not in html_comp.split('id="comp-music-vol"')[1][:30]
-    assert 'id="comp-ducking"' in html_comp
-    assert 'disabled' not in html_comp.split('id="comp-ducking"')[1][:30]
+    assert 'id="composicao-music-bpm"' in html_comp
+    assert 'id="composicao-music-seed"' in html_comp
+    assert 'id="comp-music-vol"' not in html_comp
+    assert 'id="comp-ducking"' not in html_comp
+    assert 'id="comp-music-track"' not in html_comp
     assert 'Destaque por palavra (karaokê)' in html_comp
-    assert 'id="comp-music-track"' in html_comp
 
     # 2. Qualidade: botão de download e resumo audiovisual
     res_qual = client.get(f"/studio/panel/videos/{video.id}/qualidade")
