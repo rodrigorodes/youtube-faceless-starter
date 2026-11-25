@@ -9,3 +9,22 @@ Leia ../foundation-stability/README.md e PLAN.md antes de V4-00. Confirmar gates
 
 ## Integração de assinatura pessoal
 Ler GOOGLE-AI-PRO-INTEGRATION e GAI-EXECUTION-PLAN quando tocar mídia/providers/UX/QA/storage. Reconciliar com HEAD, preservar Registry/AssetRepository/RenderPlan/Budget Guard, validar MIME/kind de vídeo ponta a ponta. Importação assistida genérica primeiro; não reutilizar OAuth/cookies de assinatura, não automatizar navegador, não inferir créditos. APIs oficiais opt-in, custo/reserva/reconciliação antes de chamadas; tests offline e autorização para live. Não criar terceiro MVP nem CI/CD.
+
+## Distribuição de modelos por fase (Implementação & Review)
+| Fase | Implementação | Review |
+|---|---|---|
+| **V4-00 — Baseline** | Flash 3.8 | Carbon |
+| **V4-01 — Providers** | Flash 3.8 / Hydrogen | Neon |
+| **V4-02 — Voice** | Flash 3.8 | Carbon |
+| **V4-03 — Audio** | Flash 3.8 | Carbon |
+| **V4-04 — Composition** | Hydrogen | Neon |
+| **V4-05 — Visual Motion** | Flash 3.8 | Carbon |
+| **V4-06 — Creative Intelligence** | Hydrogen | Carbon |
+| **V4-07 — Synchronization** | Hydrogen / Carbon | Neon |
+| **V4-08 — Render Engine** | Hydrogen / Carbon | Neon |
+| **V4-09 — Quality** | Flash 3.8 | Carbon |
+| **V4-10 — Studio UX** | Flash 3.8 | Carbon |
+| **V4-11 — Assets** | Flash 3.8 | Carbon |
+| **V4-12 — Reliability** | Hydrogen / Carbon | Neon |
+| **V4-13 — Pilot** | Flash 3.8 | Carbon + Humano |
+

@@ -27,3 +27,23 @@ Preservar fases e IDs. Critérios vinculados em [consolidação](V4.1-CONSOLIDAT
 
 ## Complemento Google AI Pro / External Media
 [Especificação](GOOGLE-AI-PRO-INTEGRATION.md) e [GAI-01–09](GAI-EXECUTION-PLAN.md). Reutilizar 14 fases/227 atividades originais, sem novo MVP. Priorizar GAI-01 (fundação 04/11) + GAI-02 (10 incremental) após Foundation/V4-00, com vertical slice real de imagem/vídeo importados. GAI-09 mínimo precede APIs pagas. GAI-03–08 opcionais nas fases consumidoras; Drive P2. Sem CI/CD e sem duplicar trabalho ou somar estimativas sobrepostas.
+
+## Distribuição por fase
+
+| Fase | Implementação | Review |
+|---|---|---|
+| **V4-00 — Baseline** | Flash 3.8 | Carbon |
+| **V4-01 — Providers** | Flash 3.8 / Hydrogen | Neon |
+| **V4-02 — Voice** | Flash 3.8 | Carbon |
+| **V4-03 — Audio** | Flash 3.8 | Carbon |
+| **V4-04 — Composition** | Hydrogen | Neon |
+| **V4-05 — Visual Motion** | Flash 3.8 | Carbon |
+| **V4-06 — Creative Intelligence** | Hydrogen | Carbon |
+| **V4-07 — Synchronization** | Hydrogen / Carbon | Neon |
+| **V4-08 — Render Engine** | Hydrogen / Carbon | Neon |
+| **V4-09 — Quality** | Flash 3.8 | Carbon |
+| **V4-10 — Studio UX** | Flash 3.8 | Carbon |
+| **V4-11 — Assets** | Flash 3.8 | Carbon |
+| **V4-12 — Reliability** | Hydrogen / Carbon | Neon |
+| **V4-13 — Pilot** | Flash 3.8 | Carbon + Humano |
+
