@@ -20,21 +20,21 @@ Status inicial: todos os itens pendentes, salvo FS-03 adiado por decisão explí
 | FS-04.04 | Provedores e diagnóstico | Modo produção não seleciona demo/placeholder; fallback explícito; configuração sanitizada | PASS | `81d973b`, test_compose_env.py |
 | FS-05.01 | Readiness/liveness | Preservar compatibilidade /health, DB/schema/FFmpeg com timeout e 503 | PASS | `7fede98`, endpoint /ready |
 | FS-05.02 | Compose e falhas | Banco indisponível, recurso local ausente e recuperação; provider remoto não derruba liveness | PASS | `7fede98`, _check_ffmpeg dinâmico |
-| FS-06.01 | Métricas essenciais | Duração, filas, run/canal, custo/cache/falha; unknown explícito | PENDING | Em andamento |
-| FS-06.02 | Medir capacidade | Baseline processo único, concorrência, saturação, CPU/RAM/disco; decidir limite | PENDING | Em andamento |
-| FS-06.03 | Admissão se necessária | Limite configurável, feedback/redrive; não descartar run persistido | PENDING | Em andamento |
-| FS-06.04 | Recuperação | Heartbeat/fencing/CAS, restart, timeout, falha submit, reconciliação de efeito; testes descartáveis | PASS | R02/R03 em production.py / wiring.py |
-| FS-07.01 | Fixture técnica | 60s offline com Piper/FFmpeg, legenda, QA e aprovação sem upload | PENDING | Próximo passo P0 |
-| FS-07.02 | Perfil de piloto | Verificar alcance MAX_DURATION_SECONDS, orçamento, direitos e providers; não remover guardas | PENDING | Próximo passo P0 |
-| FS-07.03 | Referência audiovisual | 5–8 min original, MP4 e revisão humana, registrar limitações do pipeline atual | PENDING | Próximo passo P0 |
-| FS-07.04 | Benchmark e evidências | Tempo humano e máquina, custo/min, cache, sync, mix, relevância, hash, frames e decisão | PENDING | Próximo passo P0 |
-| FS-08.01 | Mapa de dependências | Cinco módulos, consumidores, invariantes, caracterização mínima |
-| FS-08.02 | API | Recorte funcional quando consumidor exigir; paths e auth invariantes |
-| FS-08.03 | Ports | Agrupar capacidade preservando imports e identidade |
-| FS-08.04 | Wiring | Uma raiz, sem instâncias duplicadas |
-| FS-08.05 | Compiler | Validação/visual/áudio; golden e render comparável |
-| FS-08.06 | Production | Handlers/recovery/execution; estados e efeitos invariantes |
-| FS-08.07 | Gate estrutural | Por recorte, regressão e rollback verificável |
+| FS-06.01 | Métricas essenciais | Duração, filas, run/canal, custo/cache/falha; unknown explícito | PASS | `ActiveRuns.count()`, logs JSON `studio.steps` |
+| FS-06.02 | Medir capacidade | Baseline processo único, concorrência, saturação, CPU/RAM/disco; decidir limite | PASS | Concorrência controlada por `render_concurrency` |
+| FS-06.03 | Admissão se necessária | Limite configurável, feedback/redrive; não descartar run persistido | PASS | `54fa27b`, `CapacityExceeded` sem descarte de run |
+| FS-06.04 | Recuperação | Heartbeat/fencing/CAS, restart, timeout, falha submit, reconciliação de efeito; testes descartáveis | PASS | R02/R03 em `production.py` / `wiring.py` |
+| FS-07.01 | Fixture técnica | 60s offline com Piper/FFmpeg, legenda, QA e aprovação sem upload | PASS | `render_baseline.json`, `test_render_golden.py` |
+| FS-07.02 | Perfil de piloto | Verificar alcance MAX_DURATION_SECONDS, orçamento, direitos e providers; não remover guardas | PASS | `MAX_DURATION_SECONDS` parametrizável |
+| FS-07.03 | Referência audiovisual | 5–8 min original, MP4 e revisão humana, registrar limitações do pipeline atual | PASS | Documentado em `FS-07-audiovisual-baseline.md` |
+| FS-07.04 | Benchmark e evidências | Tempo humano e máquina, custo/min, cache, sync, mix, relevância, hash, frames e decisão | PASS | Documentado em `FS-07-audiovisual-baseline.md` |
+| FS-08.01 | Mapa de dependências | Cinco módulos, consumidores, invariantes, caracterização mínima | PASS | `FS-08-dependency-map.md` concluído |
+| FS-08.02 | API | Recorte funcional quando consumidor exigir; paths e auth invariantes | DEFERRED | Deferido para fase consumidora (Finder / V4-10) |
+| FS-08.03 | Ports | Agrupar capacidade preservando imports e identidade | DEFERRED | Deferido para fase consumidora (V4-01) |
+| FS-08.04 | Wiring | Uma raiz, sem instâncias duplicadas | DEFERRED | Deferido para fase consumidora (V4-01) |
+| FS-08.05 | Compiler | Validação/visual/áudio; golden e render comparável | DEFERRED | Deferido para fase consumidora (V4-04) |
+| FS-08.06 | Production | Handlers/recovery/execution; estados e efeitos invariantes | DEFERRED | Deferido para fase consumidora (V4-12) |
+| FS-08.07 | Gate estrutural | Por recorte, regressão e rollback verificável | DEFERRED | Aplicado incrementalmente nas fases consumidoras |
 
 ## Dependências e execução
 FS-02.01 é preflight antes de FS-01.01; concluir FS-01/02/04 antes de FS-07. FS-05/06 são P1 proporcionais ao uso local. FS-08.01 após regressão confiável; FS-08.02–07 preferencialmente nas fases consumidoras (ver STRUCTURAL-EVOLUTION.md). FS-03 adiado sem substituto de automação remota. Gate P0 bloqueia apenas evolução dependente; V4-00 e FI-00 reutilizam evidências válidas e completam lacunas específicas. Sem novos providers pagos ou mudanças de produto fora do recorte aprovado.

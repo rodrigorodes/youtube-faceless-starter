@@ -89,7 +89,7 @@ services:
       STUDIO_AUTO_RESEARCH: ${STUDIO_AUTO_RESEARCH:-1}
       STUDIO_TREND_SOURCES: ${STUDIO_TREND_SOURCES:-}
       STUDIO_TOKEN_ENV_PATH: ${STUDIO_TOKEN_ENV_PATH:-credentials/token.env}
-      MAX_DURATION_SECONDS: '60'
+      MAX_DURATION_SECONDS: ${MAX_DURATION_SECONDS:-60}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # OAuth do Google (F8-05): o client secret é um arquivo montado em /app/credentials (read-only).
       # Estas duas variáveis eram documentadas mas NÃO eram encaminhadas ao container — sem isso,

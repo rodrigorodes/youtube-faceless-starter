@@ -39,7 +39,7 @@ services:
       STUDIO_AUTO_RESEARCH: "0"
       STUDIO_BUDGET_GUARD: "0"
       STUDIO_PUBLICATION_ENABLED: "0"
-      MAX_DURATION_SECONDS: "60"
+      MAX_DURATION_SECONDS: "${MAX_DURATION_SECONDS:-60}"
     tmpfs:
       - /data
     depends_on:
