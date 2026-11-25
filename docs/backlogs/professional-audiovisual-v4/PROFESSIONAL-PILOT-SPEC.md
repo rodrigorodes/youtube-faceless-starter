@@ -1,0 +1,7 @@
+# Pilotos e benchmark — V4-00/13 + FI-11
+1. Baseline atual: mesmo roteiro, hardware e formato, gravar hashes, tempo humano, wall time, CPU/RAM, custo, falhas, revisão audiovisual. Não inventar métricas.
+2. Vertical slice de 60–90s após fundações mínimas: voz, 4 shots, música ducking, caption, um motion, alteração de fundo/trim e cache. Gate antes de expandir providers.
+3. Documentário original 5min 1080p: 15–20 cenas sugeridas, múltiplos B-rolls, fontes rastreáveis, timeline persistente, 3 opções de thumbnail via V2-F7 reconciliado. Comparação cega pareada com baseline; perfil econômico e equilibrado, premium só autorizado.
+4. Piloto 15–20min: medir intervenção humana (meta proposta <=60min vs relato 6–12h), tempo total e render separado; repetir no Mac Apple Silicon. Não confundir meta com resultado.
+5. Integração: oportunidade do Finder/manual → briefing → research → roteiro → produção → edição → QA → pacote de publicação; sem publicar sem aprovação.
+Métricas: relevância humana de shots (alvo inicial >=90%), licenças comprovadas 100% antes de publicar, clipping zero, desvio áudio/legenda medido, custo API alvo R$5/5min perfil econômico sujeito a orçamento, custo/minuto e custo de regeneração, tempo/hardware, perda de edição zero. Registre metodologia, amostra, confiança e falhas. Gate GO/NO-GO com evidência e rollback. Não prometer viralização, monetização, preço ou desempenho.

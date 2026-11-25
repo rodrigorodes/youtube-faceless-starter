@@ -28,3 +28,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-08 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Aceite complementar V4.1
+Homologar Apple Silicon/macOS com benchmark local, fontes, codecs e fallback; não declarar suporte antes de render real. Preview e render por segmentos conforme dependências, não exigir Remotion como renderer principal.

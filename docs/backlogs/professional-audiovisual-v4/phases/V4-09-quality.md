@@ -32,3 +32,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-09 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Aceite complementar V4.1
+Separar gate editorial pré-produção (V4-06) e QA pós-render. Calibrar correspondência semântica com avaliação humana, fixtures de época/local incorretos, reconstrução IA e repetição; evidência por shot. Nenhum score de viralização.
