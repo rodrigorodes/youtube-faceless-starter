@@ -4,14 +4,17 @@ from collections.abc import Callable, Mapping
 from pydantic import BaseModel, ConfigDict
 
 KINDS = ("text", "image", "voice", "renderer")
+OPTIONAL_KINDS = ("video",)
+ALL_CONFIG_KINDS = (*KINDS, *OPTIONAL_KINDS)
 # Portas que podem ser construídas pelo registro. `search` é capacidade de catálogo, não uma
-# chave de `Project.config`; por isso não entra em `KINDS` nem em `_DEFAULTS`.
-BUILD_KINDS = (*KINDS, "search")
+# chave obrigatória de `Project.config`.
+BUILD_KINDS = (*ALL_CONFIG_KINDS, "search")
 _DEFAULTS = {
     "text": ("STUDIO_TEXT", "opencode:openai/gpt-6-luna"),
     "image": ("STUDIO_IMAGE", "opencode:openrouter/recraft/recraft-v4.1-flash-v2:free"),
     "voice": ("STUDIO_VOICE", "piper:pt_BR-faber-medium"),
     "renderer": ("STUDIO_RENDERER", "ffmpeg:rich"),
+    "video": ("STUDIO_VIDEO", ""),
 }
 
 
@@ -26,14 +29,18 @@ class ProjectConfig(BaseModel):
     image: str
     voice: str
     renderer: str
+    video: str | None = None
 
     @classmethod
     def resolve(cls, overrides: Mapping[str, str], env: Mapping[str, str]) -> "ProjectConfig":
         """`env` é injetado (a composição passa os.environ): a camada de aplicação não lê o ambiente."""
-        unknown = set(overrides) - set(KINDS)
+        unknown = set(overrides) - set(ALL_CONFIG_KINDS)
         if unknown:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
-        return cls(**{k: overrides.get(k) or env.get(var) or default for k, (var, default) in _DEFAULTS.items()})
+        values = {k: overrides.get(k) or env.get(var) or default for k, (var, default) in _DEFAULTS.items()}
+        if not values.get("video"):
+            values.pop("video", None)
+        return cls(**values)
 
 
 _REGISTRY: dict[tuple[str, str], Callable[[str], object]] = {}
