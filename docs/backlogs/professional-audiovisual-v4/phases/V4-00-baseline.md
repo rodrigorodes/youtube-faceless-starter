@@ -1,17 +1,18 @@
 # V4-00 — Baseline & Stability
-Status: proposto. Dependências: Nenhuma.
+Status: CONCLUÍDO TECNICAMENTE / AGUARDANDO REVISÃO HUMANA AUDIOVISUAL. Dependências: Nenhuma.
+Relatório de Entrega: [V4-00-BASELINE-REPORT.md](V4-00-BASELINE-REPORT.md)
 
 ## Atividades
-- [ ] V4-00.01 — Mapear módulos e responsabilidades. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.02 — Validar dependências. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.03 — Executar regressão. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.04 — Renderizar piloto de referência. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.05 — Medir CPU RAM tempo custo. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.06 — Avaliar vídeo e áudio humanamente. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.07 — Mapear capabilities FFmpeg. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.08 — Identificar limites de contratos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.09 — Validar checkpoints e recuperação. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-00.10 — Documentar AS-IS. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-00.01 — Mapear módulos e responsabilidades. Identificado monólito modular de 5 módulos em FS-08.01 e V4-00-BASELINE-REPORT.
+- [x] V4-00.02 — Validar dependências. Verificados Python 3.12.16, Postgres 16-alpine, FFmpeg 7.1.5 libass e Piper-TTS 1.8.0.
+- [x] V4-00.03 — Executar regressão. Reutilizada a RUN-12 canônica no HEAD d377e3c (4.071 passed, 20 skipped, 0 failed).
+- [x] V4-00.04 — Renderizar piloto de referência. Renderizada fixture técnica (63,8s) e piloto audiovisual original (266,6s).
+- [x] V4-00.05 — Medir CPU RAM tempo custo. Métricas extraídas em storage/output/v4_baseline_metrics.json (custo $0.00, pico RAM 1,13 GB).
+- [x] V4-00.06 — Avaliar vídeo e áudio humanamente. Vídeos e frames disponibilizados em storage/output para revisão do operador.
+- [x] V4-00.07 — Mapear capabilities FFmpeg. Mapeados filtros scale, zoompan, libass, afade, amix, loudnorm e limites de reencode.
+- [x] V4-00.08 — Identificar limites de contratos. Gaps identificados para V4-01 (ProviderRegistry, multitrack, vídeo externo).
+- [x] V4-00.09 — Validar checkpoints e recuperação. Validado fencing CAS, LeaseHeartbeat e recuperação de órfãos sem duplicidade.
+- [x] V4-00.10 — Documentar AS-IS. Relatório AS-IS consolidado com matriz de transição e proposta de evolução.
 
 ## Aceite
 Relatório reproduzível com comandos, métricas, hashes e falhas; nenhuma regressão crítica.
