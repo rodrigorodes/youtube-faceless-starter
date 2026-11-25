@@ -18,3 +18,9 @@
 | V4-13 | Professional Pilot | Todas as fases aplicáveis | Comparação pareada com mesmo roteiro de baseline; três estilos quando orçamento permitir; aprovação humana e licença antes de publicar. |
 
 Ordem: 00; fundações 01/04/11/12; 02/03/05; 06/07/08; 09/10; 13. UX e QA incrementais desde a primeira entrega. Divida 04,11,12 em fundação e conclusão para evitar dependências circulares. Nenhuma estimativa de prazo é compromisso.
+
+## Complemento V4.1
+Preservar fases e IDs. Critérios vinculados em [consolidação](V4.1-CONSOLIDATION.md). Após fundações 01/04/11/12, entregar vertical slice 60–90s assim que capacidades mínimas 02/03/05/06/07/08 estiverem disponíveis; não esperar todas as atividades. V4-13 amplia para 5min e 15–20min, com benchmark humano e Mac. Reconciliar F3/F7; Finder FI-00–11 independente e integrado via ContentBrief. Ver [pilotos](PROFESSIONAL-PILOT-SPEC.md).
+
+## Pré-requisito compartilhado — Foundation & Stability
+[Plano mínimo](../foundation-stability/PLAN.md): 4–7 dias estimados, FS-01/02/04/07 P0; FS-05/06 P1 proporcionais ao uso local; FS-03 CI/CD adiado. Completar V4-00 com evidência reutilizada, sem repetir regressão/baseline quando válida. Não criar terceira iniciativa funcional nem antecipar V4-12 inteira.

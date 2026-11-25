@@ -28,3 +28,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-13 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Aceite complementar V4.1
+[Professional Pilot](../PROFESSIONAL-PILOT-SPEC.md): vertical slice antecipado, documentário 5min, 15–20min para tempo humano, Mac, comparação cega, custos e edição não destrutiva. Piloto integrado Finder/manual, nenhuma publicação sem aprovação. Metas propostas, não resultados.

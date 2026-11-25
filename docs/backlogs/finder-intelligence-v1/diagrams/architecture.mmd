@@ -1,0 +1,16 @@
+flowchart TD
+  UI[Finder UI and optional extension] --> FI[Finder application]
+  FI --> P[Shared provider registry and compliance gate]
+  P --> S[Authorized sources]
+  FI --> E[Evidence and opportunity brief]
+  E --> H{Human approval}
+  M[Manual topic] --> R[Shared research and editorial gate]
+  H --> R
+  R --> C[Creative Director]
+  C --> RP[Canonical RenderPlan]
+  RP --> T[Editable timeline]
+  T --> F[FFmpeg render and QA]
+  F --> PK[Packaging F7]
+  PK --> PUB[Approved publication]
+  PUB --> A[Authorized own-channel analytics]
+  A --> FI

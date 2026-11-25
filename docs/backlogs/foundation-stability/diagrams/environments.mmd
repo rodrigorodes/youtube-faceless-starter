@@ -1,0 +1,8 @@
+flowchart LR
+ D[DEV uso diario] 
+ T[TEST DB descartavel] --> E[E2E isolado sem custo ou upload]
+ E --> P[PILOT com autorizacao e teto]
+ T --> R[Evidencias sanitizadas]
+ E --> R
+ P --> R
+ D -. nao reutilizar volumes .- T

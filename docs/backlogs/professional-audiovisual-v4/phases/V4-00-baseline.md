@@ -24,3 +24,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-00 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Integração com Foundation & Stability
+Reusar evidências FS-01/02/04/07 e FS-05/06 quando aplicáveis, conforme [plano](../../foundation-stability/PLAN.md). Conferir SHA, configuração e validade; não repetir campanha sem motivo. Nenhum CI/CD exigido; gate local e baseline real não dispensados.

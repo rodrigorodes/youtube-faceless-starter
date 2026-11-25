@@ -26,3 +26,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-06 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Aceite complementar V4.1
+[Pesquisa editorial](../EDITORIAL-RESEARCH-SPEC.md): reconciliar V2-F3, claims e AutoResearch; gate antes de voz/mídia paga. Estilos Quick/Professional como política do mesmo core. ShotIntent e briefing do Finder opcional/manual, com evidência e originalidade.
