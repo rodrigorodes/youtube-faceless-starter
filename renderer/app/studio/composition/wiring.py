@@ -740,7 +740,7 @@ class Studio:
         # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma
         # transação). A leitura para retomada/retry/painel vem da mesma porta (`run_config`).
         production = Production(coordinator=coordinator, worker=worker,
-                                submit=tracked_submit(self._executor, worker.work, self._active_runs, max_active=settings.max_active_runs),
+                                submit=tracked_submit(self._executor, worker.work, self._active_runs, max_active=s.max_active_runs),
                                 in_flight=run_repo,
                                 effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo, budget_repo),
                                 config_store=run_repo,

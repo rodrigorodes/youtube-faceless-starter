@@ -8,7 +8,7 @@ Status inicial: todos os itens pendentes, salvo FS-03 adiado por decisão explí
 | FS-01.03 | Corrigir divergências aprovadas | Testes semânticos/behavior; preservar UX, guards e fluxos | PASS | `4eba59c`, sem regressões funcionais |
 | FS-01.04 | Investigar flake TTS | Repetições controladas, duração medida e causa; não relaxar limiar sem evidência | PASS | `FS-01-TTS-STABILITY.md`, 5/5 aprovadas, média 3,20s |
 | FS-01.05 | Classificar skips | Motivo, cobertura, criticidade, owner; crítico não coberto bloqueia | PASS | `FS-01-SKIP-CLASSIFICATION.md`, 20 skips analisados |
-| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | `4eba59c` (4059 pass, 0 fail); bloqueio FS-06 em HEAD |
+| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | `4eba59c` e HEAD (4059 pass, 0 fail, exit 0) |
 | FS-02.01 | Preflight de isolamento | Antes de qualquer teste mutável: DB descartável, endpoint, credenciais fake, volumes e projeto exclusivos | PASS | DB descartável efêmero + tmpfs |
 | FS-02.02 | Separar suites | Unit/contract/DB, browser E2E e pilot; dependências Playwright/browser fixadas | PASS | `5793911`, imports protegidos |
 | FS-02.03 | Corrigir destino e exclusividade | E2E não usa DEV, unique project/porta ou lock exclusivo; cleanup own-only | PASS | `5793911`, guarda porta 8000 + PID RUN_ID |

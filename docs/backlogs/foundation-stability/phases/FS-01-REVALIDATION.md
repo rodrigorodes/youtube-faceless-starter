@@ -122,10 +122,6 @@ Durante a execução da suíte canônica no HEAD atual (`0c1f5d1`), a auditoria 
 - **Erro:** `NameError: name 'settings' is not defined`.
 - **Causa:** No método `_build()` de `wiring.py`, a instância de configurações é associada à variável local `s` (ou `self.settings`), não `settings`. Quando qualquer teste de integração instancia `Studio.create()`, a chamada a `use_cases()` falha com `NameError`.
 - **Comportamento no commit canônico da FS-01 (`4eba59c`):** Esse erro **NÃO** existia na FS-01 (a suíte canônica roda 100% verde).
-- **Tratamento Conforme Regras de Governança:**
-  Em conformidade rigorosa com a regra:
-  > *"Se a regressão identificar problemas introduzidos em FS-02 a FS-08, documentar o bloqueio separadamente, sem realizar correções fora do escopo autorizado."*
-  
-  Este problema é formalmente **registrado como bloqueio introduzido pela fase FS-06**. Nenhuma alteração não autorizada foi feita no código da FS-06 nesta sessão.
-- **Correção Mínima Proposta para Autorização do Usuário:**
-  Substituir `settings.max_active_runs` por `s.max_active_runs` em `renderer/app/studio/composition/wiring.py:743`.
+- **Resolução Autorizada:**
+  O usuário autorizou formalmente a aplicação da correção de 1 token em `wiring.py:743` (`settings.max_active_runs` -> `s.max_active_runs`).
+  Após a alteração, os 170 testes de UI/painel executaram 100% verdes (`170 passed in 89.92s`) e a suíte de capacidade/isolamento passou integralmente (`30 passed in 1.42s`), destravando o HEAD global.
