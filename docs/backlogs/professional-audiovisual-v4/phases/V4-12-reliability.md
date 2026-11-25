@@ -30,3 +30,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-12 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento GAI-09/06
+Reusar Budget Guard e UsageRepository; separar billing local/assistido/API, estimativa, reserva e custo efetivo/subsídio, sem dupla contagem. Operação Veo assíncrona: reconciliar antes de retry, sem segundo submit pago. [GAI](../GAI-EXECUTION-PLAN.md).

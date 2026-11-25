@@ -7,3 +7,6 @@ Leia [consolidação](V4.1-CONSOLIDATION.md), [pilotos](PROFESSIONAL-PILOT-SPEC.
 
 ## Preparação enxuta (25/11/2026)
 Antes de iniciar novas funcionalidades, executar a [Foundation & Stability](../foundation-stability/README.md). Sem CI/CD nesta etapa; gates locais obrigatórios. Reutilizar plano de testes da main e evidências na V4-00.
+
+## Google AI Pro — complemento audiovisual
+Após Foundation/V4-00, leia [integração](GOOGLE-AI-PRO-INTEGRATION.md) e [backlog GAI](GAI-EXECUTION-PLAN.md). Priorizar importação genérica + modo assistido, sem API paga obrigatória. Não usar autenticação de assinatura em ferramentas não autorizadas. APIs/Drive são opt-in por fase.

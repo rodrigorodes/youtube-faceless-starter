@@ -28,3 +28,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-11 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento GAI-01/07
+Ingestão genérica com validação, licença, hash/escopo, mídia tipada e paths seguros; storage local canônico para render. Drive P2 como cópia complementar com OAuth próprio, escopo mínimo, verificação e restore. Não substituir backup integral. [GAI](../GAI-EXECUTION-PLAN.md).

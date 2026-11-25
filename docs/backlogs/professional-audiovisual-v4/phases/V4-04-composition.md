@@ -34,3 +34,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-04 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento GAI-01
+Fundação de ingestão imagem/vídeo tipada, validação/probe, revisão de cena, RenderPlan e policy de duração. Provar clipe MP4 real; catálogo de vídeo não basta. Reutilizar contratos e FS-08 quando justificado. [GAI](../GAI-EXECUTION-PLAN.md).

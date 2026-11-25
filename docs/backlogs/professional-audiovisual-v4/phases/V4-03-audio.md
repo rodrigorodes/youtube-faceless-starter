@@ -32,3 +32,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-03 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento mídia externa
+Importar trilha autorizada na track de música, nunca no slot visual; origem e direitos verificáveis, mix/ducking e duração conforme engine. Geração externa opcional. [GAI](../GOOGLE-AI-PRO-INTEGRATION.md).

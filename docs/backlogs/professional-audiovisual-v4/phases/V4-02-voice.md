@@ -29,3 +29,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-02 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento GAI-05
+Gemini TTS candidato opt-in, Piper padrão. Importação externa de voz somente via contrato de narração, duração/alinhamento comprovados. [GAI](../GAI-EXECUTION-PLAN.md).

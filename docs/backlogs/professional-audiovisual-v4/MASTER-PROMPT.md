@@ -6,3 +6,6 @@ Leia V4.1-CONSOLIDATION, SEMANTIC-MEDIA-SPEC, EDITORIAL-RESEARCH-SPEC, EDITABLE-
 
 ## Preparação aprovada
 Leia ../foundation-stability/README.md e PLAN.md antes de V4-00. Confirmar gates P0, reutilizar evidências e completar lacunas; não introduzir CI/CD ou infraestrutura corporativa nesta etapa. Gates locais e autorização humana permanecem obrigatórios.
+
+## Integração de assinatura pessoal
+Ler GOOGLE-AI-PRO-INTEGRATION e GAI-EXECUTION-PLAN quando tocar mídia/providers/UX/QA/storage. Reconciliar com HEAD, preservar Registry/AssetRepository/RenderPlan/Budget Guard, validar MIME/kind de vídeo ponta a ponta. Importação assistida genérica primeiro; não reutilizar OAuth/cookies de assinatura, não automatizar navegador, não inferir créditos. APIs oficiais opt-in, custo/reserva/reconciliação antes de chamadas; tests offline e autorização para live. Não criar terceiro MVP nem CI/CD.
