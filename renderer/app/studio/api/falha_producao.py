@@ -31,7 +31,7 @@ _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I),
            "afirmações que possam ser conferidas. Adicione uma fonte com texto colado: frases de 40 a 400 caracteres "
            "com número, data ou nome próprio. Uma URL sozinha, ou um texto curto, não conta. Só então tente de "
            "novo — repetir antes disso falha de novo.", "fontes", "Adicionar fonte")),
-    (r"automatic research .* found no source",
+    (r"automatic research .* found no source|pesquisa autom[áa]tica.*(?:n[ãa]o achou|n[ãa]o conseguiu)",
      Falha("A pesquisa automática não achou na Wikipédia um artigo sobre este tema (confira a grafia do tema). "
            "Corrija o tema ou adicione uma fonte com texto colado e tente de novo.", "fontes", "Adicionar fonte")),
     (r"paid operation .* was already confirmed",
@@ -49,6 +49,9 @@ _REGRAS: tuple[tuple[re.Pattern[str], Falha], ...] = tuple((re.compile(p, re.I),
            "capítulos), corrija as fontes ou o tema e gere o roteiro de novo.", "cenas", "Revisar cenas")),
     (r"render did not finish",
      Falha("A renderização não terminou com sucesso. Abra a execução para ver o motivo e tente novamente.")),
+    (r"ScriptRejected|claim_ids is required",
+     Falha("O roteiro gerado pelo modelo não citou fatos em todas as cenas ou foi recusado pela validação editorial. "
+           "Adicione ou refine as fontes e tente gerar novamente.", "fontes", "Revisar fontes")),
     (r"qa gate refused|qa failed|no successful render to verify|no qa report|render and a qa report",
      Falha("A verificação de qualidade (QA) não passou ou não pôde rodar. Veja os apontamentos na aba "
            "Qualidade & Aprovação.", "qualidade", "Abrir qualidade")),

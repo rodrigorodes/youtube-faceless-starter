@@ -97,6 +97,13 @@ def test_opencode_failures_become_model_unavailable(response):
         opencode(lambda r: response).complete("p")
 
 
+def test_opencode_upstream_rejection_424_is_pre_effect_and_carries_the_reason():
+    response = httpx.Response(424, json={"detail": "upstream rejected: subscription_sharing_usage_limit_exceeded"})
+    with pytest.raises(PreEffectFailure) as err:
+        opencode(lambda r: response).complete("p")
+    assert "subscription_sharing_usage_limit_exceeded" in str(err.value)
+
+
 def test_opencode_network_error_and_missing_token():
     def boom(request):
         raise httpx.ConnectError("down")

@@ -21,9 +21,11 @@ from app.main import app  # noqa: E402
 
 AUTH = ("test-user", "test-browser-password")
 
-# W1.5: sete seções do protótipo. Estas continuam sendo redirecionamento para a tela canônica.
+# W1.5: quatro seções do protótipo. Estas continuam sendo redirecionamento para a tela canônica.
 # `estilos` e `identidade` são apelidos legados (não aparecem no menu) que não podem virar 404.
 REDIRECTS = {
+    # ACH-07: a lista de canais é única; a seção de Configurações aponta para a tela canônica.
+    "canais": "/studio/canais",
     "estilos": "/studio/panel/estilos",
     "conexoes": "/studio/panel/conexoes",
     "equipe": "/studio/panel/equipe",
@@ -32,7 +34,7 @@ REDIRECTS = {
 }
 
 # W1.5: seções com página própria (`panel_settings`), renderizadas pela aplicação — sem redirect.
-OWN_PAGES = ("canais", "estrategia", "marca", "producao")
+OWN_PAGES = ("estrategia", "marca", "producao")
 
 
 @pytest.mark.parametrize("section,target", REDIRECTS.items())

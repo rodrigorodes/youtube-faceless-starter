@@ -7,6 +7,7 @@ do canal (nome + id) aparece **antes** do controle de vínculo (§5.4), e as aç
 por um `<dialog>` nativo com o efeito explícito.
 """
 import base64
+import html
 import re
 import sys
 from pathlib import Path
@@ -124,7 +125,8 @@ def settings_nav_items(html: str):
 
 
 def _nav_text(item: str) -> str:
-    return " ".join(re.sub(r"<[^>]+>", " ", item).split())
+    # Os glifos do protótipo são `aria-hidden`: não fazem parte do rótulo acessível.
+    return " ".join(html.unescape(re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", " ", item)).split())
 
 
 # ------------------------------------------------------------------ contrato
@@ -221,10 +223,9 @@ def test_connections_page_menu_has_conexoes_active_in_gestao(env):
     assert len(section_active) == 1 and "Conexões" in _nav_text(section_active[0])
     assert re.search(r'href="/studio/panel/conexoes(?:\?project_id=[^"]+)?"', section_active[0])
     assert _without_style_and_script(html).count('aria-current="page"') == 2
-    # As sete seções do protótipo seguem como destinos reais; nada de "Configurações — em breve".
+    # As quatro seções do protótipo seguem como destinos reais; nada de "Configurações — em breve".
     assert [_nav_text(item) for item in sections] == [
-        "Canais", "Estratégia editorial", "Marca e estilo", "Produção e orçamento",
-        "Conexões e providers", "Conta e equipe", "Avançado e diagnóstico"]
+        "Canais", "Marca & Editorial", "Produção & Orçamento", "Conexões & Equipe"]
     assert "em breve" not in html
     assert not any('aria-disabled="true"' in item for item in items + sections)
 

@@ -281,7 +281,9 @@ def _style_options(view: NewVideoView, disabled: str) -> str:
     herdado; sem estilo no canal, é o padrão do estúdio. Nenhum estilo fictício é criado.
     """
     inherit = view.inherited_style_name or "Padrão do estúdio (canal sem estilo)"
-    cards = [_style_choice("", inherit, True, disabled)]
+    # Mesmo texto da tela de vídeo (`panel_video.py`): a opção de valor vazio se anuncia como
+    # herança do canal, não como mais um estilo da biblioteca.
+    cards = [_style_choice("", f"Herdar do canal ({inherit})", True, disabled)]
     cards.extend(_style_choice(style_id, name, False, disabled)
                  for style_id, name in view.styles if name != view.inherited_style_name)
     return f'<div class="grid3">{"".join(cards)}</div>'
@@ -324,6 +326,14 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
                   if view.has_profile else "Canal sem perfil: valem os padrões do estúdio para voz e estilo.")
     voz = e(view.channel_voice) if (view.has_profile and view.channel_voice) else "padrão do estúdio"
     estilo = e(view.inherited_style_name) if view.inherited_style_name else "padrão do estúdio"
+    idioma = _language_label(view.channel_language) if view.channel_language else "nenhum idioma definido"
+    preset_card = f"""<div class="card" id="predefinicao-canal">
+          <div class="between"><h3>Predefinição do canal</h3><span class="pill">herdada</span></div>
+          <p class="sub" style="margin:4px 0 10px">O que o canal define e este vídeo herda. Mudar aqui vale só para este vídeo.</p>
+          <div class="between sub" style="padding:2px 0"><span>Idioma</span><b style="color:var(--text)">{e(idioma)}</b></div>
+          <div class="between sub" style="padding:2px 0"><span>Voz</span><b style="color:var(--text)">{voz}</b></div>
+          <div class="between sub" style="padding:2px 0"><span>Estilo</span><b style="color:var(--text)">{estilo}</b></div>
+        </div>"""
     voz_vinculo = (' <span class="pill" style="margin-left:6px">padrão do canal</span>'
                    if (view.has_profile and view.channel_voice) else "")
     estilo_vinculo = (' <span class="pill" style="margin-left:6px">vinculado ao canal</span>'
@@ -360,6 +370,7 @@ def render_new_video_v3(view: NewVideoView) -> tuple[str, dict[str, str]]:
           </div>
         </div>
         {gate}
+        {preset_card}
 
         <form id="form-novo-video" novalidate>
           <div class="two">

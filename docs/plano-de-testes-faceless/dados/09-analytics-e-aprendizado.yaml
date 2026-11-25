@@ -1,0 +1,298 @@
+{
+  "capitulo": "09-analytics-e-aprendizado",
+  "titulo": "Analytics e aprendizado",
+  "resumo": "Plano documental com oito cenários A_PROJETAR; referências existentes não significam testes executados.",
+  "como_funciona": "A coleta exige canal conectado, escopo de leitura e publicação com ID remoto. Observações têm origem, janela, unidade e vínculo de versão. Dashboard deduplica observações e separa formatos; recomendações são propostas humanas, não mudanças automáticas.",
+  "limites_gerais": "Executar futuramente com portas mock e Postgres descartável. Não acessar métricas reais nem credenciais. Alertas operacionais são passivos e distintos de inferência de desempenho editorial.",
+  "regras": [
+    {
+      "id": "ANA.R01",
+      "natureza": "confirmada no código",
+      "resumo": "Sem prontidão, coleta não chama provedor; ausência não equivale a zero.",
+      "fontes": [
+        "renderer/app/studio/application/analytics_collection.py:148-192",
+        "renderer/app/studio/application/analytics_collection.py:203-232"
+      ]
+    },
+    {
+      "id": "ANA.R02",
+      "natureza": "confirmada no código e contrato de teste",
+      "resumo": "ID determinístico por vídeo/métrica/janela/ID remoto permite persistência idempotente; pilar deve pertencer ao projeto.",
+      "fontes": [
+        "renderer/app/studio/application/analytics_collection.py:165-173",
+        "renderer/app/studio/application/analytics_collection.py:207-230",
+        "tests/test_analytics_repo.py:121-144"
+      ]
+    },
+    {
+      "id": "ANA.R03",
+      "natureza": "confirmada no código e contrato de teste",
+      "resumo": "Dashboard mantém recorte por vídeo/pilar/período, separa short e long, não faz média de taxas nem soma cobertura incompleta.",
+      "fontes": [
+        "renderer/app/studio/application/analytics_dashboard.py:1-10",
+        "tests/test_analytics_dashboard.py:226-272",
+        "tests/test_analytics_repo.py:144-155"
+      ]
+    },
+    {
+      "id": "ANA.R04",
+      "natureza": "confirmada no código",
+      "resumo": "Amostra mínima é três vídeos comparáveis; recomendação tem revisão humana e não aplicação automática; versões ausentes recebem motivo.",
+      "fontes": [
+        "renderer/app/studio/application/analytics_dashboard.py:60",
+        "renderer/app/studio/application/analytics_dashboard.py:225-238",
+        "renderer/app/studio/application/analytics_collection.py:97-125"
+      ]
+    },
+    {
+      "id": "ANA.R05",
+      "natureza": "confirmada no código",
+      "resumo": "Valores conhecidos precisam ser finitos, não negativos e percentuais até 100; observação mais recente vence dedupe.",
+      "fontes": [
+        "renderer/app/studio/application/analytics_collection.py:128-136",
+        "renderer/app/studio/application/analytics_dashboard.py:301-315"
+      ]
+    },
+    {
+      "id": "ANA.R06",
+      "natureza": "confirmada no código",
+      "resumo": "Alerta bridge é local ao processo e expira em 300 s; expiração OAuth exige metadado confiável com timezone e não prova validade do token.",
+      "fontes": [
+        "renderer/app/studio/application/observability.py:11-54"
+      ]
+    }
+  ],
+  "cenarios": [
+    {
+      "id": "ANA-01",
+      "titulo": "Coleta autorizada com origem e versões",
+      "tipo": "feliz",
+      "regras": [
+        "ANA.R01",
+        "ANA.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Rastrear métricas ao vídeo publicado.",
+      "pre_condicoes": [
+        "Canal de fixture conectado com escopo; vídeo com script_version=2 e publicação/ID remoto."
+      ],
+      "exemplo": {
+        "dados": "Janela de 7 dias terminada em instante UTC fixo; views=120.0 e ctr=3.5.",
+        "passos": [
+          "Coletar pela porta mock.",
+          "Consultar observações persistidas e dashboard.",
+          "Inspecionar vínculos ausentes."
+        ]
+      },
+      "esperado": "Valores medidos preservam origem API, unidade, janela e versões conhecidas; brief/packaging ausentes exibem motivo, sem versão inventada.",
+      "limitacoes": "Texto atual de atribuição declara brief/packaging não persistidos; revisar se a persistência evoluir.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_analytics_collection.py:133; tests/test_analytics_dashboard.py:260."
+      }
+    },
+    {
+      "id": "ANA-02",
+      "titulo": "Canal sem prontidão e dashboard vazio",
+      "tipo": "erro/borda",
+      "regras": [
+        "ANA.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar números fictícios ou chamada não autorizada.",
+      "pre_condicoes": [
+        "Fixtures separadas sem canal, sem escopo e sem publicação remota."
+      ],
+      "exemplo": {
+        "dados": "Projeto vazio; vídeo local sem youtube_video_id.",
+        "passos": [
+          "Solicitar coleta em cada variante.",
+          "Abrir dashboard.",
+          "Repetir com erro de autorização e timeout controlado na porta pronta."
+        ]
+      },
+      "esperado": "Sem prontidão há zero chamadas; estado indisponível traz motivo e não 0%; falhas conhecidas da porta não viram métricas medidas; vazio informa ausência.",
+      "limitacoes": "Timeout deve ser convertido para AnalyticsUnavailable pela porta; exceção arbitrária não está garantida pelo serviço.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_analytics_collection.py:111-174; tests/test_analytics_dashboard.py:179."
+      }
+    },
+    {
+      "id": "ANA-03",
+      "titulo": "Repetição e concorrência de coleta",
+      "tipo": "concorrencia/regressao",
+      "regras": [
+        "ANA.R02",
+        "ANA.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não multiplicar observações nem somar retries.",
+      "pre_condicoes": [
+        "Postgres descartável; duas coletas sincronizadas com mesma chave lógica."
+      ],
+      "exemplo": {
+        "dados": "Vídeo v1, mesma janela, views=100.0; terceira coleta em janela diferente com views=130.0.",
+        "passos": [
+          "Coletar duas vezes sequencialmente e duas em paralelo.",
+          "Consultar chaves/contagens persistidas.",
+          "Inserir nova janela e consultar dedupe no dashboard."
+        ]
+      },
+      "esperado": "Uma observação por chave lógica, sem erro de unicidade exposto; janela distinta é preservada; dashboard escolhe coleta mais recente sem somar duplicatas.",
+      "limitacoes": "Concorrência é garantia desejada a ampliar; testes existentes de idempotência sequencial não a comprovam.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_analytics_collection.py:205; tests/test_analytics_repo.py:121; tests/test_analytics_dashboard.py:364; paralelo proposto."
+      }
+    },
+    {
+      "id": "ANA-04",
+      "titulo": "Filtros e isolamento de recortes",
+      "tipo": "borda",
+      "regras": [
+        "ANA.R02",
+        "ANA.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Não misturar canais, vídeos, pilares ou períodos.",
+      "pre_condicoes": [
+        "Projetos A/B; pilares próprios; medições dentro e fora da janela."
+      ],
+      "exemplo": {
+        "dados": "A contém v1/p1 e v2/p2; B contém v3/p3; janela de 7 dias e observação de 30 dias atrás.",
+        "passos": [
+          "Filtrar A por v1 e p1.",
+          "Trocar período e conferir linhas e cobertura.",
+          "Solicitar v3/p3 no contexto A."
+        ]
+      },
+      "esperado": "Somente linhas pertencentes ao recorte; ausência tem motivo; vídeo/pilar estrangeiro é recusado em vez de atribuído a A.",
+      "limitacoes": "Filtros analíticos não substituem revisão de autorização multiusuário; não afirmar isolamento completo de tenant.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_analytics_repo.py:144; tests/test_analytics_collection.py:192; tests/test_analytics_dashboard.py:356."
+      }
+    },
+    {
+      "id": "ANA-05",
+      "titulo": "Zero, ausência e agregação honesta",
+      "tipo": "regressao",
+      "regras": [
+        "ANA.R01",
+        "ANA.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Impedir agregado enganoso.",
+      "pre_condicoes": [
+        "Medições sintéticas short/long, origens e cobertura controladas."
+      ],
+      "exemplo": {
+        "dados": "Short s1 views=0; s2 views ausente; long l1 views=200; CTRs 2% e 20%.",
+        "passos": [
+          "Consultar cada vídeo.",
+          "Consultar agregado por formato com cobertura incompleta.",
+          "Misturar origens e consultar CTR agregado."
+        ]
+      },
+      "esperado": "Zero é exibido como zero; ausência não vira zero; short/long separados; views incompletas não somadas; CTR não é média simples 11%; origem mista é desconhecida.",
+      "limitacoes": "Não inferir taxa ponderada sem denominadores; rótulos não comprovam estatística causal.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "Existentes: tests/test_analytics_dashboard.py:212-253; tests/test_analytics_learning.py:204-238."
+      }
+    },
+    {
+      "id": "ANA-06",
+      "titulo": "Limites numéricos e resposta inválida",
+      "tipo": "erro/borda",
+      "regras": [
+        "ANA.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Recusar dados inválidos sem persistência parcial.",
+      "pre_condicoes": [
+        "Porta mock e repositório espião; coleção inicialmente vazia."
+      ],
+      "exemplo": {
+        "dados": "ctr=0.0/100.0/100.1; views=-1.0; NaN; infinito; métrica desconhecida; payload malformado.",
+        "passos": [
+          "Coletar casos válidos de fronteira.",
+          "Injetar cada inválido após um ponto válido.",
+          "Inspecionar erro e chamadas de save_measurements."
+        ]
+      },
+      "esperado": "Fronteiras válidas persistem; inválidos recusam lote sem salvar parte. Desejado na API: indisponibilidade explícita sem stack trace; verificar mapeamento antes de afirmar essa garantia.",
+      "limitacoes": "Validação dos pontos ocorre fora do try da porta no serviço: resposta inválida pode propagar AnalyticsUnavailable; tratamento HTTP não comprovado nesta leitura.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Existentes: tests/test_analytics_collection.py:271-282; extensão proposta ao serviço e API."
+      }
+    },
+    {
+      "id": "ANA-07",
+      "titulo": "Recomendação exige amostra e decisão humana",
+      "tipo": "borda/regressao",
+      "regras": [
+        "ANA.R03",
+        "ANA.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Separar aprendizagem de alteração automática.",
+      "pre_condicoes": [
+        "Pilar com vídeos comparáveis e medições reais de fixture; configurações registradas antes."
+      ],
+      "exemplo": {
+        "dados": "Dois vídeos, depois três do mesmo formato/pilar; decisão aceitar e depois recusar.",
+        "passos": [
+          "Gerar dashboard com dois e três vídeos.",
+          "Registrar decisão da recomendação elegível.",
+          "Reabrir histórico e comparar configurações."
+        ]
+      },
+      "esperado": "Dois vídeos não geram recomendação suficiente; três podem gerar proposta de baixa confiança com observações; decisão fica registrada sem mudar configuração; histórico não declara A/B nativo da plataforma.",
+      "limitacoes": "Três é limiar de produto, não significância estatística; não promete ganho de audiência.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_analytics_dashboard.py:285-323; tests/test_analytics_repo.py:299."
+      }
+    },
+    {
+      "id": "ANA-08",
+      "titulo": "Alertas passivos e leitura em volume",
+      "tipo": "volume/borda",
+      "regras": [
+        "ANA.R03",
+        "ANA.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Manter alertas precisos e medir custo de consulta sem inventar SLA.",
+      "pre_condicoes": [
+        "Relógio fake; 100 vídeos sintéticos com cinco métricas por janela; sem rede."
+      ],
+      "exemplo": {
+        "dados": "Falha bridge repetida; avanço de 299 e 300 s; expiração OAuth em 7 dias; 500 observações.",
+        "passos": [
+          "Observar falha repetida e expiração do estado.",
+          "Consultar dashboard 30 vezes após cinco aquecimentos.",
+          "Medir p50/p95, contagens e consumo, com recursos da máquina registrados."
+        ]
+      },
+      "esperado": "Alerta bridge não duplica na mesma sequência; aos 300 s estado unknown; expiração não declara autenticação válida. Meta exploratória proposta: p95 local até 2 s para esse conjunto, sem perda de linhas.",
+      "limitacoes": "Meta depende do hardware e deve ser calibrada; não é SLA. Alerta é por processo, não consenso distribuído; desempenho ainda não medido.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "Existentes: tests/test_alerts_p06.py:17-111; benchmark de dashboard proposto."
+      }
+    }
+  ],
+  "prefixo": "ANA"
+}

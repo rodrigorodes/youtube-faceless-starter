@@ -283,13 +283,13 @@ def test_new_video_page_shows_the_real_styles_of_the_selected_channel(env):
     _channel(env, env["project"].id, style_id=style.id)
     html = env["client"].get(f"/studio/panel/novo-video?project_id={env['project'].id}",
                              headers=AUTH_HEADER).text
-    bloco = [m for m in re.findall(r'<fieldset class="pills"[^>]*>.*?</fieldset>', html, re.S)
-             if 'name="estilo-novo"' in m][0]
+    bloco = html.split('aria-label="Estilo visual">', 1)[1].split("</details>", 1)[0]
     assert "Cinema Noturno" in bloco and "Clean Tech" in bloco
-    assert "Herdar do canal — Cinema Noturno" in bloco
+    assert "Herdar do canal (Cinema Noturno)" in bloco
     assert 'value="" checked' in bloco
+    # "Cinemático" é um ritmo de corte legítimo fora do bloco de estilos; no bloco, não pode existir.
     for ficticio in ("Cinemático", "Documentário", "Tech Clean"):
-        assert ficticio not in html
+        assert ficticio not in bloco
     assert_ux_contract(html, page="painel/novo-video")
 
 
@@ -352,10 +352,10 @@ def test_new_video_preset_reads_the_channel_language_and_voice(env):
     _channel(env, env["project"].id, language="en-US", voice="piper:voz-do-canal")
     html = env["client"].get(f"/studio/panel/novo-video?project_id={env['project'].id}",
                              headers=AUTH_HEADER).text
-    aside = re.search(r'<aside class="painel" aria-labelledby="t-preset">(.*?)</aside>', html, re.S).group(1)
-    assert "Inglês (EUA)" in aside
-    assert "piper:voz-do-canal" in aside
-    assert "Português (BR)" not in aside
+    # A predefinição do canal vive no cartão "Predefinição do canal" (fora do Resumo do protótipo).
+    assert "Inglês (EUA)" in html
+    assert "piper:voz-do-canal" in html
+    assert "Português (BR)" not in html
 
 
 # ------------------------------------ patch de estilo persistido no vídeo (F05.T02)

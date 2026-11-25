@@ -185,6 +185,7 @@ class PixabayMediaSearch:
 
         pixabay_orientation = ORIENTATION_MAP[orientation]
 
+        safe_per_page = max(3, min(per_page, 80))
         try:
             with httpx.Client(transport=self._transport, timeout=self._timeout, trust_env=False) as client:
                 if media_type == "video":
@@ -193,7 +194,7 @@ class PixabayMediaSearch:
                         "q": text,
                         "video_type": "all",
                         "orientation": pixabay_orientation,
-                        "per_page": per_page,
+                        "per_page": safe_per_page,
                         "safesearch": "true",
                     }
                     response = client.get(VIDEO_SEARCH_URL, params=params)
@@ -210,7 +211,7 @@ class PixabayMediaSearch:
                         "q": text,
                         "image_type": "photo",
                         "orientation": pixabay_orientation,
-                        "per_page": per_page,
+                        "per_page": safe_per_page,
                         "safesearch": "true",
                     }
                     response = client.get(IMAGE_SEARCH_URL, params=params)

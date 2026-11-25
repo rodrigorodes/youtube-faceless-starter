@@ -59,10 +59,14 @@ class ProviderService:
 
     def _spec_for(self, configured: Mapping[str, str], kind: ProviderKind) -> str | None:
         """Spec do projeto para a porta; capacidades sem config (ex.: ``search``) usam o
-        primeiro nome registrado no catálogo. ``None`` quando não há implementação."""
+        primeiro nome registrado no catálogo (preferindo uma implementação validada/disponível).
+        ``None`` quando não há implementação."""
         spec = configured.get(kind.value)
         if spec:
             return spec
+        validated_names = [impl.name for impl in self.implementations if impl.kind == kind and impl.validated]
+        if validated_names:
+            return f"{validated_names[0]}:"
         names = registered_names(self.implementations, kind)
         return f"{names[0]}:" if names else None
 

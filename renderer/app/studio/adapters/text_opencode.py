@@ -69,6 +69,12 @@ class OpenCodeText:
                 self._alerts.observe(False)
             status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
             message = f"OpenCode bridge failed: {type(exc).__name__}{status}; is scripts/opencode-bridge.py running?"
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 424:
+                # o bridge diz por que o provedor recusou (ex.: limite da assinatura): vai ao operador
+                try:
+                    message = f"OpenCode provider rejected the request: {str(exc.response.json()['detail'])[:240]}"
+                except (ValueError, KeyError, TypeError):
+                    pass
             # Requisição recusada (4xx) ou nunca enviada (conexão): nenhum efeito externo pago.
             if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)) or (
                     isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500):

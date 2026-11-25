@@ -38,9 +38,17 @@ def git(*args):
                           stderr=subprocess.DEVNULL).stdout
 
 
+# Trilhas CC0 de exemplo vivem em storage/music-candidates e sao referenciadas pelo
+# produto e por testes. Nao sao segredos: ficam fora do bloqueio por diretorio, mas
+# continuam sujeitas a varredura de conteudo (has_secret) como qualquer outro arquivo.
+SAMPLE_MEDIA_PREFIXES = ("storage/music-candidates/",)
+
+
 def blocked(path):
     p = Path(path)
     name = p.name.lower()
+    if path.startswith(SAMPLE_MEDIA_PREFIXES):
+        return False
     return (bool(set(part.lower() for part in p.parts) & BLOCKED_DIRS)
             and path not in KEEP_FILES
             or name == ".env" or name.startswith(".env.") and name != ".env.example"

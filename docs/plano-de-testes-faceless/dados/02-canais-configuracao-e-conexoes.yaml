@@ -1,0 +1,259 @@
+{
+  "titulo": "02 — Canais, configuração e conexões",
+  "regras": [
+    {
+      "id": "CFG.R01",
+      "fontes": [
+        "renderer/app/studio/application/channel_creation.py:1-9",
+        "tests/test_channel_preferences_api.py:28-90"
+      ],
+      "resumo": "Canal reúne projeto, perfil, revisão, budget e configuração; criação transacional aceita replay da chave com mesmo payload e recusa divergência. Chave ausente é aceita pela API atual."
+    },
+    {
+      "id": "CFG.R02",
+      "fontes": [
+        "renderer/app/studio/api/active_channel.py:1-11",
+        "renderer/app/studio/api/active_channel.py:50-69",
+        "renderer/app/studio/api/routes.py:1111"
+      ],
+      "resumo": "project_id propaga contexto de navegação; vídeo mantém seu projeto proprietário. Canal não é tenant nem fronteira de autenticação."
+    },
+    {
+      "id": "CFG.R03",
+      "fontes": [
+        "renderer/app/studio/domain/effective_config.py:570-655",
+        "renderer/app/studio/domain/effective_config.py:336-365",
+        "renderer/app/studio/application/production.py:795-825",
+        "renderer/app/studio/application/production.py:906"
+      ],
+      "resumo": "Estilo do vídeo precede canal e default; patches seguem vídeo > canal > estilo > motor. Snapshot criativo é canônico e não carrega segredos, saldo ou autorização; retomada não resolve configuração novamente."
+    },
+    {
+      "id": "CFG.R04",
+      "fontes": [
+        "renderer/app/studio/application/channel_creation.py:91-153",
+        "renderer/app/studio/application/channel_budget.py:38-67",
+        "tests/test_channel_preferences_api.py:151-171"
+      ],
+      "resumo": "Preferências incluem modo e formato padrão; limites soft não podem exceder hard. Budget mede canal e global separadamente e nenhum canal afrouxa o teto global."
+    },
+    {
+      "id": "CFG.R05",
+      "fontes": [
+        "renderer/app/studio/application/connections.py:197-224",
+        "renderer/app/studio/application/connections.py:227-276",
+        "tests/test_connections_service.py:342-362"
+      ],
+      "resumo": "Conexões separam conta Google, identidade YouTube, grant e vínculo ao perfil; estado exibido deriva do cofre. Revogação de autorização deve afetar somente o vínculo escolhido."
+    },
+    {
+      "id": "CFG.R06",
+      "fontes": [
+        "renderer/app/studio/api/routes.py:1956-2029",
+        "renderer/app/studio/api/routes.py:160-184"
+      ],
+      "resumo": "Equipe resolve ator pelo STUDIO_BROWSER_USER e vínculo organizacional, aplicando RBAC; o seletor de canal não cria identidade individual. O guard geral também aceita worker."
+    }
+  ],
+  "como_funciona": "A interface seleciona um projeto como canal ativo, enquanto produção preserva o dono do vídeo e congela configuração criativa por run. Conexões OAuth são entidades distintas do perfil editorial. Equipe possui vínculos organizacionais, mas o principal HTTP continua o operador configurado.",
+  "resumo": "8 cenários GC, todos A_PROJETAR e não executados. Abrange criação, preferências, idempotência concorrente, navegação, snapshot, orçamento, conexões e equipe. Banco e navegador exigem ambientes descartáveis.",
+  "cenarios": [
+    {
+      "id": "CFG.C01",
+      "titulo": "Criar canal com preferências e limites",
+      "tipo": "feliz",
+      "regras": [
+        "CFG.R01",
+        "CFG.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Persistir canal completo e preferências sem configuração parcial.",
+      "pre_condicoes": [
+        "Postgres descartável comprovado; cliente autenticado sintético; nenhuma chamada de provedor."
+      ],
+      "exemplo": [
+        "POST /studio/channels/transactional com name=Canal História, default_mode=diretor, default_format=long, hard_monthly_usd=30, soft_monthly_usd=15 e Idempotency-Key=cfg-criar-1.",
+        "Ler perfil e budget; reiniciar somente o cliente e consultar novamente."
+      ],
+      "esperado": "201 com projeto/perfil/budget vinculados, modo diretor, formato long, hard 30 e soft 15 persistidos; revisão inicial existente.",
+      "limitacoes": "Testes de API não substituem validação visual do formulário.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "tests/test_channel_preferences_api.py:28-44; extensão proposta para revisão e releitura"
+      }
+    },
+    {
+      "id": "CFG.C02",
+      "titulo": "Criação concorrente e replay divergente",
+      "tipo": "concorrencia",
+      "regras": [
+        "CFG.R01"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Evitar duplicação por duplo envio e detectar chave reutilizada incorretamente.",
+      "pre_condicoes": [
+        "Banco descartável; duas conexões independentes e barreira de início."
+      ],
+      "exemplo": [
+        "Enviar simultaneamente duas criações name=Canal Replay com Idempotency-Key=cfg-replay-1.",
+        "Reenviar a mesma chave alterando name para Outro Canal; contar projetos/perfis/revisões."
+      ],
+      "esperado": "Envios equivalentes retornam os mesmos IDs sem duplicação; payload divergente retorna 409 e preserva o primeiro canal.",
+      "limitacoes": "Cliente compartilhado não comprova corrida de conexões; usar conexões reais isoladas.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "tests/test_channel_preferences_api.py:47-77,208; proposta de contagem transacional"
+      }
+    },
+    {
+      "id": "CFG.C03",
+      "titulo": "Soft acima do hard e chave ausente",
+      "tipo": "borda",
+      "regras": [
+        "CFG.R01",
+        "CFG.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "media",
+      "objetivo": "Fixar limites de validação e comportamento real da chave opcional.",
+      "pre_condicoes": [
+        "Cliente autenticado com banco descartável."
+      ],
+      "exemplo": [
+        "Criar com hard_monthly_usd=30 e soft_monthly_usd=31; repetir com soft=30.",
+        "Fazer uma criação válida sem Idempotency-Key; não repetir como se houvesse garantia de replay."
+      ],
+      "esperado": "Soft maior é recusado sem canal parcial; igualdade é aceita. Criação sem chave retorna 201 conforme contrato atual, sem presumir deduplicação entre pedidos.",
+      "limitacoes": "Ausência de chave é comportamento existente, não recomendação para clientes.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "tests/test_channel_preferences_api.py:86-90,151-171"
+      }
+    },
+    {
+      "id": "CFG.C04",
+      "titulo": "Navegar entre dois canais sem transferir vídeo",
+      "tipo": "regressao",
+      "regras": [
+        "CFG.R02"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Separar contexto visual de propriedade e autorização.",
+      "pre_condicoes": [
+        "Canal A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; vídeo V pertence a A."
+      ],
+      "exemplo": [
+        "Abrir tendências com project_id=B e seguir para configurações.",
+        "Abrir URL do vídeo V a partir do mesmo navegador e examinar links externos e downloads."
+      ],
+      "esperado": "Links de páginas mantêm B; URL e dados do vídeo continuam derivados de A. Links externos/downloads não recebem project_id. Mesmo operador pode acessar A e B; não alegar isolamento tenant.",
+      "limitacoes": "Verificação do HTML puro não comprova navegação browser completa.",
+      "automacao": {
+        "camada": "browser",
+        "referencia": "tests/test_active_channel.py como base; automação browser proposta"
+      }
+    },
+    {
+      "id": "CFG.C05",
+      "titulo": "Precedência de estilo e snapshot imutável",
+      "tipo": "regressao",
+      "regras": [
+        "CFG.R03"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Impedir alterações silenciosas na retomada de um run.",
+      "pre_condicoes": [
+        "Estilo válido com music.bpm=100, override de canal=110 e de vídeo=120; repositório de runs descartável."
+      ],
+      "exemplo": [
+        "Resolver configuração e iniciar run R; conferir bpm=120 e provenance=video.",
+        "Alterar override do canal para 130 e retomar R; criar um novo run sem override do vídeo.",
+        "Tentar inserir api_key em documento criativo."
+      ],
+      "esperado": "R mantém hash e bpm 120; novo run usa 130 com origem channel. Documento com api_key é recusado; nenhum segredo ou saldo integra snapshot.",
+      "limitacoes": "Snapshot criativo não congela autorização, preço ou disponibilidade; testes de domínio não provam transação SQL.",
+      "automacao": {
+        "camada": "local-integrado",
+        "referencia": "tests/test_effective_config.py; automação proposta para retomada baseada em renderer/app/studio/application/production.py:795-825,906"
+      }
+    },
+    {
+      "id": "CFG.C06",
+      "titulo": "Gasto de A não é gasto de B",
+      "tipo": "borda",
+      "regras": [
+        "CFG.R04"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Manter escopos de budget sem relaxar teto global.",
+      "pre_condicoes": [
+        "Usage fake: A gastou 90 USD, B gastou 5; soft de B=20; teto global configurado=15."
+      ],
+      "exemplo": [
+        "Projetar próxima etapa de vídeo de B; consultar resumo de B e global.",
+        "Repetir para run sem video_id e tentar configurar soft maior que hard."
+      ],
+      "esperado": "Projeção de B usa gasto 5 e teto min(20,15)=15; run sem vídeo usa gasto global. Soft inválido é recusado; A não aparece como consumo individual de B.",
+      "limitacoes": "Este cenário verifica projeção, não reserva concorrente nem cobrança real.",
+      "automacao": {
+        "camada": "unit",
+        "referencia": "renderer/app/studio/application/channel_budget.py:57-67; automação proposta com bases tests/test_channel_budget.py e tests/test_channel_budget_service.py"
+      }
+    },
+    {
+      "id": "CFG.C07",
+      "titulo": "Vincular, desconectar e revogar autorização isolada",
+      "tipo": "feliz",
+      "regras": [
+        "CFG.R05"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Preservar separação entre perfil editorial e identidades OAuth.",
+      "pre_condicoes": [
+        "Repositórios fake com duas autorizações e dois canais YouTube; cofre em memória com tokens sintéticos."
+      ],
+      "exemplo": [
+        "Vincular perfil A ao canal YouTube autorizado 1; listar conexões.",
+        "Desvincular perfil A e revogar somente autorização 1; reler autorização 2 e remover suas credenciais fake para avaliar status."
+      ],
+      "esperado": "Vínculo aparece corretamente; desfazê-lo não exclui perfil. Revogação 1 não revoga 2; sem credencial, status de 2 não permanece conectado por mero campo digitado; respostas não incluem tokens.",
+      "limitacoes": "Não comprova efeitos de revogação no Google; usar somente fake.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "tests/test_connections_service.py:307-340,342-362,374-397"
+      }
+    },
+    {
+      "id": "CFG.C08",
+      "titulo": "Equipe respeita papel do operador e não o canal selecionado",
+      "tipo": "erro",
+      "regras": [
+        "CFG.R02",
+        "CFG.R06"
+      ],
+      "status": "A_PROJETAR",
+      "prioridade": "alta",
+      "objetivo": "Verificar RBAC e tornar explícita a identidade atribuída ao worker.",
+      "pre_condicoes": [
+        "Organização fake com operador viewer; depois owner; resolver de ator com spy; serviço de convite fake."
+      ],
+      "exemplo": [
+        "POST /studio/panel/equipe/members como Basic com Origin válido tentando convidar teste@example.test.",
+        "Repetir como owner e depois Bearer sem Origin; alternar project_id da interface."
+      ],
+      "esperado": "Viewer é recusado pelo RBAC; owner pode convidar. Resolver recebe o STUDIO_BROWSER_USER configurado também quando o guard aceita Bearer; troca de canal não cria usuário/tenant. Respostas de chave contêm só metadados.",
+      "limitacoes": "Atribuição do worker ao operador é comportamento a caracterizar, não garantia de menor privilégio; sem multi-login real.",
+      "automacao": {
+        "camada": "mock",
+        "referencia": "Automação proposta sobre renderer/app/studio/api/routes.py:1966-2029"
+      }
+    }
+  ],
+  "prefixo": "CFG"
+}

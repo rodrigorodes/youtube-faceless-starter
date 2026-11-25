@@ -1,0 +1,32 @@
+{
+  "funcionalidades": [
+    {"id":"F08","nome":"Aprovação e publicação","arquivo":"08-aprovacao-e-publicacao.md","dados":"dados/08-aprovacao-e-publicacao.yaml","prefixo":"PUB"},
+    {"id":"F09","nome":"Analytics e aprendizado","arquivo":"09-analytics-e-aprendizado.md","dados":"dados/09-analytics-e-aprendizado.yaml","prefixo":"ANA"},
+    {"id":"F10","nome":"Painel e experiência","arquivo":"10-painel-e-experiencia.md","dados":"dados/10-painel-e-experiencia.yaml","prefixo":"UX"},
+    {"id":"F11","nome":"Ponta a ponta e desempenho","arquivo":"11-ponta-a-ponta-e-desempenho.md","dados":"dados/11-ponta-a-ponta-e-desempenho.yaml","prefixo":"E2E"}
+  ],
+  "regras": [
+    {"id":"PUB.R01","descricao":"Aprovação exige revisão renderizada; gate compara intenção, output, checksum e QA ou override registrado.","fonte":"renderer/app/studio/application/publishing.py:42","funcionalidade":"F08"},
+    {"id":"PUB.R02","descricao":"Intenção fixa metadados/destino; private é padrão e public exige confirmação adicional.","fonte":"renderer/app/studio/application/publication_gate.py:52","funcionalidade":"F08"},
+    {"id":"PUB.R03","descricao":"Claims concorrentes usam locks; retry preserva sessão e UNKNOWN não entra em retry automático.","fonte":"renderer/app/studio/adapters/postgres/publish_repo.py:115","funcionalidade":"F08"},
+    {"id":"PUB.R04","descricao":"Rearm só aceita DLQ permanente sem sessão, ID remoto, offset, UNKNOWN ou lease vivo; reconciliação depende de resposta remota.","fonte":"renderer/app/studio/adapters/postgres/publish_repo.py:316","funcionalidade":"F08"},
+    {"id":"PUB.R05","descricao":"Servidor com repositórios injetados exige destino e token do mesmo canal; flag desabilitada bloqueia antes do claim; agendamento vencido/próximo bloqueia.","fonte":"renderer/app/studio/application/publication_execution.py:205","funcionalidade":"F08"},
+    {"id":"PUB.R06","descricao":"Preview mostra versão revisada; pedir ajustes reabre edição e invalida aprovação anterior.","fonte":"tests/test_publish_api.py:215","funcionalidade":"F08"},
+    {"id":"ANA.R01","descricao":"Sem prontidão, coleta não chama provedor; ausência não equivale a zero.","fonte":"renderer/app/studio/application/analytics_collection.py:148","funcionalidade":"F09"},
+    {"id":"ANA.R02","descricao":"ID determinístico por vídeo/métrica/janela/ID remoto permite persistência idempotente; pilar deve pertencer ao projeto.","fonte":"renderer/app/studio/application/analytics_collection.py:165","funcionalidade":"F09"},
+    {"id":"ANA.R03","descricao":"Dashboard mantém recorte por vídeo/pilar/período, separa short e long, não faz média de taxas nem soma cobertura incompleta.","fonte":"renderer/app/studio/application/analytics_dashboard.py:1","funcionalidade":"F09"},
+    {"id":"ANA.R04","descricao":"Amostra mínima é três vídeos comparáveis; recomendação tem revisão humana e não aplicação automática; versões ausentes recebem motivo.","fonte":"renderer/app/studio/application/analytics_dashboard.py:60","funcionalidade":"F09"},
+    {"id":"ANA.R05","descricao":"Valores conhecidos precisam ser finitos, não negativos e percentuais até 100; observação mais recente vence dedupe.","fonte":"renderer/app/studio/application/analytics_collection.py:128","funcionalidade":"F09"},
+    {"id":"ANA.R06","descricao":"Alerta bridge é local ao processo e expira em 300 s; expiração OAuth exige metadado confiável com timezone e não prova validade do token.","fonte":"renderer/app/studio/application/observability.py:11","funcionalidade":"F09"},
+    {"id":"UX.R01","descricao":"Links de páginas permitidas propagam canal; vídeo conserva projeto proprietário; área inválida normaliza para cenas e nav usa aria-current.","fonte":"renderer/app/studio/api/active_channel.py:22","funcionalidade":"F10"},
+    {"id":"UX.R02","descricao":"Resultado de publicação só é sucesso quando UPLOADED; demais resultados explicam próximo passo em português.","fonte":"renderer/app/studio/api/publicacao_js.py:18","funcionalidade":"F10"},
+    {"id":"UX.R03","descricao":"Helper traduz 422/409/429/5xx; ações devem manter feedback legível e recuperável sem JSON cru ou sucesso falso.","fonte":"renderer/app/studio/api/erro_js.py:14","funcionalidade":"F10"},
+    {"id":"UX.R04","descricao":"Garantir uso em 390/768/1280 px, navegação por teclado, foco e anúncio de erro; suites atuais não equivalem a auditoria completa.","fonte":"tests/e2e_ux/test_e2e_responsive.py:9","funcionalidade":"F10"},
+    {"id":"UX.R05","descricao":"Duplo clique não deve repetir efeito; ação pendente deve mostrar progresso e liberar interação após falha.","fonte":"tests/test_publication_execution.py:519","funcionalidade":"F10"},
+    {"id":"E2E.R01","descricao":"Início piloto cria e inicia produção; diretor cria storyboard sem iniciar produção.","fonte":"tests/e2e_full/test_journey_inicio.py:26","funcionalidade":"F11"},
+    {"id":"E2E.R02","descricao":"Piloto percorre produção, QA, aprovação e ajustes; diretor preserva edição, citações, ordem e desfazer antes da produção.","fonte":"tests/e2e_full/test_journey_piloto.py:88","funcionalidade":"F11"},
+    {"id":"E2E.R03","descricao":"Suite completa requer flag de isolamento, recusa porta 8000 e coleta erros JS/5xx; não publica no YouTube.","fonte":"tests/e2e_full/conftest.py:1","funcionalidade":"F11"},
+    {"id":"E2E.R04","descricao":"Coordenador tem testes de idempotência, pausa, falha, cancelamento e lease; jornada integrada deve preservar essas transições.","fonte":"tests/test_production_coordinator.py:133","funcionalidade":"F11"},
+    {"id":"E2E.R05","descricao":"Medir cenários pequenos repetíveis antes de volume: Short local e long de 180 s/12 cenas; calibrar por hardware e comparar baseline equivalente.","fonte":"tests/e2e_full/test_journey_piloto.py:19","funcionalidade":"F11"}
+  ]
+}

@@ -537,6 +537,19 @@ def test_profile_context_never_relaxes_claim_citation(world):
     assert world["scripts"].saved == []
 
 
+def test_scene_zero_uncited_recovers_when_other_scenes_cited(world):
+    seed(world)
+    payload = good_payload()
+    # Apenas a cena 0 (gancho) vem sem citação explícita do modelo
+    payload["scenes"][0]["claim_ids"] = []
+    gen = GenerateScript(world["videos"], world["snaps"], world["scripts"], Text(payload),
+                         CostGuard(world["usage"], 0.0, 15.0), world["usage"])
+    script = gen.execute(V, 4)
+    assert script.version == 1
+    scenes = world["scripts"].scenes(V)
+    assert len(scenes[0].claim_ids) >= 1  # ancorada no primeiro fato válido das fontes
+
+
 def test_a_context_from_another_video_is_refused_instead_of_leaking_the_channel(world):
     seed(world)
     other = Video(id="d" * 32, project_id="c" * 32, topic="Outro vídeo", format=VideoFormat.short,

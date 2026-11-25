@@ -1,11 +1,12 @@
-"""W1.5 (SET): as sete seções de Configurações e o item Biblioteca do menu.
+"""W1.5 (SET): as quatro seções de Configurações e o item Biblioteca do menu.
 
-Regra do protótipo (`prototype/index.html:583-585`) e do plano: as sete seções precisam ser
+Regra do protótipo (`prototype-v4-v3/index.html:638`) e do plano: as quatro seções precisam ser
 navegáveis e cada uma mostrar **conteúdo real** — nada de página vazia que "parece funcional".
 As seções novas (`estrategia`, `marca`, `producao`) têm página própria, mas reusam os cartões,
 o formulário, o endpoint de escrita e o JavaScript da tela de Canais (um conceito, um dono).
 """
 import base64
+import html
 import re
 import sys
 from pathlib import Path
@@ -28,8 +29,8 @@ AUTH_HEADER = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-bro
 # Rótulos do menu principal e das seções, na ordem do protótipo.
 NAV_LABELS = ["Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho",
               "Biblioteca", "Configurações"]
-SETTINGS_LABELS = ["Canais", "Estratégia editorial", "Marca e estilo", "Produção e orçamento",
-                   "Conexões e providers", "Conta e equipe", "Avançado e diagnóstico"]
+SETTINGS_LABELS = ["Canais", "Marca & Editorial", "Produção & Orçamento",
+                   "Conexões & Equipe"]
 
 
 @pytest.fixture()
@@ -65,7 +66,8 @@ def _page(env, path):
 
 
 def _nav_text(item):
-    return re.sub(r"<[^>]+>", "", item).strip()
+    # Os glifos do protótipo são `aria-hidden`: não fazem parte do rótulo acessível.
+    return html.unescape(re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", "", item).strip())
 
 
 def _nav_items(html, label):
@@ -101,11 +103,11 @@ def test_the_settings_menu_has_the_seven_prototype_sections_with_the_active_chan
 
 
 def test_every_settings_section_reaches_real_content(env, profile):
-    """Cada uma das sete seções mostra conteúdo real (nada de cartão vazio ou 404)."""
+    """Cada seção do menu de Configurações mostra conteúdo real (nada de cartão vazio ou 404)."""
     expected = {
         "/studio/configuracoes/canais": ["Canal ativo", 'id="painel-perfil"'],
         "/studio/configuracoes/estrategia": ['id="painel-perfil"', 'id="channel-form"'],
-        "/studio/configuracoes/marca": ['id="appearance-form"', 'id="personalizar-estilo-canal"'],
+        "/studio/configuracoes/marca": ['id="channel-form"', 'id="personalizar-estilo-canal"'],
         "/studio/configuracoes/producao": ['id="painel-orcamento"', 'id="painel-providers"'],
         "/studio/configuracoes/conexoes": ["configurações", "Conex"],
         "/studio/configuracoes/equipe": ["Equipe"],

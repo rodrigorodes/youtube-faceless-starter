@@ -191,10 +191,11 @@ def test_compile_render_plan_outputs_deterministic_ffmpeg_fade_filter_for_config
     assert "fade=t=in:st=0:d=0.25" in filter_shot_0
     assert "fade=t=out:st=2.700:d=0.100" in filter_shot_0
 
-    # Segundo shot (último) tem transition=None, portanto mantém fade legado d=0.25
+    # Segundo shot (último) tem transition=None; no schema v2 isso é corte seco (sem fade).
     filter_shot_1 = compiled.shots[1].filter_complex
-    assert "fade=t=in:st=0:d=0.25" in filter_shot_1
-    assert "fade=t=out:st=2.550:d=0.25" in filter_shot_1 or "fade=t=out:st=2.550:d=0.250" in filter_shot_1
+    assert "fade=t=in" not in filter_shot_1
+    assert "fade=t=out" not in filter_shot_1
+    assert filter_shot_1.endswith("format=yuv420p[v]")
 
 
 def test_build_render_plan_accepts_transition_kwarg_or_visual_style_object():

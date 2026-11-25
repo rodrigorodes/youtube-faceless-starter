@@ -27,6 +27,11 @@ _DOZEN = {"duzia", "duzias"}
 _TOKEN = re.compile(r"\d+(?:[.,]\d+)*|[a-z]+")
 _THOUSANDS = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
 _DECIMAL = re.compile(r"\d+[.,]\d+")
+_PT_THOUSANDS_DECIMAL = re.compile(r"\d{1,3}(?:\.\d{3})+,\d+")  # 132.011,65
+_EN_THOUSANDS_DECIMAL = re.compile(r"\d{1,3}(?:,\d{3})+\.\d+")  # 132,011.65
+# Milhar por espaço ("132 011,65", "3 600"; já normalizado: NBSP/NNBSP viram espaço): só grupos de
+# exatamente 3 dígitos, fora de outro número — "2026 100" e "21 10 2026" continuam separados.
+_SPACE_THOUSANDS = re.compile(r"(?<![\d.,])\d{1,3}(?: \d{3})+(?!\d)")
 
 
 _FOLD = str.maketrans({"ø": "o", "đ": "d", "ð": "d", "ł": "l", "ß": "ss", "æ": "ae", "œ": "oe", "þ": "th"})
@@ -47,6 +52,10 @@ def _digit_values(token: str) -> list[Decimal]:
         return [Decimal(token)]
     if _THOUSANDS.fullmatch(token):
         return [Decimal(token.replace(".", "").replace(",", ""))]
+    if _PT_THOUSANDS_DECIMAL.fullmatch(token):
+        return [Decimal(token.replace(".", "").replace(",", "."))]
+    if _EN_THOUSANDS_DECIMAL.fullmatch(token):
+        return [Decimal(token.replace(",", ""))]
     if _DECIMAL.fullmatch(token):
         return [Decimal(token.replace(",", "."))]
     return [Decimal(part) for part in re.split(r"[.,]", token)]  # datas como 21.10.2026
@@ -91,7 +100,7 @@ def _parse_run(tokens: list[str], start: int) -> tuple[int, int]:
 
 
 def numbers_in(text: str) -> set[str]:
-    tokens = _TOKEN.findall(normalize(text))
+    tokens = _TOKEN.findall(_SPACE_THOUSANDS.sub(lambda m: m.group(0).replace(" ", ""), normalize(text)))
     found: set[str] = set()
     i = 0
     while i < len(tokens):

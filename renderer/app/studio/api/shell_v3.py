@@ -176,9 +176,9 @@ _ALIASES = {
     "equipe": "configuracoes",
 }
 
-# W1.5: sete seções de Configurações, com os rótulos do protótipo (`CFG`,
-# `prototype/index.html:585`). Cada item aponta para conteúdo real: páginas próprias
-# (`/studio/configuracoes/{secao}`) ou a tela que já existe.
+# W1.5: quatro seções principais de Configurações, alinhadas ao protótipo V4/V3 (`CFG`,
+# `prototype/index.html:585` e `prototype-v4-v2/index.html:638`).
+# As subáreas (Equipe e Avançado) vivem na área de Conexões e são alcançadas pela navegação secundária.
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
     ("canais", "Canais", "/studio/configuracoes/canais"),
     ("marca", "Marca & Editorial", "/studio/configuracoes/marca"),
@@ -188,14 +188,14 @@ SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
 
 
 def render_settings_nav(active_section: str, project_id: str = "") -> str:
-    subpagina = active_section in ("equipe", "avancado")
+    subpagina = active_section in ("equipe", "avancado", "conexoes")
     active_section = {"estrategia": "marca", "equipe": "conexoes", "avancado": "conexoes"}.get(active_section, active_section)
     items = []
     for key, label, href in SETTINGS_SECTIONS:
         curr = ' aria-current="page"' if key == active_section else ""
         items.append(f'<li><a href="{e(with_channel(href, project_id))}"{curr}>{e(label)}</a></li>')
     secondary = ""
-    if subpagina:  # Equipe e Avançado são subpáginas; a própria aba Conexões é a página única do protótipo
+    if subpagina:  # Equipe e Avançado são subpáginas da área de conexões
         secondary = '<div class="row" style="margin-bottom:16px">' + "".join(
             f'<a class="btn small" href="{e(with_channel(href, project_id))}">{label}</a>'
             for label, href in (("Providers", "/studio/panel/conexoes"),
@@ -305,42 +305,6 @@ def render_topbar(*, crumb: str, projects: list[tuple[str, str]], project_id: st
     </header>"""
 
 
-def render_novo_canal_dialog() -> str:
-    return """<dialog id="dlg-canal" class="modal" aria-labelledby="t-dlg-canal">
-    <div class="modal-header">
-      <h2 id="t-dlg-canal">Novo canal</h2>
-      <button class="modal-close" type="button" data-fechar-dialogo aria-label="Fechar">✕</button>
-    </div>
-    <div class="dialogo-corpo">
-      <form id="form-canal" class="stack" style="gap:14px">
-        <div class="field">
-          <label for="dlg-canal-nome">Nome do canal *</label>
-          <input class="input" type="text" id="dlg-canal-nome" name="name" minlength="1" maxlength="120" required
-                 placeholder="Ex.: Curiosidades Históricas">
-        </div>
-        <div class="field">
-          <label for="dlg-canal-nicho">Nicho editorial <span class="sample">(opcional)</span></label>
-          <input class="input" type="text" id="dlg-canal-nicho" name="niche" maxlength="200"
-                 placeholder="Ex.: História, mistérios e ciência">
-        </div>
-        <div class="field">
-          <label for="dlg-canal-idioma">Idioma</label>
-          <select class="input" id="dlg-canal-idioma" name="language">
-            <option value="pt-BR" selected>Português (BR)</option>
-            <option value="en-US">English</option>
-            <option value="es-ES">Español</option>
-          </select>
-        </div>
-        <div class="modal-footer">
-          <p class="feedback" id="canal-feedback" role="status" style="margin-right:auto"></p>
-          <button class="btn ghost small" type="button" data-fechar-dialogo>Fechar</button>
-          <button class="btn primary small" type="submit" id="dlg-btn-salvar-canal">✦ Criar canal</button>
-        </div>
-      </form>
-    </div>
-  </dialog>"""
-
-
 # Aplicado cedo (no <head>) para garantir 100% fidelidade ao dark mode nativo do protótipo.
 THEME_BOOT_JS = (
     "try{var r=document.documentElement;"
@@ -424,53 +388,6 @@ SHELL_JS = ERRO_JS + """
     location.href = u.toString();
   });
 
-  // ---- novo canal ----
-  var dlg = $('#dlg-canal');
-  var abrir = $('#btn-novo-canal');
-  if (dlg && abrir) {
-    abrir.addEventListener('click', function () {
-      if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
-      var campo = $('#dlg-canal-nome'); if (campo) campo.focus();
-    });
-    dlg.addEventListener('click', function (ev) {
-      if (ev.target === dlg || (ev.target.closest && ev.target.closest('[data-fechar-dialogo]'))) dlg.close();
-    });
-    var form = $('#form-canal');
-    var fb = $('#canal-feedback');
-    form.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var nome = $('#dlg-canal-nome').value.trim();
-      if (!nome) return;
-      var btn = $('#dlg-btn-salvar-canal');
-      btn.disabled = true;
-      btn.classList.add('carregando');
-      window.StudioLoading.start();
-      fb.removeAttribute('data-tipo'); fb.textContent = 'Cadastrando canal…';
-      fetch('/studio/projects', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: nome, niche: $('#dlg-canal-nicho').value.trim(), language: $('#dlg-canal-idioma').value })
-      }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return [r, d]; }); })
-        .then(function (par) {
-          var r = par[0], d = par[1];
-          if (r.ok && d.id) {
-            fb.textContent = 'Canal criado. Abrindo…';
-            location.href = '/studio/panel?project_id=' + encodeURIComponent(d.id);
-          } else {
-            fb.setAttribute('data-tipo', 'erro');
-            fb.textContent = 'Erro ao cadastrar: ' + (window.StudioErro.texto(d, 'tente novamente.'));
-            btn.disabled = false;
-            btn.classList.remove('carregando');
-            window.StudioLoading.done();
-          }
-        })
-        .catch(function (err) {
-          fb.setAttribute('data-tipo', 'erro'); fb.textContent = 'Falha de rede: ' + err.message;
-          btn.disabled = false;
-          btn.classList.remove('carregando');
-          window.StudioLoading.done();
-        });
-    });
-  }
 })();
 """
 

@@ -23,9 +23,10 @@ def _item(style_id, name, params=None):
 def test_library_header_and_tabs_follow_the_prototype():
     html = _page()
     assert "Recursos reutilizáveis" in html and "Canal ativo: Canal H" in html
-    tabs = re.findall(r'<button class="tab"[^>]*>(.*?)</button>', html)
-    assert tabs == ["Estilos visuais", "Vozes", "Músicas", "Modelos de roteiro"]
-    assert html.count('aria-current="page"') >= 2  # menu + aba ativa
+    tabs = re.findall(r'<button class="tab[^"]*"[^>]*>(.*?)</button>', html)
+    assert tabs == ["Estilos visuais", "Vozes", "Músicas", "Mídias & Stock (Pixabay)", "Modelos de roteiro"]
+    assert html.count('aria-current="page"') == 1  # menu: página atual
+    assert html.count('aria-selected="true"') == 1  # aba ativa
     assert "O estilo vinculado ao canal é herdado por todos os novos vídeos." in html
     assert "+ Criar novo estilo" in html
 
@@ -40,12 +41,15 @@ def test_library_marks_the_channel_style_and_offers_to_link_the_others():
     assert "border:2px solid var(--accent);background:var(--accentbg);padding:17px" in html
 
 
-def test_library_without_catalogs_says_so_instead_of_inventing_mockup_items():
+def test_library_shows_real_catalogs_and_never_invents_mockup_items():
+    """A Biblioteca passou a exibir catálogos reais (vozes, trilhas CC0, modelos de roteiro e
+    busca Pixabay). O teste garante que itens de mockup do protótipo continuam ausentes."""
     html = _page(voice="Rodrigo")
-    assert "Ainda não há catálogo de vozes" in html and "Rodrigo" in html
-    assert "Ainda não há biblioteca de músicas" in html
-    assert "Ainda não há modelos de roteiro cadastrados" in html
-    for fake in ("Cinemática Sombria", "Marina Alves", "Mary Celeste", "Noir Poético\"" ):
+    assert "Piper Faber (pt-BR)" in html
+    assert "6 trilhas disponíveis" in html
+    assert "3 modelos disponíveis" in html
+    assert "PIXABAY_API_KEY ausente no .env" in html
+    for fake in ("Cinemática Sombria", "Marina Alves", "Mary Celeste", "Noir Poético\""):
         assert fake not in html.replace('placeholder="Ex.: Noir Poético"', "")
 
 

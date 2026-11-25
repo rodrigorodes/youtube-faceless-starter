@@ -157,3 +157,29 @@ def test_the_derived_claims_make_the_fact_check_pass():
     cited = [t for cid, t in CLAIMS if cid in ids]
     assert check_narration(text, cited) == []
     assert check_narration(text, [CLAIMS[0][1]]) != []  # com a citação antiga (c1) o fact-check reprovaria
+
+
+# ---- formatos numéricos de milhar/decimal (pt-BR com ponto, espaço e vírgula; en com vírgula e ponto) ----
+
+@pytest.mark.parametrize("text", ["132.011,65", "132 011,65", "132\u00a0011,65", "132\u202f011,65", "132,011.65"])
+def test_mixed_thousand_and_decimal_separators_are_one_number(text):
+    assert numbers_in(text) == {"132011.65"}
+
+
+@pytest.mark.parametrize("text", ["3 600", "3\u00a0600", "3.600", "3,600"])
+def test_space_grouped_thousands_equal_other_notations(text):
+    assert numbers_in(text) == {"3600"}
+
+
+def test_space_grouping_does_not_merge_dates_years_or_loose_numbers():
+    assert numbers_in("em 2023 tinha 153.391.145 habitantes") == {"2023", "153391145"}
+    assert numbers_in("21 10 2026") == {"21", "10", "2026"}
+    assert numbers_in("2026 100 pessoas") == {"2026", "100"}
+    assert numbers_in("1 2 3") == {"1", "2", "3"}
+
+
+def test_area_written_in_either_notation_is_supported_by_the_source():
+    source = "Tem 132 011,65 km² de área e em 2023 tinha 153.391.145 habitantes"
+    assert check_narration("Em 2023 tinha 132.011,65 km² e 153.391.145 habitantes.", [source]) == []
+    other = check_narration("A ilha tem 132.011,66 km².", [source])  # valor diferente continua recusado
+    assert [(i.kind, i.value) for i in other] == [("number", "132011.66")]

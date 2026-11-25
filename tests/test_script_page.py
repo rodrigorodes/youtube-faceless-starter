@@ -200,13 +200,13 @@ def test_roteiro_page_uses_the_shared_shell(env):
     video = seed_video(env)
     r = env["client"].get(f"/studio/videos/{video.id}/roteiro", headers=AUTH_HEADER)
     assert r.status_code == 200
-    assert '<aside class="side">' in r.text and '<main class="main">' in r.text
-    assert "Faceless Studio" in r.text and "ESTÚDIO DO CANAL" in r.text
+    assert '<aside class="side"' in r.text and '<main class="main">' in r.text
+    assert "Faceless Studio" in r.text and "Menu principal" in r.text
 
     markup = re.sub(r"<(style|script)\b.*?</\1>", "", r.text, flags=re.S)
     nav = re.search(r'<nav aria-label="Principal">(.*?)</nav>', markup, re.S)
     assert nav is not None, "roteiro sem a navegação principal da casca"
-    labels = " ".join(re.sub(r"<[^>]+>", " ", nav.group(1)).split())
+    labels = " ".join(re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", " ", nav.group(1)).split())
     for expected in ("Início", "Criar vídeo", "Vídeos", "Tendências e ideias", "Desempenho"):
         assert expected in labels, f"roteiro: '{expected}' fora da casca"
 

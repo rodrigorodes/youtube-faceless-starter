@@ -53,12 +53,31 @@ def parse_model(ref):
     return out
 
 
+class UpstreamRejected(RuntimeError):
+    """O provedor recusou a requisição (ex.: limite da assinatura): comprovadamente sem geração nem cobrança."""
+
+
+def _raise_cli_failure(proc):
+    """Falha do `opencode api`: recusa explícita do provedor é distinguível; o resto segue ambíguo.
+
+    Só `ProviderRequestError` com `reason == "invalid_request"` (o provedor rejeitou o pedido) vira
+    `UpstreamRejected`; saída ilegível, timeout ou outra falha continua `RuntimeError` (502, ambíguo).
+    """
+    try:
+        error = json.loads(proc.stdout)
+    except (ValueError, TypeError):
+        error = None
+    if isinstance(error, dict) and error.get("_tag") == "ProviderRequestError" and error.get("reason") == "invalid_request":
+        raise UpstreamRejected(str(error.get("message") or "provider rejected the request")[:200])
+    raise RuntimeError("opencode api failed")
+
+
 def generate(prompt, model_ref, binary):
     body = json.dumps({"prompt": prompt, "model": parse_model(model_ref)})
     proc = subprocess.run([binary, "api", "post", "/api/experimental/generate/text", "-d", body],
                           capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
     if proc.returncode != 0:
-        raise RuntimeError("opencode api failed")
+        _raise_cli_failure(proc)
     return json.loads(proc.stdout)["data"]["text"]
 
 
@@ -74,7 +93,7 @@ def generate_image(prompt, model_ref, binary):
     proc = subprocess.run([binary, "api", "post", "/api/experimental/generate/image", "-d", body],
                           capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
     if proc.returncode != 0:
-        raise RuntimeError("opencode api failed")
+        _raise_cli_failure(proc)
     image = json.loads(proc.stdout)["data"]["images"][0]
     return {"mime": image.get("mime", "image/png"), "data": image["data"]}
 
@@ -123,6 +142,8 @@ def make_handler(token, model_ref, binary, generate_fn=generate, image_model=DEF
                     self.reply(200, image_fn(prompt, image_model, binary))
                 else:
                     self.reply(200, {"text": generate_fn(prompt, model_ref, binary)})
+            except UpstreamRejected as exc:
+                self.reply(424, {"detail": f"upstream rejected: {exc}"})
             except subprocess.TimeoutExpired:
                 self.reply(504, {"detail": "opencode timed out"})
             except Exception as exc:

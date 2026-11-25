@@ -64,7 +64,8 @@ def nav_items(html: str):
 
 
 def _nav_text(item: str) -> str:
-    return " ".join(re.sub(r"<[^>]+>", " ", item).split())
+    # Os glifos do protótipo são `aria-hidden`: não fazem parte do rótulo acessível.
+    return " ".join(re.sub(r"<span aria-hidden.*?</span>|<[^>]+>", " ", item).split())
 
 
 def _create_style(env, name, params=None):
@@ -220,3 +221,30 @@ def test_styles_page_preserves_csp_and_no_store(env):
 
 def test_styles_page_requires_authentication(env):
     assert env["client"].get("/studio/panel/estilos").status_code == 401
+
+
+def test_studio_music_endpoint_streams_audio_and_validates(env):
+    # Extensão inválida
+    assert env["client"].get("/studio/music/malicious.sh", headers=AUTH_HEADER).status_code == 400
+    # Arquivo inexistente
+    assert env["client"].get("/studio/music/nao_existe_12345.mp3", headers=AUTH_HEADER).status_code == 404
+    # Arquivo existente local
+    r = env["client"].get("/studio/music/939d0f93.mp3", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/mpeg"
+    assert r.headers["accept-ranges"] == "bytes"
+    assert len(r.content) > 1000
+
+
+def test_library_voices_and_script_templates_tabs(env):
+    html = page(env).text
+    # 1. Aba Vozes
+    assert 'id="painel-vozes"' in html
+    assert "Piper Faber" in html
+    assert "pt_BR-faber-medium" in html
+    assert "172" in html
+    # 2. Aba Modelos de Roteiro
+    assert 'id="painel-modelos"' in html
+    assert "Shorts" in html
+    assert "Retenção" in html or "Viral" in html
+    assert "Documentário" in html or "capítulos" in html
