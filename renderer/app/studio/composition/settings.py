@@ -77,6 +77,8 @@ class Settings:
     auto_research: bool = True
     # R03: intervalo (s) da varredura periódica de órfãos; 0 desliga (STUDIO_RECOVERY_INTERVAL_SECONDS).
     recovery_interval_seconds: float = 60.0
+    # FS-06: limite de admissão de execuções simultâneas no processo local; 0 = sem teto extra (STUDIO_MAX_ACTIVE_RUNS).
+    max_active_runs: int = 0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -99,7 +101,8 @@ class Settings:
                    _flag(env.get("STUDIO_PUBLICATION_ENABLED", "1")),
                    _flag(env.get("STUDIO_PROVIDER_PRODUCTION")),
                    _flag(env.get("STUDIO_AUTO_RESEARCH", "1")),
-                   _recovery_interval(env.get("STUDIO_RECOVERY_INTERVAL_SECONDS")))
+                   _recovery_interval(env.get("STUDIO_RECOVERY_INTERVAL_SECONDS")),
+                   int(_cap(env.get("STUDIO_MAX_ACTIVE_RUNS"), 0.0)))
 
 
 RETRY_SECONDS = 5.0

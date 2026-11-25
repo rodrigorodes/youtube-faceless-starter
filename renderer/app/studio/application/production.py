@@ -720,6 +720,10 @@ def orphan_in_flight(
     return tuple(orphans)
 
 
+class CapacityExceeded(RuntimeError):
+    """Limite de capacidade de execuções simultâneas atingido no processo local."""
+
+
 class ActiveRuns:
     """Runs despachados neste processo e ainda não terminados (contador por `run_id`, thread-safe).
 
@@ -746,6 +750,10 @@ class ActiveRuns:
     def snapshot(self) -> frozenset[str]:
         with self._lock:
             return frozenset(self._counts)
+
+    def count(self) -> int:
+        with self._lock:
+            return len(self._counts)
 
 
 # ---------------------------------------------------------------------------

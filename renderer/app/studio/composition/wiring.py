@@ -123,7 +123,7 @@ from ..application.budget import PaidOperationGuard
 from ..application.reopen import ReopenForEditing
 from ..application.research import AutoResearch
 from ..adapters.wikipedia_research import WikipediaResearch
-from ..application.production import (ActiveRuns, COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
+from ..application.production import (ActiveRuns, CapacityExceeded, COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
 from ..application.advanced_page import BuildAdvancedView
 from ..application.use_cases import ServiceUnavailable, UseCases
@@ -133,12 +133,18 @@ from .providers import (FREE_PROVIDERS, ProviderRouting, _configured_provider_sp
                         _provider_implementations, _provider_probes)
 
 
-def tracked_submit(executor, work, active):
+def tracked_submit(executor, work, active, max_active: int | None = None):
     """`submit` do worker que registra o run em `ActiveRuns` até o future terminar (ou o submit falhar).
 
     Nunca descarta: só registra, para a recuperação periódica não re-despachar o que já está na fila.
+    Quando `max_active` é configurado (> 0), recusa novas admissões com `CapacityExceeded` sem
+    descartar o run persistido no banco, permitindo backpressure e redrive posterior.
     """
     def submit(run_id):
+        if max_active is not None and max_active > 0 and active.count() >= max_active:
+            raise CapacityExceeded(
+                f"limite de capacidade atingido ({active.count()}/{max_active} runs ativos)"
+            )
         active.acquire(run_id)
         try:
             future = executor.submit(work, run_id)
@@ -734,7 +740,7 @@ class Studio:
         # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma
         # transação). A leitura para retomada/retry/painel vem da mesma porta (`run_config`).
         production = Production(coordinator=coordinator, worker=worker,
-                                submit=tracked_submit(self._executor, worker.work, self._active_runs),
+                                submit=tracked_submit(self._executor, worker.work, self._active_runs, max_active=settings.max_active_runs),
                                 in_flight=run_repo,
                                 effective_config_for=lambda video: _effective_config_for(video, channel_repo, style_repo, repo, budget_repo),
                                 config_store=run_repo,
@@ -843,6 +849,12 @@ production=production, script_view=script_view,
         ok = self._check()
         self._ping = (ok, time.monotonic() + PING_TTL_SECONDS)
         return ok
+
+    def active_runs_count(self) -> int:
+        return self._active_runs.count()
+
+    def active_runs_snapshot(self) -> frozenset[str]:
+        return self._active_runs.snapshot()
 
     def _check(self) -> bool:
         if self.use_cases() is None:
