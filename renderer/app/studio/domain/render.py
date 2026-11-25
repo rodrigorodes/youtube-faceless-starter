@@ -90,7 +90,7 @@ def make_cues(text: str, start: float, speech_seconds: float, max_chars: int = 4
     begin, total = start + LEAD, float(sum(len(c) for c in chunks))
     cues, elapsed = [], 0
     for i, chunk in enumerate(chunks):
-        cue_start = begin + speech_seconds * elapsed / total
+        cue_start = begin + speech_seconds * (elapsed / total)
         elapsed += len(chunk)
         cue_end = begin + speech_seconds * (elapsed / total if i < len(chunks) - 1 else 1.0)
         cues.append(Cue(cue_start, cue_end, chunk))

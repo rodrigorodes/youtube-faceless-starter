@@ -703,7 +703,9 @@ def _subtitle_cues(scene: StoryboardScene, offset_s: float, speech: float, tps: 
     cues: list[SubtitleCue] = []
     for chunk_index, cue in enumerate(make_cues(scene.narration, offset_s, speech)):
         start_tick = seconds_to_ticks(cue.start, tps)
-        end_tick = seconds_to_ticks(cue.end, tps)
+        if cues:
+            start_tick = max(start_tick, cues[-1].start_tick + cues[-1].duration_ticks)
+        end_tick = max(start_tick + 1, seconds_to_ticks(cue.end, tps))
         duration_ticks = end_tick - start_tick
         if duration_ticks < 1:
             raise PlanBuildError(

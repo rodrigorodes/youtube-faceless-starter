@@ -1,0 +1,118 @@
+{
+  "timestamp": "2026-11-25T21:38:05Z",
+  "phase": "V4-00",
+  "title": "Baseline Audiovisual AS-IS e Benchmark Técnico",
+  "environment": {
+    "runtime": "Docker Debian Bookworm aarch64",
+    "python_version": "3.12.16",
+    "ffmpeg_support": "FFmpeg nativo com libass, ebur128, silencedetect, blackdetect, freezedetect",
+    "piper_voice": "pt_BR-faber-medium"
+  },
+  "overall_performance": {
+    "total_benchmark_elapsed_s": 598.97,
+    "resource_usage": {
+      "cpu_user_seconds": 1258.931,
+      "cpu_system_seconds": 135.635,
+      "cpu_total_seconds": 1394.566,
+      "peak_rss_self_mb": 1348.86,
+      "peak_rss_children_mb": 1632.58,
+      "peak_rss_combined_mb": 1632.58
+    },
+    "cost_api_total_usd": 0.0,
+    "cost_compute_summary": "Processamento local em contêiner Docker oficial sem chamadas externas a provedores pagos."
+  },
+  "videos": [
+    {
+      "name": "v4_fixture_tecnica_60s",
+      "path": "/w/storage/output/v4_fixture_tecnica_60s.mp4",
+      "file_name": "v4_fixture_tecnica_60s.mp4",
+      "format": "1920x1080 (16:9)",
+      "duration_s": 63.52,
+      "scenes_count": 4,
+      "timing_s": {
+        "synth_time_s": 6.96,
+        "render_time_s": 46.92,
+        "qa_time_s": 11.96,
+        "total_execution_time_s": 65.83
+      },
+      "disk_usage": {
+        "output_size_bytes": 9167665,
+        "output_size_mb": 8.74,
+        "temp_work_dir_bytes": 26297098,
+        "temp_work_dir_mb": 25.08
+      },
+      "sha256": "904eb8c9b801251ba222cd8f93d180c74c98900c0f1f03cd35399ac656516c04",
+      "stream_details": {
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "fps": 25.0,
+        "nb_frames": 1588,
+        "resolution": "1920x1080"
+      },
+      "qa_metrics": {
+        "integrated_lufs": -16.3,
+        "narration_lufs": -16.2,
+        "silence_ratio": 0.0,
+        "narration_silence_ratio": 0.1017,
+        "black_ratio": 0.0,
+        "frozen_ratio": 0.5183,
+        "true_peak_dbtp": -1.6
+      },
+      "cost": {
+        "cost_api_usd": 0.0,
+        "cost_compute_type": "local_cpu_execution",
+        "notes": "100% processado localmente em CPU (Piper TTS + FFmpeg nativo). Zero chamadas a APIs pagas."
+      }
+    },
+    {
+      "name": "v4_piloto_audiovisual_5min",
+      "path": "/w/storage/output/v4_piloto_audiovisual_5min.mp4",
+      "file_name": "v4_piloto_audiovisual_5min.mp4",
+      "format": "1920x1080 (16:9)",
+      "duration_s": 345.6,
+      "scenes_count": 18,
+      "timing_s": {
+        "synth_time_s": 59.63,
+        "render_time_s": 421.95,
+        "qa_time_s": 47.79,
+        "total_execution_time_s": 529.37
+      },
+      "disk_usage": {
+        "output_size_bytes": 47798249,
+        "output_size_mb": 45.58,
+        "temp_work_dir_bytes": 140856293,
+        "temp_work_dir_mb": 134.33
+      },
+      "sha256": "9b20e2e749127ccd6ce6aeb4f1d5cf029d31840b338b807aa0aba71b45a1ba6f",
+      "stream_details": {
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "fps": 25.0,
+        "nb_frames": 8640,
+        "resolution": "1920x1080"
+      },
+      "qa_metrics": {
+        "integrated_lufs": -15.5,
+        "narration_lufs": -16.2,
+        "silence_ratio": 0.0,
+        "narration_silence_ratio": 0.0953,
+        "black_ratio": 0.0,
+        "frozen_ratio": 0.4899,
+        "true_peak_dbtp": -1.5
+      },
+      "extracted_frames": [
+        "/w/storage/output/frames_pilot_v4/frame_01_17s.png",
+        "/w/storage/output/frames_pilot_v4/frame_02_69s.png",
+        "/w/storage/output/frames_pilot_v4/frame_03_138s.png",
+        "/w/storage/output/frames_pilot_v4/frame_04_207s.png",
+        "/w/storage/output/frames_pilot_v4/frame_05_276s.png",
+        "/w/storage/output/frames_pilot_v4/frame_06_328s.png"
+      ],
+      "cost": {
+        "cost_api_usd": 0.0,
+        "cost_compute_type": "local_cpu_execution",
+        "notes": "100% processado localmente em CPU (Piper TTS + FFmpeg nativo). Zero chamadas a APIs pagas."
+      }
+    }
+  ]
+}
