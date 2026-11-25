@@ -85,6 +85,10 @@ services:
       # `STUDIO_SECRETS_ROOT` aponta o cofre de segredos (F10-07); vazio = <storage_root>/secrets.
       STUDIO_PROVIDER_PRODUCTION: ${STUDIO_PROVIDER_PRODUCTION:-}
       STUDIO_SECRETS_ROOT: ${STUDIO_SECRETS_ROOT:-}
+      STUDIO_RENDER_PLAN_ENABLED: ${STUDIO_RENDER_PLAN_ENABLED:-1}
+      STUDIO_AUTO_RESEARCH: ${STUDIO_AUTO_RESEARCH:-1}
+      STUDIO_TREND_SOURCES: ${STUDIO_TREND_SOURCES:-}
+      STUDIO_TOKEN_ENV_PATH: ${STUDIO_TOKEN_ENV_PATH:-credentials/token.env}
       MAX_DURATION_SECONDS: '60'
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # OAuth do Google (F8-05): o client secret é um arquivo montado em /app/credentials (read-only).

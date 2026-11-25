@@ -122,3 +122,38 @@ def test_compose_forwards_the_recovery_interval_with_a_safe_default():
 def test_env_example_documents_the_recovery_interval():
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert _re.search(r"^STUDIO_RECOVERY_INTERVAL_SECONDS=60$", text, flags=_re.M)
+
+
+def test_compose_forwards_fs04_pipeline_and_runtime_flags():
+    declared = _service_environment((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), "renderer")
+    assert declared["STUDIO_RENDER_PLAN_ENABLED"] == "${STUDIO_RENDER_PLAN_ENABLED:-1}"
+    assert declared["STUDIO_AUTO_RESEARCH"] == "${STUDIO_AUTO_RESEARCH:-1}"
+    assert declared["STUDIO_TREND_SOURCES"] == "${STUDIO_TREND_SOURCES:-}"
+    assert declared["STUDIO_TOKEN_ENV_PATH"] == "${STUDIO_TOKEN_ENV_PATH:-credentials/token.env}"
+
+
+def test_fs04_settings_from_env_defaults_and_overrides():
+    defaults = Settings.from_env(_renderer_env({}))
+    assert defaults.render_plan_enabled is True
+    assert defaults.auto_research is True
+    assert defaults.trend_hosts == ("www.googleapis.com", "www.youtube.com")
+    assert str(defaults.token_env_path) == "credentials/token.env"
+
+    custom = Settings.from_env(_renderer_env({
+        "STUDIO_RENDER_PLAN_ENABLED": "0",
+        "STUDIO_AUTO_RESEARCH": "0",
+        "STUDIO_TREND_SOURCES": "custom.api.org,youtube.com",
+        "STUDIO_TOKEN_ENV_PATH": "custom/tokens.env",
+    }))
+    assert custom.render_plan_enabled is False
+    assert custom.auto_research is False
+    assert custom.trend_hosts == ("custom.api.org", "youtube.com")
+    assert str(custom.token_env_path) == "custom/tokens.env"
+
+
+def test_env_example_documents_fs04_flags():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert _re.search(r"^STUDIO_RENDER_PLAN_ENABLED=1$", text, flags=_re.M)
+    assert _re.search(r"^STUDIO_AUTO_RESEARCH=1$", text, flags=_re.M)
+    assert _re.search(r"^STUDIO_TREND_SOURCES=$", text, flags=_re.M)
+    assert _re.search(r"^STUDIO_TOKEN_ENV_PATH=credentials/token.env$", text, flags=_re.M)
