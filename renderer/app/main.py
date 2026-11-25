@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException
@@ -49,9 +50,33 @@ async def lifespan(_app):
 app = FastAPI(title="Faceless Renderer MVP", version="0.3.0", lifespan=lifespan)
 
 
+def _check_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "ffmpeg": True, "studio_db": "ok" if studio.ping() else "unavailable"}
+    return {"status": "ok", "ffmpeg": _check_ffmpeg(), "studio_db": "ok" if studio.ping() else "unavailable"}
+
+
+@app.get("/ready")
+def ready():
+    db_ok = bool(studio.ping())
+    ffmpeg_ok = _check_ffmpeg()
+    if not (db_ok and ffmpeg_ok):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "unavailable",
+                "studio_db": "ok" if db_ok else "unavailable",
+                "ffmpeg": "ok" if ffmpeg_ok else "unavailable",
+            },
+        )
+    return {
+        "status": "ready",
+        "studio_db": "ok",
+        "ffmpeg": "ok",
+    }
 
 
 @app.api_route("/videos", methods=["GET", "POST", "HEAD"])

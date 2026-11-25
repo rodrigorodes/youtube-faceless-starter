@@ -25,6 +25,20 @@ def test_boot_imports_app_and_health_responds():
     assert body["studio_db"] in {"ok", "unavailable"}  # sem banco configurado: degradado, não quebra
 
 
+def test_ready_endpoint_differentiates_readiness_from_liveness():
+    client = TestClient(app)
+    response = client.get("/ready")
+    assert response.status_code in {200, 503}
+    if response.status_code == 200:
+        data = response.json()
+        assert data["status"] == "ready"
+        assert data["studio_db"] == "ok"
+        assert data["ffmpeg"] == "ok"
+    else:
+        detail = response.json()["detail"]
+        assert detail["status"] == "unavailable"
+
+
 def test_legacy_videos_route_is_replaced_by_410():
     client = TestClient(app)
     assert client.get("/videos").status_code == 410
