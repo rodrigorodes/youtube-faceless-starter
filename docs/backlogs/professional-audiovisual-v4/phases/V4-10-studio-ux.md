@@ -37,3 +37,6 @@ Implemente exclusivamente V4-10 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 [Timeline editável](../EDITABLE-TIMELINE-SPEC.md): trim/split, substituir mídia, fundo/fonte/volume, autosave, undo/redo, zero LLM em edits determinísticos; alternativas até três quando disponíveis. Reconciliar Packaging F7 (3 thumbnails, revisão e seleção) sem duplicar adapter. Preservar UX existente.
+
+## Complemento GAI-02
+UX mínimo incremental: selecionar origem, editar/copiar prompt, abrir ferramenta oficial, importar/preview/aplicar asset na cena, preservar revisões e aprovação. Sem login de assinatura dentro do Studio, scraping, worker bloqueado ou quota inventada. [GAI](../GAI-EXECUTION-PLAN.md).

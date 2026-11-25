@@ -26,3 +26,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-01 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento GAI-03/04/09
+Registrar candidatos Google API com capabilities e disponibilidade reais, Text/Image opcional, billing distinto de assinatura e custo guardado antes de chamada; manter OpenCode Bridge e Registry. Não representar Flow assistido como API. Ver [GAI](../GAI-EXECUTION-PLAN.md).

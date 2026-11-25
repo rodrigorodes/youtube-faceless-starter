@@ -1,0 +1,17 @@
+flowchart TD
+ S[Studio storyboard and creative brief] --> M{Generation mode}
+ M -->|Assisted| P[Copy prompt and open official tool]
+ P --> H[Human generates and exports asset]
+ H --> I[Validated external import]
+ M -->|Automatic opt-in| R[Existing Provider Registry]
+ R --> B[Existing Budget Guard and API usage]
+ B --> G[Authorized API adapter]
+ G --> I
+ I --> A[Existing Asset Repository and provenance]
+ A --> L[Local staging and cache]
+ A -. optional authorized copy .-> D[Google Drive]
+ D -. download and verify .-> L
+ L --> T[Canonical RenderPlan and timeline]
+ T --> F[FFmpeg and technical QA]
+ F --> Q[Human approval and optional semantic QA]
+ Q --> O[Final artifact]

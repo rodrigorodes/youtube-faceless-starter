@@ -26,3 +26,6 @@ Preserve comportamento anterior por compatibilidade ou flag; documente reversão
 
 ## Prompt
 Implemente exclusivamente V4-07 conforme este documento e o MASTER-PROMPT; reconcilie com HEAD, proponha plano antes de editar e comprove o aceite. Não declare sucesso sem evidência.
+
+## Complemento mídia externa
+Preservar ticks, duração de voz e captions; voz externa medida/alinhada, vídeo externo trim/loop/crop por política, sem mudar timeline silenciosamente. [GAI](../GOOGLE-AI-PRO-INTEGRATION.md).

@@ -31,3 +31,6 @@ Implemente exclusivamente V4-08 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 Homologar Apple Silicon/macOS com benchmark local, fontes, codecs e fallback; não declarar suporte antes de render real. Preview e render por segmentos conforme dependências, não exigir Remotion como renderer principal.
+
+## Complemento render de mídia externa
+FFmpeg local, staging e cache por hash/escopo; teste real de vídeo importado e áudio quando suportado; render sem rede. Não chamar geração paga dentro do compilador. [GAI](../GAI-EXECUTION-PLAN.md).

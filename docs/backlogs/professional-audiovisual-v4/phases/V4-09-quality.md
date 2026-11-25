@@ -35,3 +35,6 @@ Implemente exclusivamente V4-09 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 Separar gate editorial pré-produção (V4-06) e QA pós-render. Calibrar correspondência semântica com avaliação humana, fixtures de época/local incorretos, reconstrução IA e repetição; evidência por shot. Nenhum score de viralização.
+
+## Complemento GAI-08
+Gemini multimodal via API autorizada e orçamento, reusar SemanticChecker e QA report, evidência temporal e revisão humana; not_verified não equivale a pass. [GAI](../GAI-EXECUTION-PLAN.md).

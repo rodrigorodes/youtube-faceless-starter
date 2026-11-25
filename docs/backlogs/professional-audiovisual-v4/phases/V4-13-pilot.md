@@ -31,3 +31,6 @@ Implemente exclusivamente V4-13 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 [Professional Pilot](../PROFESSIONAL-PILOT-SPEC.md): vertical slice antecipado, documentário 5min, 15–20min para tempo humano, Mac, comparação cega, custos e edição não destrutiva. Piloto integrado Finder/manual, nenhuma publicação sem aprovação. Metas propostas, não resultados.
+
+## Complemento piloto assistido
+Vertical slice 60–90s com PNG/MP4 externo original autorizado, render e QA local, medir tempo humano, taxa de descarte, custo/minuto e qualidade antes de ampliar 5min e 15–20min. API paga/Drive opcionais, autorização separada, sem publicação. [GAI](../GAI-EXECUTION-PLAN.md).

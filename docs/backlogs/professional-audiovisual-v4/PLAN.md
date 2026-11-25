@@ -24,3 +24,6 @@ Preservar fases e IDs. Critérios vinculados em [consolidação](V4.1-CONSOLIDAT
 
 ## Pré-requisito compartilhado — Foundation & Stability
 [Plano mínimo](../foundation-stability/PLAN.md): 4–7 dias estimados, FS-01/02/04/07 P0; FS-05/06 P1 proporcionais ao uso local; FS-03 CI/CD adiado. Completar V4-00 com evidência reutilizada, sem repetir regressão/baseline quando válida. Não criar terceira iniciativa funcional nem antecipar V4-12 inteira.
+
+## Complemento Google AI Pro / External Media
+[Especificação](GOOGLE-AI-PRO-INTEGRATION.md) e [GAI-01–09](GAI-EXECUTION-PLAN.md). Reutilizar 14 fases/227 atividades originais, sem novo MVP. Priorizar GAI-01 (fundação 04/11) + GAI-02 (10 incremental) após Foundation/V4-00, com vertical slice real de imagem/vídeo importados. GAI-09 mínimo precede APIs pagas. GAI-03–08 opcionais nas fases consumidoras; Drive P2. Sem CI/CD e sem duplicar trabalho ou somar estimativas sobrepostas.

@@ -49,3 +49,6 @@ Implemente exclusivamente V4-05 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 Aplicar [Semantic Media](../SEMANTIC-MEDIA-SPEC.md) às atividades .04/.09/.10/.14 e [catálogo](../PROFESSIONAL-STYLE-CATALOG.md) às .17–32. Primeiro Documentary e Whiteboard; ranking explicável e alternativas persistidas. Reusar scene_media_intelligence e MediaSearch; teste real de mídia autorizada ou fixture, sem download indevido.
+
+## Complemento GAI-04/06
+Nano Banana API e Veo API são candidatos opcionais. Veo atual é stub; vídeo exige capability explícita e operação assíncrona persistida/reconciliada. Flow exportado por humano usa importação genérica GAI-01. [GAI](../GAI-EXECUTION-PLAN.md).

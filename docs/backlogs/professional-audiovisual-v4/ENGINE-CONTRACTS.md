@@ -5,3 +5,6 @@ RenderPlan: preservar schema atual; extensão versionada para tracks, z_order, s
 
 ## Complemento V4.1 (conceitual)
 Evoluir MediaCandidate/MediaSearch com ShotIntent, RankedCandidate, ShotSelection conforme SEMANTIC-MEDIA-SPEC; ClaimEvidence sobre SourceSnapshot; EditCommand/EditResult sobre revisões existentes; OpportunityBrief compatível com ContentBrief. Nenhum DTO novo sem reconciliação e compatibilidade. Separar políticas de estilo de execução; capabilities explícitas.
+
+## Complemento GAI (conceitual, reconciliar com contratos existentes)
+ImportExternalAsset: bytes/stream, kind, declared metadata, origin/license evidence, scope, hash -> AssetRef validado; attach via CAS/version e dependências existentes. Assisted prompt/intent não é provider que executa API. VideoGeneration: submit -> operation id -> poll/reconcile -> verified AssetRef; evitar segundo submit em efeito ambíguo. BillingMode LOCAL_FREE/SUBSCRIPTION_ASSISTED/API_METERED; estimate/reservation/actual/credit/unknown separados. Não forçar novo DTO/porta se existente suficiente. Ver [spec](GOOGLE-AI-PRO-INTEGRATION.md).

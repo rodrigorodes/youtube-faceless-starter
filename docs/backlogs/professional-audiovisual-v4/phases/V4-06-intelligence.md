@@ -29,3 +29,6 @@ Implemente exclusivamente V4-06 conforme este documento e o MASTER-PROMPT; recon
 
 ## Aceite complementar V4.1
 [Pesquisa editorial](../EDITORIAL-RESEARCH-SPEC.md): reconciliar V2-F3, claims e AutoResearch; gate antes de voz/mídia paga. Estilos Quick/Professional como política do mesmo core. ShotIntent e briefing do Finder opcional/manual, com evidência e originalidade.
+
+## Complemento direção criativa assistida
+Preparar prompt por cena/shot com intenção visual, estilo, formato e duração. Importar texto/fontes de Gemini Deep Research via gate editorial e SourceSnapshot, sem considerar fonte verificada automaticamente. [GAI](../GOOGLE-AI-PRO-INTEGRATION.md).
