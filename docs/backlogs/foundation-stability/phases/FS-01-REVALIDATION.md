@@ -1,11 +1,11 @@
 # FS-01 — Relatório de Homologação e Revalidação Técnica
 
 **Fase:** FS-01 (Estabilização da Regressão e Suíte Verde)  
-**Status Oficial:** **HOMOLOGADO CONDICIONALMENTE / PASS PARA FS-01 (COM BLOQUEIO IDENTIFICADO EM FS-06 NO HEAD)**  
+**Status Oficial:** **HOMOLOGADO INTEGRALMENTE / PASS PARA FS-01 (HEAD TOTALMENTE DESBLOQUEADO)**  
 **Auditor Responsável:** Engenheiro de Software Sênior (Antigravity)  
 **Data:** 25 de Novembro de 2026  
 **Commit Canônico da FS-01:** `4eba59c6103d0aeb991fd73840eb74e5a17c45fc`  
-**HEAD do Repositório:** `0c1f5d1` (`main` / `feat/fs-01-homologation`)  
+**HEAD do Repositório:** `a493d2f` (`main` / `feat/fs-01-homologation`)  
 
 ---
 
@@ -37,7 +37,7 @@ O preflight executado comprovou total isolamento e repetibilidade:
 ## 2. Atividade FS-01.02 — Matriz das 23 Divergências de UI
 
 A matriz completa e exaustiva de cada uma das 23 falhas de UI identificadas na RUN-08 foi consolidada em:
-- [FS-01-UI-RECONCILIATION.md](file:///Users/rodrigomendes/youtube-faceless-starter/docs/backlogs/foundation-stability/phases/FS-01-UI-RECONCILIATION.md)
+- [FS-01-UI-RECONCILIATION.md](FS-01-UI-RECONCILIATION.md)
 
 **Resumo da Homologação:**
 - **Zero bugs de produto nas 23 falhas:** Todas decorreram de drift de asserções em testes legados que esperavam marcações da V2/V3 diante da evolução aprovada da V4/V3 (onboarding ativo, chips de filtro, dark mode padrão, breakpoint 1000px, 4 hubs de configurações, glifos de navegação e rotas separadas da IA-01).
@@ -59,32 +59,34 @@ Foi auditado que as correções de produto e integrações prévias continuam at
 
 ## 4. Atividade FS-01.04 — Estabilidade da Calibração Piper TTS
 
-Foram executadas **5 baterias independentes e consecutivas** do teste de calibração TTS no contêiner oficial:
-- Evidência completa em [FS-01-TTS-STABILITY.md](file:///Users/rodrigomendes/youtube-faceless-starter/docs/backlogs/foundation-stability/phases/FS-01-TTS-STABILITY.md).
+Foram executadas **5 baterias independentes e consecutivas** do teste de calibração TTS no contêiner oficial (tanto da suíte completa de testes quanto das medições diretas de síntese):
+- Evidência completa em [FS-01-TTS-STABILITY.md](FS-01-TTS-STABILITY.md).
 
 **Resultados Quantitativos:**
-- **Referência empírica calibrada:** 3,2547 s (tolerância de 15%: [2,7665 s a 3,7429 s]).
-- **Execuções reais:**
-  - Run 1: delta = 3,0070 s (desvio 7,61%) → **PASS**
-  - Run 2: delta = 3,0883 s (desvio 5,11%) → **PASS**
-  - Run 3: delta = 3,4714 s (desvio 6,66%) → **PASS**
-  - Run 4: delta = 3,3205 s (desvio 2,02%) → **PASS**
-  - Run 5: delta = 3,1347 s (desvio 3,69%) → **PASS**
-- **Média Amostral:** **3,2044 s** (desvio médio de 1,54%).
-- **Desvio Padrão:** **0,1885 s**.
-- **Taxa de Sucesso:** 100% (5/5 consecutivas aprovadas, sem retries).
+- **Série A (5 execuções da suíte pytest `tests/test_tts_calibration.py`):**
+  - Run 1: 6 passed em 35.58s (exit code 0)
+  - Run 2: 6 passed em 30.00s (exit code 0)
+  - Run 3: 6 passed em 49.10s (exit code 0)
+  - Run 4: 6 passed em 104.65s (exit code 0)
+  - Run 5: 6 passed em 88.73s (exit code 0)
+  - Taxa de sucesso: 100% (5 de 5 consecutivas, 0 falhas).
+- **Série B (5 sínteses diretas do modelo Piper TTS):**
+  - Referência empírica calibrada: 3,2547 s (tolerância de 15%: [2,7665 s a 3,7429 s]).
+  - Média amostral observada: **3,2044 s** (desvio médio de apenas 1,54%).
+  - Desvio padrão: **0,1885 s**.
+  - Taxa de sucesso: 100% (5/5 consecutivas aprovadas, sem retries).
 
 ---
 
 ## 5. Atividade FS-01.05 — Classificação dos 20 Testes Ignorados
 
-A auditoria individual dos 20 skips foi detalhada em:
-- [FS-01-SKIP-CLASSIFICATION.md](file:///Users/rodrigomendes/youtube-faceless-starter/docs/backlogs/foundation-stability/phases/FS-01-SKIP-CLASSIFICATION.md)
+A auditoria individual e extração mecânica dos 20 skips foi detalhada em:
+- [FS-01-SKIP-CLASSIFICATION.md](FS-01-SKIP-CLASSIFICATION.md)
 
-**Estrutura dos Skips:**
-- **7 testes de Nós n8n:** Requerem binário `node` (ausente no container Python do renderer). Cobertura alternativa assegurada por testes unitários Python dos domínios analítico, publicação e tendências.
-- **13 testes de Navegador Playwright:** Requerem drivers Chromium/Playwright (`pytest_playwright`). Cobertura alternativa assegurada por testes de contrato HTML e APIs.
-- **Avaliação de Risco:** Zero testes críticos ou financeiros ignorados. Decisão oficial: **Aceitar temporariamente** na suíte unitária/mock e consolidar formalmente na fase FS-02.
+**Estrutura Mecânica dos Skips:**
+- **17 testes de Helpers JS / Nós n8n:** Decorrentes da ausência do binário `node` na imagem Python slim do renderer (4 funções individuais em `test_panel.py`, `test_workflow_publish.py`, `test_workflow_analytics.py`, `test_workflow_trends.py`, `test_falha_producao.py`, 6 testes no módulo `test_erro_js.py` e 4 funções em `test_publicacao_acao.py`). Cobertura alternativa assegurada por testes unitários Python dos domínios analítico, publicação e tendências.
+- **3 módulos de Navegador Playwright:** `tests/test_reference_browser.py`, `tests/ve08/test_composition_functional.py` e `tests/ve08/test_storyboard_functional.py` (exigem `pytest_playwright`, ausente na imagem headless slim). Cobertura alternativa assegurada por testes de contrato HTML e APIs.
+- **Avaliação de Risco:** Zero testes críticos ou financeiros ignorados. Decisão oficial: **Aceitar temporariamente** na suíte canônica headless e consolidar formalmente na fase FS-02.
 
 ---
 
@@ -111,17 +113,28 @@ Em estrito cumprimento às diretrizes de auditoria:
 
 ---
 
-## 8. Diagnóstico de Bloqueio em FS-06 no HEAD Atual (`0c1f5d1`)
+## 8. Resolução do Bloqueio Identificado em FS-06 no HEAD (`a493d2f`)
 
-Durante a execução da suíte canônica no HEAD atual (`0c1f5d1`), a auditoria identificou uma regressão introduzida no commit `54fa27b` (referente à fase **FS-06**):
-
-- **Local:** `renderer/app/studio/composition/wiring.py`, linha 743:
+Durante a auditoria da estabilização da regressão, foi identificado que o commit `54fa27b` (referente à fase **FS-06**) introduziu uma regressão em `renderer/app/studio/composition/wiring.py`:
+- **Local:** Linha 743:
   ```python
   submit=tracked_submit(self._executor, worker.work, self._active_runs, max_active=settings.max_active_runs)
   ```
-- **Erro:** `NameError: name 'settings' is not defined`.
-- **Causa:** No método `_build()` de `wiring.py`, a instância de configurações é associada à variável local `s` (ou `self.settings`), não `settings`. Quando qualquer teste de integração instancia `Studio.create()`, a chamada a `use_cases()` falha com `NameError`.
-- **Comportamento no commit canônico da FS-01 (`4eba59c`):** Esse erro **NÃO** existia na FS-01 (a suíte canônica roda 100% verde).
-- **Resolução Autorizada:**
-  O usuário autorizou formalmente a aplicação da correção de 1 token em `wiring.py:743` (`settings.max_active_runs` -> `s.max_active_runs`).
-  Após a alteração, os 170 testes de UI/painel executaram 100% verdes (`170 passed in 89.92s`) e a suíte de capacidade/isolamento passou integralmente (`30 passed in 1.42s`), destravando o HEAD global.
+- **Erro:** `NameError: name 'settings' is not defined`. No escopo local de `_build()`, a instância de configurações é `s`.
+- **Resolução Implementada e Auditada:**
+  - Aplicação da correção de 1 token em `wiring.py:743` (`settings.max_active_runs` -> `s.max_active_runs`), comitada em `a493d2f`.
+  - Validação imediata: 170 testes de UI executados e aprovados (`170 passed in 89.92s`) e 30 testes pós-FS01 aprovados (`30 passed in 1.42s`).
+  - O bloqueio está **100% resolvido**, sem impactos colaterais ou débitos técnicos.
+
+---
+
+## 9. Regressão Canônica Completa (RUN-12)
+
+A regressão canônica oficial sobre o HEAD limpo (`a493d2f`) foi executada no ambiente canônico oficial (`scripts/test-container.sh`) com relatório JUnit estruturado.
+
+- **Evidência Consolidada:** [RUN-12-regressao-canonica-final.md](../../../plano-de-testes-faceless/evidencias/RUN-2026-11-25-container/RUN-12-regressao-canonica-final.md).
+- **Métricas Mecânicas Reais:** **4.071 passed, 20 skipped, 0 failed** em 1.016,91s (~16m 56s), com exit code 0.
+- **JUnit XML Gerado:** `storage/test-reports/junit_canonical_run12.xml` (721 KB, 4.091 testes catalogados).
+- **Justificativa da Variação de Cobertura:** Os 12 testes adicionais em relação à RUN-11 (4.059 -> 4.071) decorrem de testes de capacidade, Compose e isolamento implementados em fases posteriores no HEAD (`tests/test_production_capacity.py`, `tests/test_compose_env.py`).
+- **Skips:** Exatamente 20 skips, 100% categorizados e justificados individualmente em [FS-01-SKIP-CLASSIFICATION.md](FS-01-SKIP-CLASSIFICATION.md).
+- **Decisão Final para FS-01:** **GO / HOMOLOGADA**.

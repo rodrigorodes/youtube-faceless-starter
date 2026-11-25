@@ -3,12 +3,12 @@ Status inicial: todos os itens pendentes, salvo FS-03 adiado por decisão explí
 
 | ID | Atividade | Entrega / aceite | Status | Commit / Evidência |
 |---|---|---|---|---|
-| FS-01.01 | Preflight e inventário de falhas | Checkout limpo, runner isolado, registrar SHA e comparar RUN-08 | PASS | `4eba59c`, `FS-01-REVALIDATION.md` |
-| FS-01.02 | Aprovar comportamento UI | Matriz 23 A2: cenário, esperado, observado, decisão teste/produto, evidência | PASS | `FS-01-UI-RECONCILIATION.md`, 23 falhas mapeadas |
-| FS-01.03 | Corrigir divergências aprovadas | Testes semânticos/behavior; preservar UX, guards e fluxos | PASS | `4eba59c`, sem regressões funcionais |
-| FS-01.04 | Investigar flake TTS | Repetições controladas, duração medida e causa; não relaxar limiar sem evidência | PASS | `FS-01-TTS-STABILITY.md`, 5/5 aprovadas, média 3,20s |
-| FS-01.05 | Classificar skips | Motivo, cobertura, criticidade, owner; crítico não coberto bloqueia | PASS | `FS-01-SKIP-CLASSIFICATION.md`, 20 skips analisados |
-| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | `4eba59c` e HEAD (4059 pass, 0 fail, exit 0) |
+| FS-01.01 | Preflight e inventário de falhas | Checkout limpo, runner isolado, registrar SHA e comparar RUN-08 | PASS | `a493d2f`, `phases/FS-01-REVALIDATION.md` |
+| FS-01.02 | Aprovar comportamento UI | Matriz 23 A2: cenário, esperado, observado, decisão teste/produto, evidência | PASS | `phases/FS-01-UI-RECONCILIATION.md`, 23 falhas mapeadas |
+| FS-01.03 | Corrigir divergências aprovadas | Testes semânticos/behavior; preservar UX, guards e fluxos | PASS | `a493d2f`, sem regressões funcionais |
+| FS-01.04 | Investigar flake TTS | Repetições controladas, duração medida e causa; não relaxar limiar sem evidência | PASS | `phases/FS-01-TTS-STABILITY.md`, 5/5 suítes e 5 sínteses (100% PASS, delta 3,20s) |
+| FS-01.05 | Classificar skips | Motivo, cobertura, criticidade, owner; crítico não coberto bloqueia | PASS | `phases/FS-01-SKIP-CLASSIFICATION.md`, 20 skips mecânicos catalogados |
+| FS-01.06 | Regressão canônica | Zero falhas não justificadas, evidência, exit code e duração | PASS | `RUN-12` em `a493d2f` (4071 pass, 20 skip, 0 fail em 1016,91s, exit 0) |
 | FS-02.01 | Preflight de isolamento | Antes de qualquer teste mutável: DB descartável, endpoint, credenciais fake, volumes e projeto exclusivos | PASS | DB descartável efêmero + tmpfs |
 | FS-02.02 | Separar suites | Unit/contract/DB, browser E2E e pilot; dependências Playwright/browser fixadas | PASS | `5793911`, imports protegidos |
 | FS-02.03 | Corrigir destino e exclusividade | E2E não usa DEV, unique project/porta ou lock exclusivo; cleanup own-only | PASS | `5793911`, guarda porta 8000 + PID RUN_ID |
