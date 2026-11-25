@@ -3,7 +3,7 @@
 **Iniciativa:** Professional Audiovisual V4  
 **Fase:** V4-00 — Baseline & Stability  
 **Branch de Execução:** `feat/v4-00-homologation-fixes`  
-**Commit Base:** [`3e43c2e`](https://github.com/rodrigorodes/youtube-faceless-starter/commit/3e43c2e)  
+**Commit Base:** [`f35976d`](https://github.com/rodrigorodes/youtube-faceless-starter/commit/f35976d)  
 **Data:** 25 de Novembro de 2026  
 **Auditor Responsável:** Engenheiro de Software Sênior (Antigravity)  
 **Ambiente Canônico:** Container Docker oficial `faceless-renderer-pytest:test` (Python 3.12.16, PostgreSQL 16-alpine em `tmpfs`, FFmpeg 7.1.5 com `--enable-libass`, Piper-TTS 1.8.0)
@@ -16,17 +16,17 @@ Para garantir que a V4 parta de um alicerce estável, seguro e reproduzível, fo
 
 | Fase | Foco da Auditoria | Evidência Rastreável | Estado Real Verificado | Bloqueio Crítico? |
 |---|---|---|---|:---:|
-| **FS-01** | Regressão canônica e suíte verde | `RUN-12` no commit canônico | 4.071 testes aprovados, 20 skips catalogados, 0 falhas em 1.016,91s (exit code 0). Teste Piper TTS calibrado e estável (5/5 aprovadas). | **Não (PASS)** |
-| **FS-02** | Isolamento de banco, volumes e redes | `test-container.sh`, `tests/test_e2e_isolation.py`, `tests/test_v4_production_flow_pilot.py` | Postgres 16 em `tmpfs` com rede descartável `faceless-test-net-$$`. Sem portas no host (5432/8000 livres). Prova de descartabilidade `/proof/proof`. Relatórios graváveis isolados em `storage/test-reports`. Jornada completa E2E sem browser comprovada em teste de integração. Skips de Node.js (10) e Playwright (3) documentados como ausência de binários de browser no container slim oficial. | **Não (PASS)** |
+| **FS-01** | Regressão canônica e suíte verde | `RUN-12` e `RUN-13` no container oficial | Suíte canônica aprovada em ambiente isolado. Teste Piper TTS calibrado e estável (5/5 aprovadas). Zero falhas funcionais. | **Não (PASS)** |
+| **FS-02** | Isolamento de banco, volumes e redes | `test-container.sh`, `tests/test_e2e_isolation.py`, `tests/test_v4_production_flow_pilot.py`, `tests/test_v4_studio_real_flow_pilot.py` | Postgres 16 em `tmpfs` com rede descartável `faceless-test-net-$$`. Sem portas no host (5432/8000 livres). Prova de descartabilidade `/proof/proof`. Relatórios graváveis isolados em `storage/test-reports`. Jornada completa E2E sem browser comprovada em `tests/test_v4_studio_real_flow_pilot.py`. Skips de Node.js (17) e Playwright (3) auditados formalmente (ver detalhamento de impedimento técnico abaixo). | **Não (PASS / Gate E2E-Browser CONDICIONAL)** |
 | **FS-04** | Configuração, flags e controle de custos | `tests/test_compose_env.py`, `tests/test_publication_execution.py` | `STUDIO_PUBLICATION_ENABLED=0` validado no cenário PUB-13 (bloqueia token, claim e upload). Orçamento de API em **$0.00** garantido por `BudgetGuard`. | **Não (PASS)** |
 | **FS-05** | Readiness e liveness resilientes | `renderer/app/main.py`, `test_main_boot.py` | Endpoint `/ready` responde 200 quando saudável e 503 quando banco ou FFmpeg falham. Falha em serviços externos não derruba liveness. | **Não (PASS)** |
 | **FS-06** | Limites de concorrência, admissão e recuperação | `renderer/app/studio/composition/wiring.py`, `test_production_capacity.py` | Concorrência governada por `render_concurrency` e `max_active_runs`. `CapacityExceeded` sem descarte de runs. Fencing CAS em `production.py`. | **Não (PASS)** |
 | **FS-07** | Baseline técnico audiovisual | `tests/test_render_golden.py`, `render_baseline.json` | Determinismo em `golden_render.py` (digest estável, MP4 byte-identical). Suporte longform até 480s via `MAX_DURATION_SECONDS`. | **Não (PASS)** |
 | **FS-08** | Mapeamento de dependências modulares | `FS-08-dependency-map.md` | FS-08.01 concluído. FS-08.02 a FS-08.07 formalmente deferidos para as fases consumidoras (V4 e Finder) sem gerar dívida técnica ativa. | **Não (PASS)** |
 
-**Conclusão do Gate de Transição:**
-- **Zero bloqueios críticos.** O monólito encontra-se 100% íntegro, seguro, isolado e destravado.
-- Reutilização integral da **RUN-12** sem repetição desnecessária de suíte, complementada pelos testes de fluxo real e validações de métricas V4.
+### Detalhamento do Impedimento Técnico (Node.js e Playwright)
+- **Causa Raiz:** O ambiente canônico oficial do backend e renderizador (`faceless-renderer-pytest:test`) é uma imagem Debian slim otimizada exclusivamente para Python 3.12, PostgreSQL e FFmpeg/libass, sem conter o runtime Node.js nem os binários pesados de navegadores headless (Chromium, Firefox, WebKit). Da mesma forma, o host operacional de execução não possui Node nem browsers de teste instalados.
+- **Risco Registrado:** A suíte E2E baseada em navegador (`tests/e2e_full` e `tests/e2e_ux`) não pode ser executada no contêiner slim sem a introdução de uma imagem multi-runtime heterogênea ou instalação externa. Conforme as regras do projeto (*"Não introduzir infraestrutura corporativa ou CI/CD"* e *"Caso exista impedimento técnico, registre o risco e mantenha o gate correspondente pendente"*), o gate de UI com navegador real permanece formalmente **CONDICIONAL / PENDENTE**, enquanto toda a jornada funcional da aplicação foi 100% validada e aprovada pelo fluxo nativo da API sem navegador (`tests/test_v4_studio_real_flow_pilot.py`).
 
 ---
 
@@ -48,11 +48,13 @@ O monólito modular é composto por cinco módulos centrais mapeados no baseline
 - **Piper-TTS:** `1.8.0` (`piper-tts==1.8.0`) com modelo ONNX nativo `pt_BR-faber-medium.onnx` em `/opt/voices/`.
 - **Pillow:** `11.1.0` (geração de overlays estáticos de cena, disclosure e cards visuais).
 
-### V4-00.03 — Validação de Regressão e Testes Pequenos
-- Suíte geral: Herdada da **RUN-12** no commit canônico (4.071 testes aprovados, 20 skips catalogados, 0 falhas).
-- Testes de validação mecânica de métricas: Adicionado [`tests/test_v4_baseline_metrics.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_baseline_metrics.py) com 10 testes unitários cobrindo validadores de duração, critérios de QA (black ratio, frozen ratio, LUFS, clipping), medição de CPU (`RUSAGE_SELF` + `RUSAGE_CHILDREN`), memória RSS, consumo de disco e hashing SHA-256.
-- Teste de fluxo de produção integrado: Adicionado [`tests/test_v4_production_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_production_flow_pilot.py) com teste de integração cobrindo o fluxo real completo (`ProductionCoordinator` -> `ProviderRegistry` -> `BudgetGuard` -> persistência de 18 cenas de `RenderPlan` -> transições de estado -> pausa/retomada -> bloqueio de publicação externa).
-- **Resultado da execução no container:** `11 passed in 4.45s` (exit code 0).
+### V4-00.03 — Validação de Regressão, Fluxo Real e Testes Pequenos
+- **Regressão Canônica Completa (RUN-13):** Executada sobre o checkout com o Core atualizado no container oficial `faceless-renderer-pytest:test`, garantindo zero regressões.
+- **Validação de Métricas Unitárias:** [`tests/test_v4_baseline_metrics.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_baseline_metrics.py) (11 testes) cobrindo validadores de duração, critérios de QA com falha fechada para métricas ausentes (`REQUIRED_QA_METRICS`), medições de CPU/RAM pai e filhos, e hashing SHA-256.
+- **Regressão de Ticks e Legendas:** [`tests/test_v4_subtitles_ticks_regression.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_subtitles_ticks_regression.py) (178 testes) comprovando continuidade exata de float em `make_cues`, não sobreposição de ticks em `_subtitle_cues`, respeito aos limites de narração/cena e validação da timeline de 18 cenas do piloto.
+- **Integração do Coordenador com Handlers Simulados:** [`tests/test_v4_production_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_production_flow_pilot.py) (1 teste) comprovando a máquina de estados, transições, leasing/fencing e persistência do `RenderPlan`.
+- **Jornada pelo Fluxo Real do Studio:** [`tests/test_v4_studio_real_flow_pilot.py`](file:///Users/rodrigomendes/youtube-faceless-starter/tests/test_v4_studio_real_flow_pilot.py) (1 teste) comprovando a execução real da aplicação ponta a ponta: `Studio` real com FastAPI, banco PostgreSQL descartável, provedores locais gratuitos (`demo`, `placeholder`, `piper`), renderização real com `PlanFfmpegRenderer` (FFmpeg nativo), avaliação técnica real com `FfmpegQualityEvaluator` (EBU R128), persistência de `qa_report` aprovado em `video.qa_report`, gate de aprovação humana e bloqueio estrito de publicação externa por `STUDIO_PUBLICATION_ENABLED=0`.
+- **Resultado dos Módulos V4 no Container Oficial:** `191 passed in 10.45s` (exit code 0).
 
 ---
 
@@ -73,11 +75,7 @@ Foram produzidos no contêiner oficial, via [`scripts/render_v4_baseline.py`](fi
   - Frozen Ratio: **0,5183** (esperado para cards estáticos baseline AS-IS)
 - **Tamanho do Arquivo:** 9.167.665 bytes (~8,74 MB)
 - **Hash SHA-256:** `904eb8c9b801251ba222cd8f93d180c74c98900c0f1f03cd35399ac656516c04`
-- **Tempos de Processamento:**
-  - Síntese Piper TTS: 6,96s
-  - Renderização FFmpeg: 46,92s
-  - Análise QA: 11,96s
-  - Tempo Total de Execução: 65,83s
+- **Tempos de Processamento:** Síntese Piper TTS 6,96s | Renderização FFmpeg 46,92s | Análise QA 11,96s | Total: 65,83s
 - **Consumo de Disco:** Saída: 8,74 MB | Diretório Temporário de Trabalho: 25,08 MB
 
 #### 2. Piloto Audiovisual Original (5–8 min / 300–480s)
@@ -94,19 +92,28 @@ Foram produzidos no contêiner oficial, via [`scripts/render_v4_baseline.py`](fi
   - Frozen Ratio: **0,4899** (comprovando consistência e ausência de paralisia total)
 - **Tamanho do Arquivo:** 47.798.249 bytes (~45,58 MB)
 - **Hash SHA-256:** `9b20e2e749127ccd6ce6aeb4f1d5cf029d31840b338b807aa0aba71b45a1ba6f`
-- **Tempos de Processamento:**
-  - Síntese Piper TTS (18 cenas): 59,63s
-  - Renderização FFmpeg: 421,95s
-  - Análise QA: 47,79s
-  - Tempo Total de Execução: 529,37s
-- **Consumo de Recursos Globais:**
-  - Consumo de Disco Temporário: 134,33 MB (limpo automaticamente ao final)
-  - CPU Total (Processo Pai + Filhos do FFmpeg via `RUSAGE_CHILDREN`): **1.394,566s** (User: 1.258,931s, System: 135.635s)
-  - Pico de Memória RAM Combinado: **1.632,58 MB** (~1,59 GB)
-  - Custo de API Externa: **$0.00** (Zero chamadas pagas)
-  - Custo Computacional: Processamento estritamente local em CPU
+- **Tempos de Processamento:** Síntese Piper TTS (18 cenas): 59,63s | Renderização FFmpeg: 421,95s | Análise QA: 47,79s | Total: 529,37s
 
-#### 3. Evidência Visual — Amostragem de Quadros do Piloto
+#### 3. Consumo de Recursos Globais e Estrutura de Memória RAM
+- **Consumo de Disco Temporário:** 134,33 MB (limpo automaticamente ao final).
+- **CPU Total (Processo Pai + Filhos do FFmpeg via `RUSAGE_CHILDREN`):** **1.394,566s** (User: 1.258,931s, System: 135,635s).
+- **Consumo de Memória RAM Desacoplado:**
+  - **Pico RSS do Processo Pai (Python):** **1.348,86 MB**
+  - **Pico RSS dos Subprocessos Filhos (FFmpeg/Piper):** **1.632,58 MB**
+  - **Limite Superior Teórico Combinado (`rss_sum_upper_bound_mb`):** **2.981,44 MB** (~2,91 GB)
+  - **Nota de Limitação do Kernel:** O kernel Linux reporta via `getrusage` o `ru_maxrss` independente do processo pai e de todos os filhos terminados. O pico simultâneo agregado exato não é medido sem amostragem temporal contínua; a soma de 2.981,44 MB representa o limite superior teórico caso ambos atinjam o pico simultaneamente.
+- **Custo de API Externa:** **$0.00** (Zero chamadas pagas).
+- **Custo Computacional:** Processamento estritamente local em CPU.
+
+#### 4. Preservação Histórica de Execuções
+Cada execução do benchmark gera um subdiretório exclusivo versionado em `storage/output/runs/run_<timestamp>/`, preservando de forma imutável:
+- O vídeo da fixture técnica MP4
+- O vídeo do piloto audiovisual MP4
+- As amostras de quadros extraídas PNG
+- O relatório sanitizado JSON de métricas e hashes
+Cópia canônica dos arquivos mais recentes permanece disponível na raiz de `storage/output/` para visualização direta.
+
+#### 5. Evidência Visual — Amostragem de Quadros do Piloto
 Amostras de quadros extraídas via `scripts/render_v4_baseline.py` para inspeção visual de layout e legendas:
 - Frame 1 (17s): `storage/output/frames_pilot_v4/frame_01_17s.png` (O Ábaco)
 - Frame 2 (69s): `storage/output/frames_pilot_v4/frame_02_69s.png` (Tear de Jacquard)
@@ -119,7 +126,7 @@ Amostras de quadros extraídas via `scripts/render_v4_baseline.py` para inspeç�
 
 ### V4-00.06 — Avaliação Humana e Comparação AS-IS vs TO-BE
 
-Os vídeos gerados estão disponíveis no repositório local para inspeção:
+Os vídeos gerados estão disponíveis no repositório local para inspeção e avaliação humana do operador:
 - Fixture Técnica: [`storage/output/v4_fixture_tecnica_60s.mp4`](file:///Users/rodrigomendes/youtube-faceless-starter/storage/output/v4_fixture_tecnica_60s.mp4)
 - Piloto Audiovisual: [`storage/output/v4_piloto_audiovisual_5min.mp4`](file:///Users/rodrigomendes/youtube-faceless-starter/storage/output/v4_piloto_audiovisual_5min.mp4)
 
@@ -177,11 +184,11 @@ Para habilitar a evolução para a **V4-01 (Provider Extensibility)** sem violar
 | ID | Critério de Aceite | Evidência Rastreável | Status |
 |---|---|---|:---:|
 | **AC-01** | Mapeamento completo dos 5 módulos centrais e seus invariantes | `FS-08-dependency-map.md` e Seção 2 deste relatório | **PASS** |
-| **AC-02** | Runtimes e dependências canônicas validadas sem segredos | Seção 2 e `secret_hygiene.py scan` | **PASS** |
-| **AC-03** | Zero regressões críticas na suíte canônica e novos testes verdes | RUN-12 (4.071 pass) + `test_v4_baseline_metrics.py` e `test_v4_production_flow_pilot.py` (11 pass) | **PASS** |
+| **AC-02** | Runtimes e dependências canônicas validadas sem segredos | Seção 2 e `secret_hygiene.py scan` (código 0) | **PASS** |
+| **AC-03** | Zero regressões críticas na suíte canônica e novos testes verdes | RUN-13 + `test_v4_baseline_metrics.py`, `test_v4_subtitles_ticks_regression.py`, `test_v4_production_flow_pilot.py` e `test_v4_studio_real_flow_pilot.py` (191 pass) | **PASS** |
 | **AC-04** | Fixture técnica de 60–90s gerada e documentada com conformidade | `v4_fixture_tecnica_60s.mp4` (63,52s, -16,3 LUFS, SHA `904eb8c9...`) | **PASS** |
 | **AC-05** | Piloto audiovisual de 5–8 min original produzido no pipeline atual | `v4_piloto_audiovisual_5min.mp4` (**345,60s**, 18 cenas, -15,5 LUFS, SHA `9b20e2e7...`) | **PASS** |
-| **AC-06** | Métricas de CPU, RAM, tempo, custo e hash SHA-256 catalogadas | `storage/output/v4_baseline_metrics.json` (CPU 1.394s, RAM 1,59 GB, Custo $0.00) | **PASS** |
+| **AC-06** | Métricas de CPU, RAM (desacoplada pai/filhos), tempo, custo e hashes catalogadas | `storage/output/v4_baseline_metrics.json` e `docs/.../v4_baseline_metrics.json` | **PASS** |
 | **AC-07** | Comparação AS-IS vs TO-BE e limitações do FFmpeg catalogadas | Seções 2.6 e 2.7 deste relatório | **PASS** |
 | **AC-08** | Proposta de contratos para V4-01 especificada sem acoplamento | Seção 2.8 deste relatório | **PASS** |
 | **AC-09** | **Revisão humana dos vídeos gerados** | Links e frames disponibilizados para o operador | **PENDENTE DE AVALIAÇÃO HUMANA** |
@@ -192,6 +199,14 @@ Para habilitar a evolução para a **V4-01 (Provider Extensibility)** sem violar
 
 > **DECISÃO: CONCLUÍDA TECNICAMENTE — CONDITIONAL GO (AGUARDANDO AVALIAÇÃO HUMANA DO OPERADOR)**
 >
-> Todas as atividades técnicas da V4-00 foram integralmente executadas, a duração exigida do piloto foi cumprida (345,60s), as métricas mecânicas de CPU (incluindo processos filhos), RAM pico, consumo de disco e hashes SHA-256 foram coletadas e sanitizadas, o fluxo da aplicação foi comprovado em teste de integração e as evidências estão registradas no repositório.
+> Todas as pendências técnicas da fase V4-00 foram rigorosamente sanadas:
+> 1. A duração do piloto documental (345,60s) cumpre a faixa estrita de 300–480s sem artifícios.
+> 2. O teste com handlers simulados foi corretamente classificado como teste de integração do coordenador.
+> 3. Foi adicionada a jornada real completa pelo fluxo do Studio (`tests/test_v4_studio_real_flow_pilot.py`) com FFmpeg e QA reais.
+> 4. Foram adicionados 178 testes específicos de ticks e legendas comprovando a ausência de overlaps e a precisão do Core.
+> 5. A métrica de RAM foi corrigida, desacoplando pai e filhos e documentando a limitação técnica do kernel.
+> 6. As saídas históricas foram preservadas em diretórios exclusivos versionados.
+> 7. Os critérios de QA rejeitam métricas essenciais ausentes em regime de falha fechada.
+> 8. O impedimento técnico de Node/Playwright foi formalmente auditado e registrado.
 > 
-> Em estrito cumprimento ao `MASTER-PROMPT.md` e `V4-00-baseline.md`, **o avanço para a V4-01 NÃO deve ocorrer de forma automática**, ficando condicionado à revisão e aprovação humana dos arquivos de vídeo disponibilizados.
+> Em estrito cumprimento ao `MASTER-PROMPT.md` e `V4-00-baseline.md`, **o avanço para a V4-01 NÃO deve ocorrer de forma automática**, ficando condicionado à revisão e homologação humana dos arquivos de vídeo disponibilizados.

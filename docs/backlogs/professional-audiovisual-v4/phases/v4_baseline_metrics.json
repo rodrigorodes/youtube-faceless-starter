@@ -16,7 +16,8 @@
       "cpu_total_seconds": 1394.566,
       "peak_rss_self_mb": 1348.86,
       "peak_rss_children_mb": 1632.58,
-      "peak_rss_combined_mb": 1632.58
+      "rss_sum_upper_bound_mb": 2981.44,
+      "memory_limitation_note": "resource.getrusage reporta o ru_maxrss independente do processo Python pai (RUSAGE_SELF) e dos subprocessos filhos terminados (RUSAGE_CHILDREN). O pico simultâneo agregado exato não é disponibilizado diretamente pelo kernel sem amostragem contínua; rss_sum_upper_bound_mb expressa o limite superior teórico caso ambos atinjam o pico no mesmo instante."
     },
     "cost_api_total_usd": 0.0,
     "cost_compute_summary": "Processamento local em contêiner Docker oficial sem chamadas externas a provedores pagos."

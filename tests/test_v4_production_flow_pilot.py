@@ -1,13 +1,17 @@
-"""Comprova o piloto pelo fluxo real da aplicação (V4-00 / Homologação).
+"""Teste de integração do ProductionCoordinator com handlers simulados (V4-00 / Homologação).
 
-Exercita e comprova ponta a ponta:
+Classificação: Teste de integração do coordenador com handlers simulados (simulated/mock handlers).
+Exercita e comprova a governança e o ciclo de vida do ProductionCoordinator:
 1. Production Coordinator (DAG de estágios: SCRIPT -> FACTCHECK -> STORYBOARD -> ASSETS -> RENDER -> QA -> APPROVAL -> PUBLISH).
-2. Provider Registry (resolução e auditoria dos provedores por capacidade).
-3. Budget Guard (controle orçamentário rígido com teto zero de API).
-4. Persistência do RenderPlan (PostgresRenderPlanRepository com hash, versão e multi-scene).
-5. Renderização e QA (gravação de relatório de qualidade e gates).
+2. Transições determinísticas de estado e leasing/fencing entre etapas.
+3. Provider Registry (resolução e snapshot de configuração imutável por capacidade).
+4. Budget Guard (controle orçamentário rígido com teto zero de API).
+5. Persistência do RenderPlan versionado (PostgresRenderPlanRepository com hash, versão e multi-scene).
 6. Recuperação e retomada (pausa humana, retomada e idempotência).
-7. Aprovação sem publicação externa (gate humano exigido e publicação estritamente bloqueada por STUDIO_PUBLICATION_ENABLED=0).
+7. Gate de aprovação sem publicação externa (publicação externa bloqueada por flag).
+
+Nota: Para a jornada de produção com handlers reais acionando FFmpeg nativo e FfmpegQa real,
+consulte `tests/test_v4_studio_real_flow_pilot.py` e `scripts/render_v4_baseline.py`.
 
 Executa contra o PostgreSQL descartável com prova criptográfica de isolamento.
 """

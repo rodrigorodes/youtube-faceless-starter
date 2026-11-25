@@ -59,7 +59,7 @@ def measure_resources_usage() -> dict:
 
     self_rss_mb = self_ru.ru_maxrss / factor
     children_rss_mb = children_ru.ru_maxrss / factor
-    combined_rss_mb = max(self_rss_mb, children_rss_mb)
+    rss_sum_upper_bound_mb = self_rss_mb + children_rss_mb
 
     cpu_user = round(self_ru.ru_utime + children_ru.ru_utime, 3)
     cpu_sys = round(self_ru.ru_stime + children_ru.ru_stime, 3)
@@ -71,7 +71,13 @@ def measure_resources_usage() -> dict:
         "cpu_total_seconds": cpu_total,
         "peak_rss_self_mb": round(self_rss_mb, 2),
         "peak_rss_children_mb": round(children_rss_mb, 2),
-        "peak_rss_combined_mb": round(combined_rss_mb, 2),
+        "rss_sum_upper_bound_mb": round(rss_sum_upper_bound_mb, 2),
+        "memory_limitation_note": (
+            "resource.getrusage reporta o ru_maxrss independente do processo Python pai "
+            "(RUSAGE_SELF) e dos subprocessos filhos terminados (RUSAGE_CHILDREN). O pico simultâneo "
+            "agregado exato não é disponibilizado diretamente pelo kernel sem amostragem contínua; "
+            "rss_sum_upper_bound_mb expressa o limite superior teórico caso ambos atinjam o pico no mesmo instante."
+        ),
     }
 
 
@@ -142,25 +148,57 @@ def validate_duration(duration_s: float, min_s: float, max_s: float, label: str)
         )
 
 
+REQUIRED_QA_METRICS = (
+    "duration_s",
+    "has_audio",
+    "width",
+    "height",
+    "video_codec",
+    "audio_codec",
+    "integrated_lufs",
+    "narration_lufs",
+    "true_peak_dbtp",
+    "silence_ratio",
+    "black_ratio",
+    "frozen_ratio",
+)
+
+
 def validate_qa_criteria(qa_result: dict, label: str) -> None:
-    """Valida critérios técnicos essenciais de conformidade EBU R128 e integridade do vídeo."""
+    """Valida critérios técnicos essenciais de conformidade EBU R128 e integridade do vídeo.
+
+    Métricas essenciais ausentes ou nulas são rejeitadas imediatamente (falha fechada).
+    """
+    missing = [m for m in REQUIRED_QA_METRICS if qa_result.get(m) is None]
+    if missing:
+        raise ValueError(
+            f"Métricas essenciais de QA ausentes ou nulas para {label}: {', '.join(missing)}"
+        )
+
     errors = []
+    if qa_result.get("has_audio") is not True:
+        errors.append("has_audio não é True (trilha de áudio ausente)")
+
     black_ratio = qa_result.get("black_ratio", 1.0)
-    if black_ratio is not None and black_ratio > 0.0:
+    if black_ratio > 0.0:
         errors.append(f"black_ratio={black_ratio} (esperado 0.0)")
 
     # frozen_ratio elevado é a limitação estrutural mapeada no baseline AS-IS (cards estáticos).
     # Rejeita apenas se o vídeo estiver totalmente paralisado (> 0.85).
     frozen_ratio = qa_result.get("frozen_ratio", 1.0)
-    if frozen_ratio is not None and frozen_ratio > 0.85:
+    if frozen_ratio > 0.85:
         errors.append(f"frozen_ratio={frozen_ratio} (esperado <= 0.85 no baseline AS-IS)")
 
     lufs = qa_result.get("integrated_lufs")
-    if lufs is None or not (-24.0 <= lufs <= -14.0):
+    if not (-24.0 <= lufs <= -14.0):
         errors.append(f"integrated_lufs={lufs} (esperado entre -24 e -14 LUFS)")
 
+    narration_lufs = qa_result.get("narration_lufs")
+    if not (-24.0 <= narration_lufs <= -14.0):
+        errors.append(f"narration_lufs={narration_lufs} (esperado entre -24 e -14 LUFS)")
+
     true_peak = qa_result.get("true_peak_dbtp")
-    if true_peak is not None and true_peak > 0.0:
+    if true_peak > 0.0:
         errors.append(f"true_peak_dbtp={true_peak} dBTP (esperado <= 0.0 dBTP)")
 
     if errors:
@@ -228,12 +266,14 @@ def _create_cinematic_card(
     img.save(path)
 
 
-def render_fixture_60s(voice: PiperVoice) -> dict:
+def render_fixture_60s(voice: PiperVoice, target_dir: Path | None = None) -> dict:
     """Produz a fixture técnica de 60 a 90 segundos (16:9)."""
     print("\n[+] Renderizando Fixture Técnica (60–90s)...")
+    dest_dir = target_dir or OUTPUT_DIR
+    dest_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix="v4_fixture_60s_work_"))
     size = SIZE[VideoFormat.long]  # 1920, 1080
-    out_mp4 = OUTPUT_DIR / "v4_fixture_tecnica_60s.mp4"
+    out_mp4 = dest_dir / "v4_fixture_tecnica_60s.mp4"
 
     script_segments = [
         (
@@ -530,12 +570,14 @@ DOCUMENTARY_SCENES = [
 ]
 
 
-def render_pilot_5min(voice: PiperVoice) -> dict:
+def render_pilot_5min(voice: PiperVoice, target_dir: Path | None = None) -> dict:
     """Produz o piloto audiovisual de 5 a 8 minutos (300 a 480 segundos: 18 cenas documentais, ~350s)."""
     print("\n[+] Renderizando Piloto Audiovisual Original (5–8 min / 300–480s)...")
+    dest_dir = target_dir or OUTPUT_DIR
+    dest_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix="v4_pilot_5min_work_"))
     size = SIZE[VideoFormat.long]  # 1920, 1080
-    out_mp4 = OUTPUT_DIR / "v4_piloto_audiovisual_5min.mp4"
+    out_mp4 = dest_dir / "v4_piloto_audiovisual_5min.mp4"
 
     documentary_scenes = DOCUMENTARY_SCENES
 
@@ -608,7 +650,7 @@ def render_pilot_5min(voice: PiperVoice) -> dict:
     total_size = out_mp4.stat().st_size
 
     # Extrai 6 quadros representativos para revisão visual
-    frames_dir = OUTPUT_DIR / "frames_pilot_v4"
+    frames_dir = dest_dir / "frames_pilot_v4"
     frame_files = extract_representative_frames(out_mp4, frames_dir, probe["duration_s"], num_frames=6)
 
     return {
@@ -658,10 +700,14 @@ def render_pilot_5min(voice: PiperVoice) -> dict:
 
 def main() -> int:
     t0 = time.perf_counter()
+    run_timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+    run_dir = OUTPUT_DIR / "runs" / f"run_{run_timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     voice = PiperVoice("pt_BR-faber-medium")
 
-    fixture_metrics = render_fixture_60s(voice)
-    pilot_metrics = render_pilot_5min(voice)
+    fixture_metrics = render_fixture_60s(voice, target_dir=run_dir)
+    pilot_metrics = render_pilot_5min(voice, target_dir=run_dir)
 
     t1 = time.perf_counter()
     resources = measure_resources_usage()
@@ -669,6 +715,8 @@ def main() -> int:
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "phase": "V4-00",
+        "run_id": f"run_{run_timestamp}",
+        "run_dir": str(run_dir),
         "title": "Baseline Audiovisual AS-IS e Benchmark Técnico",
         "environment": {
             "runtime": "Docker Debian Bookworm aarch64",
@@ -685,15 +733,29 @@ def main() -> int:
         "videos": [fixture_metrics, pilot_metrics],
     }
 
-    report_path = OUTPUT_DIR / "v4_baseline_metrics.json"
-    with open(report_path, "w", encoding="utf-8") as f:
+    # Salva no diretório exclusivo da execução
+    run_report_path = run_dir / "v4_baseline_metrics.json"
+    with open(run_report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
+    # Atualiza também a cópia canônica 'latest' na raiz de storage/output
+    canonical_report_path = OUTPUT_DIR / "v4_baseline_metrics.json"
+    with open(canonical_report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    shutil.copy2(run_dir / "v4_fixture_tecnica_60s.mp4", OUTPUT_DIR / "v4_fixture_tecnica_60s.mp4")
+    shutil.copy2(run_dir / "v4_piloto_audiovisual_5min.mp4", OUTPUT_DIR / "v4_piloto_audiovisual_5min.mp4")
+    canonical_frames = OUTPUT_DIR / "frames_pilot_v4"
+    if canonical_frames.exists():
+        shutil.rmtree(canonical_frames, ignore_errors=True)
+    shutil.copytree(run_dir / "frames_pilot_v4", canonical_frames)
+
     print("\n[+] Benchmark Concluído com Sucesso!")
-    print(f"    - Relatório gravado em: {report_path}")
+    print(f"    - Execução arquivada em: {run_dir}")
+    print(f"    - Relatório canônico em: {canonical_report_path}")
     print(f"    - Fixture (60-90s): {fixture_metrics['path']} ({fixture_metrics['duration_s']}s, {fixture_metrics['disk_usage']['output_size_mb']} MB, SHA: {fixture_metrics['sha256'][:16]}...)")
     print(f"    - Piloto (5-8 min): {pilot_metrics['path']} ({pilot_metrics['duration_s']}s, {pilot_metrics['disk_usage']['output_size_mb']} MB, SHA: {pilot_metrics['sha256'][:16]}...)")
-    print(f"    - CPU Total: {resources['cpu_total_seconds']}s | RAM Pico Combinada: {resources['peak_rss_combined_mb']} MB")
+    print(f"    - CPU Total: {resources['cpu_total_seconds']}s | RAM Pai: {resources['peak_rss_self_mb']} MB | Filhos: {resources['peak_rss_children_mb']} MB | Limite Sup: {resources['rss_sum_upper_bound_mb']} MB")
     print(f"    - Custo API: ${report['overall_performance']['cost_api_total_usd']:.2f}")
     return 0
 
