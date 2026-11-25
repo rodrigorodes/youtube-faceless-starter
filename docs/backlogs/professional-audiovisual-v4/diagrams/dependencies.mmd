@@ -1,0 +1,9 @@
+flowchart TD
+ V400 --> Foundation
+ Foundation --> VoiceAudio
+ Foundation --> VisualMotion
+ VoiceAudio --> Sync
+ VisualMotion --> Render
+ Sync --> QA
+ Render --> QA
+ QA --> UX --> Pilot

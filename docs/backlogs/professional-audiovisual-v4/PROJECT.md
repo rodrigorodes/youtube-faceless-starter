@@ -1,0 +1,2 @@
+# Objetivo
+Qualidade audiovisual profissional com baixo custo e controle humano, mantendo monólito modular, RenderPlan canônico e FFmpeg principal. Escopo: 14 fases, 227 atividades. Não inclui reconstrução do core, migração para microserviços, implementação simultânea de todos os providers ou promessa de monetização. Perfis econômico, equilibrado e premium opcional. Sucesso medido por comparação humana pareada, custo/minuto, sincronização, estabilidade e regeneração seletiva.

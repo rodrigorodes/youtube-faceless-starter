@@ -1,0 +1,20 @@
+# Plano
+
+| Fase | Entrega | Dependências | Gate |
+|---|---|---|---|
+| V4-00 | Baseline & Stability | Nenhuma | Relatório reproduzível com comandos, métricas, hashes e falhas; nenhuma regressão crítica. |
+| V4-01 | Provider Extensibility | 00 | Piper e FFmpeg continuam funcionando; adapter fake comprova extensão sem mudança no domínio. |
+| V4-02 | Professional Voice | 01,11 fundação | Mesmo roteiro PT-BR em dois providers locais quando viável; avaliação cega e custo registrados; capacidades não suportadas explícitas. |
+| V4-03 | Professional Audio | 01,04 fundação,11 fundação | Fixture com voz, duas músicas, ambiência e SFX; sem clipping; licença comprovada; duração preservada. |
+| V4-04 | Composition Core | 00,01 contratos | Golden fixtures antigas e novas; múltiplas camadas e transição com duração correta; erros explícitos para capacidades ausentes. |
+| V4-05 | Visual & Motion | 04,11 fundação | Cena demonstrativa com B-roll, gráfico, título e movimento; sem repetição indevida; fontes e dados verificáveis. |
+| V4-06 | Creative Intelligence | 02,03,05 contratos | Brief estruturado por cena, validado e editável; identidade congelada; sem comandos FFmpeg no LLM. |
+| V4-07 | Captions & Sync | 02,04 | Fixture com timestamps e mudança de duração da voz; legenda legível e sincronizada; exportações válidas. |
+| V4-08 | Render Extensibility | 04,12 fundação | FFmpeg principal; render real com cancelamento, cache e preflight; equivalência de segmentos e render integral. |
+| V4-09 | Multimodal Quality | 03,05,07,08 | Fixtures com defeitos conhecidos; relatório com evidência e localização; avaliação humana calibrada; sem autopublicação. |
+| V4-10 | Studio UX | 01–09 incremental | Fluxo real de edição persistente, undo/redo, adicionar cena na mesma bancada, gerar faltantes, preview e render; testes navegador. |
+| V4-11 | Asset Management | 00; fundação antes de 02–05 | Licença desconhecida bloqueia publicação; hash e referências preservados; restauração testada. |
+| V4-12 | Reliability & Scale | 00; transversal | Testes de falha e restart; nenhuma cobrança duplicada em fixture; limites e readiness verificáveis. |
+| V4-13 | Professional Pilot | Todas as fases aplicáveis | Comparação pareada com mesmo roteiro de baseline; três estilos quando orçamento permitir; aprovação humana e licença antes de publicar. |
+
+Ordem: 00; fundações 01/04/11/12; 02/03/05; 06/07/08; 09/10; 13. UX e QA incrementais desde a primeira entrega. Divida 04,11,12 em fundação e conclusão para evitar dependências circulares. Nenhuma estimativa de prazo é compromisso.

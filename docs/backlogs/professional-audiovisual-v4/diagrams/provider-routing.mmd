@@ -1,0 +1,4 @@
+flowchart TD
+ Request --> Capability --> License --> Budget --> Selection --> Adapter --> Validate
+ Validate -->|failure| ExplicitFallback --> Capability
+ Validate -->|success| Asset

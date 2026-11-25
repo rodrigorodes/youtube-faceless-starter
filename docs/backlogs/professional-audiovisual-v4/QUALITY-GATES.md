@@ -1,0 +1,2 @@
+# Gates
+G0 baseline reproduzível; G1 contratos e regressão; G2 licenças e orçamento; G3 render real e sincronização; G4 UX persistente e acessível; G5 avaliação humana pareada; G6 confiabilidade e rollback. Falhas críticas: corrupção, licença desconhecida para publicação, cobrança duplicada, perda de edição, duração inválida, publicação não autorizada. Medir loudness/true peak, clipping, frames congelados, relevância e legibilidade; calibrar limites na baseline, não inventar scores. Registrar evidência, comando, resultado, responsável e decisão GO/NO-GO.

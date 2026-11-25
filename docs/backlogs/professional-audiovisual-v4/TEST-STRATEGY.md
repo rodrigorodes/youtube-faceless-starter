@@ -1,0 +1,2 @@
+# Testes
+Descobrir comandos reais no repo. Unit: ticks, transforms, routing, licenças, budget. Contract: fake e adapters reais opcionais. Integration: persistência, cache, lease, restart, cancelamento. E2E: fixture local sem chamadas pagas, render FFmpeg, ffprobe e inspeção humana. Browser: edição persistente, undo/redo, adicionar cena, gerar faltantes, preview, responsividade. Golden tests toleram diferenças de codec documentadas. Benchmark mesmo roteiro e ambiente; registrar custo, tempo, CPU/RAM, hashes e limitações.
