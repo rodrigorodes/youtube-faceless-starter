@@ -511,3 +511,86 @@ def _finding(finding_id: str, check_id: str, severity: str, evidence: str,
 
 def _join_gaps(gaps: list[str]) -> str:
     return "; ".join(gaps)[:500]
+
+
+@dataclass(frozen=True)
+class SelectiveRegenerationPlan:
+    """Plano determinístico de regeneração seletiva por cena/shot (V4-09.16/17)."""
+
+    can_regenerate: bool
+    attempt_number: int
+    max_attempts: int
+    defective_scene_ids: tuple[str, ...]
+    defective_shot_ids: tuple[str, ...]
+    recommended_actions: tuple[str, ...]
+    reason: str
+
+
+def compute_selective_regeneration(
+    plan: RenderPlan,
+    report: QaReport,
+    max_attempts: int = 3,
+    current_attempt: int = 1,
+) -> SelectiveRegenerationPlan:
+    """Calcula o plano de regeneração seletiva isolando apenas as cenas ou shots com defeito."""
+    defective_scenes: list[str] = []
+    defective_shots: list[str] = []
+    actions: list[str] = []
+
+    for finding in report.findings:
+        if finding.severity in (BLOCKING, WARNING):
+            if finding.scene_id:
+                defective_scenes.append(finding.scene_id)
+            if finding.shot_id:
+                defective_shots.append(finding.shot_id)
+            if finding.suggested_action:
+                actions.append(finding.suggested_action)
+
+    unique_scenes = tuple(sorted(set(defective_scenes)))
+    unique_shots = tuple(sorted(set(defective_shots)))
+    unique_actions = tuple(dict.fromkeys(actions))
+
+    if not unique_scenes and not unique_shots and not actions and report.is_publishable:
+        return SelectiveRegenerationPlan(
+            can_regenerate=False,
+            attempt_number=current_attempt,
+            max_attempts=max_attempts,
+            defective_scene_ids=(),
+            defective_shot_ids=(),
+            recommended_actions=(),
+            reason="Nenhum defeito impeditivo identificado no relatório de QA.",
+        )
+
+    if current_attempt >= max_attempts:
+        return SelectiveRegenerationPlan(
+            can_regenerate=False,
+            attempt_number=current_attempt,
+            max_attempts=max_attempts,
+            defective_scene_ids=unique_scenes,
+            defective_shot_ids=unique_shots,
+            recommended_actions=unique_actions,
+            reason="Teto máximo de tentativas de regeneração excedido; requer intervenção humana.",
+        )
+
+    return SelectiveRegenerationPlan(
+        can_regenerate=True,
+        attempt_number=current_attempt,
+        max_attempts=max_attempts,
+        defective_scene_ids=unique_scenes,
+        defective_shot_ids=unique_shots,
+        recommended_actions=unique_actions,
+        reason=f"Regeneração seletiva recomendada para {len(unique_scenes)} cena(s) e {len(unique_shots)} shot(s).",
+    )
+
+
+def is_human_review_required(report: QaReport) -> bool:
+    """Determina se a aprovação humana do operador é obrigatória antes de qualquer publicação."""
+    return True
+
+
+def assert_ready_for_human_review(report: QaReport) -> None:
+    """Assegura que o render foi efetivamente verificado antes de disponibilizar para avaliação humana."""
+    if report.coverage.status != "verified":
+        raise ValueError(
+            f"Cannot request human review without verified QA coverage (status={report.coverage.status!r}: {report.coverage.reason})"
+        )
