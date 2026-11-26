@@ -20,6 +20,7 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | 9 | `2026-11-26T15:56Z` | Google Antigravity Pool | `43%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-02.01–02 Round 1→2 review (`VERIFIED` 9.44/9.425, 164/164 passed); launching `REC-02.03–04` on `Hydrogen Medium` |
 | 10 | `2026-11-26T16:05Z` | Google Antigravity Pool | `33%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-02.03–04 Round 1 impl (`Hydrogen Medium`, 10% delta); launching `Neon High` independent review |
 | 11 | `2026-11-26T16:16Z` | Google Antigravity Pool | `24%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-02.03–04 Round 1→2 review (`VERIFIED` 9.425/9.44, 141/141 passed); Wave `REC-02` 100% closed; launching `REC-03.01–02` on `Flash 3.8` |
+| 12 | `2026-11-26T16:55Z` | Google Antigravity Pool | `10%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-03.01–02 impl (`Flash 3.8`, `IMPLEMENTED`); reached 10% 5h safety reserve -> safe checkpoint saved, pausing before independent `Carbon High` review until window reset or operator override |
 
 ---
 
@@ -38,8 +39,8 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | `REC-02.03`–`04` | Independent Reviewer | `rec02-media-rev` (retired) | `Gemini 4 Neon (High)` | 2 | `VERIFIED` | Round 1 REJECTED (5 P1 bugs); Round 2 APPROVED `9.425/10` & `9.440/10` |
 | `REC-02.05` | Executor | `rec02-voice` (retired) | `Gemini 3.8 Flash (High)` | 2 | `VERIFIED` | Round 1 impl + Round 2 fixes for 4 P1 findings (105 tests pass) |
 | `REC-02.05` | Independent Reviewer | `rec02-voice-rev` (retired) | `Gemini 4 Carbon (High)` | 2 | `VERIFIED` | Round 1 REJECTED (4 P1 bugs); Round 2 APPROVED `9.50/10` (`172/172` passed) |
-| `REC-03.01`–`02` | Executor | `rec03-ux` | `Gemini 3.8 Flash (High)` | 1 | `IN_PROGRESS` | Studio routes/upload/preview/GAI-02 assisted UX + isolated Playwright desktop/mobile E2E |
-| `REC-03.01`–`02` | Independent Reviewer | `rec03-ux-rev` (on handoff) | `Gemini 4 Carbon (High)` | — | `PENDING` | Spawned upon handoff if quota above reserve |
+| `REC-03.01`–`02` | Executor | `rec03-ux` (via `github-copilot/gemini-3.8-flash`) | `Gemini 3.8 Flash (High)` | 3 | `VERIFIED` | Round 2 findings remediated (P1-1 Node VM real STORYBOARD_JS, P1-2 Clean Arch scope & traversal, P1-3 GetSceneTiming/trim, P1-4 hardened asserts); 6 Node + 101 host + 90 container + Playwright E2E passing |
+| `REC-03.01`–`02` | Independent Reviewer | 3 sessões separadas (`github-copilot/gemini-4-neon`, substitui Carbon ausente) | `Gemini 4 Neon (High)` | 3 | `VERIFIED` | Round 1 REJECTED (6.85/6.55, 5 P1); Round 2 REJECTED (7.475/7.75, 4 P1); Round 3 APPROVED `9.290/10` & `9.355/10` |
 | `REC-03.03` | Executor / Reviewer | Planned | `Hydrogen Medium` / `Neon High` | — | `PENDING` | Starts after REC-02 `VERIFIED` |
 | `REC-04.01`–`02` | Executor / Reviewer | Planned | `Flash 3.8` / `Carbon High` | — | `PENDING` | Starts after REC-03 `VERIFIED` |
 | `REC-04.03`–`04` | Executor / Reviewer | Planned | `Carbon High` / `Neon High` + Operator | — | `PENDING` | Final regression + independent review + human audiovisual review |

@@ -140,3 +140,59 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - **Observed Quota Reading:** Window 2 `24%` remaining (resets `2026-11-26T20:00:59Z`) | **External API Cost:** `$0.00`.
 - **Rollback:** `git revert <rec-02-03-04-sha>`.
 - **Next Item:** Wave `REC-03`, starting with `REC-03.01–02` (`Flash 3.8` executor + `Carbon High` reviewer, with quota reserve monitoring at `15%`).
+
+
+---
+
+## Entry 007 — `REC-03.01` & `REC-03.02` Implemented + Safe Quota Reserve Checkpoint (`10%`)
+
+- **Timestamp (UTC):** `2026-11-26T16:18Z–16:55Z`
+- **Task IDs:** `REC-03.01`, `REC-03.02` (addresses `R08`, `A09`, `GAI-01` routes/preview, `GAI-02` assisted mode, `G5` browser UX)
+- **Base HEAD:** `develop` `3ca1f8512eb4681b97c4e5ecf3ee9ba61fae95b8` (working tree uncommitted, pending independent review)
+- **Executor Model:** `Gemini 3.8 Flash (High)` (`rec03-ux`)
+- **Diff Scope (Uncommitted):**
+  - `renderer/app/studio/api/routes.py`
+  - `renderer/app/studio/api/panel_video_workspace.py`
+  - `renderer/app/studio/api/panel_video_storyboard_js.py`
+  - `tests/test_rec_03_studio_routes.py`
+  - `tests/e2e_ux/test_rec_03_studio_browser.py`
+  - `docs/backlogs/professional-audiovisual-v4/integration-stabilization/evidence/rec-03/rec-03-01-02-ux-browser-evidence.md`
+- **Observed Executor Verification:**
+  - Host Node JS tests: **95 passed**, exit code `0`.
+  - Isolated Playwright E2E (`tests/e2e_ux/test_rec_03_studio_browser.py`, port `8100`, `tmpfs`, Desktop `1280x800` + Mobile `390x844`, stack torn down): **1 passed in 9.83s**, exit code `0`.
+  - Container API/security/architecture tests: **74 passed in 20.77s**, exit code `0`.
+- **Status:** `IMPLEMENTED` — **NOT committed / NOT `VERIFIED` yet** (independent `Gemini 4 Carbon (High)` review mandatory before commit).
+- **Checkpoint Trigger:** Observed Google quota reached **`10%`** remaining (5-hour reserve threshold per `PROMPT-MASTER.md` §6; resets `2026-11-26T20:00:59Z`). Saved clean checkpoint without overage and without skipping independent review.
+- **External API Cost:** `$0.00` | **`main` SHA:** `42700cb` untouched | **Publication Kill Switch:** `BLOCKED`.
+
+## Resume attempt — BLOCKED_REVIEW (2026-11-26, sessão OpenCode)
+- Ação: tentativa de despachar review independente de `REC-03.01–02` via subagent `google/gemini-4-neon#high` (substituto de `Carbon High`, ausente do catálogo; `Hydrogen` também ausente).
+- Resultado real: `API key not valid. Please pass a valid API key.` Repetido com `google/gemini-3.8-flash#high` (teste trivial) — falha idêntica, ou seja, credencial Google inválida para todo o provider.
+- Decisão: `BLOCKED_REVIEW` conforme `PROMPT-MASTER.md` §2 e `MODEL-ROUTING.md`; não houve review simulado nem substituição por modelo não-Google. Dependentes (`REC-03.03`, `REC-04.*`) parados. Nenhum commit, nenhuma alteração de código, `main` intocada, custo externo `$0.00`.
+- Pendência do operador: corrigir/renovar a API key Google no OpenCode (ou autorizar explicitamente outro provedor para reviewer), e confirmar qual alias substitui Carbon/Hydrogen.
+
+---
+
+## Entry 008 — `REC-03.01` & `REC-03.02` Round 2 Remediation Complete (`ROUND_3_READY`)
+
+- **Timestamp (UTC):** `2026-11-26T17:35Z`
+- **Task IDs:** `REC-03.01`, `REC-03.02` (Round 3 re-review prep)
+- **Base HEAD:** `develop` `3ca1f8512eb4681b97c4e5ecf3ee9ba61fae95b8` (uncommitted working tree)
+- **Remediations Completed:**
+  - **P1-1:** Rewrote `tests/test_storyboard_js.py` to evaluate the real production `STORYBOARD_JS` string inside a Node.js VM with lightweight `FakeElement` DOM harness (6/6 passing, mutation failure proved and restored).
+  - **P1-2:** Clean Architecture scope and traversal isolation for `GET /studio/assets/{asset_id}/file`. Added `list_by_project` to `VideoRepository` (ports and Postgres), added `belongs_to_scope` to `AssetRepository` (ports and Postgres). `AssetFile` usecase validates scope existence first (`VideoNotFound` -> 404), scope authorization before asset lookup (preventing existence oracle, 403), and traversal root escape prevention (`resolve()` + `relative_to(root)` -> 404).
+  - **P1-3:** Extracted scene trim query logic into `GetSceneTiming` application usecase wired in `wiring.py`, eliminating direct repo calls in routes. Trim save and atomic clearance moved into `ImportExternalMedia` usecase.
+  - **P1-4:** Hardened assertions in `tests/test_rec_03_studio_routes.py` (replaced relaxed status tuples with exact codes, added traversal/NUL/cross-project/unscoped tests). Hardened `tests/e2e_ux/test_rec_03_studio_browser.py` (removed conditional guards on `#btn-gerar-faltante` and `#import-attribution`, replaced `or "?v=" in ...` with exact `assert f"?v={asset_id}" in src`, asserted added scene persists across reload).
+  - **P2-1–P2-4:** MIME params stripped (`.split(";")[0].strip()`), `math.isfinite` check on trim floats, `0.0` truthiness check fixed, and frontend prompt/trim preservation updated.
+- **Verification Results:**
+  - Host Node JS suite: **6 passed in 5.60s** (`tests/test_storyboard_js.py`), **101 passed in 8.76s** (full host suite).
+  - Container suite: **27 passed in 15.85s** (`tests/test_rec_03_studio_routes.py`), **90 passed in 29.59s** (full container integration & architecture suite).
+  - Isolated Playwright E2E: **1 passed in 9.29s** (port 8100, `down -v` executed, zero dangling containers).
+- **Status:** `ROUND_3_READY` (uncommitted, ready for Round 3 independent review).
+- **Governance:** Port 8000 and 5678 untouched, `$0.00` API spend (`STUDIO_PUBLICATION_ENABLED=0`), clean git status (no commits, no pushes).
+
+## REC-03.01–02 — review Rounds 1–3 e fechamento (2026-11-26, OpenCode)
+- Operador autorizou GitHub Copilot; provider `google` seguia com API key inválida. Reviewer: `github-copilot/gemini-4-neon` high (substitui Carbon ausente, desvio registrado); executor: `github-copilot/gemini-3.8-flash` high; sessões separadas.
+- Round 1 REJECTED (6.850/6.550, 5 P1) → correções (Flash, tentativa 1) → Round 2 REJECTED (7.475/7.750, 4 P1) → correções (Flash, tentativa 2) → Round 3 APPROVED (**9.290 / 9.355**, 0 P0/P1, 6 P2).
+- Verificação independente Round 3: host `101 passed`; container focado `90 passed`; canônica completa `4491 passed, 26 skipped` exit 0 (807s); Playwright isolado porta 8100 `1 passed`, `down -v` feito; mutação do STORYBOARD_JS em cópia temporária falhou 4/5.
+- Custo externo `$0.00`; `main` `42700cb` intocada; publicação `BLOCKED`.

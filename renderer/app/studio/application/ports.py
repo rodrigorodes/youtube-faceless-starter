@@ -171,6 +171,7 @@ class VideoRepository(Protocol):
         gravado); ``VideoStylePatchConflict`` = ``expected_revision`` divergente (nada gravado).
         """
     def transition_video(self, video_id: str, expected: VideoStatus, new: VideoStatus) -> bool: ...
+    def list_by_project(self, project_id: str) -> list[Video]: ...
 
 
 @runtime_checkable
@@ -457,6 +458,8 @@ class AssetRepository(Protocol):
         """Troca o asset de UMA cena por id estável, com CAS no vínculo lido; False se o vínculo mudou."""
     def set_scene_broll(self, video_id: str, scene_id: str, enabled: bool, note: str | None) -> bool:
         """Grava só `broll_enabled`/`broll_note` de UMA cena (sem nova versão, sem tocar na mídia); False se a cena não existe."""
+    def belongs_to_scope(self, asset_id: str, *, video_id: str | None = None, project_id: str | None = None) -> bool:
+        """Verifica se o asset_id pertence ao escopo (cenas ou scene_assets do vídeo ou projeto)."""
 
 
 class AssetStore(Protocol):

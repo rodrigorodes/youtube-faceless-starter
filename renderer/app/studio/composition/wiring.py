@@ -115,7 +115,7 @@ from ..domain.youtube_oauth import OAuthConfigurationError
 from ..application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from ..application.scene_narration import RegenerateSceneNarration, SceneNarration
 from ..application.render_cache import PlanRegeneration
-from ..application.media import (ImportExternalMedia, ListAssets, ListSceneCandidates, Media,
+from ..application.media import (AssetFile, GetSceneTiming, ImportExternalMedia, ListAssets, ListSceneCandidates, Media,
                                  PrepareStoryboard, ProduceAssets, SceneAssetFile, SetSceneBroll, SwapSceneMedia)
 from ..application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
 from ..application.creative_director import CreateCreativeBrief
@@ -577,7 +577,9 @@ class Studio:
             swap=SwapSceneMedia(repo, scripts, assets, asset_store, fetcher=media_fetcher, guard=guard, usage=usage),
             broll=SetSceneBroll(repo, scripts, assets),
             asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root),
-            import_media=ImportExternalMedia(repo, scripts, assets, asset_store, probe=FfmpegMediaProbe()))
+            import_media=ImportExternalMedia(repo, scripts, assets, asset_store, probe=FfmpegMediaProbe()),
+            direct_asset_file=AssetFile(repo, scripts, assets, s.storage_root),
+            scene_timing=GetSceneTiming(scripts))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.

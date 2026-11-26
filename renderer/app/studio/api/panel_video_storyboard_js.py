@@ -40,7 +40,7 @@ STORYBOARD_JS = r"""
   function norm(t) { return (t || '').trim(); }
   function validNarr(s) { var n = norm(s.narration).length; return n >= 5 && n <= 400; }
   function validPrompt(s) { var n = norm(s.image_prompt).length; return n >= 10 && n <= 500; }
-  function assetUrl(s) { return '/studio/videos/' + encodeURIComponent(VID) + '/scenes/' + encodeURIComponent(s.id) + '/asset'; }
+  function assetUrl(s) { return '/studio/videos/' + encodeURIComponent(VID) + '/scenes/' + encodeURIComponent(s.id) + '/asset?v=' + encodeURIComponent(s.asset_id || ''); }
 
   var cidN = 0;
   function newCid() { cidN += 1; return 'c' + cidN; }
@@ -52,16 +52,19 @@ STORYBOARD_JS = r"""
 
   /* ---------------- render ---------------- */
   function thumbKey(s, i) {
-    return s.asset_id ? ['m', s.id, s.asset_id, s.asset_tag, s.broll_enabled ? 1 : 0, secsOf(s)].join('|') : 'empty';
+    return s.asset_id ? ['m', s.id, s.asset_id, s.asset_tag, s.asset_kind || '', s.broll_enabled ? 1 : 0, secsOf(s)].join('|') : 'empty';
   }
   function thumbHtml(s, i) {
     if (!s.asset_id) {
       return '<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3);border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px">Sem m\u00eddia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>';
     }
     var tag = (s.asset_tag || 'M\u00eddia') + (s.broll_enabled ? ' \u00b7 +B-roll' : '');
-    return '<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3)"><img src="' + esc(assetUrl(s)) +
-      '" alt="M\u00eddia da cena ' + (i + 1) + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><span class="tag">' +
-      esc(tag) + '</span><span class="time">' + clock(secsOf(s)) + '</span></div>';
+    var isVideo = (s.asset_kind === 'video' || (s.asset_tag && s.asset_tag.toLowerCase().indexOf('v\u00eddeo') !== -1));
+    var mediaEl = isVideo
+      ? '<video src="' + esc(assetUrl(s)) + '" preload="metadata" muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>'
+      : '<img src="' + esc(assetUrl(s)) + '" alt="M\u00eddia da cena ' + (i + 1) + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">';
+    return '<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3);position:relative">' + mediaEl +
+      '<span class="tag">' + esc(tag) + '</span><span class="time">' + clock(secsOf(s)) + '</span></div>';
   }
   var AUD = { ok: ['ok', '\u2713 \u00c1udio atual'], stale: ['warn', '\u00c1udio desatualizado'], none: ['bad', 'Sem \u00e1udio ainda'] };
 
@@ -112,6 +115,31 @@ STORYBOARD_JS = r"""
     regen.textContent = s.audio_state === 'none' ? 'Gerar \u00e1udio da cena' : 'Regenerar \u00e1udio da cena';
     var up = card.querySelector('[data-a="mv"][data-d="-1"]'), down = card.querySelector('[data-a="mv"][data-d="1"]');
     up.disabled = !editable || !structure || i === 0; down.disabled = !editable || !structure || i === total - 1;
+    var assistedPrompt = card.querySelector('[data-f="assisted-prompt"]');
+    if (assistedPrompt) {
+      var isDirty = (assistedPrompt.dataset && assistedPrompt.dataset.dirty === '1') || (s.custom_assisted_prompt != null);
+      if (!isDirty) {
+        var aspect = (D.format === 'long') ? 'horizontal 16:9' : 'vertical 9:16';
+        var hint = (s.image_prompt || '') + '\n[Contexto: ' + secsOf(s) + 's, ' + aspect + ', identidade do canal]';
+        if (assistedPrompt.value !== hint && !assistedPrompt.matches(':focus')) assistedPrompt.value = hint;
+      } else if (s.custom_assisted_prompt != null && assistedPrompt.value !== s.custom_assisted_prompt && !assistedPrompt.matches(':focus')) {
+        assistedPrompt.value = s.custom_assisted_prompt;
+      }
+    }
+    var expAid = card.querySelector('[data-f="expected-asset-id"]');
+    if (expAid) expAid.value = s.asset_id || '';
+    var trimStart = card.querySelector('[data-f="trim-start"]');
+    if (trimStart && s.trim_start_s != null && !trimStart.matches(':focus')) {
+      trimStart.value = String(s.trim_start_s);
+    }
+    var trimEnd = card.querySelector('[data-f="trim-end"]');
+    if (trimEnd) {
+      if (s.trim_end_s != null && !trimEnd.matches(':focus')) {
+        trimEnd.value = String(s.trim_end_s);
+      } else if (!trimEnd.value) {
+        trimEnd.placeholder = secsOf(s).toFixed(1);
+      }
+    }
   }
 
   function renderAll() {
@@ -206,10 +234,20 @@ STORYBOARD_JS = r"""
   }
   function applyScript(res, cids) {
     version = res.script.version;
-    var tags = {}; server.forEach(function (s) { tags[s.cid] = s.asset_tag; });
+    var tags = {}, kinds = {}, trims = {};
+    server.forEach(function (s) {
+      tags[s.cid] = s.asset_tag;
+      kinds[s.cid] = s.asset_kind;
+      trims[s.cid] = { start: s.trim_start_s, end: s.trim_end_s };
+    });
     server = res.scenes.map(function (sc, i) {
+      var prevTrim = trims[cids[i]] || {};
       return { cid: cids[i], id: sc.id, label: sc.label || '', caption: sc.caption || '', narration: sc.narration,
-        image_prompt: sc.image_prompt, asset_id: sc.asset_id || null, asset_tag: tags[cids[i]] || '',
+        image_prompt: sc.image_prompt, asset_id: sc.asset_id || null,
+        asset_tag: tags[cids[i]] || '',
+        asset_kind: kinds[cids[i]] || '',
+        trim_start_s: prevTrim.start != null ? prevTrim.start : null,
+        trim_end_s: prevTrim.end != null ? prevTrim.end : null,
         duration_s: sc.duration_s || null, broll_enabled: !!sc.broll_enabled, broll_note: sc.broll_note || null };
     });
     adoptIds();
@@ -258,7 +296,7 @@ STORYBOARD_JS = r"""
       if (!t) continue;
       if (t.asset_id && t.asset_id !== s.asset_id) {
         res = await call('POST', '/scenes/' + encodeURIComponent(s.id) + '/media', { asset_id: t.asset_id, expected_version: version }, false);
-        if (res.asset) { s.asset_id = res.asset.id; s.asset_tag = t.asset_tag; }
+        if (res.asset) { s.asset_id = res.asset.id; s.asset_tag = t.asset_tag; s.asset_kind = t.asset_kind; }
       } else if (!t.asset_id && s.asset_id) { cannotClear = true; }
       var tn = norm(t.broll_note) || null, sn = norm(s.broll_note) || null;
       if (!!t.broll_enabled !== !!s.broll_enabled || tn !== sn) {
@@ -266,12 +304,14 @@ STORYBOARD_JS = r"""
         s.broll_enabled = !!res.enabled; s.broll_note = res.note || null;
       }
     }
-    // o servidor manda em id, dura\u00e7\u00e3o e \u00e1udio; a m\u00eddia s\u00f3 pode ser trocada, nunca removida
+    // o servidor manda em id, duração e áudio; a mídia só pode ser trocada, nunca removida
     model.forEach(function (m) {
       var sv = server.filter(function (x) { return x.cid === m.cid; })[0];
       if (!sv) return;
       m.id = sv.id; m.duration_s = sv.duration_s;
-      if (cannotClear && !m.asset_id) { m.asset_id = sv.asset_id; m.asset_tag = sv.asset_tag; }
+      if (cannotClear && !m.asset_id) { m.asset_id = sv.asset_id; m.asset_tag = sv.asset_tag; m.asset_kind = sv.asset_kind; }
+      if (m.trim_start_s == null) m.trim_start_s = sv.trim_start_s;
+      if (m.trim_end_s == null) m.trim_end_s = sv.trim_end_s;
       m.audio_state = sv.duration_s ? 'ok' : (m.audio_state === 'stale' ? 'stale' : 'none');
       if (sv.duration_s === null && m.audio_state === 'ok') m.audio_state = 'none';
     });
@@ -282,9 +322,10 @@ STORYBOARD_JS = r"""
     adoptIds(); renderAll();
     say('N\u00e3o foi poss\u00edvel salvar: ' + (err && err.message ? err.message : 'tente novamente.') + ' A tela voltou ao \u00faltimo estado salvo.');
   }
+  var needsSync = false;
   function scheduleSync() {
     if (!editable) return;
-    if (pending) return;
+    if (pending) { needsSync = true; return; }
     pending = true;
     say('Salvando\u2026');
     queue = queue.then(async function () {
@@ -292,9 +333,18 @@ STORYBOARD_JS = r"""
       var out = await reconcile();
       renderAll();
       say(lastInvalid || (out.cannotClear ? 'Salvo. A m\u00eddia de uma cena s\u00f3 pode ser trocada, n\u00e3o removida.' : 'Altera\u00e7\u00f5es salvas.'));
-    }).catch(function (err) { pending = false; rollback(err); });
+      if (needsSync) {
+        needsSync = false;
+        scheduleSync();
+      }
+    }).catch(function (err) { pending = false; needsSync = false; rollback(err); });
   }
-  window.__sbFlush = function () { return queue; };
+  window.__sbFlush = async function () {
+    while (pending || needsSync) {
+      await queue;
+    }
+    return queue;
+  };
 
   /* ---------------- a\u00e7\u00f5es ---------------- */
   function cardOf(el) { return el.closest('.scene'); }
@@ -342,13 +392,20 @@ STORYBOARD_JS = r"""
     if (!m) return;
     var sv = server.filter(function (x) { return x.cid === m.cid; })[0];
     if (sv && (norm(m.narration) !== norm(sv.narration) || norm(m.image_prompt) !== norm(sv.image_prompt))) {
-      m.asset_id = null; m.asset_tag = '';   // o backend limpa a m\u00eddia de uma cena cujo texto mudou
+      m.asset_id = null; m.asset_tag = ''; m.asset_kind = null;   // o backend limpa a m\u00eddia de uma cena cujo texto mudou
       if (m.audio_state === 'ok') m.audio_state = 'stale';
     }
     renderAll(); scheduleSync();
   }
   cardsEl.addEventListener('input', function (ev) {
-    var el = ev.target, a = el.dataset && el.dataset.a;
+    var el = ev.target;
+    if (el.matches && el.matches('[data-f="assisted-prompt"]')) {
+      el.dataset.dirty = '1';
+      var sc = sceneOf(el);
+      if (sc) sc.custom_assisted_prompt = el.value;
+      return;
+    }
+    var a = el.dataset && el.dataset.a;
     if (!/^(text|prompt|brollnote)$/.test(a || '')) return;
     var m = sceneOf(el); if (!m) return;
     if (!committed && snapAtFocus) { undo.push(snapAtFocus); if (undo.length > MAX) undo.shift(); redo = []; committed = true; syncButtons(); }
@@ -401,14 +458,41 @@ STORYBOARD_JS = r"""
     if (mediaTab === 'video') {
       var seen = {}, opts = model.filter(function (x) { if (!x.asset_id || seen[x.asset_id]) return false; seen[x.asset_id] = 1; return true; });
       body.innerHTML = '<div class="grid3">' + (opts.map(function (x) {
+        var isVid = (x.asset_kind === 'video' || (x.asset_tag && x.asset_tag.toLowerCase().indexOf('v\u00eddeo') !== -1));
+        var mediaHtml = isVid
+          ? '<video src="' + esc(assetUrl(x)) + '" preload="metadata" muted playsinline style="width:100%;height:64px;object-fit:cover;border-radius:6px"></video>'
+          : '<img src="' + esc(assetUrl(x)) + '" alt="" style="width:100%;height:64px;object-fit:cover;border-radius:6px">';
         return '<button type="button" class="btn" data-a="pickmedia" data-asset="' + esc(x.asset_id) + '" data-tag="' + esc(x.asset_tag) +
-          '" aria-label="Usar a m\u00eddia da cena ' + (indexOf(x) + 1) + '"><img src="' + esc(assetUrl(x)) +
-          '" alt="" style="width:100%;height:64px;object-fit:cover;border-radius:6px"></button>';
+          '" data-kind="' + (isVid ? 'video' : 'image') +
+          '" aria-label="Usar a m\u00eddia da cena ' + (indexOf(x) + 1) + '">' + mediaHtml + '</button>';
       }).join('') || '<p>Nenhuma m\u00eddia dispon\u00edvel neste escopo.</p>') + '</div>';
     } else if (mediaTab === 'channel') {
       body.innerHTML = '<p>Nenhuma m\u00eddia dispon\u00edvel neste escopo.</p><p class="sample">A biblioteca de m\u00eddia do canal ainda n\u00e3o tem leitura no servidor.</p>';
     } else if (mediaTab === 'files') {
-      body.innerHTML = '<p class="sub">Nenhum arquivo enviado. Importa\u00e7\u00e3o real depende do backend.</p><label class="field">Escolher arquivo<input type="file" disabled></label><p class="sample">O envio de arquivos ainda n\u00e3o existe no servidor.</p>';
+      var aspect = (D.format === 'long') ? 'horizontal 16:9' : 'vertical 9:16';
+      var defaultHint = (m.image_prompt || '') + '\n[Contexto: ' + secsOf(m) + 's, ' + aspect + ', identidade do canal]';
+      var promptVal = (m.custom_assisted_prompt != null) ? m.custom_assisted_prompt : defaultHint;
+      body.innerHTML = '<div class="assisted-import-modal-panel" data-assisted-import="true" data-scene-id="' + esc(m.id) + '" style="display:flex;flex-direction:column;gap:10px">' +
+        '<p class="sub">Importe m\u00eddia externa (PNG, JPEG, WebP, MP4, WebM) gerada por ferramenta assistida com licen\u00e7a verificada.</p>' +
+        '<label class="field"><span>Prompt sugerido para gera\u00e7\u00e3o externa:</span>' +
+        '<textarea data-f="modal-assisted-prompt" rows="3" style="width:100%;font-size:12px">' + esc(promptVal) + '</textarea></label>' +
+        '<div class="row"><button type="button" class="btn small ghost" data-a="copy-modal-prompt">📋 Copiar prompt</button></div>' +
+        '<label class="field"><span>Arquivo de m\u00eddia:</span><input type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm" data-f="modal-import-file"></label>' +
+        '<label class="field"><span>Licen\u00e7a registrada:</span><select data-f="modal-import-license" style="width:100%">' +
+        '<option value="OWN_ORIGINAL">OWN_ORIGINAL (Cria\u00e7\u00e3o pr\u00f3pria)</option>' +
+        '<option value="CC0-1.0">CC0-1.0 (Dom\u00ednio p\u00fablico)</option>' +
+        '<option value="CC-BY-4.0">CC-BY-4.0 (Atribui\u00e7\u00e3o requerida)</option>' +
+        '<option value="COMMERCIAL_LICENSED">COMMERCIAL_LICENSED (Licen\u00e7a comercial)</option>' +
+        '</select></label>' +
+        '<label class="field"><span>Autor / Atribui\u00e7\u00e3o (CC-BY):</span><input type="text" data-f="modal-import-attribution" placeholder="Ex: Artista / Fonte"></label>' +
+        '<label class="field"><span>URL da fonte (CC-BY):</span><input type="url" data-f="modal-import-source-url" placeholder="https://..."></label>' +
+        '<div class="row" style="gap:8px">' +
+        '<label class="field" style="width:70px"><span class="sample">In\u00edcio (s):</span><input type="number" step="0.1" min="0" placeholder="0.0" data-f="modal-trim-start"' + (m.trim_start_s != null ? ' value="' + esc(String(m.trim_start_s)) + '"' : '') + '></label>' +
+        '<label class="field" style="width:70px"><span class="sample">Fim (s):</span><input type="number" step="0.1" min="0" placeholder="' + secsOf(m).toFixed(1) + '" data-f="modal-trim-end"' + (m.trim_end_s != null ? ' value="' + esc(String(m.trim_end_s)) + '"' : '') + '></label>' +
+        '</div>' +
+        '<button type="button" class="btn primary small" data-a="submit-modal-import">⬆ Importar para a cena</button>' +
+        '<div class="sample err" data-f="modal-import-error" style="display:none;color:var(--bad)"></div>' +
+        '</div>';
     } else if (mediaTab === 'generate') {
       body.innerHTML = '<p class="sub">A imagem \u00e9 gerada a partir do prompt da cena durante a produ\u00e7\u00e3o. S\u00f3 o que falta \u00e9 gerado; o que j\u00e1 \u00e9 v\u00e1lido \u00e9 reaproveitado.</p><button type="button" class="btn primary small" data-a="genmissing-from-modal">Gerar tudo o que falta</button>';
     } else if (mediaTab === 'stock') {
@@ -431,9 +515,10 @@ STORYBOARD_JS = r"""
     document.getElementById('media-scene').textContent = 'Cena ' + (indexOf(m) + 1) + ' \u00b7 ' + m.label;
     mediaBody(); openDialog(dlgMedia);
   }
-  function pickAsset(assetId, tag) {
+  function pickAsset(assetId, tag, kind) {
     var m = model.filter(function (x) { return x.cid === mediaCid; })[0]; if (!m) return;
     remember(); m.asset_id = assetId; m.asset_tag = tag || m.asset_tag;
+    if (kind) m.asset_kind = kind;
     dlgMedia.close(); renderAll(); toast('M\u00eddia da cena atualizada.'); scheduleSync();
   }
   function pickCandidate(c) {
@@ -442,9 +527,12 @@ STORYBOARD_JS = r"""
     queue = queue.then(async function () {
       var res = await call('POST', '/scenes/' + encodeURIComponent(m.id) + '/media', { candidate: c, expected_version: version }, false);
       if (res.asset) {
-        var lic = String(res.asset.license || ''); var tag = lic.indexOf('ai-generated') === 0 ? 'Arte IA' : (res.asset.kind === 'video' ? 'V\u00eddeo stock' : 'Imagem stock');
-        m.asset_id = res.asset.id; m.asset_tag = tag;
-        var sv = server.filter(function (x) { return x.cid === m.cid; })[0]; if (sv) { sv.asset_id = res.asset.id; sv.asset_tag = tag; }
+        var isVid = (res.asset.kind === 'video' || c.media_type === 'video');
+        var lic = String(res.asset.license || '');
+        var tag = lic.indexOf('ai-generated') === 0 ? 'Arte IA' : (isVid ? 'V\u00eddeo stock' : 'Imagem stock');
+        m.asset_id = res.asset.id; m.asset_tag = tag; m.asset_kind = isVid ? 'video' : 'image';
+        var sv = server.filter(function (x) { return x.cid === m.cid; })[0];
+        if (sv) { sv.asset_id = res.asset.id; sv.asset_tag = tag; sv.asset_kind = m.asset_kind; }
       }
       renderAll(); toast('M\u00eddia da cena atualizada.'); say(res.changed ? 'M\u00eddia aplicada.' : (res.reason || 'Nada mudou.'));
     }).catch(function (err) { undo.pop(); syncButtons(); say('N\u00e3o foi poss\u00edvel trocar a m\u00eddia: ' + err.message); });
@@ -458,6 +546,129 @@ STORYBOARD_JS = r"""
       return '<div class="card flat" style="margin-top:10px"><b>Gera\u00e7\u00e3o ' + (i + 1) + '</b><p class="sub">' + esc(h.text) + '</p></div>';
     }).join('') : '<p>Nenhuma gera\u00e7\u00e3o guardada ainda.</p>';
     openDialog(dlgHist);
+  }
+
+  function copyPrompt(sid, isModal) {
+    var ta = isModal
+      ? document.querySelector('#media-body [data-f="modal-assisted-prompt"]')
+      : document.querySelector('.scene[data-sid="' + sid + '"] [data-f="assisted-prompt"]');
+    if (!ta) return;
+    var text = ta.value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast('Prompt copiado para a \u00e1rea de transfer\u00eancia.'); say('Prompt copiado.');
+      }).catch(function () {
+        ta.select(); document.execCommand('copy');
+        toast('Prompt copiado.'); say('Prompt copiado.');
+      });
+    } else {
+      ta.select(); document.execCommand('copy');
+      toast('Prompt copiado.'); say('Prompt copiado.');
+    }
+  }
+
+  async function doImportMedia(sid, isModal) {
+    var card = document.querySelector('.scene[data-sid="' + sid + '"]');
+    var fileInput = isModal
+      ? document.querySelector('#media-body [data-f="modal-import-file"]')
+      : (card ? card.querySelector('[data-f="import-file"]') : null);
+    var licSelect = isModal
+      ? document.querySelector('#media-body [data-f="modal-import-license"]')
+      : (card ? card.querySelector('[data-f="import-license"]') : null);
+    var attInput = isModal
+      ? document.querySelector('#media-body [data-f="modal-import-attribution"]')
+      : (card ? card.querySelector('[data-f="import-attribution"]') : null);
+    var srcInput = isModal
+      ? document.querySelector('#media-body [data-f="modal-import-source-url"]')
+      : (card ? card.querySelector('[data-f="import-source-url"]') : null);
+    var errEl = isModal
+      ? document.querySelector('#media-body [data-f="modal-import-error"]')
+      : (card ? card.querySelector('[data-f="import-error"]') : null);
+    var expInput = card ? card.querySelector('[data-f="expected-asset-id"]') : null;
+    var trimStart = isModal
+      ? document.querySelector('#media-body [data-f="modal-trim-start"]')
+      : (card ? card.querySelector('[data-f="trim-start"]') : null);
+    var trimEnd = isModal
+      ? document.querySelector('#media-body [data-f="modal-trim-end"]')
+      : (card ? card.querySelector('[data-f="trim-end"]') : null);
+
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+    if (!fileInput || !fileInput.files || !fileInput.files.length) {
+      var msg = 'Selecione um arquivo de m\u00eddia para importar.';
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+      toast(msg); say(msg);
+      return;
+    }
+    var file = fileInput.files[0];
+    var lic = licSelect ? licSelect.value : 'OWN_ORIGINAL';
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('license', lic);
+    if (attInput && attInput.value) fd.append('attribution', attInput.value);
+    if (srcInput && srcInput.value) fd.append('source_url', srcInput.value);
+    if (expInput && expInput.value) fd.append('expected_asset_id', expInput.value);
+    if (trimStart && trimStart.value) fd.append('trim_start_s', trimStart.value);
+    if (trimEnd && trimEnd.value) fd.append('trim_end_s', trimEnd.value);
+
+    say('Importando m\u00eddia para a cena\u2026');
+    queue = queue.then(async function () {
+      if (sid && sid.indexOf('tmp-') === 0) {
+        var found = model.filter(function (x) { return x.cid === (card ? card.dataset.cid : ''); })[0];
+        if (found && found.id && found.id.indexOf('tmp-') !== 0) {
+          sid = found.id;
+          if (card) card.dataset.sid = sid;
+        }
+      }
+      if (sid && sid.indexOf('tmp-') === 0) {
+        var unErr = 'Aguarde a nova cena ser salva antes de importar m\u00eddia.';
+        if (errEl) { errEl.textContent = unErr; errEl.style.display = 'block'; }
+        toast(unErr); say(unErr);
+        return;
+      }
+      try {
+        var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
+        var resp = await fetch('/studio/videos/' + encodeURIComponent(VID) + '/scenes/' + encodeURIComponent(sid) + '/import-media', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+          body: fd
+        });
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) {
+          var errText = window.StudioErro.texto(data, 'Erro ao importar m\u00eddia.', resp.status);
+          if (errEl) { errEl.textContent = errText; errEl.style.display = 'block'; }
+          toast(errText); say(errText);
+          return;
+        }
+        remember();
+        var m = model.filter(function (x) { return x.id === sid; })[0];
+        if (m && data.asset) {
+          var tag = (data.asset.license && String(data.asset.license).indexOf('ai-generated') === 0)
+            ? 'Arte IA'
+            : (data.asset.kind === 'video' ? 'V\u00eddeo importado' : 'Imagem importada');
+          m.asset_id = data.asset.id;
+          m.asset_tag = tag;
+          m.asset_kind = data.asset.kind;
+          if (trimStart && trimStart.value) m.trim_start_s = parseFloat(trimStart.value);
+          if (trimEnd && trimEnd.value) m.trim_end_s = parseFloat(trimEnd.value);
+          var sv = server.filter(function (x) { return x.id === sid; })[0];
+          if (sv) {
+            sv.asset_id = data.asset.id;
+            sv.asset_tag = tag;
+            sv.asset_kind = data.asset.kind;
+            sv.trim_start_s = m.trim_start_s;
+            sv.trim_end_s = m.trim_end_s;
+          }
+        }
+        if (isModal && dlgMedia) dlgMedia.close();
+        renderAll();
+        toast('M\u00eddia externa importada com sucesso.');
+        say('M\u00eddia externa importada para a cena.');
+      } catch (err) {
+        var netErr = 'Falha de comunica\u00e7\u00e3o ao importar: ' + err.message;
+        if (errEl) { errEl.textContent = netErr; errEl.style.display = 'block'; }
+        toast(netErr); say(netErr);
+      }
+    });
   }
 
   /* delega\u00e7\u00e3o de cliques */
@@ -475,8 +686,12 @@ STORYBOARD_JS = r"""
     else if (a === 'mv' && m) moveScene(m, Number(el.dataset.d));
     else if (a === 'play' && m) playScene(m);
     else if (a === 'regen' && m) regenScene(m, el);
+    else if (a === 'copy-prompt') copyPrompt(el.dataset.sid || (m && m.id), false);
+    else if (a === 'copy-modal-prompt') copyPrompt(m ? m.id : '', true);
+    else if (a === 'submit-import') doImportMedia(el.dataset.sid || (m && m.id), false);
+    else if (a === 'submit-modal-import') { var cur = model.filter(function (x) { return x.cid === mediaCid; })[0]; if (cur) doImportMedia(cur.id, true); }
     else if (a === 'media-tab') { mediaTab = el.dataset.v; mediaBody(); }
-    else if (a === 'pickmedia') pickAsset(el.dataset.asset, el.dataset.tag);
+    else if (a === 'pickmedia') pickAsset(el.dataset.asset, el.dataset.tag, el.dataset.kind);
     else if (a === 'pickcandidate') { var b = document.getElementById('media-body'); if (b._cands) pickCandidate(b._cands[Number(el.dataset.i)]); }
     else if (a === 'genmissing-from-modal') { dlgMedia.close(); var g = document.getElementById('btn-gerar-faltante'); if (g) g.click(); }
   });

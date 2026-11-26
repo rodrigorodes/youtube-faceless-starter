@@ -269,6 +269,13 @@ class PostgresVideoRepository:
                 row = cur.fetchone()
             return _video(row) if row else None
 
+    def list_by_project(self, project_id: str) -> list[Video]:
+        with _translated():
+            with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT id, project_id, topic, format, status, production_mode, title, description, tags, privacy, style_id, qa_report, schema_version, target_duration_s, pacing_preset, budget_cap_usd, creative_brief, created_at, updated_at "
+                            "FROM studio.videos WHERE project_id = %s ORDER BY created_at", (check_id(project_id),))
+                return [_video(r) for r in cur.fetchall()]
+
     def update_video_creative_brief(self, video_id: str, brief_dict: dict) -> None:
         with _translated():
             with self._connect() as conn, conn.cursor() as cur:

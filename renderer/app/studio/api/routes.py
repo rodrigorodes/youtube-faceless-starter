@@ -3,8 +3,11 @@ from collections.abc import Callable
 from datetime import date, datetime, timezone
 import base64
 import binascii
+import email
 import hashlib
 import hmac
+import math
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -38,7 +41,7 @@ from ..application.analytics_learning import conclusion_from
 from ..application.editorial import (ScriptRejected, SourceRefused, SourceUnavailable, StateConflict, VideoNotFound)
 from ..application.longform import ScriptApprovalRefused, ScriptVersionStale
 from ..application.ideas import IdeaInputRefused, IdeasRejected, MAX_TOPICS
-from ..application.media import AssetRefused, SceneMediaRefused, SceneNotFound
+from ..application.media import AssetRefused, MAX_IMPORT_BYTES, SceneMediaRefused, SceneNotFound
 from ..application.production import RunNotFound, StageCapabilityUnavailable
 from ..application.publishing import PublicationConflict, PublicationNotFound
 from ..application.publication_execution import PublicationResult
@@ -1685,7 +1688,197 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         result = run(go)
         return SceneBrollOut(scene_id=result.scene_id, enabled=result.enabled, note=result.note, changed=result.changed)
 
+    async def _read_stream_with_cap(request: Request, max_bytes: int) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(413, "Mídia excede o limite máximo de 100MB.")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @router.post("/videos/{video_id}/scenes/{scene_id}/import-media", response_model=SceneMediaOut)
+    @router.post("/videos/{video_id}/scenes/{scene_id}/media/import", response_model=SceneMediaOut)
+    async def import_scene_media(
+        video_id: str,
+        scene_id: str,
+        request: Request,
+    ):
+        content_type = request.headers.get("content-type", "")
+        if "\r" in content_type or "\n" in content_type:
+            raise HTTPException(400, "Header Content-Type contém caracteres de controle inválidos (CRLF).")
+
+        is_multipart = "multipart/form-data" in content_type.lower()
+        max_wire_bytes = MAX_IMPORT_BYTES + (64 * 1024 if is_multipart else 0)
+
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > max_wire_bytes:
+                    raise HTTPException(413, "Mídia excede o limite máximo de 100MB.")
+            except ValueError:
+                pass
+
+        file_bytes: bytes = b""
+        filename: str = ""
+        file_mime: str = ""
+        license_str: str = ""
+        expected_asset_id: str | None = None
+        source_url: str = ""
+        attribution: str = ""
+        trim_start_s: float | None = None
+        trim_end_s: float | None = None
+
+        if is_multipart:
+            if "boundary=" not in content_type.lower():
+                raise HTTPException(400, "Content-Type multipart/form-data ausente do parâmetro boundary.")
+            raw_body = await _read_stream_with_cap(request, max_wire_bytes)
+            try:
+                msg = email.message_from_bytes(b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + raw_body)
+            except (ValueError, KeyError, email.errors.MessageError, UnicodeDecodeError) as exc:
+                raise HTTPException(400, f"Estrutura multipart inválida: {exc}") from exc
+
+            for part in msg.walk():
+                if part.is_multipart():
+                    continue
+                name = part.get_param("name", header="content-disposition")
+                if name == "file":
+                    file_bytes = part.get_payload(decode=True) or b""
+                    filename = part.get_filename() or "upload.bin"
+                    file_mime = part.get_content_type()
+                elif name == "license":
+                    license_str = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                elif name == "expected_asset_id":
+                    expected_asset_id = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip() or None
+                elif name == "source_url":
+                    source_url = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                elif name in ("author", "attribution"):
+                    attribution = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                elif name == "trim_start_s":
+                    ts_raw = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                    if ts_raw:
+                        try:
+                            trim_start_s = float(ts_raw)
+                        except ValueError as exc:
+                            raise HTTPException(422, "trim_start_s deve ser um número válido") from exc
+                elif name == "trim_end_s":
+                    te_raw = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                    if te_raw:
+                        try:
+                            trim_end_s = float(te_raw)
+                        except ValueError as exc:
+                            raise HTTPException(422, "trim_end_s deve ser um número válido") from exc
+
+        elif "application/json" in content_type.lower():
+            raw_body = await _read_stream_with_cap(request, max_wire_bytes)
+            try:
+                body = json.loads(raw_body)
+            except Exception as exc:
+                raise HTTPException(422, "JSON malformado no corpo da requisição") from exc
+            if not isinstance(body, dict):
+                raise HTTPException(422, "Corpo JSON deve ser um objeto")
+
+            raw_data = body.get("file") or body.get("data") or body.get("file_base64") or ""
+            if isinstance(raw_data, str) and raw_data:
+                try:
+                    file_bytes = base64.b64decode(raw_data)
+                except Exception:
+                    file_bytes = raw_data.encode("utf-8")
+            elif isinstance(raw_data, bytes):
+                file_bytes = raw_data
+            filename = str(body.get("filename") or "upload.bin")
+            file_mime = str(body.get("mime") or "")
+            license_str = str(body.get("license") or "")
+            expected_asset_id = body.get("expected_asset_id") or None
+            if expected_asset_id:
+                expected_asset_id = str(expected_asset_id)
+            source_url = str(body.get("source_url") or "")
+            attribution = str(body.get("attribution") or body.get("author") or "")
+            if body.get("trim_start_s") is not None:
+                try:
+                    trim_start_s = float(body["trim_start_s"])
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(422, "trim_start_s deve ser um número válido") from exc
+            if body.get("trim_end_s") is not None:
+                try:
+                    trim_end_s = float(body["trim_end_s"])
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(422, "trim_end_s deve ser um número válido") from exc
+        else:
+            file_bytes = await _read_stream_with_cap(request, MAX_IMPORT_BYTES)
+            filename = request.headers.get("x-filename", "upload.bin")
+            file_mime = content_type.split(";")[0].strip()
+            license_str = request.headers.get("x-license", "")
+            expected_asset_id = request.headers.get("x-expected-asset-id")
+
+        if len(file_bytes) > MAX_IMPORT_BYTES:
+            raise HTTPException(413, "Mídia excede o limite máximo de 100MB.")
+
+        # Validação estrita de corte (trim)
+        if trim_start_s is not None and (not math.isfinite(trim_start_s) or trim_start_s < 0):
+            raise HTTPException(422, "trim_start_s deve ser um número finito não negativo")
+        if trim_end_s is not None and (not math.isfinite(trim_end_s) or trim_end_s <= 0):
+            raise HTTPException(422, "trim_end_s deve ser um número finito maior que zero")
+        if trim_start_s is not None and trim_end_s is not None:
+            if trim_end_s <= trim_start_s:
+                raise HTTPException(422, "trim_end_s deve ser estritamente maior que trim_start_s")
+        elif (trim_start_s is not None and trim_end_s is None) or (trim_start_s is None and trim_end_s is not None):
+            raise HTTPException(422, "Tanto trim_start_s quanto trim_end_s devem ser especificados quando o corte for definido")
+
+        # Guess MIME ONLY if missing or application/octet-stream (never rewrite declared text/plain or mismatched types!)
+        if not file_mime or file_mime == "application/octet-stream":
+            if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                file_mime = "image/png"
+            elif file_bytes.startswith(b"\xff\xd8\xff"):
+                file_mime = "image/jpeg"
+            elif file_bytes.startswith(b"RIFF") and file_bytes[8:12] == b"WEBP":
+                file_mime = "image/webp"
+            elif b"ftyp" in file_bytes[:32]:
+                file_mime = "video/mp4"
+            elif file_bytes.startswith(b"\x1a\x45\xdf\xa3"):
+                file_mime = "video/webm"
+            else:
+                ext = Path(filename).suffix.lower()
+                mime_map = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".mp4": "video/mp4",
+                    ".webm": "video/webm",
+                }
+                file_mime = mime_map.get(ext, file_mime or "application/octet-stream")
+
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.import_media is None:
+                raise HTTPException(503, "import media service unavailable")
+            try:
+                saved = uc.media.import_media.execute(
+                    video_id=check_id(video_id),
+                    data=file_bytes,
+                    filename=filename or "upload.bin",
+                    mime=file_mime,
+                    license=license_str,
+                    scene_id=check_id(scene_id),
+                    attribution=attribution,
+                    source_url=source_url,
+                    expected_asset_id=check_id(expected_asset_id) if expected_asset_id else None,
+                    trim_start_s=trim_start_s,
+                    trim_end_s=trim_end_s,
+                )
+                return saved
+            except AssetRefused as exc:
+                msg = str(exc)
+                if "100mb" in msg.lower() or ("exceeds" in msg.lower() and "limit" in msg.lower()):
+                    raise HTTPException(413, f"Arquivo excede limite de tamanho: {msg}") from exc
+                raise HTTPException(422, f"Mídia externa recusada: {msg}") from exc
+
+        result = run(go)
+        return SceneMediaOut(scene_id=scene_id, asset=result, changed=True, reason="imported")
+
     @router.get("/videos/{video_id}/scenes/{scene_id}/asset")
+    @router.get("/videos/{video_id}/scenes/{scene_id}/preview")
     def scene_asset_file(video_id: str, scene_id: str):
         """Preview da mídia real de uma cena (o storyboard mostra o asset vinculado, nunca um desenho)."""
         def go(uc: UseCases):
@@ -1695,7 +1888,51 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         path = run(go)
         if path is None:
             raise HTTPException(404, "scene media not available")
-        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
+        ext = path.suffix.lower() if hasattr(path, "suffix") else os.path.splitext(str(path))[1].lower()
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+        }
+        media_type = mime_map.get(ext) or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, max-age=60", "Accept-Ranges": "bytes"})
+
+    @router.get("/assets/{asset_id}/file")
+    def asset_file_by_id(asset_id: str, video_id: str | None = None, project_id: str | None = None):
+        """Serve o arquivo de um asset registrado pelo seu ID sob escopo de projeto/vídeo."""
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.direct_asset_file is None:
+                raise HTTPException(503, "asset file service unavailable")
+            try:
+                vid = check_id(video_id) if video_id else None
+                pid = check_id(project_id) if project_id else None
+                aid = check_id(asset_id)
+            except InvalidId:
+                raise HTTPException(404, "identificador de asset, vídeo ou projeto inválido")
+            try:
+                return uc.media.direct_asset_file.execute(aid, video_id=vid, project_id=pid)
+            except PermissionError as exc:
+                raise HTTPException(403, f"Acesso negado fora do escopo autorizado: {exc}") from exc
+            except VideoNotFound as exc:
+                raise HTTPException(404, f"Vídeo ou projeto de escopo não encontrado: {exc}") from exc
+
+        path = run(go)
+        if path is None:
+            raise HTTPException(404, "asset file not found")
+        ext = path.suffix.lower() if hasattr(path, "suffix") else os.path.splitext(str(path))[1].lower()
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+        }
+        media_type = mime_map.get(ext) or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, max-age=60", "Accept-Ranges": "bytes"})
 
     @router.get("/videos/{video_id}/scenes/{scene_id}/assets", response_model=list[SceneAsset])
     def list_scene_assets(video_id: str, scene_id: str):
@@ -2067,12 +2304,16 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                     scenes = None
             # VE-08: o storyboard mostra o asset real de cada cena (tag e preview); só as áreas que o usam leem.
             scene_assets = None
-            if area in ("cenas", "composicao") and scenes and uc.media is not None:
-                try:
-                    scene_assets = {x.idx: x.asset for x in uc.media.list_assets.execute(check_id(video_id))
-                                    if x.asset is not None}
-                except Exception:
-                    scene_assets = None
+            scene_timing = {}
+            if area in ("cenas", "composicao") and scenes:
+                if uc.media is not None:
+                    try:
+                        scene_assets = {x.idx: x.asset for x in uc.media.list_assets.execute(check_id(video_id))
+                                        if x.asset is not None}
+                    except Exception:
+                        scene_assets = None
+                if uc.media is not None and getattr(uc.media, "scene_timing", None) is not None:
+                    scene_timing = uc.media.scene_timing.execute(scenes)
             # VE-08.6: a execução viva alimenta o cartão de progresso com as etapas reais (não com um chute),
             # em todas as abas: sem isso o cartão caía nas etapas registradas (ex.: só "1/1 Render").
             run_stages = None
@@ -2093,6 +2334,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                                           scenes=scenes,
                                           script=script,
                                           scene_assets=scene_assets,
+                                          scene_timing=scene_timing,
                                           run_stages=run_stages,
                                           projects=_topbar(uc, detail.video.project_id)[0],
                                           project_id=detail.video.project_id,

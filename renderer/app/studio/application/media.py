@@ -1,16 +1,17 @@
 """Casos de uso de mídia: storyboard e produção de imagens por cena (cache por conteúdo, licença obrigatória)."""
+from pathlib import Path
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
 from ..domain.asset_registry import requires_attribution, verify_license_provenance
-from ..domain.contracts import Asset, AssetKind, Scene, Video, VideoStatus
+from ..domain.contracts import Asset, AssetKind, Scene, SceneAsset as DomainSceneAsset, Video, VideoStatus
 from ..domain.ids import asset_cache_key
 from ..domain.media import ASPECT_FOR, build_image_prompt, strip_style
 from ..domain.media_ranker import MediaRanker
 from .budget import PaidOperationGuard, paid_key, provider_settlement
-from .editorial import CostGuard, StateConflict, _require_video
+from .editorial import CostGuard, StateConflict, VideoNotFound, _require_video
 from .errors import ServiceUnavailable
 from .ports import (AssetRepository, AssetStore, ImageModel, MediaCandidate, MediaFetcher, MediaProbe, MediaSearch,
                     ProductionLock, ScriptRepository, UsageRepository, VideoRepository)
@@ -379,6 +380,76 @@ class SceneAssetFile:
         return target if target.is_file() else None
 
 
+class AssetFile:
+    """Arquivo de um asset registrado sob escopo de projeto ou vídeo.
+
+    Garante fronteira de Clean Architecture sem acesso a repositórios diretamente na camada de rotas.
+    Rejeita acesso cruzado (outro vídeo/projeto) e sem escopo (403), além de path traversal fora da raiz (404).
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, root):
+        self.videos, self.scripts, self.assets, self.root = videos, scripts, assets, root
+
+    def execute(self, asset_id: str, *, video_id: str | None = None, project_id: str | None = None):
+        from pathlib import Path
+        if not video_id and not project_id:
+            raise PermissionError("asset file request requires video_id or project_id scope")
+
+        if video_id:
+            video = _require_video(self.videos, video_id)
+            if project_id and video.project_id != project_id:
+                raise PermissionError("video does not belong to specified project")
+        elif project_id:
+            if hasattr(self.videos, "get_project"):
+                proj = self.videos.get_project(project_id)
+                if proj is None:
+                    raise VideoNotFound(f"project {project_id!r} not found")
+
+        authorized = False
+        if hasattr(self.assets, "belongs_to_scope"):
+            authorized = self.assets.belongs_to_scope(asset_id, video_id=video_id, project_id=project_id)
+        else:
+            if video_id:
+                for sc in self.scripts.scenes(video_id):
+                    if sc.asset_id == asset_id:
+                        authorized = True
+                        break
+                    if hasattr(self.scripts, "get_scene_assets"):
+                        sas = self.scripts.get_scene_assets(sc.id)
+                        if any(sa.asset_id == asset_id for sa in sas):
+                            authorized = True
+                            break
+            elif project_id:
+                if hasattr(self.videos, "list_by_project"):
+                    for v in self.videos.list_by_project(project_id):
+                        for sc in self.scripts.scenes(v.id):
+                            if sc.asset_id == asset_id:
+                                authorized = True
+                                break
+                            if hasattr(self.scripts, "get_scene_assets"):
+                                sas = self.scripts.get_scene_assets(sc.id)
+                                if any(sa.asset_id == asset_id for sa in sas):
+                                    authorized = True
+                                    break
+                        if authorized:
+                            break
+
+        if not authorized:
+            raise PermissionError("asset does not belong to authorized scope")
+
+        asset = self.assets.get(asset_id)
+        if asset is None:
+            return None
+
+        root = Path(self.root).resolve()
+        try:
+            target = (root / asset.path).resolve()
+            target.relative_to(root)
+        except (ValueError, OSError):
+            return None
+        return target if target.is_file() else None
+
+
 MAX_IMPORT_BYTES = 100 * 1024 * 1024
 
 
@@ -405,6 +476,8 @@ class ImportExternalMedia:
         attribution: str = "",
         source_url: str = "",
         expected_asset_id: str | None = None,
+        trim_start_s: float | None = None,
+        trim_end_s: float | None = None,
     ) -> Asset:
         import hashlib
         from pathlib import PurePosixPath
@@ -419,7 +492,7 @@ class ImportExternalMedia:
         if clean_source_url and not clean_source_url.lower().startswith(("http://", "https://")):
             raise AssetRefused("invalid source_url scheme")
 
-        if not isinstance(filename, str) or "\x00" in filename:
+        if not isinstance(filename, str) or "\x00" in filename or "%00" in filename:
             raise AssetRefused("invalid media filename")
         clean_filename = PurePosixPath(filename.replace("\\", "/")).name
         if not clean_filename or clean_filename in (".", "..") or clean_filename.startswith("."):
@@ -457,9 +530,22 @@ class ImportExternalMedia:
 
         existing = self.assets.find(key)
         if existing is not None:
-            if scene_id is not None:
-                self._link_scene_cas(video.id, scene_id, existing.id, expected_asset_id)
-            return existing
+            root = Path(self.store.root).resolve() if hasattr(self.store, "root") else None
+            file_ok = False
+            if root:
+                try:
+                    target = (root / existing.path).resolve()
+                    target.relative_to(root)
+                    file_ok = target.is_file()
+                except (ValueError, OSError):
+                    file_ok = False
+            else:
+                file_ok = True
+            if file_ok:
+                if scene_id is not None:
+                    self._link_scene_cas(video.id, scene_id, existing.id, expected_asset_id)
+                    self._apply_scene_trim(scene_id, existing.id, trim_start_s, trim_end_s)
+                return existing
 
         if is_video and hasattr(self.store, "put_video"):
             try:
@@ -468,6 +554,12 @@ class ImportExternalMedia:
                 path = self.store.put_video(key, data)
         else:
             path = self.store.put(key, data, aspect)
+
+        if existing is not None:
+            if scene_id is not None:
+                self._link_scene_cas(video.id, scene_id, existing.id, expected_asset_id)
+                self._apply_scene_trim(scene_id, existing.id, trim_start_s, trim_end_s)
+            return existing
 
         asset = Asset(
             id=uuid.uuid4().hex,
@@ -489,10 +581,12 @@ class ImportExternalMedia:
                 )
                 if not linked:
                     raise StateConflict("scene media changed underneath; nothing was linked")
+                self._apply_scene_trim(scene_id, saved.id, trim_start_s, trim_end_s)
                 return saved
             saved = self.assets.add(asset)
             if scene_id is not None:
                 self._link_scene_cas(video.id, scene_id, saved.id, expected_asset_id)
+                self._apply_scene_trim(scene_id, saved.id, trim_start_s, trim_end_s)
             return saved
         except Exception:
             self._compensate_failed_import(cache_key=key, asset_id=asset.id, saved=saved, path=path)
@@ -504,6 +598,25 @@ class ImportExternalMedia:
                 raise StateConflict("scene media changed underneath; nothing was linked")
         elif hasattr(self.assets, "set_scene_asset"):
             self.assets.set_scene_asset(video_id, scene_id, asset_id)
+
+    def _apply_scene_trim(self, scene_id: str, asset_id: str, trim_start_s: float | None, trim_end_s: float | None) -> None:
+        if trim_start_s is not None and trim_end_s is not None:
+            sa = DomainSceneAsset(
+                scene_id=scene_id,
+                asset_id=asset_id,
+                position=0,
+                start_s=float(trim_start_s),
+                end_s=float(trim_end_s),
+                role="base",
+                motion="none",
+            )
+            if hasattr(self.scripts, "save_scene_assets"):
+                self.scripts.save_scene_assets(scene_id, [sa])
+            elif hasattr(self.scripts, "add_scene_asset"):
+                self.scripts.add_scene_asset(scene_id, sa)
+        else:
+            if hasattr(self.scripts, "save_scene_assets"):
+                self.scripts.save_scene_assets(scene_id, [])
 
     def _compensate_failed_import(self, *, cache_key: str, asset_id: str, saved: Asset | None, path: str) -> None:
         if saved is not None and saved.id == asset_id and hasattr(self.assets, "delete_if_unreferenced"):
@@ -522,6 +635,29 @@ class ImportExternalMedia:
                 pass
 
 
+class GetSceneTiming:
+    """Extrai os recortes de tempo (start_s, end_s) de cada cena pelo asset atualmente vinculado."""
+
+    def __init__(self, scripts: ScriptRepository):
+        self.scripts = scripts
+
+    def execute(self, scenes: list[Scene]) -> dict[str, tuple[float, float]]:
+        timing: dict[str, tuple[float, float]] = {}
+        if not hasattr(self.scripts, "get_scene_assets") or not scenes:
+            return timing
+        for sc in scenes:
+            if not getattr(sc, "asset_id", None):
+                continue
+            try:
+                sas = self.scripts.get_scene_assets(sc.id)
+            except Exception:
+                continue
+            matching = [sa for sa in sas if sa.asset_id == sc.asset_id]
+            if matching:
+                timing[sc.id] = (float(matching[0].start_s), float(matching[0].end_s))
+        return timing
+
+
 @dataclass(frozen=True)
 class Media:
     storyboard: PrepareStoryboard
@@ -532,3 +668,5 @@ class Media:
     broll: "SetSceneBroll | None" = None
     asset_file: "SceneAssetFile | None" = None
     import_media: "ImportExternalMedia | None" = None
+    direct_asset_file: "AssetFile | None" = None
+    scene_timing: "GetSceneTiming | None" = None

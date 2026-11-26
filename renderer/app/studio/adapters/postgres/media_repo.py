@@ -113,6 +113,48 @@ class PostgresAssetRepository(_Base):
             )
             return cur.rowcount == 1
 
+    def belongs_to_scope(self, asset_id: str, *, video_id: str | None = None, project_id: str | None = None) -> bool:
+        aid = check_id(asset_id)
+        with _translated(), self._connect() as conn:
+            if video_id:
+                vid = check_id(video_id)
+                if project_id:
+                    pid = check_id(project_id)
+                    cur = conn.execute(
+                        "SELECT 1 FROM studio.videos WHERE id = %s AND project_id = %s",
+                        (vid, pid),
+                    )
+                    if not cur.fetchone():
+                        return False
+                cur = conn.execute(
+                    "SELECT 1 WHERE EXISTS ("
+                    "  SELECT 1 FROM studio.scenes WHERE video_id = %s AND asset_id = %s"
+                    ") OR EXISTS ("
+                    "  SELECT 1 FROM studio.scene_assets sa "
+                    "  JOIN studio.scenes s ON s.id = sa.scene_id "
+                    "  WHERE s.video_id = %s AND sa.asset_id = %s"
+                    ")",
+                    (vid, aid, vid, aid),
+                )
+                return cur.fetchone() is not None
+            elif project_id:
+                pid = check_id(project_id)
+                cur = conn.execute(
+                    "SELECT 1 WHERE EXISTS ("
+                    "  SELECT 1 FROM studio.scenes s "
+                    "  JOIN studio.videos v ON v.id = s.video_id "
+                    "  WHERE v.project_id = %s AND s.asset_id = %s"
+                    ") OR EXISTS ("
+                    "  SELECT 1 FROM studio.scene_assets sa "
+                    "  JOIN studio.scenes s ON s.id = sa.scene_id "
+                    "  JOIN studio.videos v ON v.id = s.video_id "
+                    "  WHERE v.project_id = %s AND sa.asset_id = %s"
+                    ")",
+                    (pid, aid, pid, aid),
+                )
+                return cur.fetchone() is not None
+            return False
+
 
 class PostgresProductionLock:
     """Advisory lock de sessão por vídeo, numa conexão própria (autocommit). Não espera: sem o lock, entra com False.

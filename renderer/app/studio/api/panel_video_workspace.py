@@ -538,7 +538,7 @@ def _scene_count_text(scene: dict) -> str:
     return f"{_words(scene['narration'])} palavras · {secs}"
 
 
-def _normalize_scenes(scenes, script, assets=None) -> list[dict]:
+def _normalize_scenes(scenes, script, assets=None, scene_timing=None) -> list[dict]:
     """Cenas do roteiro em dicts simples (aceita `Scene`, objetos e dicts)."""
     raw_scenes = scenes
     if raw_scenes is None and script is not None:
@@ -566,6 +566,18 @@ def _normalize_scenes(scenes, script, assets=None) -> list[dict]:
         s_broll_note = getattr(s, "broll_note", None)
         if s_broll_note is None and isinstance(s, dict):
             s_broll_note = s.get("broll_note")
+        asset_obj = (assets or {}).get(int(s_idx if s_idx is not None else idx))
+        asset_kind = getattr(getattr(asset_obj, "kind", None), "value", getattr(asset_obj, "kind", "")) if asset_obj else ""
+        timing = (scene_timing or {}).get(str(s_id))
+        val_start = getattr(s, "trim_start_s", None)
+        if val_start is None and isinstance(s, dict):
+            val_start = s.get("trim_start_s")
+        t_start = timing[0] if timing else val_start
+
+        val_end = getattr(s, "trim_end_s", None)
+        if val_end is None and isinstance(s, dict):
+            val_end = s.get("trim_end_s")
+        t_end = timing[1] if timing else val_end
         normalized_hist = []
         for h in (s_hist or []):
             normalized_hist.append({
@@ -587,7 +599,10 @@ def _normalize_scenes(scenes, script, assets=None) -> list[dict]:
             "audio_history": normalized_hist,
             "broll_enabled": bool(s_broll_enabled or False),
             "broll_note": str(s_broll_note) if s_broll_note is not None else None,
-            "asset_tag": _asset_tag((assets or {}).get(int(s_idx if s_idx is not None else idx))) if s_asset else "",
+            "asset_tag": _asset_tag(asset_obj) if s_asset else "",
+            "asset_kind": str(asset_kind or ""),
+            "trim_start_s": float(t_start) if t_start is not None else None,
+            "trim_end_s": float(t_end) if t_end is not None else None,
         })
 
     return normalized_scenes
@@ -647,12 +662,15 @@ def _nova_cena_btn(video_id: str, script, editable: bool = True, structure: bool
 
 
 def _asset_tag(asset) -> str:
-    """Tag do `thumb` do protótipo ('Arte IA' / 'Vídeo stock'), decidida pelo asset real."""
+    """Tag do `thumb` do protótipo ('Arte IA' / 'Vídeo stock' / 'Vídeo importado'), decidida pelo asset real."""
     if asset is None:
         return ""
     if str(getattr(asset, "license", "")).startswith("ai-generated"):
         return "Arte IA"
     kind = getattr(getattr(asset, "kind", None), "value", getattr(asset, "kind", ""))
+    provider = getattr(asset, "provider", "")
+    if provider == "import":
+        return "Vídeo importado" if kind == "video" else "Imagem importada"
     return "Vídeo stock" if kind == "video" else "Imagem stock"
 
 
@@ -672,14 +690,86 @@ def _scene_thumb(video_id: str, s: dict, i: int) -> str:
                 'border-style:dashed;color:var(--muted);font-size:12px;text-align:center;padding:10px">'
                 'Sem mídia ainda<br><span class="sample">Gere ou escolha uma imagem</span></div>')
     tag = (s.get("asset_tag") or "Mídia") + (" · +B-roll" if s.get("broll_enabled") else "")
-    return ('<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3)">'
-            f'<img src="/studio/videos/{e(video_id)}/scenes/{e(s["id"])}/asset" alt="Mídia da cena {i + 1}" '
-            'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+    is_video = (s.get("asset_kind") == "video" or "vídeo" in (s.get("asset_tag") or "").lower())
+    aid_bust = f"?v={e(s['asset_id'])}"
+    media_tag = (
+        f'<video src="/studio/videos/{e(video_id)}/scenes/{e(s["id"])}/asset{aid_bust}" '
+        'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" preload="metadata" muted playsinline></video>'
+        if is_video else
+        f'<img src="/studio/videos/{e(video_id)}/scenes/{e(s["id"])}/asset{aid_bust}" alt="Mídia da cena {i + 1}" '
+        'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+    )
+    return ('<div class="thumb" data-f="thumb" style="height:132px;background:var(--panel3);position:relative">'
+            f'{media_tag}'
             f'<span class="tag">{e(tag)}</span><span class="time">{_clock(_scene_secs(s))}</span></div>')
 
 
+def _assisted_import_panel(video_id: str, s: dict, i: int, editable: bool, fmt: str = "short") -> str:
+    sid = e(s["id"])
+    expected_aid = e(s.get("asset_id") or "")
+    prompt = e(s.get("image_prompt") or "")
+    secs = _scene_secs(s)
+    aspect = "horizontal 16:9" if fmt == "long" else "vertical 9:16"
+    prompt_hint = f"{prompt}\n[Contexto: {secs}s, {aspect}, identidade do canal]"
+    lock = "" if editable else " disabled"
+    val_start = f' value="{s["trim_start_s"]:.1f}"' if s.get("trim_start_s") is not None else ""
+    val_end = f' value="{s["trim_end_s"]:.1f}"' if s.get("trim_end_s") is not None else ""
+    return (
+        f'<details class="assisted-import-panel" data-assisted-import="true" data-scene-id="{sid}" data-sid="{sid}" '
+        f'style="grid-column:1/-1;margin-top:10px;padding:12px;background:var(--panel2,#16181f);border-radius:8px;border:1px solid var(--line,#2a2d38)">'
+        '<summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--text)">'
+        '🎬 Mídia Externa / Modo Assistido (GAI-02)</summary>'
+        '<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">'
+        '<p class="sample" style="margin:0">Gere a mídia na ferramenta externa de sua preferência com o prompt contextualizado e envie o arquivo original diretamente.</p>'
+        '<label class="field" style="display:flex;flex-direction:column;gap:4px">'
+        '<span class="sample" style="font-weight:500">Prompt assistido para geração externa:</span>'
+        f'<textarea data-f="assisted-prompt" rows="3" style="width:100%;font-size:12px;font-family:inherit" aria-label="Prompt contextualizado para ferramenta externa"{lock}>{prompt_hint}</textarea>'
+        '</label>'
+        '<div class="row" style="gap:8px">'
+        f'<button type="button" class="btn small ghost" data-a="copy-prompt" data-sid="{sid}"{lock}>📋 Copiar prompt</button>'
+        '</div>'
+        '<div class="row" style="flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:4px">'
+        '<label class="field" style="flex:1;min-width:200px">'
+        '<span class="sample" style="font-weight:500">Arquivo de mídia (PNG, JPEG, WebP, MP4, WebM):</span>'
+        f'<input type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm" data-f="import-file" data-sid="{sid}"{lock}>'
+        '</label>'
+        '<label class="field" style="min-width:160px">'
+        '<span class="sample" style="font-weight:500">Licença verificada:</span>'
+        f'<select data-f="import-license" data-sid="{sid}" style="width:100%"{lock}>'
+        '<option value="OWN_ORIGINAL">OWN_ORIGINAL (Criação própria)</option>'
+        '<option value="CC0-1.0">CC0-1.0 (Domínio público)</option>'
+        '<option value="CC-BY-4.0">CC-BY-4.0 (Atribuição requerida)</option>'
+        '<option value="COMMERCIAL_LICENSED">COMMERCIAL_LICENSED (Licença comercial)</option>'
+        '</select>'
+        '</label>'
+        '<label class="field" style="flex:1;min-width:160px">'
+        '<span class="sample" style="font-weight:500">Autor / Atribuição (CC-BY):</span>'
+        f'<input type="text" data-f="import-attribution" data-sid="{sid}" placeholder="Ex: Artista / Fonte"{lock}>'
+        '</label>'
+        '<label class="field" style="flex:1;min-width:160px">'
+        '<span class="sample" style="font-weight:500">URL da fonte (CC-BY):</span>'
+        f'<input type="url" data-f="import-source-url" data-sid="{sid}" placeholder="https://..."{lock}>'
+        '</label>'
+        f'<input type="hidden" data-f="expected-asset-id" data-sid="{sid}" value="{expected_aid}">'
+        '<div class="row" style="gap:8px">'
+        '<label class="field" style="width:70px">'
+        '<span class="sample">Início (s):</span>'
+        f'<input type="number" step="0.1" min="0" placeholder="0.0"{val_start} data-f="trim-start" data-sid="{sid}"{lock}>'
+        '</label>'
+        '<label class="field" style="width:70px">'
+        '<span class="sample">Fim (s):</span>'
+        f'<input type="number" step="0.1" min="0" placeholder="{secs:.1f}"{val_end} data-f="trim-end" data-sid="{sid}"{lock}>'
+        '</label>'
+        '</div>'
+        f'<button type="button" class="btn primary small" data-a="submit-import" data-sid="{sid}"{lock}>⬆ Importar para esta cena</button>'
+        '</div>'
+        f'<div class="sample err" data-f="import-error" data-sid="{sid}" style="display:none;color:var(--bad)"></div>'
+        '</div></details>'
+    )
+
+
 def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, editable: bool,
-                structure: bool = True) -> str:
+                structure: bool = True, fmt: str = "short") -> str:
     """`sceneCard(v, s, i)` do protótipo, com os dados reais da cena (a mesma estrutura, os mesmos textos)."""
     sid = e(s["id"])
     aud_cls, aud_txt = _AUDIO_BADGE.get(s["audio_state"], _AUDIO_BADGE["none"])
@@ -732,6 +822,7 @@ def _scene_card(video_id: str, s: dict, i: int, total: int, *, voice_name: str, 
         f'{off_move(i == total - 1)}>↓</button></span>'
         f'<button class="btn ghost small" style="color:var(--bad)" data-a="delscene" data-sid="{sid}"{lock_text}>Excluir</button>'
         '</div></div>'
+        f'{_assisted_import_panel(video_id, s, i, editable, fmt=fmt)}'
         f'<div class="card-shots" style="grid-column:1/-1;padding:12px;margin-top:8px;background:var(--panel2,#16181f);border-radius:10px;border:1px solid var(--line,#2a2d38)">'
         f'<div class="between" style="margin-bottom:8px"><span class="lbl">TOMADAS DESTA CENA</span><span class="row">'
         f'<span class="sample">Ritmo:</span><select style="width:auto" data-a="scene-pacing" data-sid="{sid}">'
@@ -790,24 +881,28 @@ def _empty_storyboard(view, video_id: str) -> str:
 
 
 def _area_cenas(view, *, style_view=None, script_view=None, video_id: str, composition_view=None,
-                scenes=None, script=None, channel_voice: str | None = None, scene_assets=None) -> str:
+                scenes=None, script=None, channel_voice: str | None = None, scene_assets=None,
+                scene_timing=None) -> str:
     """`tabScenes` do protótipo (com Desfazer/Refazer do v3): um `sceneCard` completo por cena, na ordem do roteiro."""
     editable = _scene_editable(view, script)
     structure = _structure_editable(script_view)
-    items = _normalize_scenes(scenes, script, scene_assets)
+    items = _normalize_scenes(scenes, script, scene_assets, scene_timing=scene_timing)
     voice_name = channel_voice or "Voz padrão do estúdio"
     version = _script_version(script)
+    video_obj = getattr(view, "video", view)
+    fmt = getattr(getattr(video_obj, "format", None), "value", str(getattr(video_obj, "format", "short"))) if video_obj else "short"
     cards = "".join(_scene_card(video_id, s, i, len(items), voice_name=voice_name, editable=editable,
-                                  structure=structure)
+                                structure=structure, fmt=fmt)
                     for i, s in enumerate(items))
     blank = {"id": "__sid__", "label": "", "narration": "", "image_prompt": "", "duration_s": None,
-             "asset_id": None, "audio_state": "none", "broll_enabled": False, "broll_note": None}
+             "asset_id": None, "audio_state": "none", "broll_enabled": False, "broll_note": None,
+             "trim_start_s": None, "trim_end_s": None}
     template = ('<template id="scene-card-template">'
                 + _scene_card(video_id, blank, 0, 2, voice_name=voice_name, editable=editable,
-                            structure=structure) + '</template>')
+                            structure=structure, fmt=fmt) + '</template>')
     empty = _empty_storyboard(view, video_id) if not items else ""
     gen_off = "" if items else ' disabled title="Sem cenas: gere o roteiro primeiro."'
-    data = {"video_id": video_id, "version": version, "editable": editable, "structure": structure, "voice": voice_name,
+    data = {"video_id": video_id, "version": version, "format": fmt, "editable": editable, "structure": structure, "voice": voice_name,
             "scenes": [{k: v for k, v in s.items() if k != "audio_history"} | {"audio_history": s["audio_history"]}
                        for s in items]}
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
@@ -1698,7 +1793,7 @@ def _dock(view, video_id: str, scenes, script, scene_assets=None) -> str:
 
 def _content(view, area: str, *, style_view, script_view, video_id, composition_view=None, preview=None,
              scenes=None, script=None, channel_voice: str | None = None, channel_name: str = "",
-             scene_assets=None) -> str:
+             scene_assets=None, scene_timing=None) -> str:
     if area == "publicacao":
         return _area_publicacao(view, style_view=style_view, script_view=script_view,
                                 video_id=video_id, preview=preview, channel_name=channel_name)
@@ -1709,7 +1804,8 @@ def _content(view, area: str, *, style_view, script_view, video_id, composition_
     if area == "cenas":
         return _area_cenas(view, style_view=style_view, script_view=script_view, video_id=video_id,
                            composition_view=composition_view, scenes=scenes, script=script,
-                           channel_voice=channel_voice, scene_assets=scene_assets
+                           channel_voice=channel_voice, scene_assets=scene_assets,
+                           scene_timing=scene_timing
                            ) + _dock(view, video_id, scenes, script, scene_assets)
     if area == "composicao":
         return _area_composicao(view, style_view=style_view, script_view=script_view, video_id=video_id,
@@ -2487,6 +2583,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
                            composition_view=None, preview=None, projects=(), project_id: str = "",
                            channel_name: str = "", script=None, scenes=None,
                            sources=None, channel_voice: str | None = None, scene_assets=None,
+                           scene_timing=None,
                            run_stages=None) -> WorkspaceResult:
     """Workspace do vídeo: uma área por rota, reusando os blocos reais do detalhe.
 
@@ -2552,7 +2649,7 @@ def render_video_workspace(view, area: str = "cenas", *, active_area: str | None
                   composition_view=composition_view,
                   preview=preview if active_area in ("publicacao", "qualidade") else None,
                   scenes=scenes, script=script, channel_voice=channel_voice, channel_name=channel_name,
-                  scene_assets=scene_assets)}
+                  scene_assets=scene_assets, scene_timing=scene_timing)}
       </section>"""
 
     crumb = f"{channel_name} / {title}" if channel_name else f"Vídeos / {title}"

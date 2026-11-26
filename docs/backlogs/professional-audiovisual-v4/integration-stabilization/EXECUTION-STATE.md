@@ -1,23 +1,23 @@
 # EXECUTION-STATE — V4 Integration & Stabilization Recovery
 
-**Last Updated (UTC):** `2026-11-26T16:17Z`  
-**Branch:** `develop` | **Base HEAD:** `ef367fc66b9b888f7ef7fec78fd8e48991c41bad` | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
+**Last Updated (UTC):** `2026-11-26` (retomada OpenCode)  
+**Branch:** `develop` | **HEAD:** `3ca1f8512eb4681b97c4e5ecf3ee9ba61fae95b8` (+ commit `REC-03.01–02` desta entrada) | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
 **Observed `main` SHA:** `42700cb331165a68455173a91c463d4733292cfd` (strictly untouched)  
-**Campaign Status:** `IN_PROGRESS` (Waves `REC-00`, `REC-01`, and **ALL of `REC-02`** `VERIFIED` >= 9.42/10; launching Wave `REC-03` starting with `REC-03.01–02`)  
+**Campaign Status:** `IN_PROGRESS` (Waves `REC-00`, `REC-01`, `REC-02` `VERIFIED`; `REC-03.01–02` `VERIFIED` no Round 3 do review independente `Neon High` via `github-copilot` (9.290 / 9.355); próximo: `REC-03.03`)  
 **Merge / Publication Status:** `NO-GO` / `BLOCKED` (`STUDIO_PUBLICATION_ENABLED=0`, `$0.00` external API spend)
 
 ---
 
 ## 1. Active Roles & Delegation
 - **Coordinator:** `Gemini 4 Carbon (High)`
-- **REC-00 (Completed & Retired):** Executor `Gemini 4 Neon (High)` | Reviewer `Gemini 4 Carbon (High)` (`REC-00.01 = 9.51/10`, `REC-00.02 = 9.54/10`)
-- **REC-01 (Completed & Retired):** Executor `Gemini 4 Hydrogen (Medium)` | Reviewer `Gemini 4 Neon (High)` (`REC-01.01/02/03 = 9.50/10`)
-- **REC-02 (ALL 5 Tasks Completed & Retired):**
-  - `REC-02.01–02`: Executor `Hydrogen Medium` | Reviewer `Neon High` (`9.440/10`, `9.425/10`)
-  - `REC-02.03–04`: Executor `Hydrogen Medium` | Reviewer `Neon High` (`9.425/10`, `9.440/10`)
-  - `REC-02.05`: Executor `Flash 3.8` | Reviewer `Carbon High` (`9.50/10`)
-- **REC-03.01–02 (Launching):** Executor `Gemini 3.8 Flash (High)` (`rec03-ux`) | Reviewer `Gemini 4 Carbon (High)` (on handoff, subject to 15% quota reserve check)
-- **Observed Google Quota:** Window 2 `97%`→`74%`→`62%`→`43%`→`33%`→`24%` (resets `2026-11-26T20:00:59Z`)
+- **REC-00 (VERIFIED & Retired):** Executor `Gemini 4 Neon (High)` | Reviewer `Gemini 4 Carbon (High)` (`REC-00.01 = 9.51/10`, `REC-00.02 = 9.54/10`, commit `031811f`)
+- **REC-01 (VERIFIED & Retired):** Executor `Gemini 4 Hydrogen (Medium)` | Reviewer `Gemini 4 Neon (High)` (`REC-01.01/02/03 = 9.50/10`, commit `d9fd1cd`)
+- **REC-02 (ALL 5 Tasks VERIFIED & Retired):**
+  - `REC-02.01–02`: Executor `Hydrogen Medium` | Reviewer `Neon High` (`9.440/10`, `9.425/10`, commit `ef367fc`)
+  - `REC-02.03–04`: Executor `Hydrogen Medium` | Reviewer `Neon High` (`9.425/10`, `9.440/10`, commit `3ca1f85`)
+  - `REC-02.05`: Executor `Flash 3.8` | Reviewer `Carbon High` (`9.50/10`, commit `4ece073`)
+- **REC-03.01–02 (`IMPLEMENTED`, parked on quota reserve):** Executor `Gemini 3.8 Flash (High)` (`rec03-ux`, `waiting`) | Independent Reviewer `Gemini 4 Carbon (High)` (to dispatch immediately upon resume after `2026-11-26T20:00:59Z` reset)
+- **Modelos (operador autorizou GitHub Copilot em 2026-11-26):** provider `google` com API key inválida; `gemini-4-carbon`/`gemini-4-hydrogen` ausentes. Uso real: `github-copilot/gemini-4-neon` (high) como reviewer independente e `github-copilot/gemini-3.8-flash` (high) como executor, sessões separadas. Neon substitui Carbon (desvio registrado).
 - **Observed External API Cost:** `$0.00`
 
 ---
@@ -33,12 +33,12 @@
 | `REC-01.03` | REC-01 | P0 | `REC-01.02` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed (`d9fd1cd`) |
 | `REC-02.01` | REC-02 | P0 | `REC-01.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.440/10** (min 9.2) | Closed & committed (`ef367fc`) |
 | `REC-02.02` | REC-02 | P1 | `REC-02.01` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.425/10** (min 9.3) | Closed & committed (`ef367fc`) |
-| `REC-02.03` | REC-02 | P0 | `REC-01.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.425/10** (min 9.0) | Closed & committed |
-| `REC-02.04` | REC-02 | P0 | `REC-02.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.440/10** (min 9.2) | Closed & committed |
+| `REC-02.03` | REC-02 | P0 | `REC-01.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.425/10** (min 9.0) | Closed & committed (`3ca1f85`) |
+| `REC-02.04` | REC-02 | P0 | `REC-02.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.440/10** (min 9.2) | Closed & committed (`3ca1f85`) |
 | `REC-02.05` | REC-02 | P1 | `REC-01.03` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed (`4ece073`) |
-| `REC-03.01` | REC-03 | P1 | `REC-02.01–05` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` | `IN_PROGRESS` | — | Executing Studio upload/preview/GAI-02 UX |
-| `REC-03.02` | REC-03 | P1 | `REC-03.01` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` | `IN_PROGRESS` | — | Executing isolated Playwright desktop/mobile E2E |
-| `REC-03.03` | REC-03 | P1 | `REC-02.01–05` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Depends on Wave REC-02 |
+| `REC-03.01` | REC-03 | P1 | `REC-02.01–05` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` / `Neon High` | `VERIFIED` | **REC-03.01 = 9.290/10 (min 9.1); REC-03.02 = 9.355/10 (min 9.2)** — Round 1 (6.85/6.55) e Round 2 (7.475/7.75) REJECTED; Round 3 APPROVED (`evidence/rec-03/rec-03-01-02-independent-review-neon-high-round3.md`) | Closed & committed on `develop` |
+| `REC-03.02` | REC-03 | P1 | `REC-03.01` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` / `Neon High` | `VERIFIED` | **REC-03.01 = 9.290/10 (min 9.1); REC-03.02 = 9.355/10 (min 9.2)** — Round 1 (6.85/6.55) e Round 2 (7.475/7.75) REJECTED; Round 3 APPROVED (`evidence/rec-03/rec-03-01-02-independent-review-neon-high-round3.md`) | Closed & committed on `develop` |
+| `REC-03.03` | REC-03 | P1 | `REC-02.01–05` | `Hydrogen Medium` (ausente → Flash 3.8/Neon via Copilot) | `Neon High` | `PENDING` | — | Próxima ação |
 | `REC-04.01` | REC-04 | P0 | `REC-03.01–03` | `Flash 3.8` | `Carbon High` | `PENDING` | — | Depends on Wave REC-03 |
 | `REC-04.02` | REC-04 | P0 | `REC-04.01` | `Flash 3.8` / `Carbon High` | `Carbon High` | `PENDING` | — | Depends on `REC-04.01` |
 | `REC-04.03` | REC-04 | P0 | `REC-04.02` | `Carbon High` | `Neon High` | `PENDING` | — | Depends on `REC-04.02` |
@@ -55,12 +55,13 @@
 | **G2 Contracts & Compatibility** | `PENDING` | Re-verified in REC-01..REC-04.03. |
 | **G3 Real Execution** | `IN_PROGRESS` (`REC-02` AV/media/voice `VERIFIED`; `REC-03.03` & `REC-04.01–02` `PENDING`) | Real FFmpeg `xfade`/PiP/multitrack/ebur128/Piper/MP4-probe verified in Wave `REC-02`. |
 | **G4 Security & Reliability** | `VERIFIED` (`REC-01` + `REC-02.03–04` closed) | P0 financial safety (`R01–R03`, `9.50/10`) and P0 media import/CAS/dedup/license security (`R06–R07`, `9.425/9.44/10`) closed & independently verified with real Postgres concurrency/restart/negative tests. |
-| **G5 Browser UX** | `PENDING` | Executable on host against isolated port `8100`; required in REC-03.01–02 & REC-04.03. |
+| **G5 Browser UX** | `VERIFIED` (`REC-03.01–02`) | Host Node JS `101 passed` (6 Node real VM storyboard tests), isolated Playwright Desktop+Mobile on port `8100` `1 passed in 9.29s` (strict assertions: readyState>=1, videoWidth>0, __sbFlush, add/reorder with reload persistence, CAS 409, no conditional guards, exact `?v={asset_id}`; stack torn down), container API/security/arch `90 passed in 29.59s`; evidence in `evidence/rec-03/rec-03-01-02-ux-browser-evidence.md`. |
 | **G6 Full Regression** | `PENDING` | Clean final-SHA container + host Node + isolated browser suite required in REC-04.03. |
 | **G7 Observed Pilot & Human Review** | `PENDING` / `AWAITING_HUMAN_REVIEW` | 60–90s slice (REC-04.01), 5–8min paired pilot (REC-04.02), operator audiovisual >=9/10 sign-off (`V4-00.06`, `V4-13.11`). |
 
 ---
 
 ## 4. Checkpoints & Resume Pointer
-- **Current Checkpoint:** Waves `REC-00` (`031811f`) & `REC-01` (`REC-01.01/02/03 = 9.50/10` independent `Neon High` review) `VERIFIED` and committed atomically on `develop`.
-- **Next Authorized Action:** Execute Wave `REC-02` sequentially by slice: `REC-02.05` (`Flash 3.8` + `Carbon High` review) -> `REC-02.01–02` (`Hydrogen Medium` + `Neon High` review) -> `REC-02.03–04` (`Hydrogen Medium` + `Neon High` review).
+- **Checkpoint atual:** `REC-00`, `REC-01`, `REC-02` e `REC-03.01–02` `VERIFIED` e commitados em `develop`. Re-execução independente do Round 3: host `101 passed`, container focado `90 passed`, canônica completa `4491 passed, 26 skipped` (exit 0), Playwright isolado porta 8100 `1 passed`.
+- **Próxima ação:** `REC-03.03` (executor + review independente `Neon High`), depois Wave `REC-04`.
+- P2 abertos não bloqueantes do Round 3 listados em `evidence/rec-03/rec-03-01-02-independent-review-neon-high-round3.md`.
