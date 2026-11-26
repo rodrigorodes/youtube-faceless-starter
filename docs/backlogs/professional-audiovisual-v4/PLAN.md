@@ -47,3 +47,5 @@ Preservar fases e IDs. Critérios vinculados em [consolidação](V4.1-CONSOLIDAT
 | **V4-12 — Reliability** | Hydrogen / Carbon | Neon |
 | **V4-13 — Pilot** | Flash 3.8 | Carbon + Humano |
 
+## Recuperação de integração — develop (26/11/2026)
+Status de homologação V4-01–13: revalidação pendente após revisão estática de 0257c04; não autoriza merge. [Achados](integration-stabilization/AUDIT-FINDINGS.md), [backlog INT-01–07](integration-stabilization/EXECUTION-BACKLOG.md), [gates](integration-stabilization/QUALITY-GATES.md) e [prompts](integration-stabilization/README.md) organizam integração sem substituir IDs originais. Preservar main, corrigir P0, comprovar execução real incremental e avaliação humana. Não iniciar Finder nem novas APIs pagas nesta recuperação.
