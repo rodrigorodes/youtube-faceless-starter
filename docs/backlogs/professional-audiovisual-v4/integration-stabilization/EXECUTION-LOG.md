@@ -206,3 +206,7 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - Executor `github-copilot/gemini-4-neon` high (escalado por histórico do Flash); reviewer = sessão Neon separada. Round 1 APPROVED **9.345/10** (0 P0/P1, 4 P2 + PRE-1).
 - Slice: `67.36s` 1920x1080, `-16.1 LUFS`/`-1.4 dBTP`, Piper real, PNG+MP4 importados, overlay+PiP, regeneração seletiva 4/4 nar + 10/10 vis reusados (-42.5%), QA 10 checks 0 bloqueios, `$0.00`, kill switch BLOCKED. Reviewer re-executou: focados `12 passed`, novo run `66.92s`, canônica `4502 passed, 26 skipped`, host `101 passed`, 3/3 mutações mortas.
 - `test_int_06_pilot.py` reclassificado SMOKE sem enfraquecer asserts. Multitrack 3+/xfade na camada HTTP: DEFERRED (provados no renderer em REC-02). Aprovação audiovisual: AWAITING_HUMAN_REVIEW.
+
+## REC-04.02 — BLOCKED por cota (2026-11-26, OpenCode)
+- Executor Neon (Copilot) abortou com `You have exceeded your monthly quota` após editar render.py/render_compiler.py/testes (parcial, sem commit, sem verificação). Flash (Copilot) idem; Google segue com `API key not valid`.
+- Decisão: checkpoint seguro; sem substituição por modelo fora da política nem auto-execução/auto-review. main `42700cb` intocada; `$0.00`; publicação BLOCKED.

@@ -1,9 +1,9 @@
 # EXECUTION-STATE — V4 Integration & Stabilization Recovery
 
 **Last Updated (UTC):** `2026-11-26` (retomada OpenCode)  
-**Branch:** `develop` | **HEAD:** `3ca1f8512eb4681b97c4e5ecf3ee9ba61fae95b8` (+ commit `REC-03.01–02` desta entrada) | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
+**Branch:** `develop` | **HEAD:** `5097b98` (+ working tree parcial de `REC-04.02`) | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
 **Observed `main` SHA:** `42700cb331165a68455173a91c463d4733292cfd` (strictly untouched)  
-**Campaign Status:** `IN_PROGRESS` (Waves `REC-00`, `REC-01`, `REC-02` `VERIFIED`; `REC-03.01–03` `VERIFIED` (9.290 / 9.355 / 9.44, review independente Neon High via `github-copilot`); `REC-04.01` `VERIFIED` técnico (9.345); próximo: `REC-04.02`)  
+**Campaign Status:** `PAUSED_QUOTA_CHECKPOINT` (2026-11-26: `github-copilot/*` → `You have exceeded your monthly quota`; `google/*` → `API key not valid`. `REC-00`..`REC-03` e `REC-04.01` (técnico) `VERIFIED`; `REC-04.02` `IN_PROGRESS` com working tree parcial NÃO commitado)  
 **Merge / Publication Status:** `NO-GO` / `BLOCKED` (`STUDIO_PUBLICATION_ENABLED=0`, `$0.00` external API spend)
 
 ---
@@ -41,7 +41,7 @@
 | `REC-03.03` | REC-03 | P1 | `REC-02.01–05` | `Hydrogen Medium` (ausente → Flash 3.8/Neon via Copilot) | `Neon High` | `VERIFIED` | **9.44/10** (min 9.2) — Round 1 REJECTED (3.95, 3 P0/6 P1); executor escalado Flash→Neon High; Round 2 APPROVED (`evidence/rec-03/rec-03-03-independent-review-neon-high-round2.md`) | Closed & committed on `develop` |
 | `REC-04.01` | REC-04 | P0 | `REC-03.01–03` | `Flash 3.8` | `Carbon High` | `VERIFIED` (técnico; audiovisual `AWAITING_HUMAN_REVIEW`) | **9.345/10** (min 9.1) — Round 1 APPROVED (`evidence/rec-04/rec-04-01-independent-review-neon-high.md`) | Closed & committed on `develop` |
 | `REC-04.02` | REC-04 | P0 | `REC-04.01` | `Flash 3.8` / `Carbon High` | `Carbon High` | `VERIFIED` (técnico; audiovisual `AWAITING_HUMAN_REVIEW`) | **9.345/10** (min 9.1) — Round 1 APPROVED (`evidence/rec-04/rec-04-01-independent-review-neon-high.md`) | Closed & committed on `develop` |
-| `REC-04.03` | REC-04 | P0 | `REC-04.02` | `Carbon High` | `Neon High` | `PENDING` | — | Depends on `REC-04.02` |
+| `REC-04.03` | REC-04 | P0 | `REC-04.02` | `Carbon High` | `Neon High` | `IN_PROGRESS` | — | Pré-requisitos parciais no working tree (sem commit); executor interrompido por cota mensal Copilot |
 | `REC-04.04` | REC-04 | P0 | `REC-04.03` | `Carbon High` | `Neon High` + Operator | `PENDING` | — | Depends on `REC-04.03` + Human review |
 
 ---
@@ -64,3 +64,9 @@
 ## 4. Checkpoints & Resume Pointer
 - **Checkpoint atual:** `REC-00`..`REC-03` e `REC-04.01` (técnico) `VERIFIED` em `develop`. Slice 60–90s: `67.36s`, 1080p, `-16.1 LUFS`/`-1.4 dBTP`, `$0.00`, kill switch `BLOCKED`; MP4 em `storage/output/runs/rec04_slice_20261126_213537_4fa225b/rec04_01_vertical_slice.mp4` (gitignored; manifesto em `evidence/rec-04/rec-04-01/manifest.json`). Novo run do reviewer: `rec04_slice_20261126_215800_4fa225b` (`66.92s`).
 - **Próxima ação:** `REC-04.02` (documentário 5–8min pareado com V4-00). Itens a tratar antes/junto: P2-1 PiP sobrepondo selo "FATO"/disclosure de IA (`render.py:353-354`); `PRE-1` bug preexistente de legenda duplicada (Pillow + ASS) em cena de vídeo base único (`render_compiler.py:216-219`); `DEFERRED` HTTP de multitrack 3+ e `xfade` (risco/owner a formalizar na `TRACEABILITY-MATRIX.md` até `REC-04.04`).
+
+## 5. Checkpoint de cota (REC-04.02)
+- Executor `github-copilot/gemini-4-neon` interrompido por cota mensal. Teste de `github-copilot/gemini-3.8-flash` (mesma mensagem) e `google/gemini-4-neon` (API key inválida): nenhum modelo da campanha disponível. Não foram usados modelos fora da política (Claude/GPT/Grok no Copilot) sem autorização do operador.
+- Working tree NÃO commitado e NÃO revisado (parcial do executor): `renderer/app/studio/application/render.py`, `render_compiler.py` (P2-1 PiP, PRE-1 legenda duplicada — correções em andamento), `tests/conftest.py`, `tests/test_rec_04_vertical_slice.py`, `tests/test_render.py`, `tests/test_render_plan_compiler_v2.py`, `tests/rec04_helpers.py` (novo). Nenhum teste/review dessas mudanças foi concluído.
+- Pendente de REC-04.02: confirmar/finalizar os 3 pré-requisitos, `tests/test_rec_04_documentary.py`, `scripts/run-rec04-documentary.sh`, MP4 de 300–480s, comparação V4-00, manifesto, evidência e review independente (sessão separada).
+- Retomada: restaurar cota Copilot ou chave Google, ou autorizar outro modelo; começar conferindo `git diff` do working tree.
