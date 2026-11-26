@@ -27,7 +27,7 @@
   - Conectar resiliência e idempotência ao `ProductionCoordinator` e `PostgresProductionRunRepository` existentes.
   - Provar invalidação seletiva de cache de cena e reconciliação pré-retry de operações assíncronas.
 
-- [ ] **INT-05 — Studio, Acervo Persistente e Mídia Externa (GAI-01/02):**
+- [x] **INT-05 — Studio, Acervo Persistente e Mídia Externa (GAI-01/02):**
   - Suportar importação segura de PNG e MP4 externos com magic bytes, sem path traversal.
   - Conectar storyboard ao `AssetRepository` persistente.
 
