@@ -36,7 +36,7 @@
   - Rotular claramente métricas reais observadas vs contratos sintéticos.
   - Kill switch de publicação verificado como `BLOCKED`.
 
-- [ ] **INT-07 — Regressão Canônica Completa e Homologação:**
+- [x] **INT-07 — Regressão Canônica Completa e Homologação:**
   - Execução de 100% dos testes no container canônico.
   - Auditoria de arquitetura limpa (`test_architecture.py`).
   - Emissão do relatório final e parada para Avaliação Humana formal do operador.

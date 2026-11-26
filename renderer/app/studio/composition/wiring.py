@@ -502,7 +502,8 @@ class Studio:
                             production=s.provider_production).primary.spec
                 except (ProviderNotFound, NoProviderAvailable):
                     continue
-                selection[kind.value] = spec
+                if spec:
+                    selection[kind.value] = spec
             return selection or None
 
         def text_for(project_id: str | None):

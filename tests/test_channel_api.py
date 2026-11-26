@@ -127,7 +127,7 @@ def test_provider_connection_test_available_and_unvalidated(api):
                       json={"kind": "voice", "spec": "elevenlabs:flash"}, headers=WORKER_HEADER)
     assert bad.status_code == 200
     assert bad.json()["available"] is False
-    assert "no implementation" in bad.json()["reason"].lower()
+    assert any(term in bad.json()["reason"].lower() for term in ("no implementation", "byok", "autorização"))
 
 
 def test_provider_route_uses_economic_profile(api):

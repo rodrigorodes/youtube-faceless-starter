@@ -38,7 +38,7 @@ def render_advanced(view: AdvancedView) -> tuple[str, dict[str, str]]:
         '<tr><td colspan="5">Nenhum provider no catálogo desta instalação.</td></tr>')
 
     efetivas = "".join(
-        f"<tr><th scope=\"row\">{e(kind)}</th><td>{e(spec)}</td></tr>"
+        f"<tr><th scope=\"row\">{e(str(kind))}</th><td>{e(str(spec) if spec is not None else '-')}</td></tr>"
         for kind, spec in view.effective) or (
         '<tr><td colspan="2">Nenhum canal ativo para resolver a configuração.</td></tr>')
 

@@ -328,7 +328,7 @@ def test_applied_and_loaded_only_groups_partition_the_known_params():
 def test_presets_only_carry_groups_the_render_applies():
     # Um preset nunca promete o que o render não faz: só grupos aplicáveis, e passa pelo mesmo
     # `clean_params` (é params de estilo válido, não um dialeto paralelo).
-    assert set(PRESETS) == {"documentario", "noticia", "curiosidades"}
+    assert set(PRESETS) == {"documentario", "noticia", "curiosidades", "whiteboard", "cinematic"}
     for preset_id in PRESETS:
         params = preset_params(preset_id)
         assert set(params) <= APPLIED_GROUPS

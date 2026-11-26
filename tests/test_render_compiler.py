@@ -22,7 +22,7 @@ from app.studio.adapters.render_plan_compiler import (  # noqa: E402
     CompiledRender,
     compile_render_plan,
 )
-from app.studio.application.render_compiler import CompileError  # noqa: E402
+from app.studio.application.render_compiler import CompileError, MAX_OVERLAYS_PER_SCENE  # noqa: E402
 from app.studio.domain.asset_resolver import AssetDescriptor  # noqa: E402
 from app.studio.domain.contracts import Asset, AssetKind, VideoFormat  # noqa: E402
 from app.studio.domain.render import FADE_S, FPS  # noqa: E402
@@ -506,9 +506,9 @@ def test_T11_two_overlays_in_the_same_scene_are_refused():
     total = simple_plan().timeline.scenes[0].duration_ticks
     plan = _overlay_plan(
         bases=[(0, total)],
-        overlays=[{"start": 0, "duration": 100}, {"start": 200, "duration": 100}],
+        overlays=[{"start": 0, "duration": 10} for _ in range(MAX_OVERLAYS_PER_SCENE + 1)],
     )
-    with pytest.raises(CompileError, match="at most 1 overlay|MAX_OVERLAYS|one overlay per scene"):
+    with pytest.raises(CompileError, match=f"at most {MAX_OVERLAYS_PER_SCENE} overlay|MAX_OVERLAYS|one overlay per scene"):
         _compile_overlay(plan)
 
 
