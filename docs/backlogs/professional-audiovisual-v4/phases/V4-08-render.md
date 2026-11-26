@@ -1,21 +1,21 @@
 # V4-08 — Render Extensibility
-Status: proposto. Dependências: 04,12 fundação.
+Status: concluído. Dependências: 04,12 fundação.
 
 ## Atividades
-- [ ] V4-08.01 — Contrato capabilities. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.02 — Consolidar FFmpeg. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.03 — Separar compilação e execução. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.04 — Preflight. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.05 — Render por segmentos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.06 — Cache de segmentos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.07 — Progresso. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.08 — Cancelamento. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.09 — Concorrência recursos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.10 — Presets preview produção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.11 — Avaliar hardware. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.12 — Homologar Remotion assets. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.13 — Avaliar segundo renderer. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-08.14 — Benchmarks. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.01 — Contrato capabilities. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.02 — Consolidar FFmpeg. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.03 — Separar compilação e execução. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.04 — Preflight. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.05 — Render por segmentos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.06 — Cache de segmentos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.07 — Progresso. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.08 — Cancelamento. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.09 — Concorrência recursos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.10 — Presets preview produção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.11 — Avaliar hardware. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.12 — Homologar Remotion assets. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.13 — Avaliar segundo renderer. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-08.14 — Benchmarks. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
 
 ## Aceite
 FFmpeg principal; render real com cancelamento, cache e preflight; equivalência de segmentos e render integral.
