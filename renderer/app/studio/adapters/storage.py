@@ -73,12 +73,17 @@ class FileAssetStore:
             tmp.unlink(missing_ok=True)
         return relative
 
-    def put_video(self, cache_key: str, data: bytes) -> str:
+    _VIDEO_EXT = {"video/mp4": ".mp4", "video/webm": ".webm"}
+
+    def put_video(self, cache_key: str, data: bytes, mime: str = "video/mp4") -> str:
         """Armazena um vídeo (MP4/WebM) de forma atômica no cache de assets por conteúdo."""
         key = check_cache_key(cache_key)
+        ext = self._VIDEO_EXT.get((mime or "").strip().lower())
+        if ext is None:
+            raise AssetRefused(f"unsupported video mime {mime!r}")
         if not data or len(data) > 100 * 1024 * 1024:
             raise AssetRefused("video is empty or larger than 100 MB")
-        dest = cache_path(self.root, key).with_name(key + ".mp4")
+        dest = cache_path(self.root, key).with_name(key + ext)
         relative = dest.relative_to(self.root).as_posix()
         if dest.exists() and dest.stat().st_size == len(data):
             return relative
@@ -90,6 +95,21 @@ class FileAssetStore:
         finally:
             tmp.unlink(missing_ok=True)
         return relative
+
+    def delete(self, relative_path: str) -> bool:
+        """Remove um arquivo dentro da raiz de storage (compensação segura; sem traversal)."""
+        if not relative_path or Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
+            return False
+        root = self.root.resolve()
+        try:
+            target = (root / relative_path).resolve()
+            target.relative_to(root)
+        except (ValueError, OSError):
+            return False
+        if target.is_file():
+            target.unlink(missing_ok=True)
+            return True
+        return False
 
 
 class FileRenderStorage:

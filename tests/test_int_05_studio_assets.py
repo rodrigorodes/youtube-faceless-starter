@@ -8,10 +8,13 @@ Valida os achados A09, A10 e A12 da auditoria INT-01:
 - A10: Persistência integrada com FileAssetStore e AssetRepository (Postgres).
 """
 import io
+import shutil
+import subprocess
 from pathlib import Path
 from PIL import Image
 import pytest
 
+from app.studio.adapters.media_probe import FfmpegMediaProbe
 from app.studio.adapters.postgres.db import migrate
 from app.studio.adapters.postgres.editorial_repo import PostgresScriptRepository
 from app.studio.adapters.postgres.media_repo import PostgresAssetRepository
@@ -60,7 +63,7 @@ def setup_db(conn, dsn, tmp_path: Path):
         (VIDEO_ID, PROJECT_ID),
     )
     conn.execute(
-        "INSERT INTO studio.scenes(id, video_id, idx, narration, image_prompt) VALUES (%s, %s, 1, 'Primeira cena', 'Prompt')",
+        "INSERT INTO studio.scenes(id, video_id, idx, narration, image_prompt) VALUES (%s, %s, 1, 'Primeira cena', 'Prompt visual da primeira cena')",
         (SCENE_ID, VIDEO_ID),
     )
     conn.commit()
@@ -71,7 +74,7 @@ def setup_db(conn, dsn, tmp_path: Path):
     assets = PostgresAssetRepository(connect)
     store = FileAssetStore(tmp_path / "storage")
 
-    importer = ImportExternalMedia(videos=videos, scripts=scripts, assets=assets, store=store)
+    importer = ImportExternalMedia(videos=videos, scripts=scripts, assets=assets, store=store, probe=FfmpegMediaProbe())
     return importer, assets, tmp_path / "storage"
 
 
@@ -135,11 +138,22 @@ def test_int_05_import_rejects_fake_magic_bytes(setup_db):
         )
 
 
-def test_int_05_import_valid_mp4_video(setup_db):
+def test_int_05_import_valid_mp4_video(setup_db, tmp_path: Path):
     """GAI-01: Importação de vídeo MP4 válido persistido como AssetKind.video."""
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg/ffprobe necessários para fixture MP4 real")
     importer, assets, storage_root = setup_db
-    # Payload mínimo simulado de MP4 com caixa ftyp
-    mp4_data = b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2mp41" + b"\x00" * 64
+    mp4_file = tmp_path / "broll_clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=24:d=1.0",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            str(mp4_file),
+        ],
+        check=True,
+    )
+    mp4_data = mp4_file.read_bytes()
 
     asset = importer.execute(
         video_id=VIDEO_ID,

@@ -464,6 +464,25 @@ class AssetStore(Protocol):
         """Valida e grava a imagem; devolve o caminho relativo à raiz de storage."""
 
 
+@dataclass(frozen=True)
+class ProbedMedia:
+    """Resultado da inspeção real (magic bytes, ffprobe/Pillow e decodificação) de mídia externa."""
+
+    mime: str
+    kind: Literal["image", "video"]
+    format_name: str
+    width: int
+    height: int
+    duration_s: float | None = None
+    video_codec: str | None = None
+    size_bytes: int = 0
+
+
+class MediaProbe(Protocol):
+    def probe(self, data: bytes, declared_mime: str) -> ProbedMedia:
+        """Valida magic bytes, container/formato, dimensões, duração, codec e decodificabilidade real."""
+
+
 class AssetResolver(Protocol):
     """RP-019: resolve um ``AssetReference`` do manifesto em um ``AssetDescriptor``.
 

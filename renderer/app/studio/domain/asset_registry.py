@@ -17,7 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "LicenseVerificationError",
     "KNOWN_PERMITTED_LICENSES",
+    "PROVENANCE_REQUIRED_LICENSES",
     "verify_license_provenance",
+    "requires_attribution",
     "assert_known_license",
     "AssetMetadataRecord",
     "detect_orphan_assets",
@@ -31,15 +33,36 @@ class LicenseVerificationError(ValueError):
 # Licenças abertas e comerciais homologadas para distribuição no canal
 KNOWN_PERMITTED_LICENSES: frozenset[str] = frozenset({
     "cc0",
+    "cc0-1.0",
     "cc-by",
+    "cc-by-4.0",
     "cc-by-sa",
+    "cc-by-sa-4.0",
     "public domain",
     "free stock",
     "commercial stock",
     "studio generated",
+    "own_original",
+    "own original",
+    "commercial_licensed",
+    "commercial licensed",
     "proprietary commercial",
     "gerado pelo estúdio a partir de assets licenciados",
 })
+
+PROVENANCE_REQUIRED_LICENSES: frozenset[str] = frozenset({
+    "cc-by-4.0",
+    "cc-by-sa-4.0",
+    "commercial_licensed",
+    "commercial licensed",
+})
+
+
+def requires_attribution(license_name: str | None) -> bool:
+    """Indica se a licença exige declaração de atribuição ou URL de origem."""
+    if not license_name or not license_name.strip():
+        return False
+    return license_name.strip().casefold() in PROVENANCE_REQUIRED_LICENSES
 
 
 def verify_license_provenance(license_name: str | None) -> bool:

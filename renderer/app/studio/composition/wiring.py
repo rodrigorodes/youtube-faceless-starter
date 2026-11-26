@@ -62,6 +62,7 @@ from ..adapters.quality_semantic import NotVerifiedSemanticChecker
 from ..adapters.render_disabled import DisabledRenderer
 from ..adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from ..adapters.storage import FileAssetStore, FileRenderStorage
+from ..adapters.media_probe import FfmpegMediaProbe
 from ..adapters.voice_piper import PiperVoice
 from ..adapters.voice_kokoro import KokoroVoice
 from ..adapters.voice_elevenlabs import ElevenLabsVoice
@@ -576,7 +577,7 @@ class Studio:
             swap=SwapSceneMedia(repo, scripts, assets, asset_store, fetcher=media_fetcher, guard=guard, usage=usage),
             broll=SetSceneBroll(repo, scripts, assets),
             asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root),
-            import_media=ImportExternalMedia(repo, scripts, assets, asset_store))
+            import_media=ImportExternalMedia(repo, scripts, assets, asset_store, probe=FfmpegMediaProbe()))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.

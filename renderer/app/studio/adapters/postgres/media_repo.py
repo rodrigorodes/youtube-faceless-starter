@@ -65,6 +65,54 @@ class PostgresAssetRepository(_Base):
                                (bool(enabled), note, check_id(video_id), check_id(scene_id)))
             return cur.rowcount == 1
 
+    def add_and_swap_scene_asset(
+        self,
+        asset: Asset,
+        video_id: str,
+        scene_id: str,
+        expected_asset_id: str | None,
+    ) -> tuple[Asset, bool]:
+        """Insere (ou reutiliza por cache_key) e vincula à cena em UMA transação com advisory lock por cache_key.
+
+        Se o CAS na cena falhar, faz rollback completo (não deixando linha fantasma em studio.assets).
+        """
+        key = check_cache_key(asset.cache_key)
+        vid = check_id(video_id)
+        sid = check_id(scene_id)
+        exp = check_id(expected_asset_id) if expected_asset_id else None
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+            cur.execute(
+                "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license, attribution, source_url, cost_usd) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (cache_key) DO NOTHING",
+                (check_id(asset.id), asset.kind.value, key, asset.path, asset.provider, asset.model,
+                 asset.license, asset.attribution, asset.source_url, asset.cost_usd),
+            )
+            cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE cache_key = %s", (key,))
+            persisted = _asset(cur.fetchone())
+            cur.execute(
+                "UPDATE studio.scenes SET asset_id = %s "
+                "WHERE video_id = %s AND id = %s AND asset_id IS NOT DISTINCT FROM %s",
+                (check_id(persisted.id), vid, sid, exp),
+            )
+            if cur.rowcount != 1:
+                conn.rollback()
+                return persisted, False
+            return persisted, True
+
+    def delete_if_unreferenced(self, asset_id: str) -> bool:
+        """Remove um asset apenas se nenhuma cena, scene_asset ou render_job o referencia (compensação)."""
+        aid = check_id(asset_id)
+        with _translated(), self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM studio.assets WHERE id = %s "
+                "AND NOT EXISTS (SELECT 1 FROM studio.scenes WHERE asset_id = %s) "
+                "AND NOT EXISTS (SELECT 1 FROM studio.render_jobs WHERE output_asset_id = %s) "
+                "AND NOT EXISTS (SELECT 1 FROM studio.scene_assets WHERE asset_id = %s)",
+                (aid, aid, aid, aid),
+            )
+            return cur.rowcount == 1
+
 
 class PostgresProductionLock:
     """Advisory lock de sessão por vídeo, numa conexão própria (autocommit). Não espera: sem o lock, entra com False.
