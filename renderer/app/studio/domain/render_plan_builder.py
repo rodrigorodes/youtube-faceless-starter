@@ -143,6 +143,10 @@ class StoryboardOverlay:
     duration_s: float
     z_index: int = 1
     fit: Literal["cover", "contain"] = "contain"
+    opacity: float = 1.0
+    scale: float = 1.0
+    position_x: float = 0.5
+    position_y: float = 0.5
 
 
 def style_snapshot_for_channel(profile: ChannelProfile) -> StyleSnapshot:
@@ -600,10 +604,13 @@ def _motions(motions: Mapping[str, Motion] | None, scenes: Sequence[StoryboardSc
 
 
 def _tracks(overlays_by_scene: Mapping[str, Sequence[StoryboardOverlay]]) -> list[Track]:
-    """Tracks do plano; a faixa de overlay só existe quando há overlay."""
+    """Tracks do plano; faixas de overlay são criadas para cada camada de overlay por cena."""
     tracks = [Track(track_id=VISUAL_TRACK, kind="visual")]
-    if any(overlays_by_scene.values()):
+    max_overlays_per_scene = max((len(ovs) for ovs in overlays_by_scene.values()), default=0)
+    if max_overlays_per_scene >= 1:
         tracks.append(Track(track_id=OVERLAY_TRACK, kind="visual"))
+    for i in range(2, max_overlays_per_scene + 1):
+        tracks.append(Track(track_id=f"visual-overlay-{i}", kind="visual"))
     tracks.extend([
         Track(track_id=NARRATION_TRACK, kind="narration"),
         Track(track_id=SUBTITLE_TRACK, kind="subtitle"),
@@ -667,16 +674,23 @@ def _overlay_shots(
                 f"overlay {index} of scene {scene_id!r} ends outside its scene: "
                 f"{start_s!r}s + {duration_s!r}s exceeds {scene_duration / tps!r}s"
             )
+        track_id = OVERLAY_TRACK if index == 0 else f"visual-overlay-{index + 1}"
         shots.append(
             Shot(
                 shot_id=f"overlay:{scene_id}:{index}",
-                track_id=OVERLAY_TRACK,
+                track_id=track_id,
                 start_tick=start_tick + relative_start,
                 duration_ticks=relative_duration,
                 asset_ref=overlay.asset_id,
                 role="overlay",
                 z_index=overlay.z_index,
-                composition=Composition(fit=overlay.fit),
+                composition=Composition(
+                    fit=overlay.fit,
+                    opacity=getattr(overlay, "opacity", 1.0),
+                    scale=getattr(overlay, "scale", 1.0),
+                    position_x=getattr(overlay, "position_x", 0.5),
+                    position_y=getattr(overlay, "position_y", 0.5),
+                ),
             )
         )
     return shots

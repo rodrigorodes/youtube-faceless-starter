@@ -86,13 +86,24 @@ def visual_fingerprint(
     """
     transition_kind = shot.transition.kind if shot.transition is not None else None
     transition_duration = shot.transition.duration_ticks if shot.transition is not None else 0
+    comp = shot.composition
+    comp_repr = None
+    if comp is not None:
+        if (getattr(comp, "opacity", 1.0) == 1.0 and
+            getattr(comp, "scale", 1.0) == 1.0 and
+            getattr(comp, "position_x", 0.5) == 0.5 and
+            getattr(comp, "position_y", 0.5) == 0.5):
+            comp_repr = comp.fit
+        else:
+            comp_repr = (comp.fit, comp.opacity, comp.scale, comp.position_x, comp.position_y)
+
     return _fingerprint(
         "visual",
         shot.asset_ref,
         asset_digest,
         media_type,
         shot.effects.motion,
-        shot.composition.fit if shot.composition is not None else None,
+        comp_repr,
         transition_kind,
         transition_duration,
         shot.asset_offset_ticks,
