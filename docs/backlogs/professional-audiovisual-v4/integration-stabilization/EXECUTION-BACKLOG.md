@@ -28,3 +28,6 @@ Os IDs INT organizam a recuperação das entregas existentes; não substituem os
 
 ## Ordem de entrega
 01 → 02 → 03 → 04/05 em slices com dependências explícitas → 06 → 07. Provar o primeiro slice assim que capacidades mínimas existirem; não esperar toda a expansão. Não implementar API paga para fechar gate; GAI-03–08/Drive continuam opcionais. Aprovação humana anterior V4-00 não presumida.
+
+## Reabertura — revisão 72438e9
+A campanha anterior não homologou integralmente INT-01–07. Todos os itens ainda exigem evidência/reconciliação individual; a sequência ativa é [RECOVERY-BACKLOG.md](RECOVERY-BACKLOG.md). Não alterar os IDs originais; mapear cada um na TRACEABILITY-MATRIX. Status PENDING até revisão válida >=9 conforme rubrica.

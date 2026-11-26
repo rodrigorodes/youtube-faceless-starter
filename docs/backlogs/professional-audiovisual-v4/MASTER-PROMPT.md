@@ -30,3 +30,6 @@ Ler GOOGLE-AI-PRO-INTEGRATION e GAI-EXECUTION-PLAN quando tocar mídia/providers
 
 ## Gate de recuperação — develop (26/11/2026)
 Antes de qualquer nova implementação V4 na develop, ler [Integration & Stabilization](integration-stabilization/README.md), [gates](integration-stabilization/QUALITY-GATES.md) e executar somente a onda INT autorizada. Para INT-01, usar [prompt de auditoria](integration-stabilization/prompts/INT-01-audit.md) sem alteração funcional. Não avançar automaticamente; critérios originais prevalecem e evidência de consumidor/artefato real é obrigatória.
+
+## Recuperação REC — gate >=9/10 (26/11/2026)
+A develop 72438e9 segue NO-GO. A entrada ativa é [PROMPT-MASTER de recuperação](integration-stabilization/PROMPT-MASTER.md), com [backlog REC](integration-stabilization/RECOVERY-BACKLOG.md), [roteamento](integration-stabilization/MODEL-ROUTING.md) e [rubrica](integration-stabilization/QUALITY-RUBRIC.md). Não usar GO histórico como aceite; execução técnica contínua apenas quando operador iniciar a campanha, sem merge/publicação/gasto e com gates independentes.

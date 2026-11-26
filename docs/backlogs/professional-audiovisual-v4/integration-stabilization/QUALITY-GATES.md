@@ -12,3 +12,6 @@ Aplicar em conjunto com ../QUALITY-GATES.md e Foundation. Os gates abaixo não s
 
 ## Entrega por tarefa
 ID original V4/GAI e INT, base/HEAD, diff, consumidor real, comando, resultado, prova (hash/artefato/log), custo API e computacional separados, limitações, rollback, risco residual e GO/NO-GO. Interromper em P0 ou escopo ambíguo, solicitar decisão. Não avançar por conta própria. Merge main só com autorização explícita após INT-07.
+
+## Gate adicional obrigatório — REC (26/11/2026)
+Aplicar [QUALITY-RUBRIC.md](QUALITY-RUBRIC.md): >=9,0 por dimensão aplicável e média ponderada, reviewer independente e todos gates obrigatórios. Reabrir R01–R13; [RECOVERY-BACKLOG](RECOVERY-BACKLOG.md) governa sequência. Não compensar P0/P1 obrigatório com nota. Autorização expressa do operador para campanha contínua permite avançar tarefas técnicas elegíveis, não dispensa review, evidência ou aprovação humana. Regressão completa após última alteração funcional; reteste focal não encerra G6. Browser não executado permanece BLOCKED. Aprovação estética só operador.

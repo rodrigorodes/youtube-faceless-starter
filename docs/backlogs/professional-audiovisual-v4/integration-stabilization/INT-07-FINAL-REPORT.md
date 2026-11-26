@@ -94,3 +94,6 @@ A branch `main` permaneceu estritamente intocada e bloqueada durante todo o proc
 
 1. **Avaliação Audiovisual Humana:** O operador humano deve avaliar a qualidade estética do áudio gerado pelo Piper e a composição visual no player local.
 2. **Merge para `main`:** Uma vez aprovada a avaliação humana, a branch `develop` estará apta e segura para merge direto na `main`.
+
+## Adendo de revisão independente — 26/11/2026
+O GO anterior está suspenso: revisão estática de 72438e9 identificou P0 financeiro, validação MP4 insuficiente, crossfade não real, lacunas de integração/UX/piloto e regressão final não comprovada. Ver [RECOVERY-REVIEW.md](RECOVERY-REVIEW.md). Este relatório é histórico e não autoriza merge; status atual NO-GO, reabertura em [PROMPT-MASTER.md](PROMPT-MASTER.md). Nenhum teste foi executado pelo autor deste adendo.

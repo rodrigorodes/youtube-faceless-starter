@@ -40,3 +40,6 @@ flowchart TD
   C -. checkpoints e leases .-> D[(Postgres)]
 ```
 Importação externa assistida genérica precede APIs opcionais. Não adicionar pipeline, registry, budget guard, cache ou coordenador paralelo.
+
+## Entrada atual — segunda recuperação (26/11/2026)
+A execução INT-01–07 ocorreu, mas revisão de 72438e9 identificou lacunas e P0 financeiro. Status NO-GO. Use [PROMPT-MASTER.md](PROMPT-MASTER.md) como entrada única da campanha REC-00–04, [achados](RECOVERY-REVIEW.md), [backlog](RECOVERY-BACKLOG.md), [roteamento](MODEL-ROUTING.md) e [rubrica >=9](QUALITY-RUBRIC.md). As instruções antigas acima são históricas para INT; o master atual permite execução técnica contínua quando iniciada expressamente pelo operador, mantendo gates, review independente e aprovação humana. Não repetir ondas inteiras nem aceitar GO antigo.

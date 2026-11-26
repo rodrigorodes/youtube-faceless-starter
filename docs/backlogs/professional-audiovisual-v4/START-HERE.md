@@ -13,3 +13,6 @@ Após Foundation/V4-00, leia [integração](GOOGLE-AI-PRO-INTEGRATION.md) e [bac
 
 ## Recuperação de integração — develop (26/11/2026)
 A develop contém V4-01–13 implementadas em diferentes níveis de maturidade. Não tratar relatórios GO como homologação do produto. A entrada para continuar nessa branch é [Integration & Stabilization](integration-stabilization/README.md), começando exclusivamente pela auditoria INT-01 quando autorizada. O fluxo original e IDs V4 permanecem válidos; main preservada e merge bloqueado até gate final e autorização.
+
+## Recuperação REC — gate >=9/10 (26/11/2026)
+A develop 72438e9 segue NO-GO. A entrada ativa é [PROMPT-MASTER de recuperação](integration-stabilization/PROMPT-MASTER.md), com [backlog REC](integration-stabilization/RECOVERY-BACKLOG.md), [roteamento](integration-stabilization/MODEL-ROUTING.md) e [rubrica](integration-stabilization/QUALITY-RUBRIC.md). Não usar GO histórico como aceite; execução técnica contínua apenas quando operador iniciar a campanha, sem merge/publicação/gasto e com gates independentes.
