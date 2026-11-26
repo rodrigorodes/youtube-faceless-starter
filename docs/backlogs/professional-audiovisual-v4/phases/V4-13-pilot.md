@@ -1,21 +1,21 @@
 # V4-13 — Professional Pilot
-Status: proposto. Dependências: Todas as fases aplicáveis.
+Status: homologado tecnicamente; aguardando avaliação humana. Dependências: Todas as fases aplicáveis.
 
 ## Atividades
-- [ ] V4-13.01 — Roteiros referência. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.02 — Piloto econômico. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.03 — Piloto equilibrado. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.04 — Piloto premium opcional. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.05 — Comparar voz. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.06 — Comparar som. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.07 — Comparar visual. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.08 — Custo por minuto. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.09 — Tempo produção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.10 — Custo regeneração. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.11 — Avaliação humana. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.12 — Corrigir problemas. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.13 — Publicação controlada. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-13.14 — Relatório final. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.01 — Roteiros referência. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.02 — Piloto econômico. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.03 — Piloto equilibrado. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.04 — Piloto premium opcional. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.05 — Comparar voz. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.06 — Comparar som. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.07 — Comparar visual. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.08 — Custo por minuto. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.09 — Tempo produção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.10 — Custo regeneração. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [ ] V4-13.11 — Avaliação humana. Disponibilizar vídeos e relatórios pareados; aguardar avaliação do operador humano (não simular aprovação).
+- [x] V4-13.12 — Corrigir problemas. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.13 — Publicação controlada. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-13.14 — Relatório final. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
 
 ## Aceite
 Comparação pareada com mesmo roteiro de baseline; três estilos quando orçamento permitir; aprovação humana e licença antes de publicar.
