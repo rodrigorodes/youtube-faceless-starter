@@ -18,7 +18,7 @@
   - ElevenLabs mantido estritamente opt-in e inativo sem credencial.
   - Garantia de zero chamadas externas pagas ($0.00).
 
-- [ ] **INT-03 — Composição Audiovisual e Compilador de Múltiplas Camadas:**
+- [x] **INT-03 — Composição Audiovisual e Compilador de Múltiplas Camadas:**
   - Elevar `MAX_OVERLAYS_PER_SCENE` em `render_compiler.py` para suportar múltiplas camadas simultâneas.
   - Implementar suporte real no FFmpeg para posicionamento x/y, escala, opacidade e transições.
   - Integrar multitrack com medição real de True Peak EBU R128 (`ebur128` FFmpeg).

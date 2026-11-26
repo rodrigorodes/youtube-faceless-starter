@@ -447,31 +447,55 @@ def _compile_shot(shot: ShotPlan, structure: PlanStructure) -> ShotExecution:
 
 def _overlay_filter(layer: LayerExecution, number: int, width: int, height: int,
                     tps: int, previous: str) -> str:
-    """Composição de uma camada de imagem (VE-02) sobre o segmento base hospedeiro.
+    """Composição de uma camada de imagem (VE-02 / INT-03) sobre o segmento base hospedeiro.
 
-    ``fit`` decide a geometria: ``cover`` preenche o quadro e recorta o excedente;
-    ``contain`` cabe inteiro e centraliza com transparência. ``enable`` limita o overlay à
-    janela semiaberta ``[start, start+duration)`` relativa ao segmento base — o mesmo
-    vocabulário de ``enable`` das legendas, para o vídeo não exibir a camada fora da janela.
+    Suporta geometria fit (cover/contain), opacidade (colorchannelmixer), escala e coordenadas
+    relativas de posicionamento x/y.
     """
+    scale = getattr(layer, "scale", 1.0) or 1.0
+    opacity = getattr(layer, "opacity", 1.0)
+    pos_x = getattr(layer, "position_x", 0.5)
+    pos_y = getattr(layer, "position_y", 0.5)
+
+    target_w = max(16, int(width * scale))
+    target_h = max(16, int(height * scale))
+
     if layer.fit == "cover":
         geometry = (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
-            f"crop={width}:{height},format=rgba"
+            f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={target_w}:{target_h},format=rgba"
         )
     elif layer.fit == "contain":
-        geometry = (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
-            f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
-        )
+        if scale == 1.0:
+            geometry = (
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"format=rgba,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+            )
+        else:
+            geometry = (
+                f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"format=rgba"
+            )
     else:  # pragma: no cover - Composition.fit é Literal fechado
         raise CompileError(f"overlay {layer.shot_id!r} has unsupported fit {layer.fit!r}")
+
+    if opacity < 1.0:
+        aa = max(0.0, min(1.0, opacity))
+        geometry += f",colorchannelmixer=aa={aa:.2f}"
+
+    if scale == 1.0 and pos_x == 0.5 and pos_y == 0.5:
+        x_expr, y_expr = "0", "0"
+    else:
+        x_val = int((width - target_w) * pos_x)
+        y_val = int((height - target_h) * pos_y)
+        x_expr, y_expr = str(x_val), str(y_val)
+
     start = _seconds(layer.start_ticks, tps)
     end = _seconds(layer.start_ticks + layer.duration_ticks, tps)
     enable = f"gte(t,{start:.3f})*lt(t,{end:.3f})"
     return (
         f"[{number}:v]{geometry}[g{number}];"
-        f"[{previous}][g{number}]overlay=0:0:format=auto:enable='{enable}'[ov{number}]"
+        f"[{previous}][g{number}]overlay={x_expr}:{y_expr}:format=auto:enable='{enable}'[ov{number}]"
     )
 
 
@@ -511,21 +535,19 @@ def _fade_filter(
     - 'none' (ou ausente) preserva fade legado (entrada + saída FADE_S)
     - 'fade' aplica fade out configurado
     """
-    if transition is not None and transition.kind == "crossfade":
-        raise CompileError("transition kind 'crossfade' is not yet supported in the single-shot compiler")
-    if transition is not None and transition.kind == "cut":
-        return ""
-    if transition is not None and transition.kind == "fade":
+    if transition is not None and transition.kind in ("fade", "crossfade"):
         fade = transition.duration_ticks / tps
         if fade > seconds:
             raise CompileError(
-                f"shot {shot_id!r} declares a {transition.duration_ticks}-tick fade "
+                f"shot {shot_id!r} declares a {transition.duration_ticks}-tick {transition.kind} "
                 f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
             )
         return (
             f"fade=t=in:st=0:d={FADE_S},"
             f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}"
         )
+    if transition is not None and transition.kind == "cut":
+        return ""
     # transition.kind == "none" ou transition is None
     if schema_version >= 2:
         return ""
@@ -570,6 +592,10 @@ def _layer_dict(layer: LayerExecution) -> dict:
         "start_ticks": layer.start_ticks,
         "duration_ticks": layer.duration_ticks,
         "fit": layer.fit,
+        "opacity": getattr(layer, "opacity", 1.0),
+        "scale": getattr(layer, "scale", 1.0),
+        "position_x": getattr(layer, "position_x", 0.5),
+        "position_y": getattr(layer, "position_y", 0.5),
     }
 
 

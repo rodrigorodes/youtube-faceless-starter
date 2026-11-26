@@ -165,12 +165,15 @@ def mix_multitrack_pcm(
         final_samples.append(clamped)
 
     final_peak = max(abs(s) for s in final_samples) if final_samples else 0
-    true_peak_dbtp = round(20.0 * math.log10(max(1, final_peak) / 32767.0), 2)
+    # INT-03 (A06): Pico de amostra (sample peak). Para True Peak real (com oversampling EBU R128),
+    # o Studio utiliza a medição pelo filtro ebur128 do FFmpeg.
+    sample_peak_dbfs = round(20.0 * math.log10(max(1, final_peak) / 32767.0), 2)
 
     metrics = {
         "duration_s": round(total_samples / float(sample_rate), 2),
         "peak_amplitude": final_peak,
-        "true_peak_dbtp": true_peak_dbtp,
+        "sample_peak_dbfs": sample_peak_dbfs,
+        "true_peak_dbtp": sample_peak_dbfs,  # alias compatível para chamadores que esperam a chave
         "is_clipped": final_peak >= CLIPPING_LIMIT,
         "sample_rate": sample_rate,
     }
