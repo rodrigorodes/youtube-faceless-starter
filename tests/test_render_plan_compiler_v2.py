@@ -149,10 +149,10 @@ def test_fade_filter_fade_applies_configured_fade_out():
 
 
 def test_fade_filter_crossfade_supported():
+    """REC-02.01: crossfade não usa fade-to-black individual; _fade_filter retorna '' e xfade ocorre no concat."""
     trans = Transition(kind="crossfade", duration_ticks=2500)
     res = _fade_filter(trans, 2.0, DEFAULT_TICKS_PER_SECOND, "shot-1")
-    assert f"fade=t=in:st=0:d={FADE_S}" in res
-    assert "fade=t=out:st=1.900:d=0.100" in res
+    assert res == ""
 
 
 def test_cut_transition_in_compiled_plan_produces_clean_cut_without_fade():

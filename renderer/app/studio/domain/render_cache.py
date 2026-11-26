@@ -454,13 +454,26 @@ def _hosted_overlays(scene, base, manifest: Mapping[str, object]) -> tuple:
     entries: list[tuple] = []
     for overlay in hosted:
         reference = manifest.get(overlay.asset_ref)
-        entries.append((
+        comp = overlay.composition
+        comp_repr = None
+        if comp is not None:
+            if (getattr(comp, "opacity", 1.0) == 1.0 and
+                getattr(comp, "scale", 1.0) == 1.0 and
+                getattr(comp, "position_x", 0.5) == 0.5 and
+                getattr(comp, "position_y", 0.5) == 0.5):
+                comp_repr = comp.fit
+            else:
+                comp_repr = (comp.fit, comp.opacity, comp.scale, comp.position_x, comp.position_y)
+        entry = [
             overlay.asset_ref,
             reference.content_sha256 if reference is not None else "",
             reference.media_type if reference is not None else "",
             overlay.z_index,
             overlay.start_tick - base.start_tick,
             overlay.duration_ticks,
-            overlay.composition.fit if overlay.composition is not None else None,
-        ))
+            comp_repr,
+        ]
+        if getattr(overlay, "asset_offset_ticks", 0) != 0:
+            entry.append(overlay.asset_offset_ticks)
+        entries.append(tuple(entry))
     return tuple(entries)

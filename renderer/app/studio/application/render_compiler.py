@@ -23,6 +23,7 @@ são RP-024; a estrutura recusa o plano em vez de produzir um vídeo errado. O e
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -43,6 +44,8 @@ from ..domain.render_plan import (
 MOTION_NAMES = ("none", "zoom_in", "zoom_out", "pan_left", "pan_right")
 # V4-04 / INT-03: suporte a múltiplas camadas simultâneas (imagem, gráfico, PiP) com limite explícito de 8
 MAX_OVERLAYS_PER_SCENE = 8
+INTER_SHOT_TRANSITIONS = ("crossfade", "slide_left", "slide_right", "wipe_left", "wipe_right")
+SUPPORTED_TRANSITIONS = ("none", "cut", "fade", *INTER_SHOT_TRANSITIONS)
 
 
 class CompileError(ValueError):
@@ -71,6 +74,7 @@ class LayerExecution:
     scale: float = 1.0
     position_x: float = 0.5
     position_y: float = 0.5
+    asset_offset_ticks: int = 0
 
 
 @dataclass(frozen=True)
@@ -193,6 +197,7 @@ def structure_render_plan(
 
     ordered_bases = _ordered_bases(plan)
     _require_base_trajectory(ordered_bases, plan.timeline.duration_ticks)
+    _validate_transitions(ordered_bases)
     _validate_overlays(plan, manifest, by_id)
 
     subtitles = sorted(plan.timeline.subtitles, key=lambda c: c.start_tick)
@@ -295,6 +300,31 @@ def _require_base_trajectory(ordered: list[tuple[object, Shot]], total_ticks: in
         )
 
 
+def _validate_transitions(ordered_bases: list[tuple[object, Shot]]) -> None:
+    for idx, (_, shot) in enumerate(ordered_bases):
+        tr = shot.transition
+        if tr is None:
+            continue
+        if tr.kind not in SUPPORTED_TRANSITIONS:
+            raise CompileError(f"shot {shot.shot_id!r} uses unsupported transition kind {tr.kind!r}")
+        if tr.kind in INTER_SHOT_TRANSITIONS:
+            if tr.duration_ticks <= 0:
+                raise CompileError(
+                    f"shot {shot.shot_id!r} declares {tr.kind!r} with non-positive duration {tr.duration_ticks}"
+                )
+            if idx + 1 >= len(ordered_bases):
+                raise CompileError(
+                    f"shot {shot.shot_id!r} declares inter-shot transition {tr.kind!r} on the final shot"
+                )
+            next_shot = ordered_bases[idx + 1][1]
+            shorter = min(shot.duration_ticks, next_shot.duration_ticks)
+            if tr.duration_ticks >= shorter:
+                raise CompileError(
+                    f"shot {shot.shot_id!r} declares {tr.kind!r} duration {tr.duration_ticks} ticks "
+                    f">= shorter adjacent shot duration {shorter} ticks"
+                )
+
+
 def _validate_overlays(plan: RenderPlan, manifest: dict[str, AssetReference], by_id: dict[str, AssetDescriptor]) -> None:
     for scene in plan.timeline.scenes:
         overlays = scene.overlay_shots
@@ -309,11 +339,29 @@ def _validate_overlays(plan: RenderPlan, manifest: dict[str, AssetReference], by
                 raise CompileError(
                     f"overlay {overlay.shot_id!r} references unknown asset {overlay.asset_ref!r}"
                 )
-            if reference.media_type not in ("image", "graphic"):
+            if reference.media_type not in ("image", "graphic", "video"):
                 raise CompileError(
                     f"overlay {overlay.shot_id!r} uses {reference.media_type!r} media; "
-                    f"VE-01 supports image/graphic overlays only (video/text arrive in VE-02)"
+                    f"only image, graphic, and video PiP overlays are supported"
                 )
+            if overlay.composition is not None:
+                comp = overlay.composition
+                for name, val in (
+                    ("opacity", comp.opacity),
+                    ("scale", comp.scale),
+                    ("position_x", comp.position_x),
+                    ("position_y", comp.position_y),
+                ):
+                    if not math.isfinite(val):
+                        raise CompileError(f"overlay {overlay.shot_id!r} has non-finite {name}={val!r}")
+                if not (0.0 <= comp.opacity <= 1.0):
+                    raise CompileError(f"overlay {overlay.shot_id!r} opacity {comp.opacity!r} out of [0.0, 1.0]")
+                if not (0.0 < comp.scale <= 4.0):
+                    raise CompileError(f"overlay {overlay.shot_id!r} scale {comp.scale!r} out of (0.0, 4.0]")
+                if not (0.0 <= comp.position_x <= 1.0) or not (0.0 <= comp.position_y <= 1.0):
+                    raise CompileError(
+                        f"overlay {overlay.shot_id!r} position ({comp.position_x!r}, {comp.position_y!r}) out of [0.0, 1.0]"
+                    )
             descriptor = by_id.get(overlay.asset_ref)
             if descriptor is None:
                 raise CompileError(
@@ -358,6 +406,7 @@ def _compile_layers(scene, base: Shot, manifest: dict[str, AssetReference],
                 scale=scale,
                 position_x=pos_x,
                 position_y=pos_y,
+                asset_offset_ticks=overlay.asset_offset_ticks,
             )
         )
     return tuple(layers)

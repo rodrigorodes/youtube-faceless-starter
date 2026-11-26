@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from ..domain.asset_resolver import AssetDescriptor
+from ..domain.audio_catalog import AudioCatalog
+from ..domain.audio_multitrack import MultitrackAudioPlan
 from ..domain.qa_report import QaReport as QualityReport
 from ..domain.render import Cue
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact
@@ -92,6 +94,10 @@ class OverlayLayer:
     duration_s: float      # > 0
     z_index: int = 1       # >= 1
     fit: Literal["cover", "contain"] = "contain"
+    opacity: float = 1.0
+    scale: float = 1.0
+    position_x: float = 0.5
+    position_y: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,9 @@ class RenderSpec:
     config_snapshot: ConfigSnapshot | None = None
     # VE-01: camadas de imagem por cena (default vazio = plano idêntico ao atual).
     layers: tuple[OverlayLayer, ...] = ()
+    # REC-02.02: mixagem multitrack opcional (voz + 2 músicas + ambiência + SFX + ducking + licença)
+    multitrack: MultitrackAudioPlan | None = None
+    audio_catalog: AudioCatalog | None = None
 
 
 @dataclass(frozen=True)

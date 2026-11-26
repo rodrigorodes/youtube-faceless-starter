@@ -46,13 +46,15 @@ from ... import rich
 from ..application.ports import RenderQaInputs, RenderSpec
 from ..application.render_cache import PlanRegeneration
 from ..domain.asset_resolver import IMAGE_CODECS, VIDEO_CODECS, AssetDescriptor
+from ..domain.audio_catalog import AudioCatalog
+from ..domain.audio_multitrack import MultitrackAudioPlan
 from ..domain.contracts import VideoFormat
 from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
 from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardOverlay, StoryboardScene, build_render_plan
 from ..domain.visual_style import ResolvedStyle
-from .render_plan_compiler import CompiledRender, compile_render_plan
+from .render_plan_compiler import CompiledRender, compile_multitrack_audio_args, compile_render_plan
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 # Bundle neutro usado **apenas quando o vídeo não tem canal/estilo a referenciar** (RP-016):
@@ -392,8 +394,16 @@ class PlanFfmpegRenderer:
         plan = self._plan_for_render(spec)
         compiled, labels = self._compile(plan, spec)
         reuse = self._reuse_hits(plan, labels)
-        out = self.execute(compiled, spec.speech_wavs, Path(out_path), reuse=reuse, style=spec.style)
-        self._record(plan, compiled, labels, reuse)
+        out = self.execute(
+            compiled,
+            spec.speech_wavs,
+            Path(out_path),
+            reuse=reuse,
+            style=spec.style,
+            multitrack=spec.multitrack,
+            audio_catalog=spec.audio_catalog,
+        )
+        self._record(plan, compiled, labels, reuse, skip_final=spec.multitrack is not None)
         return out
 
     def qa_inputs(self, spec: RenderSpec) -> RenderQaInputs:
@@ -459,7 +469,7 @@ class PlanFfmpegRenderer:
         return hits
 
     def _record(self, plan: RenderPlan, compiled: CompiledRender, labels: Mapping[str, str],
-                reuse: Mapping[NodeId, Path]) -> None:
+                reuse: Mapping[NodeId, Path], *, skip_final: bool = False) -> None:
         """Persiste a revisão e registra cada artefato produzido/reusado — o cache do próximo ciclo.
 
         Registra a identidade **física** real (``content_sha256`` do arquivo, codec, localização)
@@ -473,6 +483,8 @@ class PlanFfmpegRenderer:
         entries: list[CacheEntry] = []
         artifacts: list[PlanArtifact] = []
         for item in graph.nodes:
+            if skip_final and item.node == NodeId("final", "video"):
+                continue
             location = reuse.get(item.node)
             if location is None:
                 produced = self._produced(item.node, compiled)
@@ -585,6 +597,10 @@ class PlanFfmpegRenderer:
                 duration_s=layer.duration_s,
                 z_index=layer.z_index,
                 fit=layer.fit,
+                opacity=layer.opacity,
+                scale=layer.scale,
+                position_x=layer.position_x,
+                position_y=layer.position_y,
             ))
         manifest = list(manifest_by_id.values())
         # VS-03: o motion do estilo (ciclo de câmera) sobrepõe o ciclo default da instância
@@ -677,7 +693,9 @@ class PlanFfmpegRenderer:
 
     def execute(self, compiled: CompiledRender, speech_wavs, out_path: Path, *,
                 reuse: Mapping[NodeId, Path] | None = None,
-                style: ResolvedStyle | None = None) -> Path:
+                style: ResolvedStyle | None = None,
+                multitrack: MultitrackAudioPlan | None = None,
+                audio_catalog: AudioCatalog | None = None) -> Path:
         """Materializa overlays, monta áudio, roda FFmpeg e publica de forma atômica.
 
         ``reuse`` mapeia nó lógico → artefato físico já existente (RP-06b). Um shot/narração/
@@ -693,8 +711,29 @@ class PlanFfmpegRenderer:
         # vídeo não mudam — o overlay é só visual.
         reuse = reuse or {}
         final_node = NodeId("final", "video")
-        if final_node in reuse:  # nada mudou: o MP4 final já existe como artefato físico
+        if final_node in reuse and multitrack is None:  # nada mudou: o MP4 final já existe como artefato físico
             return self._publish(Path(reuse[final_node]), Path(out_path))
+        mt_args: tuple[str, ...] | None = None
+        if multitrack is not None:
+            video_codec_args: tuple[str, ...] = ("-c:v", "copy")
+            if compiled.subtitles_ass_path:
+                escaped_sub_path = (
+                    compiled.subtitles_ass_path.replace("\\", "\\\\")
+                    .replace("'", "'\\''")
+                    .replace(":", "\\:")
+                )
+                video_codec_args = (
+                    "-vf", f"subtitles='{escaped_sub_path}'",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                )
+            mt_args = compile_multitrack_audio_args(
+                multitrack=multitrack,
+                audio_catalog=audio_catalog or AudioCatalog(),
+                video_input=compiled.concat.output,
+                narration_input=compiled.audio.narration.output,
+                output_path=compiled.final_output,
+                video_codec_args=video_codec_args,
+            )
         Path(compiled.final_output).parent.mkdir(parents=True, exist_ok=True)
         if compiled.subtitles_ass_content and compiled.subtitles_ass_path:
             sub_path = Path(compiled.subtitles_ass_path)
@@ -704,11 +743,12 @@ class PlanFfmpegRenderer:
         self._materialize(compiled, fmt, style)
         narration_inputs = self._narration_inputs(compiled, speech_wavs, reuse)
         rich.build_narration_track(narration_inputs, Path(compiled.audio.narration.output))
-        music_node = NodeId("music", compiled.audio.music.source_id)
-        if music_node in reuse:  # trilha inalterada: o WAV vem do cache
-            shutil.copyfile(reuse[music_node], Path(compiled.audio.music_path))
-        else:
-            self._write_music(compiled)
+        if mt_args is None:
+            music_node = NodeId("music", compiled.audio.music.source_id)
+            if music_node in reuse:  # trilha inalterada: o WAV vem do cache
+                shutil.copyfile(reuse[music_node], Path(compiled.audio.music_path))
+            else:
+                self._write_music(compiled)
         total_seconds = compiled.total_ticks / compiled.ticks_per_second
         timeout = int(self.timeout_floor + 3 * total_seconds)
         for shot in compiled.shots:
@@ -724,7 +764,7 @@ class PlanFfmpegRenderer:
             Path(compiled.concat.manifest_path).write_text(
                 "".join(f"file '{Path(shot.output).as_posix()}'\n" for shot in compiled.shots), encoding="utf-8")
             self._run(list(compiled.concat.args), timeout)
-        self._run(list(compiled.audio.args), timeout)
+        self._run(list(mt_args if mt_args is not None else compiled.audio.args), timeout)
         return self._publish(Path(compiled.final_output), Path(out_path))
 
     def _materialize(self, compiled: CompiledRender, fmt: VideoFormat,

@@ -173,6 +173,26 @@ class Composition(_PlanModel):
     position_x: float = 0.5
     position_y: float = 0.5
 
+    @model_validator(mode="after")
+    def _validate_finite_bounds(self):
+        for name, val in (
+            ("opacity", self.opacity),
+            ("scale", self.scale),
+            ("position_x", self.position_x),
+            ("position_y", self.position_y),
+        ):
+            if not math.isfinite(val):
+                raise ValueError(f"composition {name} must be finite, got {val!r}")
+        if not (0.0 <= self.opacity <= 1.0):
+            raise ValueError(f"composition opacity must be in [0.0, 1.0], got {self.opacity!r}")
+        if not (0.0 < self.scale <= 4.0):
+            raise ValueError(f"composition scale must be in (0.0, 4.0], got {self.scale!r}")
+        if not (0.0 <= self.position_x <= 1.0):
+            raise ValueError(f"composition position_x must be in [0.0, 1.0], got {self.position_x!r}")
+        if not (0.0 <= self.position_y <= 1.0):
+            raise ValueError(f"composition position_y must be in [0.0, 1.0], got {self.position_y!r}")
+        return self
+
 
 class Effects(_PlanModel):
     """Movimento explícito por shot (substitui o ``index % 4`` do renderer legado)."""

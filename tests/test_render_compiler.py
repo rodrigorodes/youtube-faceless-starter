@@ -512,8 +512,9 @@ def test_T11_two_overlays_in_the_same_scene_are_refused():
         _compile_overlay(plan)
 
 
-@pytest.mark.parametrize("media_type", ["video", "text"])
+@pytest.mark.parametrize("media_type", ["text", "audio"])
 def test_T12_overlay_media_must_be_image_or_graphic(media_type):
+    """REC-02.01: Overlays aceitam image, graphic e video (PiP), rejeitando text/audio."""
     total = simple_plan().timeline.scenes[0].duration_ticks
     overlay_ref = image_ref("asset-overlay").model_copy(update={"media_type": media_type})
     plan = _overlay_plan(
@@ -521,12 +522,16 @@ def test_T12_overlay_media_must_be_image_or_graphic(media_type):
         overlays=[{"start": 0, "duration": 100, "asset_ref": "asset-overlay"}],
         extra_assets=[overlay_ref],
     )
-    if media_type == "video":
-        descriptor = descriptor_for("asset-overlay", media_type="video", codec="h264", duration_ticks=100)
+    if media_type == "audio":
+        descriptor = AssetDescriptor.model_construct(
+            asset_id="asset-overlay", asset_version=1, uri="img/asset-overlay.png",
+            content_sha256=SHA_A, media_type="audio", license="Imagem gerada por IA",
+            location="", available=True, codec=None, width=None, height=None,
+        )
     else:
-        descriptor = descriptor_for("asset-overlay", media_type="text", codec=None, width=None,
+        descriptor = descriptor_for("asset-overlay", media_type=media_type, codec=None, width=None,
                                     height=None, location="")
-    with pytest.raises(CompileError, match="VE-02|image|graphic"):
+    with pytest.raises(CompileError, match="image|graphic|video"):
         _compile_overlay(plan, assets={"asset-01": descriptor_for("asset-01"), "asset-overlay": descriptor})
 
 

@@ -22,12 +22,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from ..application.render_compiler import (
+    INTER_SHOT_TRANSITIONS,
     CompileError,
     LayerExecution,
     MusicTrack,
@@ -37,7 +39,10 @@ from ..application.render_compiler import (
     structure_render_plan,
 )
 from ..domain.asset_resolver import AssetDescriptor
+from ..domain.audio_catalog import AudioCatalog
+from ..domain.audio_multitrack import MultitrackAudioPlan, verify_audio_licenses
 from ..domain.captions import CaptionLine, WordTiming
+from ..domain.motion_effects import calculate_motion_curve
 from ..domain.render import FADE_S
 from ..domain.render_plan import AudioMix as DomainAudioMix, Motion, RenderPlan, Transition
 from .alignment import WordAlignmentService
@@ -228,14 +233,7 @@ def compile_render_plan(
     structure = structure_render_plan(plan=plan, assets=assets, work_dir=work_dir, labels=labels)
     work = structure.work
     shots = tuple(_compile_shot(shot, structure) for shot in structure.shots)
-    concat = ConcatExecution(
-        manifest_path=f"{work}/concat.txt",
-        output=f"{work}/video_only.mp4",
-        args=(
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "concat", "-safe", "0", "-i", f"{work}/concat.txt", "-c", "copy", f"{work}/video_only.mp4",
-        ),
-    )
+    concat = _compile_concat(structure, work)
     subtitles_ass_path: str | None = None
     subtitles_ass_content: str | None = None
 
@@ -394,7 +392,10 @@ def _compile_shot(shot: ShotPlan, structure: PlanStructure) -> ShotExecution:
         number = len(captions) + 2 + offset
         parts.append(_overlay_filter(layer, number, width, height, tps, last))
         last = f"ov{number}"
-        overlay_args += ["-loop", "1", "-i", layer.source]
+        if layer.media_type == "video":
+            overlay_args += ["-i", layer.source]
+        else:
+            overlay_args += ["-loop", "1", "-i", layer.source]
     parts.append(f"[{last}][1:v]overlay=0:0:format=auto[o1]")
     last = "o1"
 
@@ -447,15 +448,25 @@ def _compile_shot(shot: ShotPlan, structure: PlanStructure) -> ShotExecution:
 
 def _overlay_filter(layer: LayerExecution, number: int, width: int, height: int,
                     tps: int, previous: str) -> str:
-    """Composição de uma camada de imagem (VE-02 / INT-03) sobre o segmento base hospedeiro.
+    """Composição de uma camada (imagem/gráfico/PiP vídeo) sobre o segmento base hospedeiro.
 
     Suporta geometria fit (cover/contain), opacidade (colorchannelmixer), escala e coordenadas
-    relativas de posicionamento x/y.
+    relativas de posicionamento x/y com limites finitos explícitos.
     """
-    scale = getattr(layer, "scale", 1.0) or 1.0
+    scale = getattr(layer, "scale", 1.0)
     opacity = getattr(layer, "opacity", 1.0)
     pos_x = getattr(layer, "position_x", 0.5)
     pos_y = getattr(layer, "position_y", 0.5)
+
+    for name, val in (("scale", scale), ("opacity", opacity), ("position_x", pos_x), ("position_y", pos_y)):
+        if not math.isfinite(val):
+            raise CompileError(f"overlay {layer.shot_id!r} has non-finite {name}={val!r}")
+    if not (0.0 < scale <= 4.0):
+        raise CompileError(f"overlay {layer.shot_id!r} scale {scale!r} out of (0.0, 4.0]")
+    if not (0.0 <= opacity <= 1.0):
+        raise CompileError(f"overlay {layer.shot_id!r} opacity {opacity!r} out of [0.0, 1.0]")
+    if not (0.0 <= pos_x <= 1.0) or not (0.0 <= pos_y <= 1.0):
+        raise CompileError(f"overlay {layer.shot_id!r} position ({pos_x!r}, {pos_y!r}) out of [0.0, 1.0]")
 
     target_w = max(16, int(width * scale))
     target_h = max(16, int(height * scale))
@@ -493,20 +504,35 @@ def _overlay_filter(layer: LayerExecution, number: int, width: int, height: int,
     start = _seconds(layer.start_ticks, tps)
     end = _seconds(layer.start_ticks + layer.duration_ticks, tps)
     enable = f"gte(t,{start:.3f})*lt(t,{end:.3f})"
+
+    prefix = ""
+    extra_overlay = ""
+    if layer.media_type == "video":
+        offset_ticks = getattr(layer, "asset_offset_ticks", 0)
+        offset_s = offset_ticks / tps if offset_ticks > 0 else 0.0
+        if offset_s > 0.0:
+            prefix = f"trim=start={offset_s:.6f},setpts=PTS-STARTPTS+{start:.3f}/TB,"
+        else:
+            prefix = f"setpts=PTS-STARTPTS+{start:.3f}/TB,"
+        extra_overlay = ":eof_action=pass"
+
     return (
-        f"[{number}:v]{geometry}[g{number}];"
-        f"[{previous}][g{number}]overlay={x_expr}:{y_expr}:format=auto:enable='{enable}'[ov{number}]"
+        f"[{number}:v]{prefix}{geometry}[g{number}];"
+        f"[{previous}][g{number}]overlay={x_expr}:{y_expr}:format=auto{extra_overlay}:enable='{enable}'[ov{number}]"
     )
 
 
 def _zoompan(motion: Motion, frames: int, width: int, height: int, rate: str) -> str:
-    """Expressões do Ken Burns legado (``index % 4``) escolhidas **explicitamente** pelo plano."""
-    mode = motion
+    """Expressões Ken Burns derivadas de ``motion_effects.calculate_motion_curve``."""
+    curve = calculate_motion_curve(motion, zoom_factor=1.10)
+    mode = curve.motion
     center = "iw/2-(iw/zoom/2)"
     if mode == "zoom_in":
-        zoom, x = f"1+0.10*on/{frames}", center
+        delta = curve.end.scale - curve.start.scale
+        zoom, x = f"{curve.start.scale:.0f}+{delta:.2f}*on/{frames}", center
     elif mode == "zoom_out":
-        zoom, x = f"1.10-0.10*on/{frames}", center
+        delta = curve.start.scale - curve.end.scale
+        zoom, x = f"{curve.start.scale:.2f}-{delta:.2f}*on/{frames}", center
     elif mode == "pan_right":
         zoom, x = "1.12", f"(iw-iw/zoom)*on/{frames}"
     elif mode == "pan_left":
@@ -518,6 +544,171 @@ def _zoompan(motion: Motion, frames: int, width: int, height: int, rate: str) ->
     return f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={width}x{height}:fps={rate}"
 
 
+_XFADE_MAP: dict[str, str] = {
+    "crossfade": "fade",
+    "slide_left": "slideleft",
+    "slide_right": "slideright",
+    "wipe_left": "wipeleft",
+    "wipe_right": "wiperight",
+}
+
+
+def _compile_concat(structure: PlanStructure, work: str) -> ConcatExecution:
+    """Compila a montagem entre shots: concat demuxer rápido ou ``xfade`` real inter-segmento."""
+    has_xfade = any(
+        shot.transition is not None and shot.transition.kind in INTER_SHOT_TRANSITIONS
+        for shot in structure.shots
+    )
+    output = f"{work}/video_only.mp4"
+    manifest_path = f"{work}/concat.txt"
+    if not has_xfade:
+        return ConcatExecution(
+            manifest_path=manifest_path,
+            output=output,
+            args=(
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "concat", "-safe", "0", "-i", manifest_path, "-c", "copy", output,
+            ),
+        )
+
+    args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    for shot in structure.shots:
+        args += ["-i", shot.output]
+
+    parts: list[str] = []
+    for i in range(len(structure.shots)):
+        parts.append(f"[{i}:v]settb=AVTB,fps={structure.rate},format=yuv420p[s{i}]")
+
+    acc = "s0"
+    cursor = structure.shots[0].seconds
+    tps = structure.ticks_per_second
+    for i in range(len(structure.shots) - 1):
+        shot = structure.shots[i]
+        next_shot = structure.shots[i + 1]
+        tr = shot.transition
+        if tr is not None and tr.kind in _XFADE_MAP:
+            d = tr.duration_ticks / tps
+            half_d = d / 2.0
+            offset = cursor - half_d
+            xfade_kind = _XFADE_MAP[tr.kind]
+            parts.append(f"[{acc}]tpad=stop_duration={half_d:.6f}:stop_mode=clone[p{i}a]")
+            parts.append(f"[s{i + 1}]tpad=start_duration={half_d:.6f}:start_mode=clone[p{i}b]")
+            parts.append(
+                f"[p{i}a][p{i}b]xfade=transition={xfade_kind}:duration={d:.6f}:offset={offset:.6f}[x{i}]"
+            )
+            acc = f"x{i}"
+            cursor += next_shot.seconds
+        else:
+            parts.append(f"[{acc}][s{i + 1}]concat=n=2:v=1:a=0[x{i}]")
+            acc = f"x{i}"
+            cursor += next_shot.seconds
+
+    args += [
+        "-filter_complex", ";".join(parts),
+        "-map", f"[{acc}]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        output,
+    ]
+    return ConcatExecution(
+        manifest_path=manifest_path,
+        output=output,
+        args=tuple(args),
+    )
+
+
+def compile_multitrack_audio_args(
+    *,
+    multitrack: MultitrackAudioPlan,
+    audio_catalog: AudioCatalog,
+    video_input: str,
+    narration_input: str,
+    output_path: str,
+    video_codec_args: tuple[str, ...] = ("-c:v", "copy"),
+) -> tuple[str, ...]:
+    """Compila grafo FFmpeg multitrack (voz + músicas + ambiência + SFX + ducking + loudnorm).
+
+    Valida licenças via ``verify_audio_licenses`` antes de gerar qualquer comando FFmpeg.
+    """
+    violations = verify_audio_licenses(multitrack, audio_catalog)
+    if violations:
+        raise CompileError(f"audio license violation: {'; '.join(violations)}")
+
+    events = [
+        *multitrack.music_events,
+        *multitrack.ambience_events,
+        *multitrack.sfx_events,
+    ]
+    args: list[str] = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", video_input,
+        "-i", narration_input,
+    ]
+    ducked_labels: list[str] = []
+    fg_labels: list[str] = ["[nar]"]
+    parts: list[str] = []
+    for idx, ev in enumerate(events, start=2):
+        track = audio_catalog.get_track(ev.track_id)
+        if track is None or not track.file_path:
+            raise CompileError(f"audio track {ev.track_id!r} has no file_path in catalog")
+        args += ["-i", track.file_path]
+        chain = [
+            f"[{idx}:a]aresample=44100",
+            "aformat=channel_layouts=stereo",
+            f"atrim=start=0:duration={ev.duration_s:.3f}",
+            "asetpts=PTS-STARTPTS",
+            f"volume={ev.gain_db:.2f}dB",
+        ]
+        if ev.fade_in_s > 0.0:
+            chain.append(f"afade=t=in:st=0:d={ev.fade_in_s:.3f}")
+        if ev.fade_out_s > 0.0:
+            fade_st = max(0.0, ev.duration_s - ev.fade_out_s)
+            chain.append(f"afade=t=out:st={fade_st:.3f}:d={ev.fade_out_s:.3f}")
+        if ev.start_s > 0.0:
+            delay_ms = int(round(ev.start_s * 1000))
+            chain.append(f"adelay={delay_ms}|{delay_ms}")
+        lbl = f"ev{idx}"
+        parts.append(f"{','.join(chain)}[{lbl}]")
+        if ev.ducked:
+            ducked_labels.append(f"[{lbl}]")
+        else:
+            fg_labels.append(f"[{lbl}]")
+
+    if ducked_labels:
+        parts.insert(
+            0,
+            f"[1:a]aresample=44100,aformat=channel_layouts=stereo,highpass=f={multitrack.highpass_voice_hz:.0f},"
+            f"apad=whole_dur={multitrack.total_duration_s:.3f},asplit=2[nar][nsc]",
+        )
+        if len(ducked_labels) == 1:
+            bed_lbl = ducked_labels[0]
+        else:
+            parts.append(f"{''.join(ducked_labels)}amix=inputs={len(ducked_labels)}:duration=longest:normalize=0[bed]")
+            bed_lbl = "[bed]"
+        ratio = max(1.0, min(20.0, abs(multitrack.ducking_attenuation_db)))
+        parts.append(f"{bed_lbl}[nsc]sidechaincompress=threshold=0.02:ratio={ratio:.1f}:attack=15:release=350[duck]")
+        fg_labels.append("[duck]")
+    else:
+        parts.insert(
+            0,
+            f"[1:a]aresample=44100,aformat=channel_layouts=stereo,highpass=f={multitrack.highpass_voice_hz:.0f},"
+            f"apad=whole_dur={multitrack.total_duration_s:.3f}[nar]",
+        )
+
+    parts.append(
+        f"{''.join(fg_labels)}amix=inputs={len(fg_labels)}:duration=longest:normalize=0,"
+        f"loudnorm=I={multitrack.target_lufs:.1f}:TP={multitrack.target_true_peak_dbtp:.1f}:LRA=11[a]"
+    )
+    args += [
+        "-filter_complex", ";".join(parts),
+        "-map", "0:v", "-map", "[a]",
+        *video_codec_args,
+        "-c:a", "aac", "-b:a", "160k",
+        "-t", f"{multitrack.total_duration_s:.3f}",
+        "-movflags", "+faststart", output_path,
+    ]
+    return tuple(args)
+
+
 def _fade_filter(
     transition: Transition | None,
     seconds: float,
@@ -527,27 +718,26 @@ def _fade_filter(
 ) -> str:
     """Filtro de fade do segmento: entrada ``FADE_S`` e saída pela ``Shot.transition``.
 
-    Em v2 (schema_version >= 2):
-    - 'cut' ou 'none' (ou ausente) produzem corte seco (retornam "")
-    - 'fade' aplica fade out configurado
-
-    Em v1 (schema_version == 1):
-    - 'none' (ou ausente) preserva fade legado (entrada + saída FADE_S)
-    - 'fade' aplica fade out configurado
+    Transições inter-segmento (``crossfade``, ``slide_*``, ``wipe_*``) NÃO aplicam fade-to-black
+    individual: são compiladas via ``xfade`` em ``_compile_concat``.
     """
-    if transition is not None and transition.kind in ("fade", "crossfade"):
-        fade = transition.duration_ticks / tps
-        if fade > seconds:
-            raise CompileError(
-                f"shot {shot_id!r} declares a {transition.duration_ticks}-tick {transition.kind} "
-                f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
+    if transition is not None:
+        if transition.kind == "fade":
+            fade = transition.duration_ticks / tps
+            if fade > seconds:
+                raise CompileError(
+                    f"shot {shot_id!r} declares a {transition.duration_ticks}-tick {transition.kind} "
+                    f"({fade:.3f}s) longer than the shot ({seconds:.3f}s)"
+                )
+            return (
+                f"fade=t=in:st=0:d={FADE_S},"
+                f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}"
             )
-        return (
-            f"fade=t=in:st=0:d={FADE_S},"
-            f"fade=t=out:st={max(0.0, seconds - fade):.3f}:d={fade:.3f}"
-        )
-    if transition is not None and transition.kind == "cut":
-        return ""
+        if transition.kind in ("cut", *_XFADE_MAP):
+            return ""
+        if transition.kind != "none":
+            raise CompileError(f"shot {shot_id!r} uses unsupported transition kind {transition.kind!r}")
+
     # transition.kind == "none" ou transition is None
     if schema_version >= 2:
         return ""

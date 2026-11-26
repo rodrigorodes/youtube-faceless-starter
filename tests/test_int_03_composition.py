@@ -90,19 +90,18 @@ def test_int_03_overlay_filter_generates_scale_and_opacity():
 
 
 def test_int_03_fade_filter_supports_crossfade():
-    """A04: _fade_filter compila transição crossfade sem rejeitar com CompileError."""
+    """REC-02.01: _fade_filter não mascara crossfade como fade-to-black; retorna '' (xfade fica no concat)."""
     transition_cross = Transition(
         kind="crossfade",
         duration_ticks=15,  # 0.5s a 30 tps
     )
 
-    # 3.0 segundos a 30 tps
     fade_str = _fade_filter(transition_cross, seconds=3.0, tps=30, shot_id="shot_01")
-    assert "fade=t=out:st=2.500:d=0.500" in fade_str
+    assert fade_str == ""
 
 
 def test_int_03_audio_metrics_labeling():
-    """A06: Métricas de mixagem rotulam sample_peak_dbfs e mantêm compatibilidade."""
+    """REC-02.02 (R05): Métricas PCM puras expõem apenas sample_peak_dbfs (sem alias enganoso true_peak_dbtp)."""
     tone_pcm = generate_synthetic_tone(duration_s=1.0, freq_hz=440.0, gain_db=-6.0)
 
     event = AudioEvent(
@@ -118,6 +117,5 @@ def test_int_03_audio_metrics_labeling():
     samples, metrics = mix_multitrack_pcm(plan, {"test_tone": tone_pcm})
     assert len(samples) > 0
     assert "sample_peak_dbfs" in metrics
-    assert "true_peak_dbtp" in metrics
-    assert metrics["sample_peak_dbfs"] == metrics["true_peak_dbtp"]
+    assert "true_peak_dbtp" not in metrics
     assert metrics["is_clipped"] is False

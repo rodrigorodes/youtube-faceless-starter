@@ -252,7 +252,8 @@ class TestMultitrackAcceptanceCriteria:
         assert metrics["duration_s"] == total_duration
         assert metrics["is_clipped"] is False
         assert metrics["peak_amplitude"] < CLIPPING_LIMIT
-        assert metrics["true_peak_dbtp"] <= 0.0
+        # REC-02.02 (R05): mix_multitrack_pcm reporta apenas sample_peak_dbfs; True Peak real (dBTP) vem do FFmpeg ebur128
+        assert metrics["sample_peak_dbfs"] <= 0.0
 
         # Gravação e inspeção física do arquivo WAV
         wav_path = tmp_path / "final_multitrack_mix.wav"

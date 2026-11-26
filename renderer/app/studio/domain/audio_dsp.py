@@ -107,7 +107,7 @@ def mix_multitrack_pcm(
 
     Retorna:
     - Lista de amostras PCM mixadas
-    - Dicionário com métricas técnicas: peak, true_peak_dbtp, duration_s, is_clipped
+    - Dicionário com métricas técnicas: duration_s, peak_amplitude, sample_peak_dbfs, is_clipped, sample_rate
     """
     total_samples = int(plan.total_duration_s * sample_rate)
     mixed_buffer = [0.0] * total_samples
@@ -173,7 +173,6 @@ def mix_multitrack_pcm(
         "duration_s": round(total_samples / float(sample_rate), 2),
         "peak_amplitude": final_peak,
         "sample_peak_dbfs": sample_peak_dbfs,
-        "true_peak_dbtp": sample_peak_dbfs,  # alias compatível para chamadores que esperam a chave
         "is_clipped": final_peak >= CLIPPING_LIMIT,
         "sample_rate": sample_rate,
     }
