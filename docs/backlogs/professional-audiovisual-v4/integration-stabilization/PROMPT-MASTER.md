@@ -23,7 +23,7 @@
   - Implementar suporte real no FFmpeg para posicionamento x/y, escala, opacidade e transições.
   - Integrar multitrack com medição real de True Peak EBU R128 (`ebur128` FFmpeg).
 
-- [ ] **INT-04 — Pipeline, Coordenador Real e Resiliência:**
+- [x] **INT-04 — Pipeline, Coordenador Real e Resiliência:**
   - Conectar resiliência e idempotência ao `ProductionCoordinator` e `PostgresProductionRunRepository` existentes.
   - Provar invalidação seletiva de cache de cena e reconciliação pré-retry de operações assíncronas.
 

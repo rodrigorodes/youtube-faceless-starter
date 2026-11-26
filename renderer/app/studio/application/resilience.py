@@ -9,6 +9,7 @@ Fornece:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -232,11 +233,13 @@ class ResilientStageExecutor:
         retry_policy: RetryPolicy | None = None,
         timeout_policy: StageTimeoutPolicy | None = None,
         reconciler: OperationReconciler | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.backpressure = backpressure
         self.retry_policy = retry_policy or RetryPolicy()
         self.timeout_policy = timeout_policy or StageTimeoutPolicy()
         self.reconciler = reconciler or OperationReconciler(InMemoryOperationStore())
+        self.clock = clock
 
     def execute_stage(
         self,
@@ -252,10 +255,7 @@ class ResilientStageExecutor:
         # 1. Backpressure admission
         slot = self.backpressure.admit_job()
         try:
-            # 2. Timeout check
-            self.timeout_policy.validate_duration(stage_name, mock_duration_seconds)
-
-            # 3. Execution loop with retries
+            # 2. Execution loop with retries e medição real de tempo
             attempt = 1
             last_exc: Exception | None = None
 
@@ -265,7 +265,11 @@ class ResilientStageExecutor:
                     raise NonRetryableError(f"Lease perdido antes da execução da etapa {stage_name}")
 
                 try:
+                    t0 = self.clock()
                     payload = handler(attempt)
+                    elapsed = max(mock_duration_seconds, self.clock() - t0)
+                    self.timeout_policy.validate_duration(stage_name, elapsed)
+
                     # Checkpoint creation & validation
                     version = 1 if previous_checkpoint is None else previous_checkpoint.version + 1
                     cp = CheckpointSnapshot.create(
