@@ -12,7 +12,7 @@
   - Auditoria completa de todos os componentes isolados, falsos positivos e stubs.
   - Relatório entregue em `INT-01-AUDIT-REPORT.md`.
 
-- [ ] **INT-02 — Providers Reais e Saneamento de Síntese:**
+- [x] **INT-02 — Providers Reais e Saneamento de Síntese:**
   - Desabilitar Kokoro como voz neural padrão validada (`validated=False`) enquanto gerar senoide.
   - Piper estabelecido como provedor local offline padrão e validado (`pt_BR-faber-medium`).
   - ElevenLabs mantido estritamente opt-in e inativo sem credencial.

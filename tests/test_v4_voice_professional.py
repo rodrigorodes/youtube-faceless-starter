@@ -21,10 +21,10 @@ import pytest
 
 from renderer.app.studio.adapters.voice_elevenlabs import ElevenLabsVoice
 from renderer.app.studio.adapters.voice_fallback import FallbackVoice
-from renderer.app.studio.adapters.voice_kokoro import KokoroVoice
+from renderer.app.studio.adapters.voice_kokoro import KokoroVoice, is_kokoro_installed
 from renderer.app.studio.adapters.voice_piper import PiperVoice
 from renderer.app.studio.application.config import build
-from renderer.app.studio.application.ports import NeuralVoice, Voice
+from renderer.app.studio.application.ports import ModelUnavailable, NeuralVoice, Voice
 from renderer.app.studio.domain.provider import ProviderMissingCredential
 from renderer.app.studio.domain.voice_audio import (
     CLIPPING_THRESHOLD,
@@ -186,7 +186,16 @@ class TestVoiceAdaptersAndFallback:
         assert kokoro.cost_estimate("Qualquer texto") == 0.0
 
         out_wav = tmp_path / "kokoro_out.wav"
-        duration = kokoro.speak("Introdução sobre computação clássica e algoritmos modernos.", out_wav)
+        if not is_kokoro_installed():
+            # Sem pacote nativo instalado, recusa gerar senoide silenciosa
+            with pytest.raises(ModelUnavailable, match="pacote kokoro não instalado no ambiente local"):
+                kokoro.speak("Introdução sobre computação clássica e algoritmos modernos.", out_wav)
+
+            # Fixture autorizada permite sintetizar tom para testes de pipeline
+            kokoro_fixture = KokoroVoice(model="pt_br-af_bella", speed=1.0, allow_synthetic_fixture=True)
+            duration = kokoro_fixture.speak("Introdução sobre computação clássica e algoritmos modernos.", out_wav)
+        else:
+            duration = kokoro.speak("Introdução sobre computação clássica e algoritmos modernos.", out_wav)
 
         assert duration > 0.5
         assert out_wav.is_file()
