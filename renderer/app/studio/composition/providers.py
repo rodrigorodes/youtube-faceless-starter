@@ -15,7 +15,7 @@ from .settings import Settings
 
 # Fornecedores locais/gratuitos: conhecimento do concreto (nome de fornecedor) declarado só
 # aqui, na raiz de composição. O domínio recebe o conjunto como política e não cita nomes.
-FREE_PROVIDERS = frozenset({"placeholder", "demo", "piper", "stock"})
+FREE_PROVIDERS = frozenset({"placeholder", "demo", "piper", "kokoro", "stock"})
 
 
 def _configured_provider_spec(videos, environ: Mapping[str, str], kind: str,
@@ -148,7 +148,8 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
     bridge_ok = bool(s.bridge_token)
     pexels_ok = bool(s.pexels_key)
     pixabay_ok = bool(s.pixabay_key)
-    kokoro_ok = importlib.util.find_spec("kokoro") is not None
+    from ..adapters.voice_kokoro import is_kokoro_offline_ready
+    kokoro_ok, kokoro_reason = is_kokoro_offline_ready()
     return [
         ProviderImplementation(ProviderKind.TEXT, "opencode",
                                capabilities=("text.generate", "text.json"),
@@ -174,7 +175,7 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
         ProviderImplementation(ProviderKind.VOICE, "kokoro", capabilities=("voice.speak", "voice.neural"),
                                cost=CostEstimate.free(note="síntese neural local"), quality=4,
                                validated=kokoro_ok,
-                               reason=None if kokoro_ok else "pacote kokoro não instalado no ambiente local; use piper para síntese offline validada"),
+                               reason=None if kokoro_ok else kokoro_reason),
         ProviderImplementation(ProviderKind.VOICE, "elevenlabs", capabilities=("voice.speak", "voice.neural"),
                                cost=CostEstimate.estimate(0.03, note="por 1k caracteres"), quality=5,
                                validated=False, reason="requer BYOK e autorização explícita"),
@@ -202,7 +203,7 @@ def pixabay_media_search(api_key: str):
 
 def _provider_probes(s: "Settings", implementations) -> dict[tuple[str, str], object]:
     probes: dict[tuple[str, str], object] = {}
-    local = {"demo", "placeholder", "piper", "ffmpeg"}
+    local = {"demo", "placeholder", "piper", "kokoro", "ffmpeg"}
     for impl in implementations:
         if not impl.validated:
             continue

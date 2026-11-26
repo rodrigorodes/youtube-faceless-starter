@@ -32,7 +32,18 @@ class PiperVoice:
         with _LOCK, rich.use_voice(self.voice_path):
             rich.synthesize_speech(text, out_path)
         with wave.open(str(out_path), "rb") as w:
+            params = w.getparams()
             samples = array.array("h", w.readframes(w.getnframes())) if w.getsampwidth() == 2 else array.array("h")
         if not samples or max(max(samples), -min(samples)) < MIN_PEAK:
             raise RuntimeError("voice produced silence")  # a trilha musical esconderia isso do QA do vídeo
+
+        # Saneamento de clipping / headroom de pico seguro (-0.8 dBFS, max ~30000)
+        peak = max(max(samples), -min(samples))
+        if peak >= 32000:
+            scale = 30000.0 / peak
+            scaled = array.array("h", (int(s * scale) for s in samples))
+            with wave.open(str(out_path), "wb") as w:
+                w.setparams(params)
+                w.writeframes(scaled.tobytes())
+
         return rich.wav_duration(out_path)

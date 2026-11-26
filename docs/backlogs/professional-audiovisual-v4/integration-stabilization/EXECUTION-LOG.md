@@ -82,3 +82,22 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - **Observed Quota Reading:** `21%` remaining (resets `2026-11-26T15:00:59Z`) | **External API Cost:** `$0.00` | **Publication Kill Switch:** `BLOCKED` verified.
 - **Rollback:** `git revert <rec-01-sha>` + SQL rollback in `0054_paid_operation_external_ref.sql` (`ALTER TABLE studio.paid_operations DROP COLUMN IF EXISTS external_reference_id, DROP COLUMN IF EXISTS submitted_at; DELETE FROM studio.schema_migrations WHERE version = '0054_paid_operation_external_ref';`).
 - **Next Item:** Wave `REC-02`, starting with `REC-02.05` (`Flash 3.8` executor + `Carbon High` independent reviewer).
+
+
+---
+
+## Entry 004 — `REC-02.05` (`R09` Voice Sanitation) Implementation, Round 1 Rejection & Round 2 Approval
+
+- **Timestamp (UTC):** `2026-11-26T14:53Z–15:26Z`
+- **Task IDs:** `REC-02.05` (closes `R09`, `A01`, `A02`, `INT-02.01`, `INT-02.02`)
+- **Base HEAD:** `develop` `d9fd1cd2f731de138070394718a2f2b733bf49cf` (`hash renderer/app: 72f8c9da952644d3`, 49 migrations)
+- **Executor Model:** `Gemini 3.8 Flash (High)` (`rec02-voice`) — 2 rounds (Round 1 impl + Round 2 remediation of 4 P1 findings)
+- **Independent Reviewer Model:** `Gemini 4 Carbon (High)` (`rec02-voice-rev`)
+- **Verification Results:**
+  - Independent container run (6 canonical suites): **105 passed in 12.05s**, exit code `0`, `0` skips.
+  - Adjacent 4 suites (`test_v4_provider_extensibility.py`, `test_panel_domain.py`, `test_composition.py`, `test_tts_calibration.py`): **67 passed in 29.85s**, exit code `0` (**172/172 total passed**).
+- **Independent Rubric Score (`evidence/rec-02/rec-02-05-independent-review-carbon-high.md`):**
+  - `REC-02.05`: **9.50 / 10** (all 5 dims `9.5`) — **APPROVED (`VERIFIED`)**
+- **Observed Quota Reading:** Window 2 `74%` remaining (resets `2026-11-26T20:00:59Z`) | **External API Cost:** `$0.00`.
+- **Rollback:** `git revert <rec-02-05-sha>`.
+- **Next Item:** `REC-02.01` & `REC-02.02` (`Hydrogen Medium` executor + `Neon High` independent reviewer).

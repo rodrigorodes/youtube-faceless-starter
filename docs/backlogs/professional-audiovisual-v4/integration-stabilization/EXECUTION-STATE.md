@@ -1,9 +1,9 @@
 # EXECUTION-STATE — V4 Integration & Stabilization Recovery
 
-**Last Updated (UTC):** `2026-11-26T14:51Z`  
-**Branch:** `develop` | **Base HEAD:** `031811f420ea74376f9a76ad461437b40db76405` | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
+**Last Updated (UTC):** `2026-11-26T15:27Z`  
+**Branch:** `develop` | **Base HEAD:** `d9fd1cd2f731de138070394718a2f2b733bf49cf` | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
 **Observed `main` SHA:** `42700cb331165a68455173a91c463d4733292cfd` (strictly untouched)  
-**Campaign Status:** `IN_PROGRESS` (Waves `REC-00` & `REC-01` `VERIFIED` >= 9.5/10; launching Wave `REC-02` starting with `REC-02.05`)  
+**Campaign Status:** `IN_PROGRESS` (`REC-00`, `REC-01`, `REC-02.05` `VERIFIED` >= 9.5/10; launching `REC-02.01–02`)  
 **Merge / Publication Status:** `NO-GO` / `BLOCKED` (`STUDIO_PUBLICATION_ENABLED=0`, `$0.00` external API spend)
 
 ---
@@ -11,9 +11,10 @@
 ## 1. Active Roles & Delegation
 - **Coordinator:** `Gemini 4 Carbon (High)`
 - **REC-00 (Completed & Retired):** Executor `Gemini 4 Neon (High)` | Reviewer `Gemini 4 Carbon (High)` (`REC-00.01 = 9.51/10`, `REC-00.02 = 9.54/10`)
-- **REC-01 (Completed & Retired):** Executor `Gemini 4 Hydrogen (Medium)` | Reviewer `Gemini 4 Neon (High)` (`REC-01.01 = 9.50/10`, `REC-01.02 = 9.50/10`, `REC-01.03 = 9.50/10` after Round 1→Round 2 independent fix cycle)
-- **REC-02.05 (Launching):** Executor `Gemini 3.8 Flash (High)` (`rec02-voice`) | Reviewer `Gemini 4 Carbon (High)` (on handoff)
-- **Observed Google Quota:** Initial `81%` → Post-REC-00 `43%` → Post-REC-01 `21%` (resets `2026-11-26T15:00:59Z`)
+- **REC-01 (Completed & Retired):** Executor `Gemini 4 Hydrogen (Medium)` | Reviewer `Gemini 4 Neon (High)` (`REC-01.01/02/03 = 9.50/10`)
+- **REC-02.05 (Completed & Retired):** Executor `Gemini 3.8 Flash (High)` | Reviewer `Gemini 4 Carbon (High)` (`REC-02.05 = 9.50/10` after Round 1→2 fix cycle)
+- **REC-02.01–02 (Launching):** Executor `Gemini 4 Hydrogen (Medium)` (`rec02-av`) | Reviewer `Gemini 4 Neon (High)` (on handoff)
+- **Observed Google Quota:** Window 1 (`81%`→`21%`) reset at `15:00:59Z`; Window 2 `97%`→`74%` (resets `2026-11-26T20:00:59Z`)
 - **Observed External API Cost:** `$0.00`
 
 ---
@@ -24,14 +25,14 @@
 |---|---|---|---|---|---|---|---|---|
 | `REC-00.01` | REC-00 | P0 | — | `Gemini 4 Neon (High)` | `Gemini 4 Carbon (High)` | `VERIFIED` | **9.51/10** (min 9.2) | Closed & committed (`031811f`) |
 | `REC-00.02` | REC-00 | P0 | `REC-00.01` | `Gemini 4 Neon (High)` | `Gemini 4 Carbon (High)` | `VERIFIED` | **9.54/10** (min 9.5) | Closed & committed (`031811f`) |
-| `REC-01.01` | REC-01 | P0 | `REC-00.02` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed |
-| `REC-01.02` | REC-01 | P0 | `REC-01.01` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed |
-| `REC-01.03` | REC-01 | P0 | `REC-01.02` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed |
-| `REC-02.01` | REC-02 | P0 | `REC-01.03` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Next after `REC-02.05` (post-15:00Z reset) |
-| `REC-02.02` | REC-02 | P1 | `REC-02.01` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Depends on `REC-02.01` |
-| `REC-02.03` | REC-02 | P0 | `REC-01.03` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Next in Wave REC-02 |
+| `REC-01.01` | REC-01 | P0 | `REC-00.02` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed (`d9fd1cd`) |
+| `REC-01.02` | REC-01 | P0 | `REC-01.01` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed (`d9fd1cd`) |
+| `REC-01.03` | REC-01 | P0 | `REC-01.02` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed (`d9fd1cd`) |
+| `REC-02.01` | REC-02 | P0 | `REC-01.03` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `IN_PROGRESS` | — | Executing AV composition (`R04`) |
+| `REC-02.02` | REC-02 | P1 | `REC-02.01` | `Gemini 4 Hydrogen (Medium)` | `Gemini 4 Neon (High)` | `IN_PROGRESS` | — | Executing multitrack/dBTP (`R05`) |
+| `REC-02.03` | REC-02 | P0 | `REC-01.03` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Next after `REC-02.01–02` |
 | `REC-02.04` | REC-02 | P0 | `REC-02.03` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Depends on `REC-02.03` |
-| `REC-02.05` | REC-02 | P1 | `REC-01.03` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` | `IN_PROGRESS` | — | Executing Voice sanitation (`R09`) |
+| `REC-02.05` | REC-02 | P1 | `REC-01.03` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` | `VERIFIED` | **9.50/10** (min 9.5) | Closed & committed |
 | `REC-03.01` | REC-03 | P1 | `REC-02.01–05` | `Flash 3.8` | `Carbon High` | `PENDING` | — | Depends on Wave REC-02 |
 | `REC-03.02` | REC-03 | P1 | `REC-03.01` | `Flash 3.8` | `Carbon High` | `PENDING` | — | Depends on `REC-03.01` |
 | `REC-03.03` | REC-03 | P1 | `REC-02.01–05` | `Hydrogen Medium` | `Neon High` | `PENDING` | — | Depends on Wave REC-02 |

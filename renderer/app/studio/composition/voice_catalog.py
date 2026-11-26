@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from pathlib import Path
+
 from ..domain.voice_catalog import VoiceGender, VoiceProfile, VoiceStyle
 
 # Catálogo canônico registrado no Faceless Studio
@@ -84,14 +86,41 @@ _CANONICAL_VOICES: tuple[VoiceProfile, ...] = (
 )
 
 
-def list_voice_catalog(language: str | None = None, is_local: bool | None = None) -> list[VoiceProfile]:
-    """Lista vozes do catálogo filtradas por idioma e/ou execução local."""
+def is_voice_profile_available(profile: VoiceProfile | str) -> bool:
+    """Verifica se uma voz do catálogo está efetivamente disponível e validada offline."""
+    prof = profile if isinstance(profile, VoiceProfile) else find_voice_profile(profile)
+    if prof is None:
+        return False
+    if prof.provider == "piper":
+        from ..adapters.voice_piper import voice_path
+        try:
+            p = Path(voice_path(prof.model))
+            return p.is_file() and p.stat().st_size > 0
+        except Exception:
+            return False
+    if prof.provider == "kokoro":
+        from ..adapters.voice_kokoro import is_kokoro_offline_ready
+        ready, _ = is_kokoro_offline_ready()
+        return ready
+    if prof.provider == "elevenlabs":
+        return False  # Opt-in BYOK, desabilitado por padrão
+    return False
+
+
+def list_voice_catalog(
+    language: str | None = None,
+    is_local: bool | None = None,
+    available_only: bool = False,
+) -> list[VoiceProfile]:
+    """Lista vozes do catálogo filtradas por idioma, execução local e/ou disponibilidade real."""
     results = list(_CANONICAL_VOICES)
     if language is not None:
         lang_lower = language.strip().lower()
         results = [v for v in results if v.language.lower() == lang_lower]
     if is_local is not None:
         results = [v for v in results if v.is_local == is_local]
+    if available_only:
+        results = [v for v in results if is_voice_profile_available(v)]
     return results
 
 
