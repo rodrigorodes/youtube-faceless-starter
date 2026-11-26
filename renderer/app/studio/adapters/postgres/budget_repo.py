@@ -185,6 +185,7 @@ class PostgresPaidOperationRepository:
                         return BeginResult.IN_PROGRESS  # reserva órfã: exige reconciliação
                     conn.execute(
                         "UPDATE studio.paid_operations SET state = 'RESERVED', attempt = attempt + 1, "
+                        "external_reference_id = NULL, submitted_at = NULL, "
                         "reason = NULL, updated_at = now() WHERE idempotency_key = %s", (key,)
                     )
                     return BeginResult.CREATED
@@ -271,6 +272,17 @@ class PostgresPaidOperationRepository:
         with _translated(), self._connect() as conn:
             _lock_budget(conn)
             state, video_id = self._locked_state(conn, key)
+            if state is PaidOperationState.CONFIRMED:
+                existing = conn.execute(
+                    "SELECT po.confirmed_kind, po.confirmed_amount_usd, ul.cost_confirmation_reference, "
+                    "ul.cost_confirmed_by "
+                    "FROM studio.paid_operations po JOIN studio.usage_ledger ul ON ul.id = po.ledger_id "
+                    "WHERE po.idempotency_key = %s",
+                    (key,),
+                ).fetchone()
+                if existing == (confirmation.kind, amount, confirmation.reference, confirmation.confirmed_by):
+                    return  # confirmação idempotente: não duplica lançamento no ledger
+                raise InvalidOperationTransition("cannot confirm a CONFIRMED operation with different settlement")
             if state not in (PaidOperationState.RESERVED, PaidOperationState.UNCERTAIN):
                 raise InvalidOperationTransition(f"cannot confirm a {state.value} operation")
             ledger_id = conn.execute(
@@ -305,6 +317,48 @@ class PostgresPaidOperationRepository:
                 raise InvalidOperationTransition(f"cannot mark a {state.value} operation as uncertain")
             conn.execute("UPDATE studio.paid_operations SET state = 'UNCERTAIN', reason = %s, updated_at = now() "
                          "WHERE idempotency_key = %s", (reason, key))
+
+    def external_reference_id(self, key: str) -> str | None:
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("idempotency key is required")
+        with _translated(), self._connect() as conn:
+            row = conn.execute(
+                "SELECT external_reference_id FROM studio.paid_operations WHERE idempotency_key = %s",
+                (key,),
+            ).fetchone()
+            return None if row is None else row[0]
+
+    def record_external_ref(self, key: str, external_reference_id: str) -> None:
+        """Persiste de forma durável e idempotente a referência externa do provedor."""
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("idempotency key is required")
+        if not isinstance(external_reference_id, str) or not external_reference_id.strip():
+            raise ValueError("external_reference_id is required")
+        ref = external_reference_id.strip()
+        with _translated(), self._connect() as conn:
+            _lock_budget(conn)
+            row = conn.execute(
+                "SELECT state, external_reference_id FROM studio.paid_operations "
+                "WHERE idempotency_key = %s FOR UPDATE",
+                (key,),
+            ).fetchone()
+            if row is None:
+                raise UnknownPaidOperation(key)
+            state, existing_ref = row
+            if state not in (PaidOperationState.RESERVED.value, PaidOperationState.UNCERTAIN.value):
+                raise InvalidOperationTransition(
+                    f"cannot record external reference for a {state} operation"
+                )
+            if existing_ref is not None:
+                if existing_ref == ref:
+                    return
+                raise IdempotencyConflict("external_reference_id already recorded for this operation")
+            conn.execute(
+                "UPDATE studio.paid_operations "
+                "SET external_reference_id = %s, submitted_at = COALESCE(submitted_at, now()), updated_at = now() "
+                "WHERE idempotency_key = %s",
+                (ref, key),
+            )
 
     def state(self, key: str) -> PaidOperationState | None:
         if not isinstance(key, str) or not key.strip():

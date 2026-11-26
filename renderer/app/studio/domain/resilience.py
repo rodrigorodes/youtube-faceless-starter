@@ -54,15 +54,12 @@ def compute_deterministic_idempotency_key(
     tenant_id: str,
     video_id: str,
     stage_name: str,
-    attempt: int,
     payload_hash: str,
 ) -> str:
-    """Gera chave de idempotência determinística via SHA-256."""
-    if not tenant_id or not video_id or not stage_name:
-        raise ValueError("tenant_id, video_id e stage_name são obrigatórios")
-    if attempt < 0:
-        raise ValueError("attempt deve ser >= 0")
-    raw = f"{tenant_id}:{video_id}:{stage_name}:{attempt}:{payload_hash}"
+    """Gera chave lógica de idempotência determinística via SHA-256 (estável entre retries)."""
+    if not tenant_id or not video_id or not stage_name or not payload_hash:
+        raise ValueError("tenant_id, video_id, stage_name e payload_hash são obrigatórios")
+    raw = f"{tenant_id}:{video_id}:{stage_name}:{payload_hash}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

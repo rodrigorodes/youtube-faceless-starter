@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
@@ -64,6 +66,8 @@ from ..domain.qa_report import (
     blocking_evidence,
 )
 from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
+from ..domain.resilience import StageTimeoutError
+from .budget import PaidOperationRepository, PaidOperationState
 from .lease_heartbeat import LeaseHeartbeat, LeaseLost, StageLease
 from .editorial import Editorial, SourceRefused, SourceUnavailable, StateConflict
 from .media import Media
@@ -219,11 +223,24 @@ class StageContext:
     run: ProductionRun
     execution: StageExecution
     lease: StageLease | None = None
+    cancel_event: threading.Event | None = None
+    deadline_monotonic: float | None = None
+    clock: Callable[[], float] = time.monotonic
 
     @property
     def checkpoint_version(self) -> int:
         # Monotônica por tentativa: retry nunca tenta regravar a versão anterior.
         return max(1, self.execution.attempt)
+
+    def is_cancelled(self) -> bool:
+        return self.cancel_event is not None and self.cancel_event.is_set()
+
+    def ensure_active(self, clock: Callable[[], float] | None = None) -> None:
+        now_fn = clock or self.clock
+        if self.is_cancelled() or (self.deadline_monotonic is not None and now_fn() >= self.deadline_monotonic):
+            raise StageTimeoutError("stage cancelled or deadline exceeded")
+        if self.lease is not None:
+            self.lease.ensure_held()
 
 
 @dataclass(frozen=True)
@@ -768,7 +785,13 @@ class ProductionCoordinator:
                  handlers: Mapping[ProductionStage, StageHandler], mode: ProductionMode = ProductionMode.INTERACTIVE,
                  lease_seconds: int = 300, budget: ProductionBudget | None = None,
                  pipeline: StageDag = COORDINATOR_DAG, videos: VideoRepository | None = None,
-                 config_store: ProductionRunConfigStore | None = None):
+                 config_store: ProductionRunConfigStore | None = None,
+                 paid_ops: PaidOperationRepository | None = None,
+                 operation_key_for: Callable[[ProductionRun, StageExecution], str | None] | None = None,
+                 reconcile_operation: Callable[[str, ProductionRun, StageExecution], bool] | None = None,
+                 stage_timeouts: Mapping[ProductionStage, float] | None = None,
+                 default_stage_timeout_seconds: float | None = None,
+                 clock: Callable[[], float] = time.monotonic):
         if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool) or not 1 <= lease_seconds <= 86_400:
             raise ValueError("lease_seconds must be an integer between 1 and 86400")
         missing = [stage for stage in pipeline.stages if stage not in handlers]
@@ -784,6 +807,24 @@ class ProductionCoordinator:
         # do run) e leitura do vídeo para entregar o agregado ao resolvedor.
         self.videos = videos
         self.config_store = config_store
+        self.paid_ops = paid_ops
+        self.operation_key_for = operation_key_for
+        self.reconcile_operation = reconcile_operation
+        self._stage_timeouts: dict[ProductionStage, float] = {}
+        if stage_timeouts is not None:
+            for stage, val in stage_timeouts.items():
+                fval = float(val)
+                if not math.isfinite(fval) or fval <= 0:
+                    raise ValueError(f"stage timeout for {stage.value} must be a positive finite number")
+                self._stage_timeouts[stage] = fval
+        if default_stage_timeout_seconds is not None:
+            fdef = float(default_stage_timeout_seconds)
+            if not math.isfinite(fdef) or fdef <= 0:
+                raise ValueError("default_stage_timeout_seconds must be a positive finite number")
+            self._default_stage_timeout_seconds: float | None = fdef
+        else:
+            self._default_stage_timeout_seconds = None
+        self._clock = clock
 
     # -- criação e consulta ------------------------------------------------
 
@@ -1015,6 +1056,59 @@ class ProductionCoordinator:
                 return claim
         return None
 
+    def _timeout_for(self, stage: ProductionStage) -> float | None:
+        if stage in self._stage_timeouts:
+            return self._stage_timeouts[stage]
+        return self._default_stage_timeout_seconds
+
+    def _reconcile_key(self, op_key: str, op_state: PaidOperationState,
+                       run: ProductionRun, execution: StageExecution) -> bool:
+        if self.reconcile_operation is None:
+            return False
+        if not self.reconcile_operation(op_key, run, execution):
+            return False
+        current = self.paid_ops.state(op_key) if self.paid_ops is not None else None
+        return current not in (PaidOperationState.RESERVED, PaidOperationState.UNCERTAIN)
+
+    def _check_pre_retry_reconciliation(self, run: ProductionRun, execution: StageExecution) -> str | None:
+        """Verifica se há operação paga pendente/incerta antes de reexecutar efeito externo.
+
+        Retorna uma mensagem de bloqueio (fail-closed) caso exista operação não reconciliada,
+        ou None quando a execução pode prosseguir.
+        """
+        if self.paid_ops is None:
+            return None
+        if self.operation_key_for is not None:
+            op_key = self.operation_key_for(run, execution)
+            if op_key is not None:
+                op_state = self.paid_ops.state(op_key)
+                if op_state in (PaidOperationState.RESERVED, PaidOperationState.UNCERTAIN):
+                    if not self._reconcile_key(op_key, op_state, run, execution):
+                        return (
+                            f"blocked before retry: paid operation {op_key} is {op_state.value} "
+                            "and requires reconciliation"
+                        )
+        if execution.attempt > 1:
+            pending = self.paid_ops.pending_reconciliation(stale_after=timedelta(0))
+            for item in pending:
+                if item.video_id != run.video_id:
+                    continue
+                if item.reason == "uncertain_operation":
+                    op_state = PaidOperationState.UNCERTAIN
+                elif item.reason == "stale_reservation":
+                    cur = self.paid_ops.state(item.idempotency_key)
+                    if cur not in (PaidOperationState.RESERVED, PaidOperationState.UNCERTAIN):
+                        continue
+                    op_state = cur
+                else:
+                    continue
+                if not self._reconcile_key(item.idempotency_key, op_state, run, execution):
+                    return (
+                        f"blocked before retry: {op_state.value} paid operation {item.idempotency_key} "
+                        f"for video {run.video_id} requires reconciliation"
+                    )
+        return None
+
     def _execute_claimed(self, run: ProductionRun, execution: StageExecution, owner: str) -> WorkerStep:
         handler = self.handlers[execution.stage_id]
         # S8: a seleção congelada é ligada só durante o handler. Em run legado (sem snapshot) ou
@@ -1024,19 +1118,66 @@ class ProductionCoordinator:
         except Exception as exc:  # leitura do snapshot não pode derrubar o worker
             logger.warning("frozen selection read failed for %s: %s", run.run_id, type(exc).__name__)
             return self._fail(run, execution, owner, f"{type(exc).__name__}: {exc}")
+        reconcile_block = self._check_pre_retry_reconciliation(run, execution)
+        if reconcile_block is not None:
+            return self._fail(run, execution, owner, reconcile_block)
         heartbeat = LeaseHeartbeat(
             renew=lambda: self.runs.renew_lease(run.run_id, execution.stage_id, owner, execution.fencing_token,
                                                 self.lease_seconds),
             lease_seconds=self.lease_seconds)
+        timeout_s = self._timeout_for(execution.stage_id)
+        cancel_event = threading.Event()
+        deadline = (self._clock() + timeout_s) if timeout_s is not None else None
         failure: Exception | None = None
         outcome = None
         # `lost` deriva com o relógio mesmo depois do stop: captura-se logo após o handler e só ele decide.
         with heartbeat as lease, use_frozen_provider_selection(selection):
+            ctx = StageContext(
+                run=run,
+                execution=execution,
+                lease=lease,
+                cancel_event=cancel_event,
+                deadline_monotonic=deadline,
+                clock=self._clock,
+            )
             try:
-                outcome = handler.execute(StageContext(run=run, execution=execution, lease=lease))
+                if timeout_s is None:
+                    outcome = handler.execute(ctx)
+                else:
+                    done = threading.Event()
+                    box: dict[str, object] = {}
+
+                    def _run_stage() -> None:
+                        with use_frozen_provider_selection(selection):
+                            try:
+                                box["outcome"] = handler.execute(ctx)
+                            except Exception as exc:  # noqa: BLE001
+                                box["failure"] = exc
+                            finally:
+                                done.set()
+
+                    worker_thread = threading.Thread(
+                        target=_run_stage,
+                        name=f"stage-{execution.stage_id.value}",
+                        daemon=True,
+                    )
+                    worker_thread.start()
+                    if not done.wait(timeout=timeout_s):
+                        cancel_event.set()
+                        failure = StageTimeoutError(
+                            f"stage {execution.stage_id.value} exceeded timeout of {timeout_s}s"
+                        )
+                    elif "failure" in box:
+                        failure = box["failure"]  # type: ignore[assignment]
+                    else:
+                        outcome = box.get("outcome")
             except Exception as exc:
                 failure = exc
+            finally:
+                cancel_event.set()
             lost = lease.lost
+            if failure is not None or lost:
+                lease.revoke("stage execution failed or timed out")
         if lost or isinstance(failure, LeaseLost):
             return WorkerStep(WorkerStepResult.LOST, run=run, stage=execution.stage_id, execution=execution,
                               detail="lease lost during stage execution")

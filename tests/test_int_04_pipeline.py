@@ -1,30 +1,40 @@
-"""Testes de Integração e Estabilização — Onda INT-04 (Pipeline, Coordenador Real e Resiliência).
+"""Testes de Integração e Estabilização — Onda INT-04 / REC-01 (Caminho Financeiro Canônico e Coordenador Real).
 
-Valida os achados A08 e A11 da auditoria INT-01:
-- A11: PostgresOperationStore conecta o OperationReconciler ao banco relacional real,
-  garantindo que estados de operação sejam persistidos e impeçam dupla cobrança após reinício.
-- ResilientStageExecutor mede o tempo decorrido via monotonic clock real e enforceia timeout.
-- A08: Invalidação seletiva de cache e persistência monotônica de checkpoints por cena.
+Substitui o adaptador inseguro PostgresOperationStore pelo caminho transacional canônico:
+- PaidOperationGuard + PostgresPaidOperationRepository (advisory lock 726002, CAS, escopo por projeto/vídeo)
+- ProductionCoordinator + LeaseHeartbeat (timeout cooperativo e fencing real)
 """
+from __future__ import annotations
+
+import os
+import threading
+import time
 from decimal import Decimal
-from pathlib import Path
-import psycopg
+
 import pytest
 
+from app.studio.adapters.postgres.budget_repo import PostgresPaidOperationRepository
 from app.studio.adapters.postgres.db import migrate
-from app.studio.adapters.postgres.operation_store import PostgresOperationStore
-from app.studio.application.resilience import (
-    OperationReconciler,
-    ResilientStageExecutor,
-    SystemReadinessReport,
+from app.studio.adapters.postgres.production_repo import PostgresProductionRunRepository
+from app.studio.application.budget import (
+    CostConfirmation,
+    OperationSettled,
+    PaidOperationGuard,
+    PaidOperationState,
 )
+from app.studio.application.production import (
+    COORDINATOR_DAG,
+    ProductionCoordinator,
+    ProductionMode,
+    StageContext,
+    StageOutcome,
+    WorkerStepResult,
+)
+from app.studio.domain.contracts import UsageEntry
+from app.studio.domain.production_run import ProductionStage
 from app.studio.domain.resilience import (
-    AsyncOperationStatus,
-    BackpressureController,
-    OperationAlreadyCharged,
-    StageTimeoutError,
-    StageTimeoutPolicy,
-    TenantScope,
+    compute_deterministic_idempotency_key,
+    compute_payload_hash,
 )
 from conftest import verified_test_connect
 
@@ -35,7 +45,6 @@ VIDEO_ID = "d" * 32
 
 @pytest.fixture
 def dsn():
-    import os
     val = os.environ.get("STUDIO_BUDGET_DISPOSABLE_DSN")
     if not val or not os.environ.get("STUDIO_BUDGET_TEST_PROOF_FILE"):
         pytest.skip("PostgreSQL descartável não configurado")
@@ -44,7 +53,6 @@ def dsn():
 
 @pytest.fixture
 def conn(dsn):
-    import os
     proof = os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"]
     c = verified_test_connect(dsn, proof)
     try:
@@ -57,90 +65,89 @@ def conn(dsn):
 
 @pytest.fixture
 def db_setup(conn, dsn):
-    import os
     proof = os.environ["STUDIO_BUDGET_TEST_PROOF_FILE"]
     migrate(conn)
     conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, 'canal')", (PROJECT_ID,))
     conn.execute(
-        "INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'tema', 'short')",
+        "INSERT INTO studio.videos(id, project_id, topic, format) VALUES (%s, %s, 'tema valido', 'short')",
         (VIDEO_ID, PROJECT_ID),
     )
     conn.commit()
     connect = lambda: verified_test_connect(dsn, proof)  # noqa: E731
-    return PostgresOperationStore(connect)
+    return conn, connect, PostgresPaidOperationRepository(connect)
 
 
-def test_int_04_postgres_operation_store_persistence_and_anti_duplicate_charge(db_setup):
-    """A11: PostgresOperationStore persiste estado real no PostgreSQL e bloqueia dupla cobrança."""
-    store = db_setup
-    reconciler = OperationReconciler(store)
-    scope = TenantScope(tenant_id="tenant_01", project_id=PROJECT_ID)
-
-    payload = {"scene_prompt": "Futuristic AI lab", "duration_s": 5.0}
-    est_cost = Decimal("0.40")
-
-    # 1. Início de operação: primeiro submit é autorizado
-    key, should_exec = reconciler.begin_operation(
-        tenant_scope=scope,
-        video_id=VIDEO_ID,
-        stage_name="render",
-        attempt=1,
-        payload=payload,
-        estimated_cost_usd=est_cost,
+def test_int_04_canonical_paid_operation_guard_persistence_and_anti_duplicate_charge(db_setup):
+    """Caminho canônico PaidOperationGuard + PostgresPaidOperationRepository persiste estado e bloqueia dupla cobrança."""
+    conn, _connect, repo = db_setup
+    guard = PaidOperationGuard(
+        repo,
+        monthly_limit_usd=Decimal("10.00"),
+        video_limit_usd=Decimal("2.00"),
     )
-    assert should_exec is True
+    payload_hash = compute_payload_hash({"scene_prompt": "Futuristic AI lab", "duration_s": 5.0})
+    key = compute_deterministic_idempotency_key("tenant_01", VIDEO_ID, "render", payload_hash)
 
-    # 2. Persistência de submissão
-    reconciler.record_submission(key, external_reference_id="render_task_404")
+    submit_calls = 0
 
-    # 3. Verificação de recuperação direta no PostgreSQL
-    retrieved = store.get_by_idempotency_key(key)
-    assert retrieved is not None
-    assert retrieved.idempotency_key == key
-    assert retrieved.status in (AsyncOperationStatus.SUBMITTED, AsyncOperationStatus.RESERVED)
+    def _call():
+        nonlocal submit_calls
+        submit_calls += 1
+        guard.record_external_ref(key, "render_task_404")
+        return {"ok": True}
 
-    # 4. Confirmação da operação
-    reconciler.record_confirmation(key, actual_cost_usd=Decimal("0.38"))
+    def _settle(_res):
+        entry = UsageEntry(video_id=VIDEO_ID, step="render", provider="local", model="default", cost_usd=0.38)
+        conf = CostConfirmation.actual(Decimal("0.38"), reference="render_task_404", confirmed_by="worker:int04")
+        return entry, conf
 
-    # 5. Tentativa de nova submissão após confirmação deve falhar com OperationAlreadyCharged
-    with pytest.raises(OperationAlreadyCharged, match="já confirmada e cobrada"):
-        reconciler.begin_operation(
-            tenant_scope=scope,
-            video_id=VIDEO_ID,
-            stage_name="render",
-            attempt=1,
-            payload=payload,
-            estimated_cost_usd=est_cost,
-        )
+    out = guard.run(key, VIDEO_ID, Decimal("0.40"), _call, _settle)
+    assert out == {"ok": True}
+    assert submit_calls == 1
+    assert repo.state(key) is PaidOperationState.CONFIRMED
+    assert repo.external_reference_id(key) == "render_task_404"
+
+    with pytest.raises(OperationSettled):
+        guard.run(key, VIDEO_ID, Decimal("0.40"), _call, _settle)
+
+    assert submit_calls == 1
+    ledger_count = conn.execute("SELECT COUNT(*) FROM studio.usage_ledger").fetchone()[0]
+    assert ledger_count == 1
 
 
-def test_int_04_resilient_executor_measures_real_duration_and_enforces_timeout():
-    """A11: ResilientStageExecutor mede a duração real pelo clock e aplica timeout determinístico."""
-    bp = BackpressureController()
-    policy = StageTimeoutPolicy(stage_timeouts={"script": 10.0, "render": 30.0})
+def test_int_04_production_coordinator_enforces_real_cooperative_timeout(db_setup):
+    """ProductionCoordinator impõe timeout cooperativo real sobre handler lento e marca etapa como FAILED."""
+    _conn, connect, repo = db_setup
+    runs_repo = PostgresProductionRunRepository(connect, dag=COORDINATOR_DAG)
 
-    # Simulação de relógio monotônico que salta 35 segundos durante o handler de render
-    current_time = 100.0
+    class _SlowHandler:
+        available = True
+        reason = "ok"
 
-    def fake_clock():
-        return current_time
+        def __init__(self, stage: ProductionStage) -> None:
+            self.stage = stage
 
-    executor = ResilientStageExecutor(
-        backpressure=bp,
-        timeout_policy=policy,
-        clock=fake_clock,
+        def execute(self, ctx: StageContext) -> StageOutcome:
+            if self.stage is ProductionStage.SCRIPT:
+                for _ in range(40):
+                    ctx.ensure_active()
+                    time.sleep(0.02)
+            return StageOutcome()
+
+    handlers = {stage: _SlowHandler(stage) for stage in ProductionStage}
+    coordinator = ProductionCoordinator(
+        runs_repo,
+        handlers=handlers,
+        mode=ProductionMode.INTERACTIVE,
+        paid_ops=repo,
+        stage_timeouts={ProductionStage.SCRIPT: 0.08},
     )
-    scope = TenantScope(tenant_id="t1", project_id=PROJECT_ID)
-
-    def slow_handler(attempt: int):
-        nonlocal current_time
-        current_time += 35.0  # Passaram-se 35 segundos (limite era 30s)
-        return {"result": "ok"}
-
-    with pytest.raises(StageTimeoutError, match="excedeu o timeout de 30.0s"):
-        executor.execute_stage(
-            tenant_scope=scope,
-            video_id=VIDEO_ID,
-            stage_name="render",
-            handler=slow_handler,
-        )
+    created = coordinator.start(
+        VIDEO_ID,
+        idempotency_key="int04-timeout-run",
+        channel_id=None,
+        stages=(ProductionStage.SCRIPT,),
+    )
+    step = coordinator.step(created.run.run_id, owner="worker-timeout")
+    assert step.result is WorkerStepResult.FAILED
+    assert "exceeded timeout" in step.detail

@@ -298,6 +298,14 @@ class PaidOperationRepository(Protocol):
         """Confirmação registrada de uma operação CONFIRMED, ou None."""
         ...
 
+    def record_external_ref(self, key: str, external_reference_id: str) -> None:
+        """Persiste de forma durável e idempotente a referência externa do provedor."""
+        ...
+
+    def external_reference_id(self, key: str) -> str | None:
+        """Lê a referência externa persistida para a operação, ou None."""
+        ...
+
     def pending_reconciliation(self, *, stale_after: timedelta = STALLED_AFTER) -> list[PendingReconciliation]:
         """Reservas antigas, operações incertas/paradas e lançamentos legados que exigem decisão explícita.
 
@@ -393,6 +401,12 @@ class PaidOperationGuard:
 
     def mark_uncertain(self, key: str, reason: str) -> None:
         self.repo.mark_uncertain(key, reason)
+
+    def record_external_ref(self, key: str, external_reference_id: str) -> None:
+        self.repo.record_external_ref(key, external_reference_id)
+
+    def external_reference_id(self, key: str) -> str | None:
+        return self.repo.external_reference_id(key)
 
     def pending_reconciliation(self, *, stale_after: timedelta = STALLED_AFTER) -> list[PendingReconciliation]:
         return self.repo.pending_reconciliation(stale_after=stale_after)

@@ -33,10 +33,7 @@ from app.studio.domain.resilience import (
     compute_payload_hash,
 )
 from app.studio.application.resilience import (
-    InMemoryOperationStore,
-    OperationReconciler,
     ReadinessChecker,
-    ResilientStageExecutor,
     SystemReadinessReport,
 )
 from app.studio.domain.channel_budget import BudgetLimits, EconomicProfile
@@ -56,13 +53,13 @@ def test_v4_12_deterministic_idempotency_and_payload_hashing():
     assert hash1 == hash2
     assert hash1 != hash3
 
-    key1 = compute_deterministic_idempotency_key("tenant_1", "vid_100", "render", 1, hash1)
-    key2 = compute_deterministic_idempotency_key("tenant_1", "vid_100", "render", 1, hash2)
-    key_other_attempt = compute_deterministic_idempotency_key("tenant_1", "vid_100", "render", 2, hash1)
-    key_other_tenant = compute_deterministic_idempotency_key("tenant_2", "vid_100", "render", 1, hash1)
+    key1 = compute_deterministic_idempotency_key("tenant_1", "vid_100", "render", hash1)
+    key2 = compute_deterministic_idempotency_key("tenant_1", "vid_100", "render", hash2)
+    key_other_stage = compute_deterministic_idempotency_key("tenant_1", "vid_100", "assets", hash1)
+    key_other_tenant = compute_deterministic_idempotency_key("tenant_2", "vid_100", "render", hash1)
 
     assert key1 == key2
-    assert key1 != key_other_attempt
+    assert key1 != key_other_stage
     assert key1 != key_other_tenant
 
 
@@ -99,53 +96,16 @@ def test_v4_12_checkpoint_continuity_and_integrity():
 
 
 def test_v4_12_anti_duplicate_charge_and_async_reconciliation():
-    """Valida que operações assíncronas são reconciliadas antes de retry para evitar cobrança duplicada (GAI-09/06)."""
-    store = InMemoryOperationStore()
-    reconciler = OperationReconciler(store)
-    scope = TenantScope(tenant_id="cerc_tenant", project_id="proj_alpha")
-
+    """Valida que a chave lógica de idempotência é estável entre retries para a mesma intenção (GAI-09/06)."""
     payload = {"prompt": "Documentary background visual", "model": "veo-2"}
-    est_cost = Decimal("0.50")
+    p_hash = compute_payload_hash(payload)
 
-    # 1. Início de operação: autoriza primeiro submit
-    key, should_exec = reconciler.begin_operation(
-        tenant_scope=scope,
-        video_id="vid_001",
-        stage_name="assets",
-        attempt=1,
-        payload=payload,
-        estimated_cost_usd=est_cost,
-    )
-    assert should_exec is True
+    key_attempt_1 = compute_deterministic_idempotency_key("cerc_tenant", "vid_001", "assets", p_hash)
+    key_attempt_2 = compute_deterministic_idempotency_key("cerc_tenant", "vid_001", "assets", p_hash)
+    assert key_attempt_1 == key_attempt_2
 
-    # 2. Registrar submissão assíncrona
-    reconciler.record_submission(key, external_reference_id="veo_task_9876")
-
-    # 3. Tentativa de retry enquanto SUBMITTED: bloqueia novo submit pago até reconciliação!
-    key_retry, should_exec_retry = reconciler.begin_operation(
-        tenant_scope=scope,
-        video_id="vid_001",
-        stage_name="assets",
-        attempt=1,
-        payload=payload,
-        estimated_cost_usd=est_cost,
-    )
-    assert key_retry == key
-    assert should_exec_retry is False  # Reconciliar antes de retry, sem segundo submit pago!
-
-    # 4. Operação confirmada e faturada
-    reconciler.record_confirmation(key, actual_cost_usd=Decimal("0.48"))
-
-    # 5. Tentativa de nova submissão após confirmação: lança OperationAlreadyCharged
-    with pytest.raises(OperationAlreadyCharged, match="já confirmada e cobrada"):
-        reconciler.begin_operation(
-            tenant_scope=scope,
-            video_id="vid_001",
-            stage_name="assets",
-            attempt=1,
-            payload=payload,
-            estimated_cost_usd=est_cost,
-        )
+    key_other_video = compute_deterministic_idempotency_key("cerc_tenant", "vid_002", "assets", p_hash)
+    assert key_attempt_1 != key_other_video
 
 
 def test_v4_12_backpressure_and_concurrency_saturation():
@@ -286,43 +246,12 @@ def test_v4_12_system_readiness_probe():
     assert report_down.database == "unavailable"
 
 
-def test_v4_12_resilient_stage_executor_with_retry_and_lease():
-    """Valida execução completa de etapa com simulação de retry transitório e verificação de lease."""
-    bp = BackpressureController(BackpressureConfig(max_concurrent_jobs=2))
-    executor = ResilientStageExecutor(backpressure=bp)
-    scope = TenantScope(tenant_id="tenant_01", project_id="proj_01")
+def test_v4_12_lease_fencing_blocks_late_handler():
+    """Valida que LeaseHeartbeat + StageContext bloqueiam escrita após perda de lease."""
+    from app.studio.application.lease_heartbeat import LeaseHeartbeat, LeaseLost
 
-    attempts_count = 0
-
-    def flaky_handler(attempt: int):
-        nonlocal attempts_count
-        attempts_count += 1
-        if attempt == 1:
-            raise OSError("I/O transitório no armazenamento")
-        return {"render_result": "video_chunk_01.mp4", "quality_pass": True}
-
-    lease_active = True
-
-    cp = executor.execute_stage(
-        tenant_scope=scope,
-        video_id="v_1234",
-        stage_name="render",
-        handler=flaky_handler,
-        check_lease_alive=lambda: lease_active,
-    )
-
-    assert attempts_count == 2
-    assert cp.version == 1
-    assert cp.stage_name == "render"
-    assert cp.payload["render_result"] == "video_chunk_01.mp4"
-
-    # Se o lease for perdido, o executor deve falhar imediatamente sem retry
-    lease_active = False
-    with pytest.raises(NonRetryableError, match="Lease perdido"):
-        executor.execute_stage(
-            tenant_scope=scope,
-            video_id="v_1234",
-            stage_name="render",
-            handler=flaky_handler,
-            check_lease_alive=lambda: lease_active,
-        )
+    hb = LeaseHeartbeat(renew=lambda: None, lease_seconds=1.0)
+    hb._mark_lost("simulated loss")
+    assert hb.lost is True
+    with pytest.raises(LeaseLost):
+        hb.ensure_held()

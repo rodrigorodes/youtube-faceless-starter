@@ -70,6 +70,10 @@ class LeaseHeartbeat(StageLease):
         if self.lost:
             raise LeaseLost("lease da etapa perdido")
 
+    def revoke(self, reason: str = "lease revoked") -> None:
+        """Cerca imediatamente o processo local (latch irreversível), sem esperar o próximo tick."""
+        self._mark_lost(reason)
+
     def start(self) -> "LeaseHeartbeat":
         if self._stop.is_set():
             raise RuntimeError("LeaseHeartbeat já foi parado; crie outro")

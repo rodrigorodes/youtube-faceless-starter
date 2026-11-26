@@ -1,8 +1,8 @@
 # Modelo de dados (gerado)
 
 > Gerado por `scripts/export_schema.py`. Não edite à mão.
-> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 48 migrações
-> (`0001_init` … `0053_usage_ledger_category`).
+> Fonte: `renderer/app/studio/adapters/postgres/migrations/` — 49 migrações
+> (`0001_init` … `0054_paid_operation_external_ref`).
 > DDL consolidado e executável: `docs/schema/studio.sql`.
 > As colunas, chaves e índices abaixo vêm da **introspecção do banco real** após aplicar
 > as migrações — não de leitura de texto —, para não documentar algo que o banco não tem.
@@ -1236,6 +1236,8 @@ erDiagram
 | `updated_at` | `timestamp with time zone` | não | `now()` |
 | `attempt` | `integer` | não | `1` |
 | `project_id` | `text` | sim | — |
+| `external_reference_id` | `text` | sim | — |
+| `submitted_at` | `timestamp with time zone` | sim | — |
 
 **Chave primária:** `idempotency_key`
 
@@ -1265,7 +1267,7 @@ erDiagram
 - `paid_operations_state_updated_at_idx`: `CREATE INDEX paid_operations_state_updated_at_idx ON studio.paid_operations USING btree (state, updated_at)`
 - `paid_operations_video_idx`: `CREATE INDEX paid_operations_video_idx ON studio.paid_operations USING btree (video_id)`
 
-**Migrações que citam esta tabela:** 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0038_budget_scope_attribution
+**Migrações que citam esta tabela:** 0017_paid_operations, 0019_ledger_estimate_and_attribution, 0020_paid_operation_attempt_and_budget_indexes, 0038_budget_scope_attribution, 0054_paid_operation_external_ref
 
 ### `studio.plan_artifacts`
 
@@ -1828,7 +1830,7 @@ erDiagram
 
 - `schema_migrations_pkey`: `CREATE UNIQUE INDEX schema_migrations_pkey ON studio.schema_migrations USING btree (version)`
 
-**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config, 0041_production_run_operation, 0042_scene_stable_identity, 0044_script_edit_requests, 0046_scene_revisions
+**Migrações que citam esta tabela:** 0018_production_runs, 0032_render_plan_cache, 0039_production_run_config, 0041_production_run_operation, 0042_scene_stable_identity, 0044_script_edit_requests, 0046_scene_revisions, 0054_paid_operation_external_ref
 
 ### `studio.script_approvals`
 
@@ -2442,6 +2444,7 @@ Tabelas citadas por cada migração (busca literal por `studio.<tabela>`).
 | `0051_scene_media_intelligence` | `scene_revisions`, `scenes` |
 | `0052_video_production_settings` | `videos` |
 | `0053_usage_ledger_category` | `usage_ledger` |
+| `0054_paid_operation_external_ref` | `paid_operations`, `schema_migrations` |
 
 ## Como regenerar
 

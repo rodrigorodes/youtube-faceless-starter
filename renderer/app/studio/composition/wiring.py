@@ -741,8 +741,9 @@ class Studio:
         # como limite superior. O guard hard recebe os dois escopos via `channel_guard_limits`.
         budget = ChannelBudgetFloor(usage_repo, repo, budget_repo,
                                     default_ceiling_usd=Decimal(str(s.max_cost_month))) if s.budget_guard else None
+        paid_ops_repo = PostgresPaidOperationRepository(connect) if s.budget_guard else None
         coordinator = ProductionCoordinator(run_repo, handlers=handlers, mode=s.production_mode, budget=budget, pipeline=pipeline_dag,
-                                            videos=repo, config_store=run_repo)
+                                            videos=repo, config_store=run_repo, paid_ops=paid_ops_repo)
         worker = ProductionWorker(coordinator)
         # F03.T02: resolução única, antes do run; o snapshot é gravado pelo `create_run` (mesma
         # transação). A leitura para retomada/retry/painel vem da mesma porta (`run_config`).

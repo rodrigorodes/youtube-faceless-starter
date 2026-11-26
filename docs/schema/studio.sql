@@ -5,7 +5,7 @@
 -- As migrações aparecem em ordem de aplicação e VERBATIM: este é o SQL que cria o
 -- schema, na mesma ordem em que db.migrate() o executa (uma transação por arquivo).
 --
--- Migrações: 48 (0001_init … 0053_usage_ledger_category)
+-- Migrações: 49 (0001_init … 0054_paid_operation_external_ref)
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -1658,3 +1658,18 @@ ALTER TABLE studio.usage_ledger
 
 CREATE INDEX IF NOT EXISTS usage_ledger_category_idx ON studio.usage_ledger(category);
 CREATE INDEX IF NOT EXISTS usage_ledger_video_category_idx ON studio.usage_ledger(video_id, category);
+
+-- ---------------------------------------------------------------------------
+-- 0054_paid_operation_external_ref.sql
+-- ---------------------------------------------------------------------------
+-- REC-01.02: persistência durável da referência externa do provedor em studio.paid_operations.
+-- Aditiva (colunas anuláveis); preserva paid_operations_settlement_check e compatibilidade v1/v2.
+--
+-- Rollback manual:
+--   ALTER TABLE studio.paid_operations DROP COLUMN IF EXISTS submitted_at;
+--   ALTER TABLE studio.paid_operations DROP COLUMN IF EXISTS external_reference_id;
+--   DELETE FROM studio.schema_migrations WHERE version = '0054_paid_operation_external_ref';
+
+ALTER TABLE studio.paid_operations
+    ADD COLUMN external_reference_id text,
+    ADD COLUMN submitted_at timestamptz;

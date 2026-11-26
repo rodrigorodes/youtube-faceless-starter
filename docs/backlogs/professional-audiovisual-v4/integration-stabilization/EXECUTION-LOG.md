@@ -56,3 +56,29 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
   - Wave Mean: **9.525 / 10** | Open P0/P1 Blockers: **0** (3 minor P2 notes carried forward to `REC-01`..`REC-04`).
 - **Decision:** **APPROVED (`VERIFIED`)** — Atomic commit on `develop` authorized; proceed to Wave `REC-01` (`REC-01.01`..`REC-01.03`) with `Gemini 4 Hydrogen (Medium)` executor + `Gemini 4 Neon (High)` mandatory reviewer.
 - **Observed Quota Reading:** `43%` remaining (resets `2026-11-26T15:00:59Z`) | **External API Cost:** `$0.00`.
+
+
+---
+
+## Entry 003 — Wave `REC-01` (`REC-01.01`, `REC-01.02`, `REC-01.03`) Implementation, Round 1 Rejection & Round 2 Approval
+
+- **Timestamp (UTC):** `2026-11-26T14:24Z–14:50Z`
+- **Task IDs:** `REC-01.01`, `REC-01.02`, `REC-01.03` (closes `R01`, `R02`, `R03`, `A08`/`A11`, `INT-04.03`, `GAI-09` minimum financial safety)
+- **Base HEAD:** `develop` `031811f420ea74376f9a76ad461437b40db76405` (`hash renderer/app: d95e281af8d0ab89`, 49 migrations)
+- **Executor Model:** `Gemini 4 Hydrogen (Medium)` (`rec01-dev`) — 2 rounds (Round 1 implementation + Round 2 fixes for 3 P1/P2 findings)
+- **Independent Reviewer Model:** `Gemini 4 Neon (High)` (`rec01-reviewer`)
+- **Diff Summary:**
+  - Removed unsafe `renderer/app/studio/adapters/postgres/operation_store.py` (`SELECT id FROM studio.videos LIMIT 1`, hardcoded `1000/100`).
+  - Added additive migration `0054_paid_operation_external_ref.sql` (`external_reference_id`, `submitted_at`, fixed rollback SQL `version = '0054_paid_operation_external_ref'`), regenerated `docs/schema/studio.sql` & `docs/22-modelo-de-dados.md`.
+  - Updated `budget_repo.py`, `budget.py`, `lease_heartbeat.py` (`revoke()`), `production.py` (cooperative `StageContext.ensure_active`, `stage_timeouts`, pre-retry reconciliation with cross-month `stale_reservation` + DB state re-check), `resilience.py` (removed duplicate `ResilientStageExecutor`/`InMemoryOperationStore`/`OperationReconciler`/`mock_duration_seconds`), `domain/resilience.py` (attempt-free logical key), `wiring.py`.
+  - Added `tests/test_rec_01_financial_safety.py`, updated `tests/test_int_04_pipeline.py`, `tests/test_v4_reliability_scale.py`, `tests/test_db.py`.
+- **Verification Results:**
+  - Executor full REC-01 run (`./scripts/test-container.sh` 16 suites): **302 passed**, exit code `0`.
+  - Independent Neon High reviewer run (`./scripts/test-container.sh` 9 focused suites): **166 passed in 86.22s**, exit code `0`.
+- **Independent Rubric Scores (`evidence/rec-01/independent-review-neon-high.md`):**
+  - `REC-01.01`: **9.50 / 10** (all 5 dims `9.5`) — **APPROVED (`VERIFIED`)**
+  - `REC-01.02`: **9.50 / 10** (all 5 dims `9.5`) — **APPROVED (`VERIFIED`)**
+  - `REC-01.03`: **9.50 / 10** (all 5 dims `9.5`) — **APPROVED (`VERIFIED`)**
+- **Observed Quota Reading:** `21%` remaining (resets `2026-11-26T15:00:59Z`) | **External API Cost:** `$0.00` | **Publication Kill Switch:** `BLOCKED` verified.
+- **Rollback:** `git revert <rec-01-sha>` + SQL rollback in `0054_paid_operation_external_ref.sql` (`ALTER TABLE studio.paid_operations DROP COLUMN IF EXISTS external_reference_id, DROP COLUMN IF EXISTS submitted_at; DELETE FROM studio.schema_migrations WHERE version = '0054_paid_operation_external_ref';`).
+- **Next Item:** Wave `REC-02`, starting with `REC-02.05` (`Flash 3.8` executor + `Carbon High` independent reviewer).
