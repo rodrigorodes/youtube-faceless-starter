@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from ..domain.asset_resolver import AssetDescriptor
 from ..domain.audio_catalog import AudioCatalog
@@ -124,6 +124,11 @@ class RenderSpec:
     # REC-02.02: mixagem multitrack opcional (voz + 2 músicas + ambiência + SFX + ducking + licença)
     multitrack: MultitrackAudioPlan | None = None
     audio_catalog: AudioCatalog | None = None
+    # REC-03.03a: briefing criativo persistido que influencia pacing/motion/audio sem alterar config congelada.
+    creative_brief: Mapping[str, Any] | None = None
+    # REC-03.03b: cancelamento cooperativo e callback de progresso granular por shot.
+    cancel_check: Callable[[], bool] | None = None
+    on_progress: Callable[[Any], None] | None = None
 
 
 @dataclass(frozen=True)

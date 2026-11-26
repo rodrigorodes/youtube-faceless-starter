@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..domain.contracts import Scene, Script, Video, VideoStatus
+from ..domain.creative_director import CreativeBrief, CreativeSecurityViolation
 from ..domain.effective_config import EffectiveConfig
 from ..domain.facts import check_narration, supporting_claim_ids
 from ..domain.longform import (
@@ -146,8 +147,22 @@ def _facts_block(claims) -> str:
     return "\n".join(f"[{c.id}] {c.text}" for c in claims)
 
 
+def _brief_guidance(brief: CreativeBrief | None) -> str:
+    if brief is None:
+        return ""
+    return (
+        f"DIREÇÃO CRIATIVA:\n"
+        f"- Objetivo narrativo: {brief.narrative_goal}\n"
+        f"- Gancho (Hook): {brief.hook}\n"
+        f"- Tom: {brief.tone} | Ritmo: {brief.pacing}\n"
+        f"- Direção visual: {brief.visual_direction}\n"
+        f"- Áudio: {brief.audio_guidance} | Legendas: {brief.caption_strategy}\n"
+    )
+
+
 def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_per_minute: float, *,
-                              context: EditorialContext | None = None) -> str:
+                              context: EditorialContext | None = None,
+                              brief: CreativeBrief | None = None) -> str:
     """Passagem 1: plano de capítulos por blocos narrativos."""
     language = language_label(context.language if context is not None else DEFAULT_LANGUAGE)
     return (
@@ -155,6 +170,7 @@ def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_p
         f"Duração alvo ~{int(target_seconds)}s, ritmo ~{words_per_minute:.0f} palavras/minuto.\n"
         f"Organize em 3 a 6 capítulos cobrindo, nesta ordem, gancho, contexto, desenvolvimento e payoff/CTA.\n"
         f"{context_guidance(context)}"
+        f"{_brief_guidance(brief)}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares.\n\n"
         f"FATOS:\n{_facts_block(claims)}\n\n"
         f"Responda apenas com JSON: {{\"chapters\": [{{\"title\": str, \"block\": "
@@ -164,7 +180,8 @@ def build_long_outline_prompt(topic: str, claims, target_seconds: float, words_p
 
 
 def build_long_scenes_prompt(topic: str, plan: ScriptPlan, claims, *,
-                             context: EditorialContext | None = None) -> str:
+                             context: EditorialContext | None = None,
+                             brief: CreativeBrief | None = None) -> str:
     """Passagem 2: cenas do roteiro seguindo o plano de capítulos, com citações."""
     summary = "; ".join(
         f"{index + 1}. {chapter.title} ({block_label(chapter.block)}), {chapter.scene_count} cenas"
@@ -175,6 +192,7 @@ def build_long_scenes_prompt(topic: str, plan: ScriptPlan, claims, *,
         f"Escreva as cenas do roteiro longo em {language} sobre: {topic}.\n"
         f"Siga o plano de capítulos: {summary}.\n"
         f"{context_guidance(context)}"
+        f"{_brief_guidance(brief)}"
         f"Use SOMENTE os fatos abaixo. Não invente números, datas, nomes ou lugares. Evento encerrado: escreva no passado.\n"
         f"Não use fotos ou nomes de pessoas que não estejam nos fatos.\n\n"
         f"FATOS:\n{_facts_block(claims)}\n\n"
@@ -305,10 +323,18 @@ class GenerateLongScript:
         return DEFAULT_TARGET_SECONDS
 
     def execute(self, video_id: str, *, target_seconds: float | None = None,
-                words_per_minute: float | None = None) -> LongScriptResult:
+                words_per_minute: float | None = None,
+                brief: CreativeBrief | None = None) -> LongScriptResult:
         video = _require_video(self.videos, video_id)
         if video.status not in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
             raise StateConflict(f"cannot write a long script in state {video.status.value}")
+        if brief is None and video.creative_brief:
+            try:
+                brief = CreativeBrief.model_validate(video.creative_brief)
+            except CreativeSecurityViolation:
+                raise
+            except ValueError as exc:
+                raise ValueError(f"invalid persisted creative_brief: {exc}") from exc
         snapshots = self.snaps.list(video_id)
         claims = _claims(snapshots)
         if not claims:
@@ -321,10 +347,11 @@ class GenerateLongScript:
 
         outline_claims = _fit_claims(video.topic, claims,
                                      lambda kept: build_long_outline_prompt(video.topic, kept, target, wpm,
-                                                                            context=context))
+                                                                            context=context, brief=brief))
         if not outline_claims:
             raise SourceRefused("topic and claims do not fit the model prompt limit")
-        outline_prompt = build_long_outline_prompt(video.topic, outline_claims, target, wpm, context=context)
+        outline_prompt = build_long_outline_prompt(video.topic, outline_claims, target, wpm,
+                                                   context=context, brief=brief)
         outline, outline_cost = self._call(model, video_id, "longform-outline", outline_prompt,
                                            validate=lambda res: parse_outline(res.text, target_seconds=target,
                                                                               words_per_minute=wpm,
@@ -332,8 +359,9 @@ class GenerateLongScript:
 
         scenes_claims = _fit_claims(video.topic, outline_claims,
                                     lambda kept: build_long_scenes_prompt(video.topic, outline, kept,
-                                                                          context=context))
-        scenes_prompt = build_long_scenes_prompt(video.topic, outline, scenes_claims, context=context)
+                                                                          context=context, brief=brief))
+        scenes_prompt = build_long_scenes_prompt(video.topic, outline, scenes_claims,
+                                                 context=context, brief=brief)
         drafts, scenes_cost = self._call(model, video_id, "longform-scenes", scenes_prompt,
                                          validate=lambda res: parse_scene_drafts(
                                              res.text, {c.id for c in scenes_claims},

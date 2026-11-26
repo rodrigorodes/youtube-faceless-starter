@@ -196,3 +196,8 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - Round 1 REJECTED (6.850/6.550, 5 P1) → correções (Flash, tentativa 1) → Round 2 REJECTED (7.475/7.750, 4 P1) → correções (Flash, tentativa 2) → Round 3 APPROVED (**9.290 / 9.355**, 0 P0/P1, 6 P2).
 - Verificação independente Round 3: host `101 passed`; container focado `90 passed`; canônica completa `4491 passed, 26 skipped` exit 0 (807s); Playwright isolado porta 8100 `1 passed`, `down -v` feito; mutação do STORYBOARD_JS em cópia temporária falhou 4/5.
 - Custo externo `$0.00`; `main` `42700cb` intocada; publicação `BLOCKED`.
+
+## REC-03.03 (R10) — fechamento (2026-11-26, OpenCode)
+- Executor Flash 3.8 (Copilot) → Round 1 REJECTED (3.95; 3 P0: licença por substring, vendor no domain, regeneração seletiva MODEL_ONLY). Executor escalado para `github-copilot/gemini-4-neon` high (Hydrogen/Carbon indisponíveis); reviewer = sessões Neon separadas.
+- Round 2 APPROVED **9.44/10** (0 P0/P1, 2 P2): focados `37 passed`; canônica completa `4501 passed, 26 skipped` exit 0; host `101 passed`; Playwright porta 8100 `1 passed` (`down -v`); 4/4 mutações fora do repo mortas.
+- Módulos legados em memória (render_engine/asset_registry/studio_workbench) declarados DEFERRED na evidência. Custo `$0.00`; main `42700cb` intocada.

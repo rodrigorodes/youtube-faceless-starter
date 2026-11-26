@@ -21,9 +21,21 @@ from .schema import _Model
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 MediaType = Literal["image", "video", "graphic", "text"]
 
-# Padrões proibidos na saída de inteligência criativa (rejeição de injeção de comandos no Core)
+# Padrões proibidos na saída de inteligência criativa (rejeição de injeção de comandos no Core).
+# Exige fronteiras de comando/flag CLI para não bloquear prosa legítima em português
+# (ex.: "auto-afirmação", "pré-afirmação", "color-preset", "tutorial de bash/curl/FFmpeg").
 FORBIDDEN_COMMAND_PATTERNS = re.compile(
-    r"(\bffmpeg\b|-filter_complex|-vf|-af|-c:v|-c:a|-preset|-crf|\bsh\s+-c\b|\bbash\b|\bcurl\b|\bwget\b|\brm\s+-rf\b)",
+    r"(?:"
+    r"(?:^|[\s;|&`\"'(=])-(?:filter_complex|vf|af|c:v|c:a|preset|crf)(?:$|[\s;|&`\"'=])"
+    r"|\bffmpeg\s+-"
+    r"|\b(?:sh|bash)\s+-[a-z]*c\b"
+    r"|\b(?:curl|wget)\s+(?:-[a-zA-Z]|https?://)"
+    r"|\brm\s+-[a-z]*r[a-z]*f\b|\brm\s+-[a-z]*f[a-z]*r\b"
+    r"|;\s*(?:rm|sh|bash|curl|wget|ffmpeg|python3?|nc)\b"
+    r"|\|\s*(?:sh|bash|ffmpeg)\b"
+    r"|\$\([^)]+\)"
+    r"|`[^`]+`"
+    r")",
     re.IGNORECASE,
 )
 

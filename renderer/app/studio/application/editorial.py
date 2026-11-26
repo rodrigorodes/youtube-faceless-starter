@@ -15,7 +15,7 @@ from ..domain.claims import extract_claims
 from ..domain.contracts import (Claim, FactCheckReport, SceneFactCheck, Script, SourceSnapshot, UnsupportedItem,
                                 Video, VideoStatus)
 from ..domain.effective_config import EDITORIAL_DEFAULTS, EDITORIAL_FIELDS, EffectiveConfig
-from ..domain.creative_director import CreativeBrief
+from ..domain.creative_director import CreativeBrief, CreativeSecurityViolation
 from ..domain.facts import check_names, check_narration
 from ..domain.policy import check_cost
 from .budget import PaidOperationGuard, paid_key, provider_settlement
@@ -472,6 +472,13 @@ class GenerateScript:
         video = _require_video(self.videos, video_id)
         if video.status not in (VideoStatus.IDEA, VideoStatus.SCRIPTED):
             raise StateConflict(f"cannot write a script in state {video.status.value}")
+        if brief is None and video.creative_brief:
+            try:
+                brief = CreativeBrief.model_validate(video.creative_brief)
+            except CreativeSecurityViolation:
+                raise
+            except ValueError as exc:
+                raise ValueError(f"invalid persisted creative_brief: {exc}") from exc
         context = self._editorial_context(video)
         claims = _claims(self.snaps.list(video_id))
         if not claims:

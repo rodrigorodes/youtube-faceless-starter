@@ -12,7 +12,7 @@ from ..domain.publication_policy import resolve_visibility
 from .editorial import StateConflict, VideoNotFound, _require_video
 from .ports import (ApprovalRepository, AssetRepository, PublicationRepository, RenderJobRepository, RenderStorage, ScriptRepository,
                     SnapshotRepository, ThumbnailMaker, VideoRepository)
-from .publication_gate import publication_block_reason
+from .publication_gate import LicenseNormalizer, license_block_reason, publication_block_reason
 
 Clock = Callable[[], datetime]
 SERVABLE = (VideoStatus.RENDERED, VideoStatus.AWAITING_APPROVAL, VideoStatus.APPROVED, VideoStatus.PUBLISHED)
@@ -36,8 +36,11 @@ def _utc_now() -> datetime:
 
 
 class Approve:
-    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, approvals: ApprovalRepository, clock: Clock = _utc_now):
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, approvals: ApprovalRepository,
+                 clock: Clock = _utc_now, assets: AssetRepository | None = None,
+                 license_normalizer: LicenseNormalizer | None = None):
         self.videos, self.scripts, self.approvals, self.clock = videos, scripts, approvals, clock
+        self.assets, self.license_normalizer = assets, license_normalizer
 
     def execute(self, video_id: str, *, title: str | None = None, description: str | None = None, tags: list[str] | None = None,
                 publish_at: datetime | None = None, override_reason: str | None = None, output_asset_id: str | None = None,
@@ -58,6 +61,13 @@ class Approve:
             raise StateConflict(f"approve needs AWAITING_APPROVAL (or RENDERED with override_reason), got {video.status.value}")
         if not output_asset_id:
             raise StateConflict("the reviewed render revision is required; reload the preview")
+
+        if self.assets is not None:
+            lic_blocked = license_block_reason(video_id, scripts=self.scripts, assets=self.assets,
+                                               license_normalizer=self.license_normalizer)
+            if lic_blocked is not None:
+                raise StateConflict(lic_blocked)
+
         script = self.scripts.latest(video_id)
         final_title, final_desc, final_tags = validate_metadata(
             title if title is not None else (video.title or default_title(video.topic)),
@@ -110,12 +120,14 @@ class ClaimItem:
 class ClaimPublication:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, jobs: RenderJobRepository,
                  snaps: SnapshotRepository, pubs: PublicationRepository, files: RenderStorage, *,
-                 approvals=None, intents=None, channels=None):
+                 approvals=None, intents=None, channels=None,
+                 license_normalizer: LicenseNormalizer | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.snaps, self.pubs, self.files = videos, scripts, assets, jobs, snaps, pubs, files
         # Achado 1: o claim passa pelo MESMO gate da publicação efetiva. Sem estes repositórios
         # (construção legada/testes) o gate não roda — a composição sempre os injeta
         # (`composition.py`), então o caminho servido é fail-closed.
         self.approvals, self.intents, self.channels = approvals, intents, channels
+        self.license_normalizer = license_normalizer
 
     def execute(self, lease_seconds: int = 1800, max_attempts: int = MAX_ATTEMPTS) -> ClaimItem | None:
         pub = self.pubs.claim(lease_seconds, max_attempts)
@@ -129,9 +141,16 @@ class ClaimPublication:
             video = _require_video(self.videos, pub.video_id)
             if self.intents is not None and self.approvals is not None:
                 blocked = publication_block_reason(video, intents=self.intents, approvals=self.approvals,
-                                                   jobs=self.jobs, channels=self.channels)
+                                                   jobs=self.jobs, channels=self.channels,
+                                                   scripts=self.scripts, assets=self.assets,
+                                                   license_normalizer=self.license_normalizer)
                 if blocked is not None:
                     raise InvalidPublishData(blocked)
+            elif self.assets is not None:
+                lic_blocked = license_block_reason(video.id, scripts=self.scripts, assets=self.assets,
+                                                   license_normalizer=self.license_normalizer)
+                if lic_blocked is not None:
+                    raise InvalidPublishData(lic_blocked)
             output = self.jobs.approved_output(video.id)
             path = self.files.resolve(output.path, "mp4") if output else None
             if path is None:

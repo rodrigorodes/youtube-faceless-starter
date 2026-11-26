@@ -65,6 +65,7 @@ from ..domain.qa_report import (
     approve as approve_qa,
     blocking_evidence,
 )
+from ..domain.quality import SelectiveRegenerationPlan, compute_selective_regeneration
 from ..domain.run_config import RunConfigConflict, RunConfigStatus, StoredRunConfig
 from ..domain.resilience import StageTimeoutError
 from .budget import PaidOperationRepository, PaidOperationState
@@ -82,6 +83,7 @@ from .ports import (
     ProductionRunRepository,
     ProductionRunStageReader,
     RenderJobRepository,
+    RenderPlanRepository,
     VideoRepository,
 )
 from .render import RunRender, StartRender
@@ -412,28 +414,107 @@ class RenderHandler(_AvailableHandler):
 
 
 class QaHandler(_AvailableHandler):
-    """Gate técnico da F6: exige render bem-sucedido com relatório de QA aprovado.
+    """Gate técnico da F6 com regeneração seletiva limitada (`compute_selective_regeneration`).
 
     Não recalcula nem inventa cobertura: só deixa passar quando o QA persistido pelo render passou.
+    Quando há defeito e o loop de render (`start_render` + `run_render`) está conectado, calcula o
+    plano determinístico de regeneração seletiva (restrito às cenas/shots defeituosos), re-renderiza
+    reaproveitando o cache dos segmentos intactos e reavalia o QA até o teto `max_regeneration_attempts`
+    (falha fechada ao esgotar tentativas).
     """
 
     stage = ProductionStage.QA
 
-    def __init__(self, videos: VideoRepository, jobs: RenderJobRepository):
+    def __init__(
+        self,
+        videos: VideoRepository,
+        jobs: RenderJobRepository,
+        *,
+        plans: RenderPlanRepository | None = None,
+        start_render: StartRender | None = None,
+        run_render: RunRender | None = None,
+        scene_repair: Callable[[str, SelectiveRegenerationPlan, StageContext], bool] | None = None,
+        max_regeneration_attempts: int = 3,
+    ):
+        if max_regeneration_attempts < 1:
+            raise ValueError("max_regeneration_attempts must be >= 1")
         self.videos, self.jobs = videos, jobs
+        self.plans = plans
+        self.start_render, self.run_render = start_render, run_render
+        self.scene_repair = scene_repair
+        self.max_regeneration_attempts = max_regeneration_attempts
 
     def execute(self, context: StageContext) -> StageOutcome:
-        job = self.jobs.latest(context.run.video_id)
+        video_id = context.run.video_id
+        job = self.jobs.latest(video_id)
         if job is None or job.status is not JobStatus.SUCCEEDED:
             raise StageExecutionFailed("no successful render to verify")
-        video = _require_video(self.videos, context.run.video_id)
+        video = _require_video(self.videos, video_id)
         report = video.qa_report
         if report is None:
             raise StageExecutionFailed("the render has no QA report")
-        if not report.is_publishable:
+
+        if report.is_publishable:
+            return StageOutcome(checkpoint=Checkpoint(
+                {"stage": self.stage.value, "render_job": job.id, "qa_passed": True, "regeneration_attempts": 0},
+                context.checkpoint_version))
+
+        # Sem pipeline de re-renderização injetado (ex.: testes unitários isolados): falha fechada imediata.
+        if self.start_render is None or self.run_render is None:
             raise StageExecutionFailed("QA failed: " + "; ".join(blocking_evidence(report)))
+
+        attempt = max(1, context.execution.attempt)
+        history: list[dict[str, object]] = []
+        while not report.is_publishable:
+            context.ensure_active()
+            plan = self.plans.latest_plan(f"plan:{video_id}") if self.plans is not None else None
+            regen_plan = compute_selective_regeneration(
+                plan,
+                report,
+                max_attempts=self.max_regeneration_attempts,
+                current_attempt=attempt,
+            )
+            if not regen_plan.can_regenerate:
+                raise StageExecutionFailed(
+                    f"QA failed after {len(history)} selective regeneration attempt(s) "
+                    f"(attempt {regen_plan.attempt_number}/{regen_plan.max_attempts}): "
+                    f"{regen_plan.reason} | {'; '.join(blocking_evidence(report))}"
+                )
+            if self.scene_repair is not None:
+                self.scene_repair(video_id, regen_plan, context)
+            new_job = self.start_render.execute(video_id)
+            self.run_render.execute(new_job.id, context.run.run_id)
+            finished = self.jobs.get(new_job.id)
+            if finished is None or finished.status is not JobStatus.SUCCEEDED:
+                err = finished.error if finished is not None else "render job disappeared"
+                raise StageExecutionFailed(
+                    f"selective regeneration render failed on attempt {attempt}: {err}"
+                )
+            job = finished
+            video = _require_video(self.videos, video_id)
+            report = video.qa_report
+            if report is None:
+                raise StageExecutionFailed("selective regeneration render produced no QA report")
+            history.append({
+                "attempt": attempt,
+                "render_job": job.id,
+                "defective_scene_ids": list(regen_plan.defective_scene_ids),
+                "defective_shot_ids": list(regen_plan.defective_shot_ids),
+                "qa_passed": bool(report.is_publishable),
+                "reason": regen_plan.reason,
+            })
+            attempt += 1
+
         return StageOutcome(checkpoint=Checkpoint(
-            {"stage": self.stage.value, "render_job": job.id, "qa_passed": True}, context.checkpoint_version))
+            {
+                "stage": self.stage.value,
+                "render_job": job.id,
+                "qa_passed": True,
+                "regeneration_attempts": len(history),
+                "regeneration_history": history,
+            },
+            context.checkpoint_version,
+        ))
 
 
 class RenderQaGate:
@@ -607,7 +688,10 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
                          videos: VideoRepository, jobs: RenderJobRepository, assets: AssetRepository,
                          approvals: ApprovalRepository, publish: RunPublication | None = None,
                          research: AutoResearch | None = None, reconcile: ReconcilePublication | None = None,
-                         publications: PublicationQueueRepository | None = None
+                         publications: PublicationQueueRepository | None = None,
+                         plans: RenderPlanRepository | None = None,
+                         scene_repair: Callable[[str, SelectiveRegenerationPlan, StageContext], bool] | None = None,
+                         max_regeneration_attempts: int = 3
                          ) -> dict[ProductionStage, StageHandler]:
     """Registra todos os nove estágios: os implementados por handler e os indisponíveis explícitos."""
     if reconcile is not None and publications is None:
@@ -618,7 +702,14 @@ def build_stage_handlers(*, editorial: Editorial, media: Media, start_render: St
         ProductionStage.STORYBOARD: StoryboardHandler(media),
         ProductionStage.ASSETS: AssetsHandler(media),
         ProductionStage.RENDER: RenderHandler(start_render, run_render, jobs),
-        ProductionStage.QA: QaHandler(videos, jobs),
+        ProductionStage.QA: QaHandler(
+            videos, jobs,
+            plans=plans,
+            start_render=start_render,
+            run_render=run_render,
+            scene_repair=scene_repair,
+            max_regeneration_attempts=max_regeneration_attempts,
+        ),
         ProductionStage.APPROVAL: ApprovalHandler(videos, approvals, RenderQaGate(videos, jobs, assets)),
     }
     handlers[ProductionStage.RESEARCH] = (ResearchHandler(research) if research is not None

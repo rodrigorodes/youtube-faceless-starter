@@ -20,14 +20,17 @@ qualquer adaptador concreto mora **só** em ``composition.py``.
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..application.ports import OverlayVerifier, QaAnalyzer, SemanticChecker
 from ..application.quality import PlanQualityEvaluator
 from ..domain.asset_resolver import AssetDescriptor
+from ..domain.captions import CaptionLine, check_audio_caption_sync
 from ..domain.qa_report import QaReport
 from ..domain.quality import OverlayEvidence, QualityEvidence, SemanticResult
 from ..domain.render_plan import RenderPlan
@@ -76,6 +79,23 @@ def _run_bytes(cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
         return subprocess.run(cmd, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise RuntimeError("overlay analysis timed out") from None
+
+
+def _probe_duration(path: Path) -> float:
+    run = _run_bytes(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        60,
+    )
+    if run.returncode != 0:
+        raise RuntimeError(f"ffprobe failed to read duration for {path.name}")
+    raw = run.stdout.decode("utf-8", "replace").strip()
+    try:
+        duration = float(raw)
+    except ValueError:
+        raise RuntimeError(f"invalid duration output from ffprobe for {path.name}") from None
+    if not math.isfinite(duration) or duration <= 0.0:
+        raise RuntimeError(f"non-positive audio duration ({duration!r}) for {path.name}")
+    return duration
 
 
 def _probe_media(path: Path, timeout: int) -> tuple[float, int, int]:
@@ -261,4 +281,33 @@ class FfmpegQualityEvaluator:
         evidence = self.probe.measure(media_path=media_path, narration_path=narration_path,
                                       descriptors=descriptors, render_id=render_id, checksum=checksum,
                                       overlays=overlays, semantic=semantic)
+        if hasattr(plan, "timeline") and plan.timeline and getattr(plan.timeline, "subtitles", None):
+            audio_path = (
+                Path(narration_path)
+                if narration_path is not None and Path(narration_path).exists()
+                else Path(media_path)
+            )
+            if audio_path.is_file():
+                media_dict = dict(evidence.media or {})
+                try:
+                    audio_dur = _probe_duration(audio_path)
+                except (RuntimeError, OSError) as exc:
+                    media_dict["caption_sync_error"] = str(exc)
+                else:
+                    tps = plan.timeline.ticks_per_second or 1000
+                    caption_lines = [
+                        CaptionLine(
+                            start_ms=int(round(cue.start_tick / tps * 1000)),
+                            end_ms=int(round((cue.start_tick + cue.duration_ticks) / tps * 1000)),
+                            text=cue.text,
+                            words=(),
+                        )
+                        for cue in plan.timeline.subtitles
+                    ]
+                    sync_result = check_audio_caption_sync(
+                        caption_lines,
+                        int(round(audio_dur * 1000)),
+                    )
+                    media_dict["caption_sync_drift_ms"] = int(sync_result["drift_ms"])
+                evidence = replace(evidence, media=media_dict)
         return self.evaluator.evaluate(plan, evidence)

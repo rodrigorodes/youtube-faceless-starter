@@ -9,6 +9,7 @@ _TRUE_PEAK = re.compile(r"True peak:\s*\n\s*Peak:\s*(-?[\d.]+|-inf)\s*dBFS")
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END = re.compile(r"silence_end:\s*(-?[\d.]+)\s*\|\s*silence_duration:\s*([\d.]+)")
 _BLACK = re.compile(r"black_duration:\s*([\d.]+)")
+_BLACK_SPAN = re.compile(r"black_start:([\d.]+)\s+black_end:([\d.]+)\s+black_duration:([\d.]+)")
 _FREEZE_START = re.compile(r"lavfi\.freezedetect\.freeze_start:\s*(-?[\d.]+)")
 _FREEZE_END = re.compile(r"lavfi\.freezedetect\.freeze_end:\s*(-?[\d.]+)")
 _FREEZE_DURATION = re.compile(r"lavfi\.freezedetect\.freeze_duration:\s*([\d.]+)")
@@ -60,6 +61,10 @@ class FfmpegQa:
         if black_run.returncode != 0:
             raise RuntimeError("media analysis failed")
         black = sum(float(m.group(1)) for m in _BLACK.finditer(black_run.stderr))
+        black_intervals = [
+            (float(s), float(e))
+            for s, e, _ in _BLACK_SPAN.findall(black_run.stderr)
+        ]
         freeze = sum(float(m.group(1)) for m in _FREEZE_DURATION.finditer(black_run.stderr))
         f_starts, f_ends = _FREEZE_START.findall(black_run.stderr), _FREEZE_END.findall(black_run.stderr)
         if len(f_starts) > len(f_ends):
@@ -75,6 +80,7 @@ class FfmpegQa:
             "integrated_lufs": lufs,
             "silence_ratio": silence,
             "black_ratio": round(min(1.0, black / duration), 4) if duration else 1.0,
+            "black_intervals": black_intervals,
             "true_peak_dbtp": true_peak,
             "video_codec": video_codec,
             "audio_codec": audio_codec,

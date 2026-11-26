@@ -58,6 +58,7 @@ from ..domain.publish import InvalidPublishData, srt_to_vtt
 from ..domain.publication_policy import PublicationPolicyError, PublicConfirmationRequired
 from ..domain.youtube_oauth import (OAuthConfigurationError, OAuthError, OAuthReconnectRequired,
                                     OAuthTransientError)
+from ..domain.creative_director import CreativeBrief, CreativeSecurityViolation, FORBIDDEN_COMMAND_PATTERNS
 from ..domain.trends import TrendItem, TrendRefused
 from ..domain.categories import CategoryNameInvalid, DuplicateCategoryName
 from ..application.categories import MissingApiKey, NoSearchTerms, YouTubeApiError
@@ -1358,6 +1359,18 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             raise HTTPException(404, "video not found")
         return video
 
+    def _validate_creative_payload(payload: object) -> None:
+        if isinstance(payload, str):
+            if FORBIDDEN_COMMAND_PATTERNS.search(payload):
+                raise HTTPException(422, "command syntax or forbidden patterns rejected in creative direction")
+        elif isinstance(payload, dict):
+            for k, v in payload.items():
+                _validate_creative_payload(k)
+                _validate_creative_payload(v)
+        elif isinstance(payload, (list, tuple)):
+            for item in payload:
+                _validate_creative_payload(item)
+
     @router.get("/videos/{video_id}/direction")
     def get_video_direction(video_id: str):
         video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
@@ -1367,6 +1380,8 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.post("/videos/{video_id}/direction")
     def post_video_direction(video_id: str, body: dict | None = None):
+        if body is not None:
+            _validate_creative_payload(body)
         video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
         if video is None:
             raise HTTPException(404, "video not found")
@@ -1393,21 +1408,25 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                     "quality_criteria": ["Boa resolução", "Sem repetição de mídia"],
                 }
             brief = run(gen)
+        _validate_creative_payload(brief)
         run(lambda uc: uc.get_video.repo.update_video_creative_brief(check_id(video_id), brief))
         return {"ok": True, "brief": brief}
 
     @router.put("/videos/{video_id}/direction")
     def put_video_direction(video_id: str, body: dict):
+        _validate_creative_payload(body)
         video = run(lambda uc: uc.get_video.execute(check_id(video_id)))
         if video is None:
             raise HTTPException(404, "video not found")
         brief = body.get("brief") if isinstance(body, dict) else body
         if not brief:
             raise HTTPException(422, "brief is required")
+        _validate_creative_payload(brief)
         current = dict(video.creative_brief or {})
         if isinstance(brief, dict):
             current.update(brief)
         brief = current
+        _validate_creative_payload(brief)
         run(lambda uc: uc.get_video.repo.update_video_creative_brief(check_id(video_id), brief))
         return {"ok": True, "brief": brief}
 
@@ -2511,14 +2530,56 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
 
     @router.get("/videos/{video_id}/subtitles")
     def video_subtitles(video_id: str):
+        def _export(uc):
+            vid = check_id(video_id)
+            r = rendering(uc)
+            if r.subtitles is not None:
+                return vid, r.subtitles.execute(vid, "srt")
+            return vid, None
+        vid, exported = run(_export)
+        if exported is not None:
+            text, media_type = exported
+            return PlainTextResponse(
+                text,
+                media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="{vid}.srt"'},
+            )
         return served(video_id, "srt", "text/plain; charset=utf-8", f"{video_id}.srt")
 
     @router.get("/videos/{video_id}/subtitles.vtt")
     def video_subtitles_vtt(video_id: str):
+        def _export(uc):
+            vid = check_id(video_id)
+            r = rendering(uc)
+            if r.subtitles is not None:
+                return r.subtitles.execute(vid, "vtt")
+            return None
+        exported = run(_export)
+        if exported is not None:
+            text, media_type = exported
+            return PlainTextResponse(text, media_type=media_type)
         path = run(lambda uc: rendering(uc).file.execute(check_id(video_id), "srt"))
         if path is None:
             raise HTTPException(404, "rendered file not available")
         return PlainTextResponse(srt_to_vtt(path.read_text(encoding="utf-8")), media_type="text/vtt; charset=utf-8")
+
+    @router.get("/videos/{video_id}/subtitles.ass")
+    def video_subtitles_ass(video_id: str):
+        def _export(uc):
+            vid = check_id(video_id)
+            r = rendering(uc)
+            if r.subtitles is not None:
+                return vid, r.subtitles.execute(vid, "ass")
+            return vid, None
+        vid, exported = run(_export)
+        if exported is None:
+            raise HTTPException(404, "rendered subtitles not available")
+        text, media_type = exported
+        return PlainTextResponse(
+            text,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{vid}.ass"'},
+        )
 
     def _narration_out(video_id: str, scene_id: str, artifact) -> SceneNarrationOut:
         return SceneNarrationOut(

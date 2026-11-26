@@ -54,7 +54,7 @@ class Scripts:
 class Assets:
     def get(self, asset_id):
         return Asset(id=asset_id, kind=AssetKind.image, cache_key=asset_id * 2, path=f"cache/ab/{asset_id}.png", provider="stock", model="p",
-                     license="Pexels License", attribution="Foto de Ana no Pexels (https://pexels.com/@ana)")
+                     license="Free Stock", attribution="Foto de Ana no Pexels (https://pexels.com/@ana)")
 
 
 class Snaps:

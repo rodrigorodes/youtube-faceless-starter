@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import re
 from typing import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,7 +31,7 @@ class LicenseVerificationError(ValueError):
     """Lançada quando um asset apresenta licença desconhecida, ausente ou inválida."""
 
 
-# Licenças abertas e comerciais homologadas para distribuição no canal
+# Licenças abertas e comerciais homologadas para distribuição no canal (sem nomes de fornecedores)
 KNOWN_PERMITTED_LICENSES: frozenset[str] = frozenset({
     "cc0",
     "cc0-1.0",
@@ -47,6 +48,7 @@ KNOWN_PERMITTED_LICENSES: frozenset[str] = frozenset({
     "commercial_licensed",
     "commercial licensed",
     "proprietary commercial",
+    "gerado pelo estúdio",
     "gerado pelo estúdio a partir de assets licenciados",
 })
 
@@ -57,6 +59,11 @@ PROVENANCE_REQUIRED_LICENSES: frozenset[str] = frozenset({
     "commercial licensed",
 })
 
+_LOCAL_STUDIO_SUFFIX = " (gerada localmente pelo estúdio)"
+_AI_GENERATED_PREFIX = "ai-generated:"
+_AI_MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]*$")
+_DISALLOWED_AI_TOKENS = ("unknown", "non-commercial", "unlicensed", "pirated", "stolen", "desconhecid")
+
 
 def requires_attribution(license_name: str | None) -> bool:
     """Indica se a licença exige declaração de atribuição ou URL de origem."""
@@ -66,13 +73,23 @@ def requires_attribution(license_name: str | None) -> bool:
 
 
 def verify_license_provenance(license_name: str | None) -> bool:
-    """Verifica se a licença do asset é formalmente reconhecida e segura para publicação."""
+    """Verifica se a licença do asset pertence à allowlist canônica (fail-closed, sem substring match)."""
     if not license_name or not license_name.strip():
         return False
     normalized = license_name.strip().casefold()
-    if normalized in ("unknown", "desconhecida", "sem licença", "none", "n/a"):
-        return False
-    return normalized in KNOWN_PERMITTED_LICENSES
+    if normalized in KNOWN_PERMITTED_LICENSES:
+        return True
+    if normalized.endswith(_LOCAL_STUDIO_SUFFIX):
+        base = normalized[: -len(_LOCAL_STUDIO_SUFFIX)].strip()
+        return base in KNOWN_PERMITTED_LICENSES
+    if normalized.startswith(_AI_GENERATED_PREFIX):
+        model_id = normalized[len(_AI_GENERATED_PREFIX):]
+        if not model_id or not _AI_MODEL_RE.fullmatch(model_id):
+            return False
+        if any(token in model_id for token in _DISALLOWED_AI_TOKENS):
+            return False
+        return True
+    return False
 
 
 def assert_known_license(license_name: str | None) -> None:

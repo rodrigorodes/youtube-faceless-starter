@@ -37,7 +37,7 @@ from ..domain.publication_policy import (
     publication_window_state,
     retry_delay,
 )
-from .publication_gate import confirmed_destination, publication_block_reason
+from .publication_gate import LicenseNormalizer, confirmed_destination, publication_block_reason
 from ..domain.youtube_oauth import OAuthError, OAuthReconnectRequired, OAuthTransientError
 from .youtube_oauth import ChannelNotConnected
 from .editorial import StateConflict
@@ -155,7 +155,8 @@ class RunPublication:
                  retry_policy: RetryPolicy | None = None,
                  channels: ChannelProfileRepository | None = None,
                  authorizations: ChannelAuthorizationRepository | None = None,
-                 enabled: bool = True):
+                 enabled: bool = True,
+                 license_normalizer: LicenseNormalizer | None = None):
         self.videos, self.scripts, self.assets, self.jobs, self.snaps = videos, scripts, assets, jobs, snaps
         self.approvals, self.intents, self.pubs, self.files = approvals, intents, pubs, files
         self.uploads, self.tokens = uploads, tokens
@@ -168,6 +169,7 @@ class RunPublication:
         self.policy = retry_policy or RetryPolicy()
         # F01.T04: desligar a publicação é a contingência explícita — nunca reativa caminho inseguro.
         self.enabled = bool(enabled)
+        self.license_normalizer = license_normalizer
 
     # -- preparação --------------------------------------------------------
 
@@ -208,7 +210,9 @@ class RunPublication:
             return self._blocked(pub, "the video no longer exists")
         # A19/A37 + W5.1: o gate é o mesmo do claim (`application/publication_gate.py`).
         blocked = publication_block_reason(video, intents=self.intents, approvals=self.approvals,
-                                           jobs=self.jobs, channels=self.channels)
+                                           jobs=self.jobs, channels=self.channels,
+                                           scripts=self.scripts, assets=self.assets,
+                                           license_normalizer=self.license_normalizer)
         if blocked is not None:
             return self._blocked(pub, blocked)
         intent = self.intents.get(video.id)

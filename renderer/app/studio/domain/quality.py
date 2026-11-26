@@ -75,6 +75,7 @@ CHECK_TRUE_PEAK = "render.true_peak"
 CHECK_CODEC = "render.codec"
 CHECK_REPEATED_ASSETS = "render.repeated_assets"
 CHECK_FROZEN_FRAMES = "render.frozen_frames"
+CHECK_CAPTION_SYNC = "render.caption_sync"
 
 # Fração mínima do quadro que a presença do overlay precisa alterar para não virar
 # aviso. VE-01 desenha o overlay em tela cheia; abaixo disto ele é imperceptível.
@@ -123,6 +124,7 @@ _ACTIONS = {
     CHECK_CODEC: "Recodificar para vídeo H.264 e áudio AAC compatíveis com YouTube.",
     CHECK_REPEATED_ASSETS: "Substituir mídia repetida por outro candidato do mesmo tom.",
     CHECK_FROZEN_FRAMES: "Adicionar tomadas alternativas ou aplicar movimento Ken Burns para dinamizar a cena.",
+    CHECK_CAPTION_SYNC: "Realinhar ou regenerar legendas para coincidir com a faixa de áudio.",
 }
 
 # `expected_s` não vem do analisador: o avaliador o deriva do próprio plano.
@@ -249,6 +251,7 @@ def evaluate_quality(plan: RenderPlan, evidence: QualityEvidence) -> QaReport:
     _collect_asset_checks(plan, evidence, checks, findings, gaps)
     _collect_overlay_checks(plan, evidence, checks, findings, gaps)
     _collect_semantic_checks(evidence, checks, findings)
+    _collect_caption_sync_checks(plan, evidence, checks, findings, gaps)
     _collect_plan_advisories(plan, checks, findings)
 
     coverage = (
@@ -282,6 +285,21 @@ def _collect_media_checks(plan, evidence, checks, findings, gaps) -> None:
     for index, failure in enumerate(report.failures):
         check_id, severity = _classify(failure)
         checks.append(check_id)
+        if check_id == CHECK_BLACK and media.get("black_intervals"):
+            tps = plan.timeline.ticks_per_second or 1
+            intervals = media["black_intervals"]
+            affected_scenes = []
+            for scene in plan.timeline.scenes:
+                s_start = scene.start_tick / tps
+                s_end = (scene.start_tick + scene.duration_ticks) / tps
+                if any(max(s_start, float(b0)) < min(s_end, float(b1)) for b0, b1 in intervals):
+                    first_shot = scene.shots[0].shot_id if scene.shots else None
+                    affected_scenes.append((scene.scene_id, first_shot))
+            if affected_scenes:
+                for sc_idx, (sc_id, sh_id) in enumerate(affected_scenes):
+                    fid = f"media-{index}" if sc_idx == 0 else f"media-{index}-scene-{sc_idx}"
+                    findings.append(_finding(fid, check_id, severity, failure, scene_id=sc_id, shot_id=sh_id))
+                continue
         findings.append(_finding(f"media-{index}", check_id, severity, failure))
 
 
@@ -364,13 +382,25 @@ def _collect_asset_checks(plan, evidence, checks, findings, gaps) -> None:
     unresolved = sorted(referenced - resolved)
     if unresolved:
         gaps.append("assets not resolved: " + ", ".join(unresolved))
+    asset_owner: dict[str, tuple[str, str]] = {}
+    for scene in plan.timeline.scenes:
+        for shot in scene.shots:
+            asset_owner.setdefault(shot.asset_ref, (scene.scene_id, shot.shot_id))
     manifest = AssetManifest.of(plan)
     for index, descriptor in enumerate(descriptors):
         try:
             verify_descriptor(manifest, descriptor)
         except AssetResolutionError as exc:
             checks.append(CHECK_ASSET)
-            findings.append(_finding(f"asset-{index}", CHECK_ASSET, BLOCKING, str(exc)))
+            owner = asset_owner.get(descriptor.asset_id)
+            findings.append(_finding(
+                f"asset-{index}",
+                CHECK_ASSET,
+                BLOCKING,
+                str(exc),
+                scene_id=owner[0] if owner else None,
+                shot_id=owner[1] if owner else None,
+            ))
         else:
             checks.append(CHECK_ASSET)
 
@@ -456,6 +486,26 @@ def _collect_semantic_checks(evidence, checks, findings) -> None:
         findings.append(_finding("semantic-failed", CHECK_SEMANTIC, BLOCKING, result.reason, category="editorial"))
     elif result.verdict == "not_verified":
         findings.append(_finding("semantic-not-verified", CHECK_SEMANTIC, INFO, result.reason, category="editorial"))
+
+
+def _collect_caption_sync_checks(plan, evidence, checks, findings, gaps) -> None:
+    if not (hasattr(plan, "timeline") and plan.timeline and getattr(plan.timeline, "subtitles", None)):
+        return
+    media = evidence.media or {}
+    probe_error = media.get("caption_sync_error")
+    if probe_error:
+        gaps.append(f"caption sync measurement failed: {probe_error}")
+        return
+    drift = media.get("caption_sync_drift_ms")
+    if drift is None:
+        return
+    checks.append(CHECK_CAPTION_SYNC)
+    drift_ms = int(round(float(drift)))
+    if drift_ms > 500:
+        findings.append(_finding(
+            "caption-sync-drift", CHECK_CAPTION_SYNC, WARNING,
+            f"Caption sync drift of {drift_ms}ms exceeds 500ms threshold",
+        ))
 
 
 def _collect_plan_advisories(plan, checks, findings) -> None:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..domain.contracts import Asset, AssetKind, RenderJob, UsageEntry, Video, VideoStatus
 from ..domain.effective_config import ConfigSource, EffectiveConfig
+from ..domain.publish import srt_to_vtt
 from ..domain.qa_report import QaReport
 from ..domain.render import MAX_SECONDS, NARRATION_FILE, Cue, make_cues, scene_length, split_chunks, to_srt
 from ..domain.render_cache import NodeId, narration_fingerprint
@@ -355,7 +356,9 @@ class RunRender:
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
                           disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id,
                           style=style,
-                          config_snapshot=(config_snapshot_for(config) if config is not None else None))
+                          config_snapshot=(config_snapshot_for(config) if config is not None else None),
+                          creative_brief=video.creative_brief,
+                          cancel_check=lambda: not self.jobs.alive(job.id))
         mp4 = renderer.render(spec, work / "final.mp4")
         # A identidade do render nasce antes do QA: é o mesmo checksum que a publicação reutiliza
         # (o asset de saída), então o relatório já sai vinculado à versão que será aprovada.
@@ -402,8 +405,51 @@ class GetRender:
         return self.jobs.latest(video_id), video.qa_report
 
 
+_SUBTITLE_MEDIA_TYPES: dict[str, str] = {
+    "srt": "text/plain; charset=utf-8",
+    "vtt": "text/vtt; charset=utf-8",
+    "ass": "text/plain; charset=utf-8",
+}
+
+
+class ExportSubtitles:
+    """Exporta legendas (SRT/VTT/ASS) a partir do RenderPlan persistido, com fallback legado em disco."""
+
+    def __init__(
+        self,
+        videos: VideoRepository,
+        plans: RenderPlanRepository | None,
+        file: GetRenderFile,
+        exporter: Callable[[object, str], str] | None = None,
+    ):
+        self.videos, self.plans, self.file, self.exporter = videos, plans, file, exporter
+
+    def execute(self, video_id: str, fmt: str = "srt") -> tuple[str, str] | None:
+        normalized = fmt.strip().lower()
+        if normalized not in _SUBTITLE_MEDIA_TYPES:
+            raise ValueError(f"unsupported subtitle format: {fmt!r}")
+        video = _require_video(self.videos, video_id)
+        if video.status not in GetRenderFile.SERVABLE:
+            return None
+        if self.plans is not None and self.exporter is not None:
+            plan = self.plans.latest_plan(f"plan:{video_id}")
+            if plan is not None and plan.timeline and plan.timeline.subtitles:
+                return self.exporter(plan, normalized), _SUBTITLE_MEDIA_TYPES[normalized]
+        # Fallback retrocompatível para renders legados sem RenderPlan persistido
+        path = self.file.execute(video_id, "srt")
+        if path is None:
+            return None
+        srt_text = path.read_text(encoding="utf-8")
+        if normalized == "srt":
+            return srt_text, _SUBTITLE_MEDIA_TYPES["srt"]
+        if normalized == "vtt":
+            return srt_to_vtt(srt_text), _SUBTITLE_MEDIA_TYPES["vtt"]
+        return None
+
+
 @dataclass(frozen=True)
 class Rendering:
     start: StartRender
     get: GetRender
     file: GetRenderFile
+    subtitles: ExportSubtitles | None = None

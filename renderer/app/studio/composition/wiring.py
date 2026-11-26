@@ -56,6 +56,8 @@ from ..adapters.provider_probes import HttpReachableProbe, LocalProviderProbe
 from ..adapters.youtube_trends import fetch_popular_trends, fetch_youtube_trends
 from ..adapters.postgres.media_repo import PostgresAssetRepository, PostgresProductionLock
 from ..adapters.thumbnail import PillowThumbnail
+from ..adapters.captions_exporters import export_captions_from_plan
+from ..adapters.license_mapping import normalize_vendor_license
 from ..adapters.qa_ffmpeg import FfmpegQa
 from ..adapters.quality_ffmpeg import FfmpegOverlayVerifier, FfmpegQualityEvaluator, FfmpegQualityProbe
 from ..adapters.quality_semantic import NotVerifiedSemanticChecker
@@ -112,7 +114,7 @@ from ..application.youtube_oauth import (BeginConsent, CompleteConsent, EnsureAc
 from ..application.connections import (BeginAccountConsent, CompleteAccountConsent, LinkStudioChannel,
                                       ListConnections, RevokeAuthorization, Unlink)
 from ..domain.youtube_oauth import OAuthConfigurationError
-from ..application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
+from ..application.render import ExportSubtitles, GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from ..application.scene_narration import RegenerateSceneNarration, SceneNarration
 from ..application.render_cache import PlanRegeneration
 from ..application.media import (AssetFile, GetSceneTiming, ImportExternalMedia, ListAssets, ListSceneCandidates, Media,
@@ -583,7 +585,8 @@ class Studio:
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.
-        plan_regeneration = PlanRegeneration(PostgresRenderPlanRepository(connect))
+        plan_repo = PostgresRenderPlanRepository(connect)
+        plan_regeneration = PlanRegeneration(plan_repo)
         files = FileRenderStorage(s.storage_root)
         # Restrição: um processo só. Job QUEUED/RUNNING de um processo anterior não vai terminar: vira FAILED e `work/` é limpo
         # (retomada fina: P06). Com várias réplicas isto derrubaria jobs vivos de outro processo.
@@ -608,7 +611,7 @@ class Studio:
                                                                   lambda project_id: provider_for("voice", project_id),
                                                                   self._build_provider),
                          renderer_for=lambda project_id: provider_for("renderer", project_id), quality=self._quality_evaluator, steps=steps,
-                         paid=paid_guard, plans=PostgresRenderPlanRepository(connect),
+                         paid=paid_guard, plans=plan_repo,
                          style_for=lambda video: _style_for_video(video, channel_repo, style_repo),
                          # F03.T03: no run existente vale o snapshot; no render avulso a config é
                          # resolvida UMA vez no início e alimenta voz e plano.
@@ -662,8 +665,13 @@ class Studio:
             list_revisions=ListScriptRevisions(repo, scripts),
             get_revision=GetScriptRevision(repo, scripts),
             creative_director=creative_director)
-        rendering = Rendering(start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
-                              get=GetRender(repo, jobs), file=GetRenderFile(repo, jobs, files))
+        render_file = GetRenderFile(repo, jobs, files)
+        rendering = Rendering(
+            start=StartRender(repo, scripts, assets, jobs, enqueue=lambda job_id: self._executor.submit(run.execute, job_id)),
+            get=GetRender(repo, jobs),
+            file=render_file,
+            subtitles=ExportSubtitles(repo, plan_repo, render_file, export_captions_from_plan),
+        )
         approvals, pubs = PostgresApprovalRepository(connect), PostgresPublicationRepository(connect)
         # Achado 1: a porta da intenção pede `get()` e a de aprovação também — um objeto só não
         # serve às duas. Sem este adaptador, o gate de publicação lia um `Approval` (sem `render_id`)
@@ -705,12 +713,15 @@ class Studio:
         publish = RunPublication(repo, scripts, assets, jobs, snaps, approvals, intents, pubs, files, uploader, tokens,
                                  channels=channel_repo,
                                  authorizations=channel_authorizations,
-                                 enabled=s.publication_enabled)
+                                 enabled=s.publication_enabled,
+                                 license_normalizer=normalize_vendor_license)
         reconcile = ReconcilePublication(repo, pubs, uploader, tokens)
         publishing = Publishing(
-            approve=Approve(repo, scripts, approvals), reject=Reject(repo, approvals),
+            approve=Approve(repo, scripts, approvals, assets=assets, license_normalizer=normalize_vendor_license),
+            reject=Reject(repo, approvals),
             claim=ClaimPublication(repo, scripts, assets, jobs, snaps, pubs, files,
-                                   approvals=approvals, intents=intents, channels=channel_repo),
+                                   approvals=approvals, intents=intents, channels=channel_repo,
+                                   license_normalizer=normalize_vendor_license),
             set_uri=SetUploadUri(pubs), uploaded=MarkUploaded(pubs),
             failed=MarkFailed(pubs), thumbnail_set=MarkThumbnail(pubs), retry=RetryPublication(repo, pubs), get=GetPublication(repo, pubs),
             thumbnail=GetThumbnail(repo, scripts, assets, files, PillowThumbnail()),
@@ -737,7 +748,8 @@ class Studio:
         handlers = build_stage_handlers(editorial=editorial, media=media, start_render=coordinator_start,
                                         run_render=run, videos=repo, jobs=jobs, assets=assets, approvals=approvals,
                                         publish=publish, research=auto_research,
-                                        reconcile=reconcile, publications=pubs)
+                                        reconcile=reconcile, publications=pubs,
+                                        plans=plan_repo)
         # Piso medido do gasto mensal (não é previsão): só com o guard hard ligado o modo guardado
         # pode dispensar a pausa intermediária.
         # F01.T03: piso medido no ESCOPO DO CANAL (não no gasto global) e com o teto das settings

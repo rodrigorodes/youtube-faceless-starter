@@ -278,13 +278,13 @@ class PostgresVideoRepository:
 
     def update_video_creative_brief(self, video_id: str, brief_dict: dict) -> None:
         with _translated():
-            with self._connect() as conn, conn.cursor() as cur:
+            with self._connect() as conn, conn.transaction(), conn.cursor() as cur:
                 cur.execute("UPDATE studio.videos SET creative_brief = %s, updated_at = NOW() WHERE id = %s",
                             (psycopg.types.json.Jsonb(brief_dict), check_id(video_id)))
 
     def update_video_pacing_preset(self, video_id: str, preset: str) -> None:
         with _translated():
-            with self._connect() as conn, conn.cursor() as cur:
+            with self._connect() as conn, conn.transaction(), conn.cursor() as cur:
                 cur.execute("UPDATE studio.videos SET pacing_preset = %s, updated_at = NOW() WHERE id = %s",
                             (preset, check_id(video_id)))
 

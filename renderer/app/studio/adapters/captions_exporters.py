@@ -10,6 +10,7 @@ __all__ = [
     "SrtSubtitleRenderer",
     "VttSubtitleRenderer",
     "export_captions",
+    "export_captions_from_plan",
 ]
 
 
@@ -89,3 +90,36 @@ def export_captions(
         return VttSubtitleRenderer.render(lines=lines)
     else:
         raise ValueError(f"Unsupported caption export format: {format_type!r}")
+
+
+def export_captions_from_plan(
+    plan: object,
+    format_type: Literal["ass", "srt", "vtt"] = "srt",
+    style_kind: str = "highlight",
+    style: CaptionStyleConfig | None = None,
+) -> str:
+    """Exporta legendas diretamente a partir dos cues do RenderPlan para SRT, WebVTT ou ASS."""
+    caption_lines: list[CaptionLine] = []
+    timeline = getattr(plan, "timeline", None)
+    if timeline and getattr(timeline, "subtitles", None):
+        tps = timeline.ticks_per_second or 1000
+        for cue in timeline.subtitles:
+            start_ms = int(round(cue.start_tick / tps * 1000))
+            dur_ms = int(round(cue.duration_ticks / tps * 1000))
+            caption_lines.append(
+                CaptionLine(
+                    start_ms=start_ms,
+                    end_ms=start_ms + dur_ms,
+                    text=cue.text,
+                    words=(),
+                )
+            )
+    out = getattr(plan, "output", None)
+    video_format = getattr(out, "format", "short")
+    return export_captions(
+        caption_lines,
+        format_type=format_type,
+        video_format=video_format,
+        style_kind=style_kind,
+        style=style,
+    )

@@ -49,12 +49,65 @@ from ..domain.asset_resolver import IMAGE_CODECS, VIDEO_CODECS, AssetDescriptor
 from ..domain.audio_catalog import AudioCatalog
 from ..domain.audio_multitrack import MultitrackAudioPlan
 from ..domain.contracts import VideoFormat
+from ..domain.pacing import PacingPreset
 from ..domain.render import LEAD, SIZE, TAIL
 from ..domain.render_cache import CacheEntry, NodeId, PlanArtifact, plan_graph
+from ..domain.render_engine import RenderProgress, RenderProgressStage, evaluate_preflight
 from ..domain.render_plan import AssetReference, Motion, RenderPlan, StyleSnapshot
 from ..domain.render_plan_builder import DEFAULT_MUSIC_PARAMS, StoryboardOverlay, StoryboardScene, build_render_plan
 from ..domain.visual_style import ResolvedStyle
 from .render_plan_compiler import CompiledRender, compile_multitrack_audio_args, compile_render_plan
+
+
+class RenderCancelledError(RuntimeError):
+    """Lançada quando o cancelamento cooperativo interrompe a execução entre segmentos."""
+
+
+def _brief_render_hints(
+    creative_brief: Mapping[str, object] | object | None,
+) -> tuple[PacingPreset | None, tuple[Motion, ...] | None, dict[str, str | int | float | bool]]:
+    """Traduz o CreativeBrief persistido em dicas determinísticas de plano (pacing/motion/music).
+
+    Não altera a identidade congelada (`EffectiveConfig` / `config_snapshot`).
+    """
+    if creative_brief is None:
+        return None, None, {}
+    if isinstance(creative_brief, Mapping):
+        raw_pacing = str(creative_brief.get("pacing") or "").strip().lower()
+        raw_visual = str(creative_brief.get("visual_direction") or "").strip().lower()
+        raw_tone = str(creative_brief.get("tone") or "").strip()
+    else:
+        raw_pacing = str(getattr(creative_brief, "pacing", "") or "").strip().lower()
+        raw_visual = str(getattr(creative_brief, "visual_direction", "") or "").strip().lower()
+        raw_tone = str(getattr(creative_brief, "tone", "") or "").strip()
+
+    pacing_preset: PacingPreset | None = None
+    motion_cycle: tuple[Motion, ...] | None = None
+    music_hints: dict[str, str | int | float | bool] = {}
+
+    if any(k in raw_pacing for k in ("dynamic", "fast", "dinâm", "dinam", "rápid", "rapid")):
+        pacing_preset = PacingPreset.dynamic
+        motion_cycle = ("zoom_in", "pan_right", "zoom_out", "pan_left")
+        music_hints["bpm"] = 132
+        music_hints["creative_brief_pacing"] = "dynamic"
+    elif any(k in raw_pacing for k in ("cinematic", "slow", "cinemat", "lent", "calm")):
+        pacing_preset = PacingPreset.cinematic
+        motion_cycle = ("zoom_in", "zoom_out")
+        music_hints["bpm"] = 106
+        music_hints["creative_brief_pacing"] = "cinematic"
+    elif any(k in raw_pacing for k in ("balanced", "moderate", "moderad", "equilibr")):
+        pacing_preset = PacingPreset.balanced
+        motion_cycle = ("zoom_in", "pan_right", "zoom_out")
+        music_hints["bpm"] = 120
+        music_hints["creative_brief_pacing"] = "balanced"
+
+    if any(k in raw_visual for k in ("estátic", "estatic", "static", "sem movimento")):
+        motion_cycle = ("none",)
+
+    if raw_tone:
+        music_hints["creative_brief_tone"] = raw_tone[:64]
+
+    return pacing_preset, motion_cycle, music_hints
 
 FONT, FONT_BOLD = rich.FONT, rich.FONT_BOLD
 # Bundle neutro usado **apenas quando o vídeo não tem canal/estilo a referenciar** (RP-016):
@@ -385,7 +438,7 @@ class PlanFfmpegRenderer:
         self._regeneration = PlanRegeneration(plans) if plans is not None else None
 
     def render(self, spec: RenderSpec, out_path: Path) -> Path:
-        """Rota de produção: decide o reúso, executa só o que falta e registra os artefatos.
+        """Rota de produção: preflight, decide o reúso, executa só o que falta e registra os artefatos.
 
         Cada render é uma **revisão** nova do plano lógico (``revision + 1``): é isso que dá ao
         ``PlanRegeneration`` a revisão anterior para comparar por fingerprint. Sem repositório,
@@ -393,6 +446,7 @@ class PlanFfmpegRenderer:
         """
         plan = self._plan_for_render(spec)
         compiled, labels = self._compile(plan, spec)
+        self._preflight(plan, spec, Path(out_path))
         reuse = self._reuse_hits(plan, labels)
         out = self.execute(
             compiled,
@@ -402,9 +456,37 @@ class PlanFfmpegRenderer:
             style=spec.style,
             multitrack=spec.multitrack,
             audio_catalog=spec.audio_catalog,
+            cancel_check=spec.cancel_check,
+            on_progress=spec.on_progress,
         )
         self._record(plan, compiled, labels, reuse, skip_final=spec.multitrack is not None)
         return out
+
+    def _preflight(self, plan: RenderPlan, spec: RenderSpec, out_path: Path) -> None:
+        """Preflight real de assets + espaço em disco antes de acionar FFmpeg (REC-03.03b)."""
+        if spec.on_progress is not None:
+            spec.on_progress(RenderProgress(
+                stage=RenderProgressStage.PREFLIGHT,
+                completed_segments=0,
+                total_segments=len(plan.timeline.scenes),
+                percent=0.0,
+                message="validating render plan and disk space",
+            ))
+        available_ids = [
+            ref.asset_id for ref in plan.asset_manifest
+            if ref.uri and Path(ref.uri).is_file()
+        ]
+        probe_dir = Path(spec.work_dir) if spec.work_dir is not None else out_path.parent
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        disk_free_mb = shutil.disk_usage(probe_dir).free / (1024 * 1024)
+        report = evaluate_preflight(
+            plan,
+            available_asset_keys=available_ids,
+            disk_free_mb=disk_free_mb,
+            required_free_mb=20.0,
+        )
+        if not report.is_valid:
+            raise RuntimeError("render preflight failed: " + "; ".join(report.errors))
 
     def qa_inputs(self, spec: RenderSpec) -> RenderQaInputs:
         """Plano lógico + descriptors resolvidos — a entrada do QA versionado (F6).
@@ -603,9 +685,23 @@ class PlanFfmpegRenderer:
                 position_y=layer.position_y,
             ))
         manifest = list(manifest_by_id.values())
-        # VS-03: o motion do estilo (ciclo de câmera) sobrepõe o ciclo default da instância
-        # quando o estilo o declara; sem estilo (ou sem motion), mantém-se ``self.cycle``.
-        cycle = spec.style.motion if (spec.style is not None and spec.style.motion) else self.cycle
+        # VS-03 + REC-03.03a: estilo explícito vence; quando não declarado no estilo, o CreativeBrief
+        # orienta pacing, ciclo de movimento e parâmetros musicais preservando config_snapshot congelado.
+        brief_pacing, brief_motion, brief_music = _brief_render_hints(spec.creative_brief)
+        if spec.style is not None and spec.style.motion:
+            cycle = spec.style.motion
+        elif brief_motion is not None:
+            cycle = brief_motion
+        else:
+            cycle = self.cycle
+        music_params: dict | None = None
+        if spec.style is not None and spec.style.music:
+            music_params = dict(spec.style.music)
+            if brief_music:
+                for k, v in brief_music.items():
+                    music_params.setdefault(k, v)
+        elif brief_music:
+            music_params = {**DEFAULT_MUSIC_PARAMS, **brief_music}
         return build_render_plan(
             plan_id=f"plan:{video_id}",
             revision=1,
@@ -619,9 +715,10 @@ class PlanFfmpegRenderer:
             disclosure=spec.disclosure,
             music=spec.music,
             motions=self._motions([row.id for row in rows], cycle),
-            music_params=(spec.style.music if spec.style is not None else None),
+            music_params=music_params,
             config_snapshot=spec.config_snapshot,
             overlays=overlays,
+            pacing_preset=brief_pacing,
         )
 
     def _motions(self, scene_ids: list[str], cycle: tuple[Motion, ...] | None = None) -> dict[str, Motion]:
@@ -695,7 +792,9 @@ class PlanFfmpegRenderer:
                 reuse: Mapping[NodeId, Path] | None = None,
                 style: ResolvedStyle | None = None,
                 multitrack: MultitrackAudioPlan | None = None,
-                audio_catalog: AudioCatalog | None = None) -> Path:
+                audio_catalog: AudioCatalog | None = None,
+                cancel_check=None,
+                on_progress=None) -> Path:
         """Materializa overlays, monta áudio, roda FFmpeg e publica de forma atômica.
 
         ``reuse`` mapeia nó lógico → artefato físico já existente (RP-06b). Um shot/narração/
@@ -706,13 +805,30 @@ class PlanFfmpegRenderer:
         ``style`` (VS-04) entra só na materialização dos overlays: legenda (geometria) e selo
         (cor). ``None`` = sem estilo resolvido ⇒ layout/cores default de sempre.
         """
+        def _emit(stage: RenderProgressStage, done: int, total: int, pct: float, msg: str) -> None:
+            if on_progress is not None:
+                on_progress(RenderProgress(
+                    stage=stage, completed_segments=done, total_segments=total,
+                    percent=round(pct, 1), message=msg,
+                ))
+
+        def _check_cancel(done: int, total: int) -> None:
+            if cancel_check is not None and cancel_check():
+                _emit(RenderProgressStage.CANCELLED, done, total, (done / max(1, total)) * 100.0,
+                      "render cancelled cooperatively")
+                raise RenderCancelledError("render was cancelled cooperatively between segments")
+
         # VE-02: as camadas de imagem já vêm no ``filter_complex``/``args`` de cada segmento
         # base (compilador puro); o executor só roda o comando. Áudio, concat e duração do
         # vídeo não mudam — o overlay é só visual.
         reuse = reuse or {}
+        total_shots = len(compiled.shots)
+        _check_cancel(0, total_shots)
         final_node = NodeId("final", "video")
         if final_node in reuse and multitrack is None:  # nada mudou: o MP4 final já existe como artefato físico
-            return self._publish(Path(reuse[final_node]), Path(out_path))
+            published = self._publish(Path(reuse[final_node]), Path(out_path))
+            _emit(RenderProgressStage.COMPLETED, total_shots, total_shots, 100.0, "reused final artifact from cache")
+            return published
         mt_args: tuple[str, ...] | None = None
         if multitrack is not None:
             video_codec_args: tuple[str, ...] = ("-c:v", "copy")
@@ -751,21 +867,33 @@ class PlanFfmpegRenderer:
                 self._write_music(compiled)
         total_seconds = compiled.total_ticks / compiled.ticks_per_second
         timeout = int(self.timeout_floor + 3 * total_seconds)
-        for shot in compiled.shots:
+        for idx, shot in enumerate(compiled.shots):
+            _check_cancel(idx, total_shots)
             cached = reuse.get(NodeId("visual", shot.shot_id))
             if cached is not None:  # cena não impactada: segmento de vídeo vem do cache
                 Path(shot.output).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(cached, shot.output)
+                msg = f"reused cached shot {shot.shot_id}"
             else:
                 self._run(list(shot.args), timeout)
+                msg = f"rendered shot {shot.shot_id}"
+            done = idx + 1
+            _emit(RenderProgressStage.RENDERING_SEGMENTS, done, total_shots,
+                  (done / max(1, total_shots)) * 75.0, msg)
+        _check_cancel(total_shots, total_shots)
+        _emit(RenderProgressStage.CONCATENATING, total_shots, total_shots, 80.0, "concatenating segments")
         if NodeId("concat", "video") in reuse:
             shutil.copyfile(reuse[NodeId("concat", "video")], compiled.concat.output)
         else:
             Path(compiled.concat.manifest_path).write_text(
                 "".join(f"file '{Path(shot.output).as_posix()}'\n" for shot in compiled.shots), encoding="utf-8")
             self._run(list(compiled.concat.args), timeout)
+        _check_cancel(total_shots, total_shots)
+        _emit(RenderProgressStage.MIXING_AUDIO, total_shots, total_shots, 90.0, "mixing final audio")
         self._run(list(mt_args if mt_args is not None else compiled.audio.args), timeout)
-        return self._publish(Path(compiled.final_output), Path(out_path))
+        published = self._publish(Path(compiled.final_output), Path(out_path))
+        _emit(RenderProgressStage.COMPLETED, total_shots, total_shots, 100.0, "render complete")
+        return published
 
     def _materialize(self, compiled: CompiledRender, fmt: VideoFormat,
                      style: ResolvedStyle | None = None) -> None:
