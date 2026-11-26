@@ -3,7 +3,7 @@
 **Last Updated (UTC):** `2026-11-26` (retomada OpenCode)  
 **Branch:** `develop` | **HEAD:** `3ca1f8512eb4681b97c4e5ecf3ee9ba61fae95b8` (+ commit `REC-03.01–02` desta entrada) | **Reopening Base:** `72438e9ea215bbec12bd350d8c2606ca62bc7d94`  
 **Observed `main` SHA:** `42700cb331165a68455173a91c463d4733292cfd` (strictly untouched)  
-**Campaign Status:** `IN_PROGRESS` (Waves `REC-00`, `REC-01`, `REC-02` `VERIFIED`; `REC-03.01–03` `VERIFIED` (9.290 / 9.355 / 9.44, review independente Neon High via `github-copilot`); próximo: Wave `REC-04`)  
+**Campaign Status:** `IN_PROGRESS` (Waves `REC-00`, `REC-01`, `REC-02` `VERIFIED`; `REC-03.01–03` `VERIFIED` (9.290 / 9.355 / 9.44, review independente Neon High via `github-copilot`); `REC-04.01` `VERIFIED` técnico (9.345); próximo: `REC-04.02`)  
 **Merge / Publication Status:** `NO-GO` / `BLOCKED` (`STUDIO_PUBLICATION_ENABLED=0`, `$0.00` external API spend)
 
 ---
@@ -39,8 +39,8 @@
 | `REC-03.01` | REC-03 | P1 | `REC-02.01–05` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` / `Neon High` | `VERIFIED` | **REC-03.01 = 9.290/10 (min 9.1); REC-03.02 = 9.355/10 (min 9.2)** — Round 1 (6.85/6.55) e Round 2 (7.475/7.75) REJECTED; Round 3 APPROVED (`evidence/rec-03/rec-03-01-02-independent-review-neon-high-round3.md`) | Closed & committed on `develop` |
 | `REC-03.02` | REC-03 | P1 | `REC-03.01` | `Gemini 3.8 Flash (High)` | `Gemini 4 Carbon (High)` / `Neon High` | `VERIFIED` | **REC-03.01 = 9.290/10 (min 9.1); REC-03.02 = 9.355/10 (min 9.2)** — Round 1 (6.85/6.55) e Round 2 (7.475/7.75) REJECTED; Round 3 APPROVED (`evidence/rec-03/rec-03-01-02-independent-review-neon-high-round3.md`) | Closed & committed on `develop` |
 | `REC-03.03` | REC-03 | P1 | `REC-02.01–05` | `Hydrogen Medium` (ausente → Flash 3.8/Neon via Copilot) | `Neon High` | `VERIFIED` | **9.44/10** (min 9.2) — Round 1 REJECTED (3.95, 3 P0/6 P1); executor escalado Flash→Neon High; Round 2 APPROVED (`evidence/rec-03/rec-03-03-independent-review-neon-high-round2.md`) | Closed & committed on `develop` |
-| `REC-04.01` | REC-04 | P0 | `REC-03.01–03` | `Flash 3.8` | `Carbon High` | `PENDING` | — | Depends on Wave REC-03 |
-| `REC-04.02` | REC-04 | P0 | `REC-04.01` | `Flash 3.8` / `Carbon High` | `Carbon High` | `PENDING` | — | Depends on `REC-04.01` |
+| `REC-04.01` | REC-04 | P0 | `REC-03.01–03` | `Flash 3.8` | `Carbon High` | `VERIFIED` (técnico; audiovisual `AWAITING_HUMAN_REVIEW`) | **9.345/10** (min 9.1) — Round 1 APPROVED (`evidence/rec-04/rec-04-01-independent-review-neon-high.md`) | Closed & committed on `develop` |
+| `REC-04.02` | REC-04 | P0 | `REC-04.01` | `Flash 3.8` / `Carbon High` | `Carbon High` | `VERIFIED` (técnico; audiovisual `AWAITING_HUMAN_REVIEW`) | **9.345/10** (min 9.1) — Round 1 APPROVED (`evidence/rec-04/rec-04-01-independent-review-neon-high.md`) | Closed & committed on `develop` |
 | `REC-04.03` | REC-04 | P0 | `REC-04.02` | `Carbon High` | `Neon High` | `PENDING` | — | Depends on `REC-04.02` |
 | `REC-04.04` | REC-04 | P0 | `REC-04.03` | `Carbon High` | `Neon High` + Operator | `PENDING` | — | Depends on `REC-04.03` + Human review |
 
@@ -62,6 +62,5 @@
 ---
 
 ## 4. Checkpoints & Resume Pointer
-- **Checkpoint atual:** `REC-00`..`REC-03` `VERIFIED` e commitados em `develop`. REC-03.03 re-executado pelo reviewer: canônica `4501 passed, 26 skipped` (exit 0), host `101 passed`, Playwright `1 passed`, 4/4 mutações mortas.
-- **Próxima ação:** `REC-04.01` (slice real 60–90s via Studio), `REC-04.02`, `REC-04.03`, `REC-04.04`.
-- P2 abertos não bloqueantes: ver reviews round3 (REC-03.01–02) e round2 (REC-03.03); `ai-generated:` denylist (P2-1) e `scene_repair` None no wiring padrão (P2-2).
+- **Checkpoint atual:** `REC-00`..`REC-03` e `REC-04.01` (técnico) `VERIFIED` em `develop`. Slice 60–90s: `67.36s`, 1080p, `-16.1 LUFS`/`-1.4 dBTP`, `$0.00`, kill switch `BLOCKED`; MP4 em `storage/output/runs/rec04_slice_20261126_213537_4fa225b/rec04_01_vertical_slice.mp4` (gitignored; manifesto em `evidence/rec-04/rec-04-01/manifest.json`). Novo run do reviewer: `rec04_slice_20261126_215800_4fa225b` (`66.92s`).
+- **Próxima ação:** `REC-04.02` (documentário 5–8min pareado com V4-00). Itens a tratar antes/junto: P2-1 PiP sobrepondo selo "FATO"/disclosure de IA (`render.py:353-354`); `PRE-1` bug preexistente de legenda duplicada (Pillow + ASS) em cena de vídeo base único (`render_compiler.py:216-219`); `DEFERRED` HTTP de multitrack 3+ e `xfade` (risco/owner a formalizar na `TRACEABILITY-MATRIX.md` até `REC-04.04`).

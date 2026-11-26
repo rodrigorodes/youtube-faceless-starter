@@ -1,13 +1,13 @@
-"""Testes de Integração e Estabilização — Onda INT-06 (Piloto Audiovisual Real com FFmpeg e QA).
+"""SMOKE Test (15s Short) — Onda INT-06 (reclassificado como SMOKE em REC-04.01 / R11).
 
-Executa a jornada real observada pelo Studio com medição física no disco:
-- Renderização real via PlanFfmpegRenderer nativo
-- Síntese vocal real via Piper TTS local (pt_BR-faber-medium)
-- Avaliação de qualidade multimodal real via FfmpegQa (EBU R128, true peak, streams)
-- Medição de tempo real decorrido via time.monotonic
-- Custo de execução comprovado em $0.00 no usage_ledger (zero chamadas pagas)
-- Kill switch de publicação verificado como BLOCKED
-- Registro de hash SHA-256 e artefato para Avaliação Humana
+NOTA DE CLASSIFICAÇÃO (R11 / REC-04.01):
+Este arquivo executa um **SMOKE test** rápido de 15s (formato Short, 2 cenas demo/placeholder)
+para regressão contínua do fluxo básico do Studio com FFmpeg real, Piper local, FfmpegQa e
+kill switch BLOCKED. Ele **NÃO** substitui o vertical slice real de 60–90s
+(`tests/test_rec_04_vertical_slice.py`, REC-04.01) nem o piloto pareado de 5–8min (REC-04.02),
+e o `POST /approve` aqui exercita apenas o contrato de endpoint (NÃO é aprovação humana audiovisual).
+
+Todos os asserts originais foram preservados integralmente sem relaxamento.
 """
 from __future__ import annotations
 
@@ -73,9 +73,10 @@ def conn(dsn):
         c.close()
 
 
+@pytest.mark.smoke
 @needs_ffmpeg
-def test_int_06_real_studio_pilot_with_ffmpeg_qa_and_kill_switch(conn, dsn, tmp_path: Path):
-    """Executa a jornada completa do piloto no Studio com FFmpeg real, QA real e métricas medidas."""
+def test_int_06_smoke_15s_studio_flow_with_ffmpeg_qa_and_kill_switch(conn, dsn, tmp_path: Path):
+    """SMOKE (15s Short): executa fluxo básico do Studio com FFmpeg real, QA real e kill switch."""
     migrate(conn)
 
     storage_root = tmp_path / "storage"

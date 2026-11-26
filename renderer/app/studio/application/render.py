@@ -22,7 +22,7 @@ from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import StateConflict, _require_video
 from .errors import ServiceUnavailable
 from .observability import run_step
-from .ports import (AssetRepository, ProductionRunConfigStore, QualityEvaluator, RenderJobRepository, RenderPlanRepository,
+from .ports import (AssetRepository, OverlayLayer, ProductionRunConfigStore, QualityEvaluator, RenderJobRepository, RenderPlanRepository,
                     Renderer, RenderSpec, RenderStorage, SceneDurationStore, SceneNarrationStore, ScriptRepository,
                     VideoRepository, Voice)
 
@@ -131,6 +131,13 @@ def config_snapshot_for(config: EffectiveConfig) -> ConfigSnapshot:
                           provenance=dict(sorted(relevant.items())))
 
 
+def _scene_assets_for(scripts: ScriptRepository, scene) -> list:
+    items = list(getattr(scene, "assets", None) or ())
+    if not items and hasattr(scripts, "get_scene_assets"):
+        items = list(scripts.get_scene_assets(scene.id) or ())
+    return items
+
+
 class StartRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository,
                  jobs: RenderJobRepository, enqueue: Callable[[str], None]):
@@ -141,7 +148,21 @@ class StartRender:
         if video.status not in (VideoStatus.ASSETS_READY, VideoStatus.RENDERED):
             raise StateConflict(f"render needs state ASSETS_READY (or RENDERED to render again), got {video.status.value}")
         pairs = _scenes_with_assets(self.videos, self.scripts, self.assets, video_id)
-        payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs]], ensure_ascii=False)
+        overlay_sig = [
+            [
+                s.id,
+                [
+                    [sa.asset_id, sa.position, float(sa.start_s), float(sa.end_s), sa.role]
+                    for sa in _scene_assets_for(self.scripts, s)
+                    if sa.role == "overlay"
+                ],
+            ]
+            for s, _ in pairs
+        ]
+        if any(items for _, items in overlay_sig):
+            payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs], overlay_sig], ensure_ascii=False)
+        else:
+            payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs]], ensure_ascii=False)
         job, created = self.jobs.enqueue(video_id, hashlib.sha256(payload.encode("utf-8")).hexdigest())
         if created:
             try:
@@ -302,6 +323,38 @@ class RunRender:
             return style_from_effective_config(config)
         return self.style_for(video) if self.style_for is not None else None
 
+    def _overlay_layers(self, pairs, lengths: list[float]) -> tuple[OverlayLayer, ...]:
+        """Projeta ``scene_assets`` com ``role='overlay'`` (imagem/gráfico ou PiP vídeo) em ``OverlayLayer``."""
+        layers: list[OverlayLayer] = []
+        for (scene, _), length in zip(pairs, lengths):
+            for sa in _scene_assets_for(self.scripts, scene):
+                if getattr(sa, "role", "base") != "overlay":
+                    continue
+                ov_asset = self.assets.get(sa.asset_id)
+                if ov_asset is None:
+                    raise RenderRefused(f"overlay asset {sa.asset_id!r} on scene {scene.idx} not found")
+                if not (ov_asset.license or "").strip():
+                    raise RenderRefused(f"overlay asset {sa.asset_id!r} on scene {scene.idx} has no license")
+                start_s = max(0.0, float(sa.start_s))
+                end_s = min(float(length), float(sa.end_s))
+                if end_s <= start_s:
+                    continue
+                layers.append(OverlayLayer(
+                    scene_id=scene.id,
+                    asset_id=ov_asset.id,
+                    image=self.files.image_path(ov_asset.path),
+                    license=ov_asset.license,
+                    start_s=start_s,
+                    duration_s=end_s - start_s,
+                    z_index=max(1, int(sa.position) + 1),
+                    fit="contain",
+                    opacity=0.95,
+                    scale=0.45,
+                    position_x=0.94 if (int(sa.position) % 2 == 1) else 0.06,
+                    position_y=0.14,
+                ))
+        return tuple(layers)
+
     def _render(self, job: RenderJob, video, pairs, work, config: EffectiveConfig | None = None) -> None:
         # F03.T03: voz e estilo saem da MESMA configuração, projetada no início — nenhuma leitura
         # de canal/estilo acontece depois deste ponto (o TTS pode demorar; o snapshot não muda).
@@ -352,11 +405,13 @@ class RunRender:
             cues += make_cues(scene.narration, offset, speech)
             offset += length
         stock = any(a.provider == "stock" for _, a in pairs)
+        overlay_layers = self._overlay_layers(pairs, lengths)
         spec = RenderSpec(scenes=[s for s, _ in pairs], images=[self.files.image_path(a.path) for _, a in pairs], speech_wavs=wavs,
                           scene_seconds=lengths, cues=cues, format=video.format, music=True, work_dir=work,
                           disclosure="Imagens ilustrativas" if stock else "Ilustração gerada por IA", voice_id=voice_id,
                           style=style,
                           config_snapshot=(config_snapshot_for(config) if config is not None else None),
+                          layers=overlay_layers,
                           creative_brief=video.creative_brief,
                           cancel_check=lambda: not self.jobs.alive(job.id))
         mp4 = renderer.render(spec, work / "final.mp4")

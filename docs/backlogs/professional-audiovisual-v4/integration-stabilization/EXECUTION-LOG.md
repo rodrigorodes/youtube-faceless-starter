@@ -201,3 +201,8 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - Executor Flash 3.8 (Copilot) → Round 1 REJECTED (3.95; 3 P0: licença por substring, vendor no domain, regeneração seletiva MODEL_ONLY). Executor escalado para `github-copilot/gemini-4-neon` high (Hydrogen/Carbon indisponíveis); reviewer = sessões Neon separadas.
 - Round 2 APPROVED **9.44/10** (0 P0/P1, 2 P2): focados `37 passed`; canônica completa `4501 passed, 26 skipped` exit 0; host `101 passed`; Playwright porta 8100 `1 passed` (`down -v`); 4/4 mutações fora do repo mortas.
 - Módulos legados em memória (render_engine/asset_registry/studio_workbench) declarados DEFERRED na evidência. Custo `$0.00`; main `42700cb` intocada.
+
+## REC-04.01 (R11) — slice real 60–90s (2026-11-26, OpenCode)
+- Executor `github-copilot/gemini-4-neon` high (escalado por histórico do Flash); reviewer = sessão Neon separada. Round 1 APPROVED **9.345/10** (0 P0/P1, 4 P2 + PRE-1).
+- Slice: `67.36s` 1920x1080, `-16.1 LUFS`/`-1.4 dBTP`, Piper real, PNG+MP4 importados, overlay+PiP, regeneração seletiva 4/4 nar + 10/10 vis reusados (-42.5%), QA 10 checks 0 bloqueios, `$0.00`, kill switch BLOCKED. Reviewer re-executou: focados `12 passed`, novo run `66.92s`, canônica `4502 passed, 26 skipped`, host `101 passed`, 3/3 mutações mortas.
+- `test_int_06_pilot.py` reclassificado SMOKE sem enfraquecer asserts. Multitrack 3+/xfade na camada HTTP: DEFERRED (provados no renderer em REC-02). Aprovação audiovisual: AWAITING_HUMAN_REVIEW.

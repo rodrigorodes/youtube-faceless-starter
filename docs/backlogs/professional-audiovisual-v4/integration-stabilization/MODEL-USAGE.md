@@ -43,7 +43,9 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | `REC-03.01`–`02` | Independent Reviewer | 3 sessões separadas (`github-copilot/gemini-4-neon`, substitui Carbon ausente) | `Gemini 4 Neon (High)` | 3 | `VERIFIED` | Round 1 REJECTED (6.85/6.55, 5 P1); Round 2 REJECTED (7.475/7.75, 4 P1); Round 3 APPROVED `9.290/10` & `9.355/10` |
 | `REC-03.03` | Executor | Flash 3.8 (tentativa 1) → `github-copilot/gemini-4-neon` high (escalado; Hydrogen/Carbon ausentes) | `Gemini 3.8 Flash` / `Neon High` | 2 | `VERIFIED` | Round 1 impl (Flash) REJECTED 3.95; fixes (Neon) APPROVED 9.44 |
 | `REC-03.03` | Independent Reviewer | 2 sessões separadas `github-copilot/gemini-4-neon` | `Gemini 4 Neon (High)` | 2 | `VERIFIED` | R1 REJECTED 3.95; R2 APPROVED 9.44 |
-| `REC-04.01`–`02` | Executor / Reviewer | Planned | `Flash 3.8` / `Carbon High` | — | `PENDING` | Starts after REC-03 `VERIFIED` |
+| `REC-04.01` | Executor | `github-copilot/gemini-4-neon` high (desvio: Flash previsto) | `Gemini 4 Neon (High)` | 1 | `VERIFIED` (técnico) | slice 67.36s real via Studio |
+| `REC-04.01` | Independent Reviewer | sessão separada `github-copilot/gemini-4-neon` | `Gemini 4 Neon (High)` | 1 | `VERIFIED` | R1 APPROVED 9.345 |
+| `REC-04.02` | Executor / Reviewer | Planned | Neon High (exec) / Neon High sessão separada | — | `PENDING` | Documentário 5–8min |
 | `REC-04.03`–`04` | Executor / Reviewer | Planned | `Carbon High` / `Neon High` + Operator | — | `PENDING` | Final regression + independent review + human audiovisual review |
 
 ---

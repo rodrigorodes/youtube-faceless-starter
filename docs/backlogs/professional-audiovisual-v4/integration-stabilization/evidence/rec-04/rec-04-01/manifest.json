@@ -1,0 +1,268 @@
+{
+  "schema_version": "rec04-01-manifest/1",
+  "task_id": "REC-04.01",
+  "requirement_id": "R11",
+  "run_id": "rec04_slice_20261126_213537_4fa225b",
+  "generated_at_utc": "2026-11-26T21:36:40.394744+00:00",
+  "git": {
+    "sha": "4fa225b34853093097c40cce57b7a601ab753d2f",
+    "branch": "develop"
+  },
+  "versions": {
+    "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+    "ffprobe": "ffprobe version 7.1.5-0+deb13u1 Copyright (c) 2007-2026 the FFmpeg developers",
+    "piper": "usage: piper [-h] -m MODEL [-c CONFIG] [-i INPUT_FILE] [-f OUTPUT_FILE]",
+    "piper_voice_model": "/opt/voices/pt_BR-faber-medium.onnx"
+  },
+  "governance": {
+    "studio_publication_enabled": false,
+    "kill_switch_result": "BLOCKED",
+    "kill_switch_detail": "publication is disabled by configuration (STUDIO_PUBLICATION_ENABLED=0)",
+    "youtube_video_id": null,
+    "budget_guard_enabled": true,
+    "max_cost_usd_per_video": 0.0,
+    "max_cost_usd_per_month": 0.0,
+    "observed_api_cost_usd": 0.0,
+    "video_final_status": "AWAITING_APPROVAL",
+    "human_review_status": "AWAITING_HUMAN_REVIEW",
+    "auto_approved_in_test": false
+  },
+  "artifact": {
+    "mp4_relative_path": "storage/output/runs/rec04_slice_20261126_213537_4fa225b/rec04_01_vertical_slice.mp4",
+    "mp4_sha256": "088c11300a2b7f6737b13d2095741d3313bd27a487ff86e6876e2634ea92fcc3",
+    "mp4_bytes": 53226343,
+    "subtitles": {
+      "srt_sha256": "32bf9c33f8722e836ace5aa80e1dc9c06f48cf5e7db5323bbb205598ceea1ba1",
+      "vtt_sha256": "ae44d3c5267996682f8b5c18f7b6d6dc474c4a8770bd3d7ce8a1647ca93def2a",
+      "ass_sha256": "a7d830c07fb7c676439b3d4f5389422fd1a5bab629de7ff199d1fdae28a87022",
+      "plan_subtitle_cues": 37
+    }
+  },
+  "ffprobe": {
+    "duration_s": 67.36,
+    "bit_rate_bps": 6321418,
+    "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "r_frame_rate": "25/1",
+      "pix_fmt": "yuv420p"
+    },
+    "audio": {
+      "codec_name": "aac",
+      "sample_rate": 96000,
+      "channels": 2,
+      "bit_rate_bps": 158554
+    }
+  },
+  "qa_measured": {
+    "ffmpeg_qa": {
+      "duration_s": 67.36,
+      "width": 1920,
+      "height": 1080,
+      "has_audio": true,
+      "integrated_lufs": -16.1,
+      "silence_ratio": 0.0,
+      "black_ratio": 0.0,
+      "black_intervals": [],
+      "true_peak_dbtp": -1.4,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "frozen_ratio": 0.1455
+    },
+    "studio_qa_report": {
+      "coverage_status": "verified",
+      "is_publishable": true,
+      "checks_run": [
+        "render.media_metrics",
+        "render.true_peak",
+        "render.codec",
+        "render.frozen_frames",
+        "render.repeated_assets",
+        "render.asset_resolution",
+        "render.overlay",
+        "render.semantic",
+        "render.caption_sync",
+        "render.timeline"
+      ],
+      "blocking_findings_count": 0,
+      "findings": [
+        {
+          "finding_id": "semantic-not-verified",
+          "check_id": "render.semantic",
+          "category": "editorial",
+          "severity": "info",
+          "evidence": "no semantic/vision provider is configured; multimodal evaluation is not verified"
+        }
+      ]
+    },
+    "content_pixel_checks": {
+      "scene0_png_overlay_enter_diff": 88.56,
+      "scene0_png_overlay_exit_diff": 88.59,
+      "scene0_ken_burns_motion_diff": 8.74,
+      "scene1_mp4_pip_enter_diff": 107.92,
+      "scene1_mp4_pip_motion_diff": 134.38,
+      "scene1_mp4_pip_exit_diff": 94.01,
+      "scene2_imported_mp4_motion_diff": 144.22
+    },
+    "audio_dynamics": {
+      "speech_window_rms_pcm16": 4203.7,
+      "inter_scene_tail_bed_rms_pcm16": 2894.7,
+      "narration_scenes": [
+        {
+          "scene_idx": 0,
+          "scene_id": "fbddaa341dcd41eeb0a9b7453fe2006a",
+          "duration_s": 13.224,
+          "rms_pcm16": 3900.5,
+          "peak_pcm16": 30000
+        },
+        {
+          "scene_idx": 1,
+          "scene_id": "1dc3e23c22e44e20915b7463f1168197",
+          "duration_s": 11.714,
+          "rms_pcm16": 4639.7,
+          "peak_pcm16": 30000
+        },
+        {
+          "scene_idx": 2,
+          "scene_id": "73e1b6d931a94d1496b94cc0003429cd",
+          "duration_s": 12.469,
+          "rms_pcm16": 4170.7,
+          "peak_pcm16": 30000
+        },
+        {
+          "scene_idx": 3,
+          "scene_id": "c0b3113644564b31a93d7a0cd46c1edf",
+          "duration_s": 14.408,
+          "rms_pcm16": 3879.1,
+          "peak_pcm16": 30000
+        },
+        {
+          "scene_idx": 4,
+          "scene_id": "63a58b4075b34112b7859757efdeb9a2",
+          "duration_s": 11.494,
+          "rms_pcm16": 4007.1,
+          "peak_pcm16": 30000
+        }
+      ]
+    }
+  },
+  "selective_regeneration": {
+    "plan_revision_before": 1,
+    "plan_revision_after": 2,
+    "edited_scene_idx": 3,
+    "edited_scene_id": "c0b3113644564b31a93d7a0cd46c1edf",
+    "untouched_scenes_count": 4,
+    "reused_narration_nodes": 4,
+    "reused_visual_nodes": 10,
+    "run1_wall_s": 26.778,
+    "run2_wall_s": 15.391,
+    "time_saved_s": 11.386
+  },
+  "stage_timings_s": {
+    "setup_and_script_s": 0.343,
+    "media_import_and_overlays_s": 3.562,
+    "run1_production_coordinator_s": 26.778,
+    "subtitles_export_v1_s": 0.036,
+    "edit_scene3_s": 0.137,
+    "run2_selective_regen_s": 15.391,
+    "content_verification_s": 7.49,
+    "total_wall_s": 54.093
+  },
+  "resource_usage": {
+    "note": "Linux container getrusage: ru_maxrss in KiB (peak RSS of process / largest child)",
+    "self_utime_s": 38.257,
+    "self_stime_s": 1.929,
+    "self_maxrss_kib": 911100,
+    "children_utime_s": 160.549,
+    "children_stime_s": 11.035,
+    "children_maxrss_kib": 1535128
+  },
+  "sampled_frames": [
+    {
+      "label": "scene0_png_overlay",
+      "timestamp_s": 1.8,
+      "description": "Cena 0 com overlay PNG gráfico",
+      "file": "frames/scene0_png_overlay.png",
+      "bytes": 91202,
+      "sha256": "bf6a42b31ba5d4fdeb7e2af70d1632167494c5529e9247fd43899f2cc029698c",
+      "stats": {
+        "mean_r": 60.55,
+        "mean_g": 57.84,
+        "mean_b": 54.92,
+        "mean_luma": 58.32,
+        "std_luma": 61.85
+      }
+    },
+    {
+      "label": "scene1_mp4_pip",
+      "timestamp_s": 15.44,
+      "description": "Cena 1 com PiP vídeo MP4",
+      "file": "frames/scene1_mp4_pip.png",
+      "bytes": 70666,
+      "sha256": "ce8577dbaca6e8ad88c5ea3af2eb441a0dfae0448c98d77e7075d063a620a2c5",
+      "stats": {
+        "mean_r": 21.73,
+        "mean_g": 78.34,
+        "mean_b": 87.78,
+        "mean_luma": 62.49,
+        "std_luma": 54.81
+      }
+    },
+    {
+      "label": "scene2_imported_mp4",
+      "timestamp_s": 28.56,
+      "description": "Cena 2 com MP4 base importado",
+      "file": "frames/scene2_imported_mp4.png",
+      "bytes": 88105,
+      "sha256": "a0a325d57f1e424330cb785f80aee77cbb8099566066591f29ec80c4eae186b0",
+      "stats": {
+        "mean_r": 119.56,
+        "mean_g": 119.52,
+        "mean_b": 123.11,
+        "mean_luma": 119.94,
+        "std_luma": 42.69
+      }
+    },
+    {
+      "label": "scene3_edited_v2",
+      "timestamp_s": 42.84,
+      "description": "Cena 3 após edição e regeneração seletiva",
+      "file": "frames/scene3_edited_v2.png",
+      "bytes": 80411,
+      "sha256": "7a6f219f0430a3ec5abd3c7c6bf2f8afcdad5d519beda176acea2f6fba2749a2",
+      "stats": {
+        "mean_r": 52.08,
+        "mean_g": 27.01,
+        "mean_b": 41.64,
+        "mean_luma": 36.17,
+        "std_luma": 24.1
+      }
+    },
+    {
+      "label": "scene4_studio_generated",
+      "timestamp_s": 58.08,
+      "description": "Cena 4 gerada localmente pelo AssetsHandler",
+      "file": "frames/scene4_studio_generated.png",
+      "bytes": 19331,
+      "sha256": "efe7fac62da036bfa90c370a02f2fb8d8fb995948046457dc160a26b6333e9e0",
+      "stats": {
+        "mean_r": 85.44,
+        "mean_g": 57.45,
+        "mean_b": 116.2,
+        "mean_luma": 72.52,
+        "std_luma": 24.31
+      }
+    }
+  ],
+  "honest_limitations": [
+    "Multitrack 2 faixas (voz Piper + trilha musical sintetizada com sidechaincompress ducking e loudnorm) é real no caminho HTTP do Studio; faixas extras de ambiência/SFX via MultitrackAudioPlan/AudioCatalog ainda não têm rota HTTP/tabela no Studio (verificado no PlanFfmpegRenderer em REC-02.02).",
+    "Transições inter-shot xfade (crossfade/slide/wipe) ainda não são expostas em visual_style.TRANSITION_KINDS (atualmente aceita apenas none/fade); verificadas no PlanFfmpegRenderer em REC-02.01.",
+    "Avaliação semântica/estética multimodal permanece not_verified sem API paga; homologação audiovisual depende de revisão humana real do MP4."
+  ],
+  "commands": {
+    "generate_slice": "./scripts/run-rec04-slice.sh",
+    "pytest_container": "./scripts/test-container.sh tests/test_rec_04_vertical_slice.py -ra",
+    "watch_macos": "open storage/output/runs/rec04_slice_20261126_213537_4fa225b/rec04_01_vertical_slice.mp4"
+  }
+}
