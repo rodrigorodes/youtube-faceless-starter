@@ -29,6 +29,7 @@ class ProviderKind(str, Enum):
 
     TEXT = "text"
     IMAGE = "image"
+    VIDEO = "video"
     VOICE = "voice"
     RENDERER = "renderer"
     SEARCH = "search"
@@ -64,8 +65,11 @@ class Capability(str, Enum):
 
     TEXT_GENERATE = "text.generate"
     TEXT_JSON = "text.json"
+    TEXT_REASONING = "text.reasoning"
     IMAGE_GENERATE = "image.generate"
+    VIDEO_GENERATE = "video.generate"
     VOICE_SPEAK = "voice.speak"
+    VOICE_NEURAL = "voice.neural"
     RENDER_VIDEO = "render.video"
     SEARCH_MEDIA = "search.media"
 
@@ -73,6 +77,7 @@ class Capability(str, Enum):
 REQUIRED_CAPABILITY: Mapping[ProviderKind, Capability] = MappingProxyType({
     ProviderKind.TEXT: Capability.TEXT_GENERATE,
     ProviderKind.IMAGE: Capability.IMAGE_GENERATE,
+    ProviderKind.VIDEO: Capability.VIDEO_GENERATE,
     ProviderKind.VOICE: Capability.VOICE_SPEAK,
     ProviderKind.RENDERER: Capability.RENDER_VIDEO,
     ProviderKind.SEARCH: Capability.SEARCH_MEDIA,
@@ -141,6 +146,26 @@ class ProviderSpecInvalid(ProviderError, ValueError):
 
 class NoProviderAvailable(ProviderError, LookupError):
     """Nenhum candidato disponível satisfaz o perfil e o teto de custo."""
+
+
+class ProviderTransientError(ProviderError):
+    """Falha transitória (timeout, rede, erro 503 com retry viável)."""
+
+
+class ProviderQuotaExceeded(ProviderError):
+    """Limite de taxa (429) ou quota do provedor excedida."""
+
+
+class ProviderBudgetBlocked(ProviderError):
+    """Operação bloqueada preventivamente pelo BudgetGuard devido a teto de custo."""
+
+
+class ProviderPermanentError(ProviderError):
+    """Falha permanente (parâmetros inválidos, prompt bloqueado ou credencial rejeitada)."""
+
+
+class ProviderMissingCredential(ProviderPermanentError):
+    """Credencial necessária não configurada para o provedor."""
 
 
 def _amount(value: object) -> Decimal:
@@ -214,6 +239,17 @@ class CostEstimate:
 
 
 @dataclass(frozen=True)
+class ProviderLimits:
+    """Formatos e limites técnicos declarados por um provedor (V4-01.04)."""
+
+    max_duration_s: float | None = None
+    min_duration_s: float | None = None
+    supported_aspects: tuple[str, ...] = ("16:9", "9:16")
+    supported_formats: tuple[str, ...] = ()
+    max_chars: int | None = None
+
+
+@dataclass(frozen=True)
 class ProviderImplementation:
     """Metadados de uma implementação registrada por um adaptador (não executa nada)."""
 
@@ -226,6 +262,7 @@ class ProviderImplementation:
     validated: bool = False
     reason: str | None = None  # obrigatório quando `validated` é False
     standing: ProviderStanding | None = None  # ausente: derivado do nome canônico
+    limits: ProviderLimits = field(default_factory=ProviderLimits)
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ProviderKind):
@@ -266,6 +303,7 @@ class ProviderCard:
     availability: Availability
     reason: str | None = None
     standing: ProviderStanding | None = None  # ausente: derivado do nome canônico
+    limits: ProviderLimits = field(default_factory=ProviderLimits)
 
     def __post_init__(self) -> None:
         if self.standing is None:
@@ -315,10 +353,12 @@ def card_for(kind: ProviderKind, spec: str, implementations: object) -> Provider
         return ProviderCard(kind, spec, name, model, found.capabilities, found.cost,
                             found.rate_limit_per_min, found.quality, Availability.UNAVAILABLE,
                             found.reason or "implementation not validated",
-                            found.standing or ProviderStanding.PRODUCTION)
+                            found.standing or ProviderStanding.PRODUCTION,
+                            limits=found.limits)
     return ProviderCard(kind, spec, name, model, found.capabilities, found.cost,
                         found.rate_limit_per_min, found.quality, Availability.AVAILABLE, None,
-                        found.standing or ProviderStanding.PRODUCTION)
+                        found.standing or ProviderStanding.PRODUCTION,
+                        limits=found.limits)
 
 
 @dataclass(frozen=True)

@@ -60,6 +60,22 @@ class ImageResult:
 
 
 @dataclass(frozen=True)
+class VideoResult:
+    """Resultado normalizado de geração/materialização de vídeo (V4-01.03)."""
+
+    data: bytes
+    mime: str
+    duration_s: float
+    width: int
+    height: int
+    usage: UsageEntry
+    license: str = ""  # obrigatória: recusa vídeo sem licença declarada
+    attribution: str = ""
+    source_url: str = ""
+    provenance: str = "ai_generated"
+
+
+@dataclass(frozen=True)
 class OverlayLayer:
     """Camada de imagem sobre uma cena (VE-01): DTO de entrada, não modelo de domínio.
 
@@ -164,6 +180,16 @@ class ImageModel(Protocol):
 
 
 @runtime_checkable
+class VideoModel(Protocol):
+    """Porta para geração de clipes de vídeo e animação visual (V4-01.02)."""
+
+    name: str
+    model: str
+    def cost_estimate(self, prompt: str, *, duration_s: float = 4.0) -> float: ...
+    def generate(self, prompt: str, *, duration_s: float = 4.0, aspect: str = "16:9") -> VideoResult: ...
+
+
+@runtime_checkable
 class MediaSearch(Protocol):
     """Busca de mídia por capacidade, sem conhecer o fornecedor concreto.
 
@@ -192,6 +218,15 @@ class MediaFetcher(Protocol):
 class Voice(Protocol):
     name: str
     def speak(self, text: str, out_path: Path) -> float: ...  # devolve a duração em segundos
+
+
+@runtime_checkable
+class NeuralVoice(Voice, Protocol):
+    """Porta para síntese neural avançada com múltiplos timbres e estimativa de custo (V4-01.02)."""
+
+    model: str
+    def supported_voices(self) -> tuple[str, ...]: ...
+    def cost_estimate(self, text: str) -> float: ...
 
 
 @runtime_checkable

@@ -307,7 +307,7 @@ def test_a_legacy_document_without_a_selection_keeps_working():
 
 
 def test_the_provider_selection_refuses_unknown_capability_or_invalid_spec():
-    for selection in ({"video": "x:y"}, {"text": ""}, {"text": ":"}, {"text": 123}):
+    for selection in ({"unknown_kind": "x:y"}, {"text": ""}, {"text": ":"}, {"text": 123}):
         with pytest.raises(EffectiveConfigInvalid):
             resolve(provider_selection=selection)
 

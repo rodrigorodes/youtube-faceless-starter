@@ -1,25 +1,25 @@
 # V4-09 — Multimodal Quality
-Status: proposto. Dependências: 03,05,07,08.
+Status: concluído. Dependências: 03,05,07,08.
 
 ## Atividades
-- [ ] V4-09.01 — Evoluir QaReport. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.02 — FFprobe. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.03 — Frames pretos congelados. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.04 — Repetição. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.05 — Enquadramento. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.06 — Clipping loudness. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.07 — Silêncio. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.08 — Sync legenda. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.09 — Amostragem frames. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.10 — Provider multimodal. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.11 — Roteiro versus imagem. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.12 — Consistência visual. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.13 — Ritmo editorial. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.14 — Severidade. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.15 — Sugestões estruturadas. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.16 — Regeneração seletiva. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.17 — Limites de correção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-09.18 — Aprovação humana. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.01 — Evoluir QaReport. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.02 — FFprobe. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.03 — Frames pretos congelados. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.04 — Repetição. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.05 — Enquadramento. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.06 — Clipping loudness. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.07 — Silêncio. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.08 — Sync legenda. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.09 — Amostragem frames. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.10 — Provider multimodal. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.11 — Roteiro versus imagem. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.12 — Consistência visual. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.13 — Ritmo editorial. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.14 — Severidade. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.15 — Sugestões estruturadas. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.16 — Regeneração seletiva. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.17 — Limites de correção. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-09.18 — Aprovação humana. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
 
 ## Aceite
 Fixtures com defeitos conhecidos; relatório com evidência e localização; avaliação humana calibrada; sem autopublicação.

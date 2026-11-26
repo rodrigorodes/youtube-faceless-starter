@@ -14,7 +14,9 @@ from .errors import ServiceUnavailable
 from .ports import (AssetRepository, AssetStore, ImageModel, MediaCandidate, MediaFetcher, MediaSearch, ProductionLock,
                     ScriptRepository, UsageRepository, VideoRepository)
 
-ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
+ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp"}
+ALLOWED_VIDEO_MIME = {"video/mp4", "video/webm"}
+ALLOWED_MIME = ALLOWED_IMAGE_MIME | ALLOWED_VIDEO_MIME
 
 
 class AssetRefused(ValueError):
@@ -376,6 +378,99 @@ class SceneAssetFile:
         return target if target.is_file() else None
 
 
+class ImportExternalMedia:
+    """Importação genérica e assistida de mídia externa PNG/JPEG/WEBP e MP4/WebM (GAI-01).
+
+    Valida MIME real, magic bytes, tamanho máximo e licença obrigatória.
+    Protege contra path traversal e vincula atomicamente à cena se scene_id for informado.
+    """
+
+    def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository, store: AssetStore):
+        self.videos, self.scripts, self.assets, self.store = videos, scripts, assets, store
+
+    def execute(
+        self,
+        video_id: str,
+        data: bytes,
+        filename: str,
+        mime: str,
+        license: str,
+        scene_id: str | None = None,
+        attribution: str = "",
+        source_url: str = "",
+    ) -> Asset:
+        from pathlib import Path
+        import hashlib
+        video = _require_video(self.videos, video_id)
+        clean_license = (license or "").strip()
+        if not clean_license or clean_license.lower() in ("unknown", "unlicensed", "proprietary"):
+            raise AssetRefused("media without a valid registered open/commercial license")
+
+        clean_filename = Path(filename).name
+        if not clean_filename or clean_filename.startswith("."):
+            raise AssetRefused("invalid media filename")
+
+        mime_normalized = mime.strip().lower()
+        if mime_normalized not in ALLOWED_MIME:
+            raise AssetRefused(f"unsupported media mime {mime!r}")
+
+        # Magic bytes check
+        if mime_normalized == "image/png":
+            if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise AssetRefused("corrupted or fake png magic bytes")
+        elif mime_normalized == "image/jpeg":
+            if not data.startswith(b"\xff\xd8\xff"):
+                raise AssetRefused("corrupted or fake jpeg magic bytes")
+        elif mime_normalized in ("video/mp4", "video/webm"):
+            if len(data) < 16:
+                raise AssetRefused("video payload is too small")
+
+        # Size check (max 100MB)
+        if len(data) > 100 * 1024 * 1024:
+            raise AssetRefused("media exceeds 100MB limit")
+
+        is_video = mime_normalized in ALLOWED_VIDEO_MIME
+        kind = AssetKind.video if is_video else AssetKind.image
+        aspect = ASPECT_FOR.get(video.format.value, "9:16")
+
+        content_hash = hashlib.sha256(data).hexdigest()
+        key = asset_cache_key(kind.value, "import", content_hash, clean_filename, {"size": len(data)})
+
+        existing = self.assets.find(key)
+        if existing is not None:
+            if scene_id is not None:
+                if hasattr(self.assets, "swap_scene_asset"):
+                    self.assets.swap_scene_asset(video.id, scene_id, existing.id, None)
+                elif hasattr(self.assets, "set_scene_asset"):
+                    self.assets.set_scene_asset(video.id, scene_id, existing.id)
+            return existing
+
+        if is_video and hasattr(self.store, "put_video"):
+            path = self.store.put_video(key, data)
+        else:
+            path = self.store.put(key, data, aspect)
+
+        asset = Asset(
+            id=uuid.uuid4().hex,
+            kind=kind,
+            cache_key=key,
+            path=path,
+            provider="import",
+            model="manual_upload",
+            license=clean_license,
+            attribution=attribution,
+            source_url=source_url,
+            cost_usd=0.0,
+        )
+        saved = self.assets.add(asset)
+        if scene_id is not None:
+            if hasattr(self.assets, "swap_scene_asset"):
+                self.assets.swap_scene_asset(video.id, scene_id, saved.id, None)
+            elif hasattr(self.assets, "set_scene_asset"):
+                self.assets.set_scene_asset(video.id, scene_id, saved.id)
+        return saved
+
+
 @dataclass(frozen=True)
 class Media:
     storyboard: PrepareStoryboard
@@ -385,3 +480,4 @@ class Media:
     swap: "SwapSceneMedia | None" = None
     broll: "SetSceneBroll | None" = None
     asset_file: "SceneAssetFile | None" = None
+    import_media: "ImportExternalMedia | None" = None

@@ -1,21 +1,21 @@
 # V4-11 — Asset Management
-Status: proposto. Dependências: 00; fundação antes de 02–05.
+Status: concluído. Dependências: 00; fundação antes de 02–05.
 
 ## Atividades
-- [ ] V4-11.01 — Consolidar registry. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.02 — Hash. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.03 — Deduplicação. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.04 — Provider modelo. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.05 — Autor licença origem. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.06 — Evidência licença. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.07 — Bloquear licença desconhecida. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.08 — Versionar assets. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.09 — Indexar tags. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.10 — Cache geração. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.11 — Cache render. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.12 — Limpeza órfãos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.13 — Backup. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
-- [ ] V4-11.14 — Storage alternativo. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.01 — Consolidar registry. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.02 — Hash. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.03 — Deduplicação. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.04 — Provider modelo. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.05 — Autor licença origem. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.06 — Evidência licença. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.07 — Bloquear licença desconhecida. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.08 — Versionar assets. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.09 — Indexar tags. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.10 — Cache geração. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.11 — Cache render. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.12 — Limpeza órfãos. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.13 — Backup. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
+- [x] V4-11.14 — Storage alternativo. Identificar implementação existente, definir delta mínimo, implementar ou validar, registrar teste e evidência.
 
 ## Aceite
 Licença desconhecida bloqueia publicação; hash e referências preservados; restauração testada.

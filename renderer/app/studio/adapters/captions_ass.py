@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from app.studio.domain.captions import CaptionLine
+from app.studio.domain.captions import CaptionLine, CaptionStyleConfig
 from app.studio.domain.contracts import VideoFormat
 
 __all__ = [
@@ -31,6 +31,7 @@ class AssSubtitleRenderer:
         lines: list[CaptionLine] | Sequence[CaptionLine],
         format: VideoFormat | str = "short",
         style_kind: str = "highlight",
+        style: CaptionStyleConfig | None = None,
     ) -> str:
         """Gera o conteúdo textual completo de um arquivo .ass com estilos e safe margins."""
         is_short = False
@@ -41,12 +42,25 @@ class AssSubtitleRenderer:
 
         if is_short:
             play_res_x, play_res_y = 1080, 1920
-            margin_v = 280
-            font_size = 64
+            default_margin_v = 280
+            default_font_size = 64
         else:
             play_res_x, play_res_y = 1920, 1080
-            margin_v = 60
-            font_size = 48
+            default_margin_v = 60
+            default_font_size = 48
+
+        font_name = style.font_name if style else "Arial"
+        font_size = (style.font_size if style and style.font_size is not None else default_font_size)
+        primary_color = style.primary_color if style else "&H00FFFFFF"
+        secondary_color = style.secondary_color if style else "&H0000FFFF"
+        outline_color = style.outline_color if style else "&H00000000"
+        back_color = style.back_color if style else "&H00000000"
+        bold = 1 if (style.bold if style else True) else 0
+        italic = 1 if (style.italic if style else False) else 0
+        outline = style.outline_width if style else 4
+        shadow = style.shadow_depth if style else 0
+        margin_v = (style.margin_v if style and style.margin_v is not None else default_margin_v)
+        alignment = style.alignment if style else 2
 
         header = [
             "[Script Info]",
@@ -57,7 +71,7 @@ class AssSubtitleRenderer:
             "",
             "[V4+ Styles]",
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            f"Style: Default,Arial,{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,10,10,{margin_v},1",
+            f"Style: Default,{font_name},{font_size},{primary_color},{secondary_color},{outline_color},{back_color},{bold},{italic},0,0,100,100,0,0,1,{outline},{shadow},{alignment},10,10,{margin_v},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

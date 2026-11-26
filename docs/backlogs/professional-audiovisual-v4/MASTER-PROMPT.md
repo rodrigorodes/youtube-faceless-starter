@@ -28,3 +28,5 @@ Ler GOOGLE-AI-PRO-INTEGRATION e GAI-EXECUTION-PLAN quando tocar mídia/providers
 | **V4-12 — Reliability** | Hydrogen / Carbon | Neon |
 | **V4-13 — Pilot** | Flash 3.8 | Carbon + Humano |
 
+## Gate de recuperação — develop (26/11/2026)
+Antes de qualquer nova implementação V4 na develop, ler [Integration & Stabilization](integration-stabilization/README.md), [gates](integration-stabilization/QUALITY-GATES.md) e executar somente a onda INT autorizada. Para INT-01, usar [prompt de auditoria](integration-stabilization/prompts/INT-01-audit.md) sem alteração funcional. Não avançar automaticamente; critérios originais prevalecem e evidência de consumidor/artefato real é obrigatória.

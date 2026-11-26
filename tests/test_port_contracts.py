@@ -54,6 +54,8 @@ EXPECTED_CATALOG = {
     ("text", "opencode"), ("text", "demo"),
     ("image", "opencode"), ("image", "placeholder"), ("image", "stock"), ("image", "veo"),
     ("voice", "piper"),
+    ("voice", "kokoro"),
+    ("voice", "elevenlabs"),
     ("renderer", "ffmpeg"),
     ("search", "pexels"),
     ("search", "pixabay"),

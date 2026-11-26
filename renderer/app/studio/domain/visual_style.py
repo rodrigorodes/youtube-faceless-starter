@@ -733,6 +733,20 @@ PRESETS: Mapping[str, dict[str, Any]] = MappingProxyType({
         "caption": {"font_size": 58, "bottom": 1560},
         "palette": {"caption_text": "#FFFFFF", "caption_box": "#1A0B2ECC", "accent": "#FF008C"},
     },
+    # Animação explicativa com fundo claro e paleta de alto contraste (V4-05).
+    "whiteboard": {
+        "motion": ["pan_left", "pan_right"],
+        "music": {"bpm": 110, "seed": 5},
+        "caption": {"font_size": 54, "bottom": 1540},
+        "palette": {"caption_text": "#1E293B", "caption_box": "#F8FAFCC0", "accent": "#0284C7"},
+    },
+    # Enquadramento cinematográfico, ritmo cadenciado e cores sóbrias (V4-05).
+    "cinematic": {
+        "motion": ["zoom_in", "zoom_out"],
+        "music": {"bpm": 85, "seed": 9},
+        "caption": {"font_size": 48, "bottom": 1500},
+        "palette": {"caption_text": "#E2E8F0", "caption_box": "#000000D0", "accent": "#F59E0B"},
+    },
 })
 
 

@@ -41,8 +41,8 @@ from ..domain.render_plan import (
 # Movimentos explícitos que o plano pode pedir (``Effects.motion``). O ``Literal`` do
 # contrato é a fonte de verdade; a tupla é só a documentação da política do compilador.
 MOTION_NAMES = ("none", "zoom_in", "zoom_out", "pan_left", "pan_right")
-# VE-01: o domínio aceita N overlays por cena; esta fase compila no máximo um por cena.
-MAX_OVERLAYS_PER_SCENE = 1
+# V4-04 / INT-03: suporte a múltiplas camadas simultâneas (imagem, gráfico, PiP) com limite explícito de 8
+MAX_OVERLAYS_PER_SCENE = 8
 
 
 class CompileError(ValueError):
@@ -51,11 +51,12 @@ class CompileError(ValueError):
 
 @dataclass(frozen=True)
 class LayerExecution:
-    """Overlay de imagem hospedado por um segmento base (VE-01/VE-02).
+    """Overlay de imagem hospedado por um segmento base (VE-01/VE-02 / INT-03).
 
     ``start_ticks`` é **relativo ao início do segmento base** que hospeda a camada. A
     janela semiaberta ``[start_ticks, start_ticks+duration_ticks)`` é composta no grafo
-    do segmento base (VE-02), com ``fit`` e ``z_index`` já ordenados.
+    do segmento base (VE-02), com ``fit``, ``z_index`` e transformações geométricas
+    (opacidade, escala, posição).
     """
 
     shot_id: str
@@ -66,6 +67,10 @@ class LayerExecution:
     start_ticks: int
     duration_ticks: int
     fit: str
+    opacity: float = 1.0
+    scale: float = 1.0
+    position_x: float = 0.5
+    position_y: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -333,6 +338,12 @@ def _compile_layers(scene, base: Shot, manifest: dict[str, AssetReference],
             continue
         reference = manifest[overlay.asset_ref]
         descriptor = by_id[overlay.asset_ref]
+        comp = overlay.composition
+        fit = comp.fit if comp is not None else "cover"
+        opacity = comp.opacity if comp is not None else 1.0
+        scale = comp.scale if comp is not None else 1.0
+        pos_x = comp.position_x if comp is not None else 0.5
+        pos_y = comp.position_y if comp is not None else 0.5
         layers.append(
             LayerExecution(
                 shot_id=overlay.shot_id,
@@ -342,7 +353,11 @@ def _compile_layers(scene, base: Shot, manifest: dict[str, AssetReference],
                 z_index=overlay.z_index,
                 start_ticks=overlay.start_tick - base.start_tick,
                 duration_ticks=overlay.duration_ticks,
-                fit=overlay.composition.fit if overlay.composition is not None else "cover",
+                fit=fit,
+                opacity=opacity,
+                scale=scale,
+                position_x=pos_x,
+                position_y=pos_y,
             )
         )
     return tuple(layers)

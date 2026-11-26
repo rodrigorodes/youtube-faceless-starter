@@ -41,6 +41,7 @@ e = lambda value: html.escape(str(value if value is not None else ""), quote=Tru
 KIND_LABELS = {
     ProviderKind.TEXT: "Roteiro",
     ProviderKind.IMAGE: "Imagens",
+    ProviderKind.VIDEO: "Vídeo",
     ProviderKind.VOICE: "Voz",
     ProviderKind.RENDERER: "Render",
 }

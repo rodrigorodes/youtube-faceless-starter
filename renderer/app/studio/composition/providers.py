@@ -1,4 +1,5 @@
 """Providers da raiz de composição: catálogo, registro e roteamento de provedores."""
+import importlib.util
 from collections.abc import Mapping
 
 from ..adapters.google_oauth import GoogleOAuthClient, google_oauth_from_client_secret
@@ -147,6 +148,7 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
     bridge_ok = bool(s.bridge_token)
     pexels_ok = bool(s.pexels_key)
     pixabay_ok = bool(s.pixabay_key)
+    kokoro_ok = importlib.util.find_spec("kokoro") is not None
     return [
         ProviderImplementation(ProviderKind.TEXT, "opencode",
                                capabilities=("text.generate", "text.json"),
@@ -169,6 +171,13 @@ def _provider_implementations(s: "Settings") -> list[ProviderImplementation]:
                                quality=5, validated=False, reason="provedor experimental, sem homologação"),
         ProviderImplementation(ProviderKind.VOICE, "piper", capabilities=("voice.speak",),
                                cost=CostEstimate.free(note="síntese local"), quality=3, validated=True),
+        ProviderImplementation(ProviderKind.VOICE, "kokoro", capabilities=("voice.speak", "voice.neural"),
+                               cost=CostEstimate.free(note="síntese neural local"), quality=4,
+                               validated=kokoro_ok,
+                               reason=None if kokoro_ok else "pacote kokoro não instalado no ambiente local; use piper para síntese offline validada"),
+        ProviderImplementation(ProviderKind.VOICE, "elevenlabs", capabilities=("voice.speak", "voice.neural"),
+                               cost=CostEstimate.estimate(0.03, note="por 1k caracteres"), quality=5,
+                               validated=False, reason="requer BYOK e autorização explícita"),
         ProviderImplementation(ProviderKind.RENDERER, "ffmpeg", capabilities=("render.video",),
                                cost=CostEstimate.free(note="render local"), quality=4, validated=True),
         ProviderImplementation(ProviderKind.SEARCH, "pexels", capabilities=("search.media",),

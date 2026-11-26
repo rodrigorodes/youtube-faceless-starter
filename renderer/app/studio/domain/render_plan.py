@@ -165,9 +165,13 @@ class GeneratedAudioSource(_PlanModel):
 
 
 class Composition(_PlanModel):
-    """Como o conteúdo do shot preenche o quadro."""
+    """Como o conteúdo do shot preenche o quadro e suas transformações geométricas."""
 
     fit: Literal["cover", "contain"] = "cover"
+    opacity: float = 1.0
+    scale: float = 1.0
+    position_x: float = 0.5
+    position_y: float = 0.5
 
 
 class Effects(_PlanModel):
@@ -192,14 +196,17 @@ class AudioMix(_PlanModel):
 class Transition(_PlanModel):
     """Transição para o próximo shot."""
 
-    kind: Literal["none", "fade", "crossfade", "cut"] = "none"
+    kind: Literal[
+        "none", "fade", "crossfade", "cut",
+        "slide_left", "slide_right", "wipe_left", "wipe_right"
+    ] = "none"
     duration_ticks: Tick = 0
 
     @model_validator(mode="after")
     def _duration_matches_kind(self):
         if self.kind in ("none", "cut") and self.duration_ticks != 0:
             raise ValueError(f"a {self.kind!r} transition has no duration")
-        if self.kind in ("fade", "crossfade") and self.duration_ticks < 1:
+        if self.kind not in ("none", "cut") and self.duration_ticks < 1:
             raise ValueError(f"a {self.kind!r} transition needs a positive duration")
         return self
 

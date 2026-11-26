@@ -125,7 +125,7 @@
     },
     "Composition": {
       "additionalProperties": false,
-      "description": "Como o conteúdo do shot preenche o quadro.",
+      "description": "Como o conteúdo do shot preenche o quadro e suas transformações geométricas.",
       "properties": {
         "fit": {
           "default": "cover",
@@ -135,6 +135,26 @@
           ],
           "title": "Fit",
           "type": "string"
+        },
+        "opacity": {
+          "default": 1.0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "position_x": {
+          "default": 0.5,
+          "title": "Position X",
+          "type": "number"
+        },
+        "position_y": {
+          "default": 0.5,
+          "title": "Position Y",
+          "type": "number"
+        },
+        "scale": {
+          "default": 1.0,
+          "title": "Scale",
+          "type": "number"
         }
       },
       "title": "Composition",
@@ -679,7 +699,11 @@
             "none",
             "fade",
             "crossfade",
-            "cut"
+            "cut",
+            "slide_left",
+            "slide_right",
+            "wipe_left",
+            "wipe_right"
           ],
           "title": "Kind",
           "type": "string"

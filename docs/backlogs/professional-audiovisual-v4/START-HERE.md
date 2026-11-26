@@ -10,3 +10,6 @@ Antes de iniciar novas funcionalidades, executar a [Foundation & Stability](../f
 
 ## Google AI Pro — complemento audiovisual
 Após Foundation/V4-00, leia [integração](GOOGLE-AI-PRO-INTEGRATION.md) e [backlog GAI](GAI-EXECUTION-PLAN.md). Priorizar importação genérica + modo assistido, sem API paga obrigatória. Não usar autenticação de assinatura em ferramentas não autorizadas. APIs/Drive são opt-in por fase.
+
+## Recuperação de integração — develop (26/11/2026)
+A develop contém V4-01–13 implementadas em diferentes níveis de maturidade. Não tratar relatórios GO como homologação do produto. A entrada para continuar nessa branch é [Integration & Stabilization](integration-stabilization/README.md), começando exclusivamente pela auditoria INT-01 quando autorizada. O fluxo original e IDs V4 permanecem válidos; main preservada e merge bloqueado até gate final e autorização.

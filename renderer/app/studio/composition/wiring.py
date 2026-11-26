@@ -63,6 +63,8 @@ from ..adapters.render_disabled import DisabledRenderer
 from ..adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from ..adapters.storage import FileAssetStore, FileRenderStorage
 from ..adapters.voice_piper import PiperVoice
+from ..adapters.voice_kokoro import KokoroVoice
+from ..adapters.voice_elevenlabs import ElevenLabsVoice
 from ..adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
 from ..adapters.postgres.scene_duration_repo import PostgresSceneDurationRepository
@@ -112,7 +114,8 @@ from ..domain.youtube_oauth import OAuthConfigurationError
 from ..application.render import GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from ..application.scene_narration import RegenerateSceneNarration, SceneNarration
 from ..application.render_cache import PlanRegeneration
-from ..application.media import ListAssets, ListSceneCandidates, Media, PrepareStoryboard, ProduceAssets, SceneAssetFile, SetSceneBroll, SwapSceneMedia
+from ..application.media import (ImportExternalMedia, ListAssets, ListSceneCandidates, Media,
+                                 PrepareStoryboard, ProduceAssets, SceneAssetFile, SetSceneBroll, SwapSceneMedia)
 from ..application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
 from ..application.creative_director import CreateCreativeBrief
 from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
@@ -325,6 +328,8 @@ class Studio:
         register("search", "pexels", lambda model: PexelsMediaSearch(model, settings.pexels_key))
         register("search", "pixabay", lambda model: PixabayMediaSearch(settings.pixabay_key))
         register("voice", "piper", PiperVoice)
+        register("voice", "kokoro", KokoroVoice)
+        register("voice", "elevenlabs", ElevenLabsVoice)
         # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
         # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
         # RP-06b: é aqui — e só aqui — que o executor recebe o repositório versionado do plano e
@@ -497,7 +502,8 @@ class Studio:
                             production=s.provider_production).primary.spec
                 except (ProviderNotFound, NoProviderAvailable):
                     continue
-                selection[kind.value] = spec
+                if spec:
+                    selection[kind.value] = spec
             return selection or None
 
         def text_for(project_id: str | None):
@@ -569,7 +575,8 @@ class Studio:
             list_candidates=ListSceneCandidates(repo, scripts, media_search, assets=assets) if media_search else None,
             swap=SwapSceneMedia(repo, scripts, assets, asset_store, fetcher=media_fetcher, guard=guard, usage=usage),
             broll=SetSceneBroll(repo, scripts, assets),
-            asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root))
+            asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root),
+            import_media=ImportExternalMedia(repo, scripts, assets, asset_store))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.

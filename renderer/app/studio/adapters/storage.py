@@ -73,6 +73,24 @@ class FileAssetStore:
             tmp.unlink(missing_ok=True)
         return relative
 
+    def put_video(self, cache_key: str, data: bytes) -> str:
+        """Armazena um vídeo (MP4/WebM) de forma atômica no cache de assets por conteúdo."""
+        key = check_cache_key(cache_key)
+        if not data or len(data) > 100 * 1024 * 1024:
+            raise AssetRefused("video is empty or larger than 100 MB")
+        dest = cache_path(self.root, key).with_name(key + ".mp4")
+        relative = dest.relative_to(self.root).as_posix()
+        if dest.exists() and dest.stat().st_size == len(data):
+            return relative
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{key}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_bytes(data)
+            os.replace(tmp, dest)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return relative
+
 
 class FileRenderStorage:
     """Arquivos do render: intermediários em `work/<job>` (descartáveis) e saída em `final.mp4`/`final.srt`, publicada de forma atômica."""
