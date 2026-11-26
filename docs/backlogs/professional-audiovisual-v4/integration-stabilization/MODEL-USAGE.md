@@ -21,6 +21,9 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | 10 | `2026-11-26T16:05Z` | Google Antigravity Pool | `33%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-02.03–04 Round 1 impl (`Hydrogen Medium`, 10% delta); launching `Neon High` independent review |
 | 11 | `2026-11-26T16:16Z` | Google Antigravity Pool | `24%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-02.03–04 Round 1→2 review (`VERIFIED` 9.425/9.44, 141/141 passed); Wave `REC-02` 100% closed; launching `REC-03.01–02` on `Flash 3.8` |
 | 12 | `2026-11-26T16:55Z` | Google Antigravity Pool | `10%` | `2026-11-26T20:00:59Z` | `$0.00` | Post-REC-03.01–02 impl (`Flash 3.8`, `IMPLEMENTED`); reached 10% 5h safety reserve -> safe checkpoint saved, pausing before independent `Carbon High` review until window reset or operator override |
+| 13 | `2026-11-26T22:47Z` | Google Antigravity Pool | `100%` | `2026-11-27T03:47:25Z` | `$0.00` | Window 3 reset (`100%`) after OpenCode session completed `REC-03.01–03` & `REC-04.01`; resuming `REC-04.02` on `Hydrogen Medium` |
+| 14 | `2026-11-26T23:37Z` | Google Antigravity Pool | `83%` | `2026-11-27T03:47:25Z` | `$0.00` | Post-REC-04.02 impl & real 309.80s documentary render (`Hydrogen Medium`, 17% delta); launching `Neon High` independent review |
+| 15 | `2026-11-26T23:48Z` | Google Antigravity Pool | `77%` | `2026-11-27T03:47:25Z` | `$0.00` | Post-REC-04.02 Round 1→2 review (`APPROVED 9.400/10`, 6% delta); launching `REC-04.03` on `Carbon High` |
 
 ---
 
@@ -45,8 +48,10 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | `REC-03.03` | Independent Reviewer | 2 sessões separadas `github-copilot/gemini-4-neon` | `Gemini 4 Neon (High)` | 2 | `VERIFIED` | R1 REJECTED 3.95; R2 APPROVED 9.44 |
 | `REC-04.01` | Executor | `github-copilot/gemini-4-neon` high (desvio: Flash previsto) | `Gemini 4 Neon (High)` | 1 | `VERIFIED` (técnico) | slice 67.36s real via Studio |
 | `REC-04.01` | Independent Reviewer | sessão separada `github-copilot/gemini-4-neon` | `Gemini 4 Neon (High)` | 1 | `VERIFIED` | R1 APPROVED 9.345 |
-| `REC-04.02` | Executor / Reviewer | Planned | Neon High (exec) / Neon High sessão separada | — | `PENDING` | Documentário 5–8min |
-| `REC-04.03`–`04` | Executor / Reviewer | Planned | `Carbon High` / `Neon High` + Operator | — | `PENDING` | Final regression + independent review + human audiovisual review |
+| `REC-04.02` | Executor | `rec04-doc` (retired) | `Gemini 4 Hydrogen (Medium)` | 2 | `VERIFIED` (técnico) | Prerequisites `P2-1`/`PRE-1`/`P2-4`/`facts.py` + 309.80s 25-scene documentary + `-57.41%` selective regen (`182 passed`) |
+| `REC-04.02` | Independent Reviewer | `rec04-doc-rev` (retired) | `Gemini 4 Neon (High)` | 2 | `VERIFIED` (técnico) | Round 1 REJECTED `9.190` (1 P1 `test_facts.py`); Round 2 APPROVED `9.400/10` (6 frames + SHA/ffprobe/ebur128 + 3 `/tmp` mutations) |
+| `REC-04.03` | Executor | `rec04-reg` | `Gemini 4 Carbon (High)` | 1 | `IN_PROGRESS` | Full canonical regression on clean final SHA + host Node + isolated Playwright E2E |
+| `REC-04.03`–`04` | Independent Reviewer | `rec04-reg-rev` / `rec04-release-rev` | `Gemini 4 Neon (High)` + Operator | — | `PENDING` | Independent Neon High review on handoff + human audiovisual review |
 
 ---
 

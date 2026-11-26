@@ -183,3 +183,13 @@ def test_area_written_in_either_notation_is_supported_by_the_source():
     assert check_narration("Em 2023 tinha 132.011,65 km² e 153.391.145 habitantes.", [source]) == []
     other = check_narration("A ilha tem 132.011,66 km².", [source])  # valor diferente continua recusado
     assert [(i.kind, i.value) for i in other] == [("number", "132011.66")]
+
+
+def test_numbers_in_and_check_narration_handle_word_zero():
+    """Regressão P1-1: palavra 'zero' (_WORDS['zero'] == 0) não pode causar KeyError em _parse_run."""
+    assert numbers_in("zero") == {"0"}
+    assert numbers_in("sistema binário de zero e um") == {"0"}
+    assert check_narration("O sistema binário de zero e um.", ["Base binária com 0 e 1."]) == []
+    unsupported = check_narration("O sistema binário de zero e um.", ["Texto sem números."])
+    assert [(i.kind, i.value) for i in unsupported] == [("number", "0")]
+

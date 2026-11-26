@@ -59,6 +59,7 @@ from app.studio.composition import Settings, Studio
 from app.studio.domain.quality import CHECK_CAPTION_SYNC, CHECK_OVERLAY
 from app.studio.domain.render_cache import NodeId
 from conftest import verified_test_connect
+from rec04_helpers import piper_version
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -844,8 +845,8 @@ def test_rec_04_01_real_vertical_slice_60_90s_via_studio(conn, dsn, tmp_path: Pa
         f_s0_motion_a = _extract_frame(final_mp4, scene_starts[0] + 5.20, frames_dir / "s0_motion_a.png")
         f_s0_motion_b = _extract_frame(final_mp4, scene_starts[0] + 8.00, frames_dir / "s0_motion_b.png")
 
-        # Região superior direita (position_x=0.94, position_y=0.14, scale=0.45) onde entra o overlay PNG (position=1)
-        box_right_top = (1000, 60, 1880, 620)
+        # Região direita segura (position_x=0.94, position_y=0.28, scale=0.45 -> x=992..1856, y=166..652)
+        box_right_top = (990, 160, 1860, 660)
         diff_png_ov_in = _mean_abs_diff(f_s0_before, f_s0_overlay, box=box_right_top)
         diff_png_ov_out = _mean_abs_diff(f_s0_overlay, f_s0_after, box=box_right_top)
         assert diff_png_ov_in > 12.0, f"Overlay PNG não detectável na entrada (Cena 0): diff={diff_png_ov_in:.2f}"
@@ -860,14 +861,19 @@ def test_rec_04_01_real_vertical_slice_60_90s_via_studio(conn, dsn, tmp_path: Pa
         f_s1_pip_b = _extract_frame(final_mp4, scene_starts[1] + 2.30, frames_dir / "s1_mp4_pip_b.png")
         f_s1_after = _extract_frame(final_mp4, scene_starts[1] + 3.70, frames_dir / "s1_after_pip.png")
 
-        # Região superior esquerda (position_x=0.06, position_y=0.14, scale=0.45) onde entra o PiP MP4 (position=2)
-        box_left_top = (40, 60, 920, 620)
-        diff_pip_in = _mean_abs_diff(f_s1_before, f_s1_pip_a, box=box_left_top)
-        diff_pip_motion = _mean_abs_diff(f_s1_pip_a, f_s1_pip_b, box=box_left_top)
-        diff_pip_out = _mean_abs_diff(f_s1_pip_b, f_s1_after, box=box_left_top)
+        # Região esquerda abaixo do HUD (P2-1: position_x=0.06, position_y=0.50, scale=0.45 -> x=63..927, y=297..783)
+        box_left_safe = (60, 290, 930, 790)
+        box_hud_top_left = (50, 90, 560, 250)
+        diff_pip_in = _mean_abs_diff(f_s1_before, f_s1_pip_a, box=box_left_safe)
+        diff_pip_motion = _mean_abs_diff(f_s1_pip_a, f_s1_pip_b, box=box_left_safe)
+        diff_pip_out = _mean_abs_diff(f_s1_pip_b, f_s1_after, box=box_left_safe)
+        diff_hud_during_pip = _mean_abs_diff(f_s1_before, f_s1_pip_a, box=box_hud_top_left)
         assert diff_pip_in > 12.0, f"PiP MP4 não detectável na entrada (Cena 1): diff={diff_pip_in:.2f}"
-        assert diff_pip_motion > 10.0, f"PiP MP4 congelado entre 1.4s e 2.75s: diff={diff_pip_motion:.2f}"
+        assert diff_pip_motion > 10.0, f"PiP MP4 congelado entre 1.20s e 2.30s: diff={diff_pip_motion:.2f}"
         assert diff_pip_out > 12.0, f"PiP MP4 não detectável na saída (Cena 1): diff={diff_pip_out:.2f}"
+        assert diff_hud_during_pip < 5.0, (
+            f"P2-1 violado: PiP MP4 alterou a zona do HUD superior esquerdo: diff={diff_hud_during_pip:.2f}"
+        )
 
         # Cena 2: MP4 base importado em movimento real
         f_s2_a = _extract_frame(final_mp4, scene_starts[2] + 2.0, frames_dir / "s2_imported_mp4_a.png")
@@ -882,7 +888,7 @@ def test_rec_04_01_real_vertical_slice_60_90s_via_studio(conn, dsn, tmp_path: Pa
         # Verificar que nenhum frame-chave é preto ou uniforme
         key_frames_info = [
             ("scene0_png_overlay", scene_starts[0] + 1.80, f_s0_overlay, "Cena 0 com overlay PNG gráfico"),
-            ("scene1_mp4_pip", scene_starts[1] + 1.40, f_s1_pip_a, "Cena 1 com PiP vídeo MP4"),
+            ("scene1_mp4_pip", scene_starts[1] + 1.20, f_s1_pip_a, "Cena 1 com PiP vídeo MP4"),
             ("scene2_imported_mp4", scene_starts[2] + 2.00, f_s2_a, "Cena 2 com MP4 base importado"),
             ("scene3_edited_v2", scene_starts[3] + 3.00, f_s3, "Cena 3 após edição e regeneração seletiva"),
             ("scene4_studio_generated", scene_starts[4] + 3.00, f_s4, "Cena 4 gerada localmente pelo AssetsHandler"),
@@ -954,7 +960,7 @@ def test_rec_04_01_real_vertical_slice_60_90s_via_studio(conn, dsn, tmp_path: Pa
                 "versions": {
                     "ffmpeg": _tool_version(["ffmpeg", "-version"]),
                     "ffprobe": _tool_version(["ffprobe", "-version"]),
-                    "piper": _tool_version(["piper", "--version"]),
+                    "piper": piper_version(),
                     "piper_voice_model": "/opt/voices/pt_BR-faber-medium.onnx",
                 },
                 "governance": {

@@ -10,6 +10,7 @@ os.environ.setdefault("STUDIO_ALLOWED_HOSTS", "localhost,127.0.0.1,renderer,test
 def pytest_configure(config):
     config.addinivalue_line("markers", "smoke: smoke test rápido do fluxo Studio (ex.: 15s short, não substitui piloto/slice)")
     config.addinivalue_line("markers", "rec04_slice: vertical slice real 60-90s via rotas HTTP do Studio e ProductionCoordinator (REC-04.01)")
+    config.addinivalue_line("markers", "rec04_documentary: documentário real 5-8min via rotas HTTP do Studio + comparação pareada V4-00 (REC-04.02)")
 
 
 def verify_disposable_connection(connection, proof_path):

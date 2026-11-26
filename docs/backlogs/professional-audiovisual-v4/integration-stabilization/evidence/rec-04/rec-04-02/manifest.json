@@ -1,0 +1,581 @@
+{
+  "schema_version": "rec04-02-manifest/1",
+  "task_id": "REC-04.02",
+  "requirement_id": "R11",
+  "run_id": "rec04_doc_20261126_233034_ea07c0c",
+  "generated_at_utc": "2026-11-26T23:34:45.704079+00:00",
+  "git": {
+    "sha": "ea07c0cae71ba49b2269bc3a6d1abb922aa3698b",
+    "branch": "develop"
+  },
+  "versions": {
+    "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+    "ffprobe": "ffprobe version 7.1.5-0+deb13u1 Copyright (c) 2007-2026 the FFmpeg developers",
+    "piper": "piper-tts==1.8.0",
+    "piper_voice_model": "/opt/voices/pt_BR-faber-medium.onnx"
+  },
+  "profiles": {
+    "economic_local": {
+      "status": "EXECUTED",
+      "providers": {
+        "text": "demo:v4",
+        "image": "placeholder:v4",
+        "voice": "piper:pt_BR-faber-medium",
+        "renderer": "ffmpeg"
+      },
+      "cost_usd": 0.0
+    },
+    "balanced_local": {
+      "status": "DEFERRED",
+      "reason": "BLOCKED_LOCAL_PAID_DEPENDENCY: sem APIs pagas nem GPU local no container; orçamento travado em $0.00.",
+      "cost_usd": 0.0
+    },
+    "premium": {
+      "status": "OUT_OF_SCOPE",
+      "reason": "Requer autorização explícita do operador e orçamento pago."
+    }
+  },
+  "governance": {
+    "studio_publication_enabled": false,
+    "kill_switch_result": "BLOCKED",
+    "kill_switch_detail": "publication is disabled by configuration (STUDIO_PUBLICATION_ENABLED=0)",
+    "youtube_video_id": null,
+    "budget_guard_enabled": true,
+    "max_cost_usd_per_video": 0.0,
+    "max_cost_usd_per_month": 0.0,
+    "observed_api_cost_usd": 0.0,
+    "video_final_status": "AWAITING_APPROVAL",
+    "human_review_status": "AWAITING_HUMAN_REVIEW",
+    "auto_approved_in_test": false
+  },
+  "documentary_structure": {
+    "topic": "A História da Computação: Da Mecânica aos Cérebros de Silício",
+    "scenes_count": 25,
+    "imported_png_base_scenes": 17,
+    "imported_mp4_base_scenes": 3,
+    "local_generated_base_scenes": 5,
+    "overlays_count": 3,
+    "rebaseline_note": "Rebaseline controlado vs V4-00 (18 cenas / 345.80s): expandido para 25 cenas na mesma linha cronológica da História da Computação para cumprir SESSION-HANDOFF §5 (>=25 cenas)."
+  },
+  "artifact": {
+    "mp4_relative_path": "storage/output/runs/rec04_doc_20261126_233034_ea07c0c/rec04_02_documentary.mp4",
+    "mp4_sha256": "62eb3b8e335cac167bce65e5a0e4c6c9a6560cc4cd03f018a7418e82f554daa9",
+    "mp4_bytes": 232080906,
+    "subtitles": {
+      "srt_sha256": "b5ae4d4056e5ff78066da07d41bc612b943951d387a60787ec85add79f2e1383",
+      "vtt_sha256": "80e9abd0a1037569d8dd1e2f5012f47b8ddafc20ed89b43dfc386c39cee9479c",
+      "ass_sha256": "62a2f35dafa3f9b79165dc421a4c91ebe681a93d2c8c71ef8cf7850814dd3263",
+      "plan_subtitle_cues": 164
+    }
+  },
+  "thumbnails_v2_f7": {
+    "http_endpoint": "/studio/videos/a0e5e517fdfb47068a457d5c37210655/thumbnail",
+    "http_primary_file": "thumbnails/thumbnail_http_primary.jpg",
+    "http_primary_sha256": "f06953f963016eeb9cdd6c690629f24244d4875f68190b30d81c02569d78f4db",
+    "http_primary_bytes": 67870,
+    "packaging_variants_count": 3,
+    "packaging_options": [
+      {
+        "variant_id": "thumb-opt-1",
+        "title": "Do Ábaco à IA: A Jornada Completa da Computação",
+        "concept": "Ábaco antigo e engrenagens mecânicas com contraste dourado",
+        "source_scene_idx": 0,
+        "bytes": 67870,
+        "width": 1280,
+        "height": 720,
+        "file": "thumbnails/thumbnail_option_1.jpg",
+        "sha256": "f06953f963016eeb9cdd6c690629f24244d4875f68190b30d81c02569d78f4db"
+      },
+      {
+        "variant_id": "thumb-opt-2",
+        "title": "Como Turing e o Silício Mudaram o Mundo Moderno",
+        "concept": "Máquina Universal de Turing e circuitos de silício iluminados",
+        "source_scene_idx": 9,
+        "bytes": 53757,
+        "width": 1280,
+        "height": 720,
+        "file": "thumbnails/thumbnail_option_2.jpg",
+        "sha256": "df9a0eedad60dbb4e0c1d9f84fb36fa36be4ed8f54eaa01c9becbd9f37c889a8"
+      },
+      {
+        "variant_id": "thumb-opt-3",
+        "title": "25 Marcos da Computação em 6 Minutos",
+        "concept": "Rede neural profunda em perspectiva com grade luminosa",
+        "source_scene_idx": 24,
+        "bytes": 53757,
+        "width": 1280,
+        "height": 720,
+        "file": "thumbnails/thumbnail_option_3.jpg",
+        "sha256": "df9a0eedad60dbb4e0c1d9f84fb36fa36be4ed8f54eaa01c9becbd9f37c889a8"
+      }
+    ],
+    "note": "GET /thumbnail usa PillowThumbnail em produção; VideoPackaging valida 3 conceitos no domínio."
+  },
+  "ffprobe": {
+    "duration_s": 309.8,
+    "bit_rate_bps": 5993051,
+    "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "r_frame_rate": "25/1",
+      "nb_frames": 7745,
+      "pix_fmt": "yuv420p"
+    },
+    "audio": {
+      "codec_name": "aac",
+      "sample_rate": 96000,
+      "channels": 2,
+      "bit_rate_bps": 159156
+    }
+  },
+  "qa_measured": {
+    "ffmpeg_qa": {
+      "duration_s": 309.8,
+      "width": 1920,
+      "height": 1080,
+      "has_audio": true,
+      "integrated_lufs": -16.1,
+      "silence_ratio": 0.0,
+      "black_ratio": 0.0,
+      "black_intervals": [],
+      "true_peak_dbtp": -1.9,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "frozen_ratio": 0.1632
+    },
+    "caption_sync_drift": {
+      "cues_count": 164,
+      "last_caption_end_ms": 309340,
+      "mp4_audio_duration_ms": 309799,
+      "drift_vs_mp4_audio_ms": 459,
+      "last_narration_end_ms": 309004,
+      "drift_vs_last_narration_end_ms": 336,
+      "note": "drift_vs_mp4_audio_ms inclui a cauda fixa TAIL_S=500ms após a última fala; drift_vs_last_narration_end_ms mede o desvio direto entre o fim da fala Piper e o fim da última legenda."
+    },
+    "studio_qa_report": {
+      "coverage_status": "verified",
+      "is_publishable": true,
+      "checks_run": [
+        "render.media_metrics",
+        "render.true_peak",
+        "render.codec",
+        "render.frozen_frames",
+        "render.repeated_assets",
+        "render.asset_resolution",
+        "render.overlay",
+        "render.semantic",
+        "render.caption_sync",
+        "render.timeline"
+      ],
+      "blocking_findings_count": 0
+    },
+    "content_pixel_checks": {
+      "scene0_png_overlay_enter_diff": 100.97,
+      "scene0_png_overlay_exit_diff": 101.01,
+      "scene1_mp4_pip_enter_diff": 124.04,
+      "scene1_mp4_pip_motion_diff": 157.63,
+      "scene1_mp4_pip_exit_diff": 109.62,
+      "scene1_hud_top_left_during_pip_diff": 3.84,
+      "scene2_imported_mp4_motion_diff": 87.16
+    },
+    "audio_dynamics": {
+      "speech_window_rms_pcm16": 4159.3,
+      "mean_scene_narration_rms_pcm16": 4558.8,
+      "min_scene_narration_duration_s": 9.694,
+      "max_scene_narration_duration_s": 13.491
+    }
+  },
+  "selective_regeneration": {
+    "plan_revision_before": 1,
+    "plan_revision_after": 2,
+    "edited_scene_idx": 15,
+    "edited_scene_id": "fe3752035d0f4617836a4dd2a709cc69",
+    "untouched_scenes_count": 24,
+    "reused_narration_nodes": 24,
+    "reused_visual_nodes": 66,
+    "run1_wall_s": 141.841,
+    "run2_wall_s": 60.409,
+    "time_saved_s": 81.433,
+    "time_saved_pct": 57.41
+  },
+  "stage_timings_s": {
+    "setup_and_script_s": 2.241,
+    "media_import_and_overlays_s": 9.014,
+    "run1_production_coordinator_s": 141.841,
+    "edit_scene15_s": 0.245,
+    "run2_selective_regen_s": 60.409,
+    "subtitles_and_thumbnails_s": 0.355,
+    "content_verification_s": 26.168,
+    "total_wall_s": 240.532
+  },
+  "resource_usage": {
+    "cpu_user_seconds": 963.885,
+    "cpu_system_seconds": 63.864,
+    "cpu_total_seconds": 1027.749,
+    "peak_rss_self_mb": 1402.08,
+    "peak_rss_children_mb": 1618.5,
+    "rss_sum_upper_bound_mb": 3020.58,
+    "memory_limitation_note": "Linux getrusage reporta ru_maxrss independente do processo pai (RUSAGE_SELF) e do maior filho terminado (RUSAGE_CHILDREN); rss_sum_upper_bound_mb é o limite superior teórico."
+  },
+  "provenance_and_licenses": [
+    {
+      "scene_idx": "0",
+      "asset_id": "eea56c25190b457d8ff7ca78ddfaeff9",
+      "filename": "overlay_badge_0.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 00"
+    },
+    {
+      "scene_idx": "0",
+      "asset_id": "62ac5e90e275463fa21dec5f42e09996",
+      "filename": "scene00_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 00"
+    },
+    {
+      "scene_idx": "1",
+      "asset_id": "8f8a485fe50c4656969f7a03ba89efea",
+      "filename": "overlay_pip_1.mp4",
+      "mime": "video/mp4",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 01"
+    },
+    {
+      "scene_idx": "1",
+      "asset_id": "728934cf546d4e78b71410d9736ac01f",
+      "filename": "scene01_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 01"
+    },
+    {
+      "scene_idx": "12",
+      "asset_id": "685dab3faa424213a906645dd9858c97",
+      "filename": "overlay_badge_12.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 12"
+    },
+    {
+      "scene_idx": "12",
+      "asset_id": "b67372565a9840629c9dbd1ade7d729c",
+      "filename": "scene12_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 12"
+    },
+    {
+      "scene_idx": "2",
+      "asset_id": "aaffadf38dc9460ebeaf6eeedb8414c4",
+      "filename": "scene02_base.mp4",
+      "mime": "video/mp4",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 02"
+    },
+    {
+      "scene_idx": "3",
+      "asset_id": "b0b7020e3f55451199bfb922fe0e323c",
+      "filename": "scene03_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 03"
+    },
+    {
+      "scene_idx": "4",
+      "asset_id": "5bc51f6ed4a24511b1d3b97bd274c4f8",
+      "filename": "scene04_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 04"
+    },
+    {
+      "scene_idx": "5",
+      "asset_id": "62ac5e90e275463fa21dec5f42e09996",
+      "filename": "scene05_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 05"
+    },
+    {
+      "scene_idx": "6",
+      "asset_id": "728934cf546d4e78b71410d9736ac01f",
+      "filename": "scene06_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 06"
+    },
+    {
+      "scene_idx": "7",
+      "asset_id": "b67372565a9840629c9dbd1ade7d729c",
+      "filename": "scene07_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 07"
+    },
+    {
+      "scene_idx": "8",
+      "asset_id": "b0b7020e3f55451199bfb922fe0e323c",
+      "filename": "scene08_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 08"
+    },
+    {
+      "scene_idx": "9",
+      "asset_id": "5bc51f6ed4a24511b1d3b97bd274c4f8",
+      "filename": "scene09_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 09"
+    },
+    {
+      "scene_idx": "10",
+      "asset_id": "7fc7113784ac4b88aa6f448b7b26819c",
+      "filename": "scene10_base.mp4",
+      "mime": "video/mp4",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 10"
+    },
+    {
+      "scene_idx": "11",
+      "asset_id": "728934cf546d4e78b71410d9736ac01f",
+      "filename": "scene11_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 11"
+    },
+    {
+      "scene_idx": "13",
+      "asset_id": "b0b7020e3f55451199bfb922fe0e323c",
+      "filename": "scene13_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 13"
+    },
+    {
+      "scene_idx": "14",
+      "asset_id": "5bc51f6ed4a24511b1d3b97bd274c4f8",
+      "filename": "scene14_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 14"
+    },
+    {
+      "scene_idx": "15",
+      "asset_id": "62ac5e90e275463fa21dec5f42e09996",
+      "filename": "scene15_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 15"
+    },
+    {
+      "scene_idx": "16",
+      "asset_id": "728934cf546d4e78b71410d9736ac01f",
+      "filename": "scene16_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 16"
+    },
+    {
+      "scene_idx": "17",
+      "asset_id": "b67372565a9840629c9dbd1ade7d729c",
+      "filename": "scene17_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 17"
+    },
+    {
+      "scene_idx": "18",
+      "asset_id": "0952275bfc5f46cfb4c5b4b39a0d7c89",
+      "filename": "scene18_base.mp4",
+      "mime": "video/mp4",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 18"
+    },
+    {
+      "scene_idx": "19",
+      "asset_id": "5bc51f6ed4a24511b1d3b97bd274c4f8",
+      "filename": "scene19_base.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 19"
+    },
+    {
+      "scene_idx": "15",
+      "asset_id": "0a5576d56dbe409b85e297a430173678",
+      "filename": "scene15_v2.png",
+      "mime": "image/png",
+      "license": "CC0-1.0",
+      "attribution": "Estúdio REC-04.02 Cena 15"
+    }
+  ],
+  "sampled_frames": [
+    {
+      "label": "scene00_png_overlay",
+      "timestamp_s": 1.8,
+      "description": "Cena 0 com overlay PNG gráfico à direita",
+      "file": "frames/scene00_png_overlay.png",
+      "bytes": 384270,
+      "sha256": "8a4b0bd94bbc82019d591858ac138d88bb140796d8b1576dd4da8f42b20fbd17",
+      "stats": {
+        "mean_r": 60.27,
+        "mean_g": 57.61,
+        "mean_b": 55.19,
+        "mean_luma": 58.13,
+        "std_luma": 61.86
+      }
+    },
+    {
+      "label": "scene01_mp4_pip",
+      "timestamp_s": 13.8,
+      "description": "Cena 1 com PiP MP4 à esquerda (sem colisão HUD)",
+      "file": "frames/scene01_mp4_pip.png",
+      "bytes": 231155,
+      "sha256": "bb43c91d49f9afc197d8354e6c756fa905646609a77cb97d94803f6f926ad861",
+      "stats": {
+        "mean_r": 20.98,
+        "mean_g": 78.01,
+        "mean_b": 88.73,
+        "mean_luma": 62.18,
+        "std_luma": 54.89
+      }
+    },
+    {
+      "label": "scene02_imported_mp4",
+      "timestamp_s": 28.24,
+      "description": "Cena 2 com MP4 base importado e ASS único (PRE-1)",
+      "file": "frames/scene02_imported_mp4.png",
+      "bytes": 412833,
+      "sha256": "58df4c72e1f586f5bf9d142d9cc851f5a70639fe2b10f631836a4e7d975d228a",
+      "stats": {
+        "mean_r": 124.55,
+        "mean_g": 126.86,
+        "mean_b": 131.21,
+        "mean_luma": 126.66,
+        "std_luma": 37.66
+      }
+    },
+    {
+      "label": "scene12_mid_overlay",
+      "timestamp_s": 154.72,
+      "description": "Cena 12 meio do documentário com overlay PNG",
+      "file": "frames/scene12_mid_overlay.png",
+      "bytes": 516415,
+      "sha256": "aabf079c8ba5223e89f68233e2518dea2672b05c2d0fba4ea5675bb85af63b38",
+      "stats": {
+        "mean_r": 39.73,
+        "mean_g": 59.38,
+        "mean_b": 78.74,
+        "mean_luma": 55.71,
+        "std_luma": 45.82
+      }
+    },
+    {
+      "label": "scene15_edited_v2",
+      "timestamp_s": 191.9,
+      "description": "Cena 15 após edição e regeneração seletiva",
+      "file": "frames/scene15_edited_v2.png",
+      "bytes": 306093,
+      "sha256": "25c7872bec3c0976a648c1f226daf96cca113500aa43e982228132a651291cbb",
+      "stats": {
+        "mean_r": 51.67,
+        "mean_g": 28.02,
+        "mean_b": 45.45,
+        "mean_luma": 37.08,
+        "std_luma": 23.91
+      }
+    },
+    {
+      "label": "scene18_imported_mp4",
+      "timestamp_s": 228.58,
+      "description": "Cena 18 com B-roll MP4 importado",
+      "file": "frames/scene18_imported_mp4.png",
+      "bytes": 433254,
+      "sha256": "6be4c9d345de6df90d14011bc074761dfef585be994d65b576dc5af27c94a07d",
+      "stats": {
+        "mean_r": 130.77,
+        "mean_g": 123.85,
+        "mean_b": 127.18,
+        "mean_luma": 126.3,
+        "std_luma": 44.69
+      }
+    },
+    {
+      "label": "scene21_studio_generated",
+      "timestamp_s": 264.14,
+      "description": "Cena 21 gerada localmente pelo AssetsHandler",
+      "file": "frames/scene21_studio_generated.png",
+      "bytes": 91027,
+      "sha256": "29bb3450d194bbc18489ec8241bfefc1d32f220d27141c161139f5a0c67e1129",
+      "stats": {
+        "mean_r": 59.64,
+        "mean_g": 40.01,
+        "mean_b": 100.76,
+        "mean_luma": 52.8,
+        "std_luma": 15.62
+      }
+    },
+    {
+      "label": "scene24_end_doc",
+      "timestamp_s": 299.94,
+      "description": "Cena 24 encerramento do documentário",
+      "file": "frames/scene24_end_doc.png",
+      "bytes": 75929,
+      "sha256": "63e4bdb414a3401baee347df97cfb040b030ad51a83b7d1c78905265260d8433",
+      "stats": {
+        "mean_r": 100.86,
+        "mean_g": 66.86,
+        "mean_b": 120.24,
+        "mean_luma": 83.11,
+        "std_luma": 25.31
+      }
+    }
+  ],
+  "v4_00_paired_comparison": {
+    "baseline_v4_00": {
+      "source": "storage/output/runs/run_20261126_132447_198e47cb/v4_baseline_metrics.json",
+      "run_id": "run_20261126_132447_198e47cb",
+      "duration_s": 345.8,
+      "scenes_count": 18,
+      "sha256": "48886a202a8b3ae205d9e0681019786b269a65455dbcb40de3f5c7ed14e70756",
+      "integrated_lufs": -15.6,
+      "true_peak_dbtp": -1.3,
+      "frozen_ratio": 0.4937,
+      "silence_ratio": 0.0,
+      "black_ratio": 0.0,
+      "total_execution_time_s": 126.28,
+      "render_time_s": 85.34,
+      "qa_time_s": 24.01,
+      "cost_api_usd": 0.0,
+      "resource_usage": {
+        "cpu_user_seconds": 647.059,
+        "cpu_system_seconds": 28.745,
+        "cpu_total_seconds": 675.804,
+        "peak_rss_self_mb": 1346.53,
+        "peak_rss_children_mb": 1544.03,
+        "rss_sum_upper_bound_mb": 2890.56,
+        "memory_limitation_note": "resource.getrusage reporta o ru_maxrss independente do processo Python pai (RUSAGE_SELF) e dos subprocessos filhos terminados (RUSAGE_CHILDREN). O pico simultâneo agregado exato não é disponibilizado diretamente pelo kernel sem amostragem contínua; rss_sum_upper_bound_mb expressa o limite superior teórico caso ambos atinjam o pico no mesmo instante."
+      }
+    },
+    "rec04_02": {
+      "duration_s": 309.8,
+      "scenes_count": 25,
+      "integrated_lufs": -16.1,
+      "true_peak_dbtp": -1.9,
+      "frozen_ratio": 0.1632,
+      "silence_ratio": 0.0,
+      "black_ratio": 0.0,
+      "run1_wall_s": 141.841,
+      "run2_selective_regen_wall_s": 60.409,
+      "cost_api_usd": 0.0
+    },
+    "deltas": {
+      "duration_delta_s": -36.0,
+      "scenes_delta": 7,
+      "frozen_ratio_delta": -0.3305
+    }
+  }
+}

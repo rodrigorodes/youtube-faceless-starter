@@ -201,6 +201,7 @@ def structure_render_plan(
     _validate_overlays(plan, manifest, by_id)
 
     subtitles = sorted(plan.timeline.subtitles, key=lambda c: c.start_tick)
+    has_pacing = any(len(sc.base_shots) > 1 for sc in plan.timeline.scenes)
     shots: list[ShotPlan] = []
     for index, (scene, shot) in enumerate(ordered_bases):
         reference = manifest.get(shot.asset_ref)
@@ -213,10 +214,15 @@ def structure_render_plan(
         if not descriptor.available:
             raise CompileError(f"asset {shot.asset_ref!r} is unavailable at {descriptor.uri!r}")
         layers = _compile_layers(scene, shot, manifest, by_id)
-        # Subtitles em cenas com múltiplos cortes de base (pacing) cruzam cortes
-        # e são renderizadas globalmente via ASS no compilador v2; cenas com apenas
-        # 1 base shot preservam os overlays por shot (incluindo cenas com overlays).
-        shot_subtitles = subtitles if len(scene.base_shots) == 1 else []
+        # PRE-1: em planos v2 com múltiplos cortes de base (pacing) ou mídia base de vídeo,
+        # as legendas são queimadas exclusivamente via ASS global no compilador v2 (evitando
+        # duplicação Pillow caption_overlay + ASS -vf subtitles). Planos v1 ou planos v2 sem
+        # pacing compostos apenas de imagens de shot único preservam os overlays por shot.
+        use_global_ass_only = (
+            plan.schema_version >= 2
+            and (len(scene.base_shots) > 1 or reference.media_type == "video" or has_pacing)
+        )
+        shot_subtitles = [] if use_global_ass_only else subtitles
         shots.append(
             _shot_plan(
                 plan, scene, shot, reference, descriptor, index, work, tps,

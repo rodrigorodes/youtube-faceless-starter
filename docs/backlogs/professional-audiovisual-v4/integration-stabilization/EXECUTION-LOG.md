@@ -210,3 +210,27 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 ## REC-04.02 — BLOCKED por cota (2026-11-26, OpenCode)
 - Executor Neon (Copilot) abortou com `You have exceeded your monthly quota` após editar render.py/render_compiler.py/testes (parcial, sem commit, sem verificação). Flash (Copilot) idem; Google segue com `API key not valid`.
 - Decisão: checkpoint seguro; sem substituição por modelo fora da política nem auto-execução/auto-review. main `42700cb` intocada; `$0.00`; publicação BLOCKED.
+
+
+---
+
+## Entry — `REC-04.02` (`R11` Real 5–8 min Documentary Pilot + Prerequisites P2-1, PRE-1, P2-4)
+
+- **Timestamp (UTC):** `2026-11-26T23:03Z–23:48Z`
+- **Task IDs:** `REC-04.02` (`R11`, `V4-13` documentary pilot, `P2-1`, `PRE-1`, `P2-4`, `V2-F7` thumbnail check)
+- **Base HEAD:** `develop` `ea07c0c` (`hash renderer/app: b677160103d832a3`, `49` migrations)
+- **Executor Model:** `Gemini 4 Hydrogen (Medium)` (`rec04-doc`, 2 rounds)
+- **Independent Reviewer Model:** `Gemini 4 Neon (High)` (`rec04-doc-rev`, 2 rounds)
+- **Artifacts & Measurements (Independently Verified on Disk):**
+  - MP4 (gitignored): `storage/output/runs/rec04_doc_20261126_233034_ea07c0c/rec04_02_documentary.mp4` (`232,080,906` bytes, SHA-256 `62eb3b8e335cac167bce65e5a0e4c6c9a6560cc4cd03f018a7418e82f554daa9`)
+  - `ffprobe`: `309.800s` (5m09.8s, 25 scenes, História da Computação), `1920x1080`, `25 fps`, `h264`/`aac`
+  - `ebur128` / `FfmpegQa`: `-16.1 LUFS`, `-1.9 dBTP`, `0.0` silence/black, `0.1632` frozen_ratio (vs `0.4937` V4-00), `336ms` caption drift, `0` blocking findings, `piper-tts==1.8.0`
+  - Selective regeneration (scene 15 edited): `141.841s` → `60.409s` (`-57.41%`, `24/24` narration & `66/66` visual nodes reused)
+  - Visual inspection of 6 extracted PNGs confirmed `P2-1` (zero HUD/FATO overlap) & `PRE-1` (single ASS caption, no Pillow duplication)
+  - All 3 `/tmp` mutations killed (`P2-1`, `PRE-1`, `facts.py` `KeyError: 'zero'`)
+  - Independent container run (7 suites): **`182 passed in 83.61s`**, exit `0`
+- **Independent Rubric Score (`evidence/rec-04/rec-04-02-independent-review-neon-high.md`):**
+  - Round 1 REJECTED (`9.190/10`, 1 P1 missing `tests/test_facts.py` test); Round 2 **APPROVED `9.400 / 10`** (`9.3 / 9.4 / 9.4 / 9.6 / 9.3`, min `9.3`, `0` P0/P1 blockers) — Technical `VERIFIED` / Audiovisual `AWAITING_HUMAN_REVIEW`.
+- **Observed Quota Reading:** Window 3 `77%` remaining (resets `2026-11-27T03:47:25Z`) | **External API Cost:** `$0.00` | **Publication Kill Switch:** `BLOCKED`.
+- **Rollback:** `git revert <rec-04-02-sha>`.
+- **Next Item:** `REC-04.03` (full canonical regression on clean final SHA + Node + isolated browser E2E).

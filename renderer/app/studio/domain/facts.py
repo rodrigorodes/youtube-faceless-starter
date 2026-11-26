@@ -94,7 +94,7 @@ def _parse_run(tokens: list[str], start: int) -> tuple[int, int]:
             total += (current or 1) * 1000
             current, mil_used = 0, True
         else:
-            current += _WORDS.get(word) or _ARTICLE_UNITS[word]
+            current += _WORDS[word] if word in _WORDS else _ARTICLE_UNITS[word]
         prev, j = word, j + 1
     return total + current, j
 

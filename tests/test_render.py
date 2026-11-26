@@ -716,3 +716,128 @@ def test_the_style_projection_uses_only_the_declared_values_of_the_config():
     assert style.music == {"bpm": 90}  # o seed default (7) não é materializado no plano
     assert style.motion == () and style.voice == {} and style.transition == {}
     assert style_from_effective_config(frozen_config(with_style=False)) is None
+
+
+# ---------------------------------------------------------------------------
+# P2-1 / P2-2 (REC-04.02): geometria segura de overlays/PiP e preservação de hash
+# ---------------------------------------------------------------------------
+
+
+def _rect_intersects(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    return ax0 < bx1 and ax1 > bx0 and ay0 < by1 and ay1 > by0
+
+
+def _overlay_box_px(layer, width: int, height: int) -> tuple[int, int, int, int]:
+    """Espelha exatamente a geometria de `_overlay_filter` em `render_plan_compiler.py`."""
+    tw = max(16, int(width * layer.scale))
+    th = max(16, int(height * layer.scale))
+    x0 = int((width - tw) * layer.position_x)
+    y0 = int((height - th) * layer.position_y)
+    return (x0, y0, x0 + tw, y0 + th)
+
+
+def test_overlay_layers_never_overlap_top_left_hud_or_bottom_caption_safe_zones(tmp_path):
+    """P2-1: overlays/PiP (posições ímpares à direita e pares à esquerda) nunca sobrepõem
+    a safe-zone do HUD/disclosure superior esquerdo (`x<=600, y<=260`) nem a faixa inferior de legendas.
+    """
+    from app.studio.domain.contracts import SceneAsset
+    from app.studio.domain.render import SIZE
+
+    w = world(tmp_path)
+    scenes = w["scripts"].scenes(V)
+    overlays = [
+        SceneAsset(scene_id=scenes[0].id, asset_id="a" * 32, position=pos, start_s=0.5, end_s=2.5, role="overlay")
+        for pos in (1, 2, 3, 4)
+    ]
+    w["scripts"].get_scene_assets = lambda sid: overlays if sid == scenes[0].id else []
+    run, _, _ = runner(w)
+    pairs = [(sc, w["assets"].get(sc.asset_id)) for sc in scenes]
+
+    layers = run._overlay_layers(pairs, [5.0, 5.0, 5.0])
+    assert len(layers) == 4
+
+    # Safe-zone superior esquerda do static_overlay (disclosure y=96..135, selo FATO y=160..245 + margem)
+    hud_safe_zone = (0, 0, 600, 260)
+    caption_zones = {
+        VideoFormat.long: (0, 880, 1920, 1080),
+        VideoFormat.short: (0, 1500, 1080, 1920),
+    }
+
+    for fmt, (width, height) in SIZE.items():
+        cap_zone = caption_zones[fmt]
+        for layer in layers:
+            box = _overlay_box_px(layer, width, height)
+            assert not _rect_intersects(box, hud_safe_zone), (
+                f"Overlay z={layer.z_index} ({layer.position_x}, {layer.position_y}) em {fmt.value} "
+                f"box={box} colide com HUD/disclosure safe-zone {hud_safe_zone}"
+            )
+            assert not _rect_intersects(box, cap_zone), (
+                f"Overlay z={layer.z_index} ({layer.position_x}, {layer.position_y}) em {fmt.value} "
+                f"box={box} colide com faixa de legendas {cap_zone}"
+            )
+
+
+def test_overlay_layers_negative_cases_and_window_clamping(tmp_path):
+    """P2-2: _overlay_layers recusa asset inexistente/sem licença e descarta janela end_s <= start_s."""
+    from app.studio.domain.contracts import SceneAsset
+
+    w = world(tmp_path)
+    scenes = w["scripts"].scenes(V)
+    pairs = [(sc, w["assets"].get(sc.asset_id)) for sc in scenes]
+    run, _, _ = runner(w)
+
+    # 1. Janela inválida (start_s >= length ou end_s <= start_s) é descartada sem erro
+    w["scripts"].get_scene_assets = lambda sid: (
+        [SceneAsset(scene_id=sid, asset_id="a" * 32, position=1, start_s=6.0, end_s=8.0, role="overlay")]
+        if sid == scenes[0].id else []
+    )
+    assert run._overlay_layers(pairs, [5.0, 5.0, 5.0]) == ()
+
+    # 2. Asset ausente -> RenderRefused (fail-closed)
+    missing_id = "f" * 32
+    orig_get = w["assets"].get
+    w["assets"].get = lambda aid: None if aid == missing_id else orig_get(aid)
+    w["scripts"].get_scene_assets = lambda sid: (
+        [SceneAsset(scene_id=sid, asset_id=missing_id, position=1, start_s=0.5, end_s=2.0, role="overlay")]
+        if sid == scenes[0].id else []
+    )
+    with pytest.raises(RenderRefused, match="not found"):
+        run._overlay_layers(pairs, [5.0, 5.0, 5.0])
+
+    # 3. Asset com licença em branco -> RenderRefused (fail-closed)
+    unlicensed_id = "e" * 32
+    w["assets"].get = lambda aid: (
+        Asset.model_construct(id=aid, kind=AssetKind.image, cache_key=aid * 2, path=f"cache/ab/{aid}.png",
+                              provider="import", model="m", license="   ")
+        if aid == unlicensed_id else orig_get(aid)
+    )
+    w["scripts"].get_scene_assets = lambda sid: (
+        [SceneAsset(scene_id=sid, asset_id=unlicensed_id, position=1, start_s=0.5, end_s=2.0, role="overlay")]
+        if sid == scenes[0].id else []
+    )
+    with pytest.raises(RenderRefused, match="no license"):
+        run._overlay_layers(pairs, [5.0, 5.0, 5.0])
+
+
+def test_start_render_preserves_input_hash_without_overlays_and_invalidates_with_overlays(tmp_path):
+    """P2-1/P2-2: vídeos sem overlays preservam o input_hash exato; anexar overlay altera o hash."""
+    from app.studio.domain.contracts import SceneAsset
+
+    w_base = world(tmp_path / "base")
+    job_base = starter(w_base).execute(V)
+
+    w_no_ov = world(tmp_path / "no_ov")
+    w_no_ov["scripts"].get_scene_assets = lambda sid: []
+    job_no_ov = starter(w_no_ov).execute(V)
+    assert job_no_ov.input_hash == job_base.input_hash
+
+    w_with_ov = world(tmp_path / "with_ov")
+    first_scene_id = w_with_ov["scripts"].scenes(V)[0].id
+    w_with_ov["scripts"].get_scene_assets = lambda sid: (
+        [SceneAsset(scene_id=sid, asset_id="a" * 32, position=2, start_s=0.5, end_s=2.0, role="overlay")]
+        if sid == first_scene_id else []
+    )
+    job_with_ov = starter(w_with_ov).execute(V)
+    assert job_with_ov.input_hash != job_base.input_hash

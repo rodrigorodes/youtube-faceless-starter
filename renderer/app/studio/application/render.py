@@ -138,6 +138,20 @@ def _scene_assets_for(scripts: ScriptRepository, scene) -> list:
     return items
 
 
+def _overlay_placement(position: int) -> tuple[float, float]:
+    """Coordenadas seguras (position_x, position_y) para overlays/PiP com scale=0.45.
+
+    Evita colisão com a safe-zone do HUD/disclosure superior esquerdo (y<=260, x<=600)
+    e com a faixa inferior de legendas tanto em 1080p horizontal (1920x1080) quanto
+    em 1080x1920 vertical (short):
+    - posição ímpar (direita): x=0.94, y=0.28 -> long [992..1856, 166..652], short [558..1044, 295..1159]
+    - posição par (esquerda):  x=0.06, y=0.50 -> long [63..927,   297..783], short [35..521,   528..1392]
+    """
+    if int(position) % 2 == 1:
+        return (0.94, 0.28)
+    return (0.06, 0.50)
+
+
 class StartRender:
     def __init__(self, videos: VideoRepository, scripts: ScriptRepository, assets: AssetRepository,
                  jobs: RenderJobRepository, enqueue: Callable[[str], None]):
@@ -339,6 +353,7 @@ class RunRender:
                 end_s = min(float(length), float(sa.end_s))
                 if end_s <= start_s:
                     continue
+                pos_x, pos_y = _overlay_placement(sa.position)
                 layers.append(OverlayLayer(
                     scene_id=scene.id,
                     asset_id=ov_asset.id,
@@ -350,8 +365,8 @@ class RunRender:
                     fit="contain",
                     opacity=0.95,
                     scale=0.45,
-                    position_x=0.94 if (int(sa.position) % 2 == 1) else 0.06,
-                    position_y=0.14,
+                    position_x=pos_x,
+                    position_y=pos_y,
                 ))
         return tuple(layers)
 

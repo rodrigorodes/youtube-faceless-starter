@@ -303,3 +303,95 @@ def test_descriptors_identifies_video_media_type_from_suffix_or_metadata(tmp_pat
     descriptors = renderer._descriptors(plan, spec)
     assert descriptors["asset-clip"].media_type == "video"
     assert descriptors["asset-image"].media_type == "image"
+
+
+# ---------------------------------------------------------------------------
+# PRE-1 (REC-04.02): evitar duplicação Pillow + ASS em cenas de vídeo base / planos com pacing
+# ---------------------------------------------------------------------------
+
+
+def test_pre1_single_shot_video_scene_v2_uses_only_ass_subtitles_no_pillow_duplication(tmp_path):
+    """PRE-1: cena de vídeo base com shot único em plano v2 não pode queimar legenda Pillow E ASS."""
+    scene = StoryboardScene(
+        scene_id="scene-video-01",
+        asset_id="asset-video-01",
+        narration="Em 1950 Alan Turing consolidou os fundamentos da computação moderna.",
+        speech_seconds=3.0,
+    )
+    vref = video_ref("asset-video-01", duration_ticks=150000)
+    plan = plan_v2_with([scene], assets=[vref])
+    assets = {"asset-video-01": descriptor_for("asset-video-01", sha=SHA_B, media_type="video", duration_ticks=150000)}
+    work_dir = str(tmp_path / "job-pre1-video")
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
+
+    compiled = compile_render_plan(plan=plan, assets=assets, work_dir=work_dir)
+
+    assert len(compiled.shots) == 1
+    assert compiled.shots[0].captions == (), "Shot único de vídeo base não deve ter overlays Pillow de legenda"
+    assert not any("cue_" in arg for arg in compiled.shots[0].args)
+    assert compiled.subtitles_ass_path is not None
+    assert "-vf" in compiled.audio.args
+    vf_idx = compiled.audio.args.index("-vf")
+    assert compiled.audio.args[vf_idx + 1].startswith("subtitles=")
+
+
+def test_pre1_paced_mixed_plan_v2_uses_only_ass_subtitles_across_all_scenes(tmp_path):
+    """PRE-1: em plano v2 com pacing ativo misturando cenas multi-shot, cena curta de imagem e cena de vídeo,
+    nenhuma cena deve duplicar Pillow + ASS (todas usam exclusivamente o ASS global).
+    """
+    scenes = [
+        StoryboardScene(
+            scene_id="scene-img-long",
+            asset_id="asset-01",
+            narration="Primeira cena longa com múltiplos cortes de pacing cinematográfico no documentário.",
+            speech_seconds=10.0,
+        ),
+        StoryboardScene(
+            scene_id="scene-img-short",
+            asset_id="asset-01",
+            narration="Cena curta.",
+            speech_seconds=2.0,
+        ),
+        StoryboardScene(
+            scene_id="scene-video-broll",
+            asset_id="asset-video-01",
+            narration="Cena com vídeo B-roll importado em movimento contínuo sem legenda duplicada.",
+            speech_seconds=4.0,
+        ),
+    ]
+    plan = plan_v2_with(
+        scenes,
+        assets=[image_ref("asset-01"), video_ref("asset-video-01", duration_ticks=200000)],
+        pacing_preset="cinematic",
+    )
+    assets = {
+        "asset-01": descriptor_for("asset-01"),
+        "asset-video-01": descriptor_for("asset-video-01", sha=SHA_B, media_type="video", duration_ticks=200000),
+    }
+    work_dir = str(tmp_path / "job-pre1-mixed")
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
+
+    compiled = compile_render_plan(plan=plan, assets=assets, work_dir=work_dir)
+    assert any(len(sc.base_shots) > 1 for sc in plan.timeline.scenes)
+    assert all(sh.captions == () for sh in compiled.shots), (
+        f"Nenhuma cena em plano v2 com pacing deve duplicar Pillow + ASS: {[len(sh.captions) for sh in compiled.shots]}"
+    )
+    assert compiled.subtitles_ass_path is not None
+
+
+def test_pre1_non_paced_single_shot_image_plan_preserves_legacy_captions_and_digest(tmp_path):
+    """Garante compatibilidade de contratos/hashes para planos sem pacing compostos apenas de imagens."""
+    scene = StoryboardScene(
+        scene_id="scene-img-01",
+        asset_id="asset-01",
+        narration="Cena única de imagem sem pacing.",
+        speech_seconds=2.0,
+    )
+    plan_v1 = plan_v2_with([scene], assets=[image_ref("asset-01")], schema_version=1)
+    plan_v2 = plan_v2_with([scene], assets=[image_ref("asset-01")], schema_version=2)
+    assets = {"asset-01": descriptor_for("asset-01")}
+
+    c1 = compile_render_plan(plan=plan_v1, assets=assets, work_dir=str(tmp_path / "v1"))
+    c2 = compile_render_plan(plan=plan_v2, assets=assets, work_dir=str(tmp_path / "v2"))
+    assert len(c1.shots[0].captions) > 0
+    assert len(c2.shots[0].captions) > 0
