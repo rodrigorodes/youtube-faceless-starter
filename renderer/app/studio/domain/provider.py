@@ -164,6 +164,10 @@ class ProviderPermanentError(ProviderError):
     """Falha permanente (parâmetros inválidos, prompt bloqueado ou credencial rejeitada)."""
 
 
+class ProviderMissingCredential(ProviderPermanentError):
+    """Credencial necessária não configurada para o provedor."""
+
+
 def _amount(value: object) -> Decimal:
     if isinstance(value, Decimal):
         return value

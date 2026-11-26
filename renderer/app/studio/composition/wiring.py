@@ -63,6 +63,8 @@ from ..adapters.render_disabled import DisabledRenderer
 from ..adapters.render_plan_ffmpeg import PlanFfmpegRenderer
 from ..adapters.storage import FileAssetStore, FileRenderStorage
 from ..adapters.voice_piper import PiperVoice
+from ..adapters.voice_kokoro import KokoroVoice
+from ..adapters.voice_elevenlabs import ElevenLabsVoice
 from ..adapters.postgres.editorial_repo import (PostgresFactCheckRepository, PostgresScriptRepository,
                                                PostgresSnapshotRepository, PostgresUsageRepository)
 from ..adapters.postgres.scene_duration_repo import PostgresSceneDurationRepository
@@ -325,6 +327,8 @@ class Studio:
         register("search", "pexels", lambda model: PexelsMediaSearch(model, settings.pexels_key))
         register("search", "pixabay", lambda model: PixabayMediaSearch(settings.pixabay_key))
         register("voice", "piper", PiperVoice)
+        register("voice", "kokoro", KokoroVoice)
+        register("voice", "elevenlabs", ElevenLabsVoice)
         # RP-032: a flag é disponibilidade do caminho baseado em plano, não dispatch dual —
         # o legado foi removido (emenda §14). Desligada, o renderer recusa o render.
         # RP-06b: é aqui — e só aqui — que o executor recebe o repositório versionado do plano e
