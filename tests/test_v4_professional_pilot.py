@@ -1,11 +1,10 @@
-"""Testes de Homologação da Fase V4-13 — Professional Pilot.
+"""Testes de Homologação de Contratos Sintéticos — Fase V4-13 / INT-06.
 
-Valida as 14 atividades da fase V4-13 e as especificações de PROFESSIONAL-PILOT-SPEC:
-- Roteiros de referência e comparação pareada (Econômico vs Equilibrado vs Premium)
-- Métricas comparadas de voz, som (LUFS/Peak), sincronia áudio/legenda
-- Custo por minuto e economia em regeneração pontual de cenas
-- Bloqueio estrito de publicação externa via kill switch
-- Emissão do relatório de conformidade consolidado para Avaliação Humana
+NOTA OPERACIONAL DE AUDITORIA (INT-06 / A05):
+Este módulo valida a álgebra de contratos, proporções de custo por minuto e limites
+de tolerância da camada de aplicação com parâmetros sintéticos controlados.
+A medição física com renderização real no FFmpeg e áudio no disco é executada
+pelo teste de integração `tests/test_int_06_pilot.py` e `tests/test_v4_studio_real_flow_pilot.py`.
 """
 from decimal import Decimal
 import pytest

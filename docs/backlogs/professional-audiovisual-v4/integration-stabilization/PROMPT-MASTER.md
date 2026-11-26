@@ -31,7 +31,7 @@
   - Suportar importação segura de PNG e MP4 externos com magic bytes, sem path traversal.
   - Conectar storyboard ao `AssetRepository` persistente.
 
-- [ ] **INT-06 — Piloto Audiovisual Real:**
+- [x] **INT-06 — Piloto Audiovisual Real:**
   - Gerar arquivo MP4 físico via Studio real medido pelo FFmpeg e QA real.
   - Rotular claramente métricas reais observadas vs contratos sintéticos.
   - Kill switch de publicação verificado como `BLOCKED`.
