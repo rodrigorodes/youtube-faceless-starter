@@ -142,6 +142,7 @@ class Scene(_Model):
     duration_s: float | None = Field(default=None, ge=0)
     broll_enabled: bool = False
     broll_note: str | None = None
+    edit_revision: int = Field(default=1, ge=1)
     assets: list[SceneAsset] = Field(default_factory=list)
     visual_intent: str = ""
     search_queries: list[str] = Field(default_factory=list)

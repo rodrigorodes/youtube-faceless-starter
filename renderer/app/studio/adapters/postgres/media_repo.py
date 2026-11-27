@@ -11,6 +11,7 @@ from .editorial_repo import _Base
 from .repo import _translated
 
 _COLUMNS = "id, kind, cache_key, path, provider, model, license, attribution, source_url, cost_usd"
+_UNSET = object()
 
 
 def _asset(row: dict) -> Asset:
@@ -51,7 +52,7 @@ class PostgresAssetRepository(_Base):
     def swap_scene_asset(self, video_id: str, scene_id: str, asset_id: str, expected_asset_id: str | None) -> bool:
         """W4.4: troca o asset de UMA cena por id estável, com CAS no vínculo lido; o resto fica intacto."""
         with _translated(), self._connect() as conn:
-            cur = conn.execute("UPDATE studio.scenes SET asset_id = %s "
+            cur = conn.execute("UPDATE studio.scenes SET asset_id = %s, edit_revision = edit_revision + 1 "
                                "WHERE video_id = %s AND id = %s AND asset_id IS NOT DISTINCT FROM %s",
                                (check_id(asset_id), check_id(video_id), check_id(scene_id),
                                 check_id(expected_asset_id) if expected_asset_id else None))
@@ -99,6 +100,175 @@ class PostgresAssetRepository(_Base):
                 conn.rollback()
                 return persisted, False
             return persisted, True
+
+    def add_and_replace_scene_base_media(
+        self,
+        *,
+        video_id: str,
+        scene_id: str,
+        asset: Asset | None = None,
+        existing_asset_id: str | None = None,
+        expected_asset_id: str | None | object = _UNSET,
+        expected_edit_revision: int | None = None,
+        apply_trim: bool = True,
+        trim_start_s: float | None = None,
+        trim_end_s: float | None = None,
+    ) -> tuple[Asset | None, int, bool, str]:
+        """Substitui mídia base e trim da cena em UMA única transação PostgreSQL com CAS de `edit_revision`.
+
+        Preserva integralmente todas as camadas não-base (`role <> 'base'`) em `studio.scene_assets`.
+        Usa deslocamento em duas etapas (+offset -> normalização) quando `position=0` está ocupado
+        por um overlay para evitar `UniqueViolation` em `uq_scene_asset_pos`.
+        """
+        vid = check_id(video_id)
+        sid = check_id(scene_id)
+        check_exp_aid = expected_asset_id is not _UNSET
+        exp_aid = check_id(expected_asset_id) if (check_exp_aid and expected_asset_id) else None
+        if asset is None and not existing_asset_id:
+            raise ValueError("either asset or existing_asset_id must be provided")
+
+        class _TxAbort(Exception):
+            def __init__(self, reason: str, rev: int = 0):
+                self.reason = reason
+                self.rev = rev
+
+        try:
+            with _translated(), self._connect() as conn:
+                with conn.transaction(), conn.cursor(row_factory=dict_row) as cur:
+                    # Sempre adquire o lock da cena ANTES de qualquer advisory lock por cache_key.
+                    cur.execute(
+                        "SELECT id, asset_id, edit_revision FROM studio.scenes "
+                        "WHERE id = %s AND video_id = %s FOR UPDATE",
+                        (sid, vid),
+                    )
+                    scene_row = cur.fetchone()
+                    if scene_row is None:
+                        raise _TxAbort("scene_not_found")
+                    current_rev = int(scene_row["edit_revision"])
+                    if expected_edit_revision is not None and current_rev != int(expected_edit_revision):
+                        raise _TxAbort("edit_revision_mismatch", current_rev)
+                    if check_exp_aid and (scene_row["asset_id"] or None) != exp_aid:
+                        raise _TxAbort("asset_id_mismatch", current_rev)
+
+                    if asset is not None:
+                        key = check_cache_key(asset.cache_key)
+                        cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+                        cur.execute(
+                            "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license, attribution, source_url, cost_usd) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (cache_key) DO NOTHING",
+                            (check_id(asset.id), asset.kind.value, key, asset.path, asset.provider, asset.model,
+                             asset.license, asset.attribution, asset.source_url, asset.cost_usd),
+                        )
+                        cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE cache_key = %s", (key,))
+                        persisted = _asset(cur.fetchone())
+                    else:
+                        cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE id = %s", (check_id(existing_asset_id),))
+                        found = cur.fetchone()
+                        if found is None:
+                            raise _TxAbort("asset_not_found", current_rev)
+                        persisted = _asset(found)
+
+                    cur.execute(
+                        "UPDATE studio.scenes SET asset_id = %s, edit_revision = edit_revision + 1 "
+                        "WHERE id = %s AND video_id = %s RETURNING edit_revision",
+                        (check_id(persisted.id), sid, vid),
+                    )
+                    new_rev = int(cur.fetchone()["edit_revision"])
+
+                    if apply_trim:
+                        if trim_start_s is not None and trim_end_s is not None:
+                            cur.execute(
+                                "SELECT id FROM studio.scene_assets "
+                                "WHERE scene_id = %s AND role = 'base' ORDER BY position LIMIT 1",
+                                (sid,),
+                            )
+                            base_row = cur.fetchone()
+                            if base_row is not None:
+                                cur.execute(
+                                    "UPDATE studio.scene_assets SET asset_id = %s, start_s = %s, end_s = %s "
+                                    "WHERE id = %s",
+                                    (check_id(persisted.id), float(trim_start_s), float(trim_end_s), base_row["id"]),
+                                )
+                                cur.execute(
+                                    "DELETE FROM studio.scene_assets "
+                                    "WHERE scene_id = %s AND role = 'base' AND id <> %s",
+                                    (sid, base_row["id"]),
+                                )
+                            else:
+                                cur.execute(
+                                    "SELECT 1 FROM studio.scene_assets WHERE scene_id = %s AND position = 0 LIMIT 1",
+                                    (sid,),
+                                )
+                                if cur.fetchone() is not None:
+                                    cur.execute(
+                                        "SELECT COALESCE(MAX(position), 0) + 10000 AS off "
+                                        "FROM studio.scene_assets WHERE scene_id = %s",
+                                        (sid,),
+                                    )
+                                    offset = int(cur.fetchone()["off"])
+                                    cur.execute(
+                                        "UPDATE studio.scene_assets SET position = position + %s "
+                                        "WHERE scene_id = %s AND role <> 'base'",
+                                        (offset, sid),
+                                    )
+                                    cur.execute(
+                                        "WITH ranked AS ("
+                                        "  SELECT id, ROW_NUMBER() OVER (ORDER BY position, created_at, id) AS new_pos "
+                                        "  FROM studio.scene_assets WHERE scene_id = %s AND role <> 'base'"
+                                        ") UPDATE studio.scene_assets sa SET position = ranked.new_pos "
+                                        "FROM ranked WHERE sa.id = ranked.id",
+                                        (sid,),
+                                    )
+                                cur.execute(
+                                    "INSERT INTO studio.scene_assets "
+                                    "(id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s) "
+                                    "VALUES (gen_random_uuid(), %s, %s, 0, %s, %s, 'base', 'none', 'none', 0.0)",
+                                    (sid, check_id(persisted.id), float(trim_start_s), float(trim_end_s)),
+                                )
+                        else:
+                            cur.execute(
+                                "DELETE FROM studio.scene_assets WHERE scene_id = %s AND role = 'base'",
+                                (sid,),
+                            )
+                    else:
+                        cur.execute(
+                            "UPDATE studio.scene_assets SET asset_id = %s "
+                            "WHERE scene_id = %s AND role = 'base'",
+                            (check_id(persisted.id), sid),
+                        )
+
+                    return persisted, new_rev, True, "ok"
+        except _TxAbort as abort:
+            return None, abort.rev, False, abort.reason
+
+    def is_path_referenced(self, path: str) -> bool:
+        """Retorna True se qualquer linha em studio.assets ainda aponta para este caminho."""
+        with _translated(), self._connect() as conn:
+            cur = conn.execute(
+                "SELECT 1 FROM studio.assets WHERE path = %s LIMIT 1",
+                (path,),
+            )
+            return cur.fetchone() is not None
+
+    def belongs_to_other_project(self, asset_id: str, project_id: str) -> bool:
+        """Retorna True se o asset já estiver vinculado a cenas/camadas de outro projeto."""
+        aid = check_id(asset_id)
+        pid = check_id(project_id)
+        with _translated(), self._connect() as conn:
+            cur = conn.execute(
+                "SELECT 1 WHERE EXISTS ("
+                "  SELECT 1 FROM studio.scenes s "
+                "  JOIN studio.videos v ON v.id = s.video_id "
+                "  WHERE s.asset_id = %s AND v.project_id <> %s"
+                ") OR EXISTS ("
+                "  SELECT 1 FROM studio.scene_assets sa "
+                "  JOIN studio.scenes s ON s.id = sa.scene_id "
+                "  JOIN studio.videos v ON v.id = s.video_id "
+                "  WHERE sa.asset_id = %s AND v.project_id <> %s"
+                ")",
+                (aid, pid, aid, pid),
+            )
+            return cur.fetchone() is not None
 
     def delete_if_unreferenced(self, asset_id: str) -> bool:
         """Remove um asset apenas se nenhuma cena, scene_asset ou render_job o referencia (compensação)."""

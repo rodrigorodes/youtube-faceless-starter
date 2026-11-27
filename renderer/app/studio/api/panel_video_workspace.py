@@ -569,6 +569,19 @@ def _normalize_scenes(scenes, script, assets=None, scene_timing=None) -> list[di
         asset_obj = (assets or {}).get(int(s_idx if s_idx is not None else idx))
         asset_kind = getattr(getattr(asset_obj, "kind", None), "value", getattr(asset_obj, "kind", "")) if asset_obj else ""
         timing = (scene_timing or {}).get(str(s_id))
+        if not timing:
+            s_assets_list = getattr(s, "assets", None) or (s.get("assets") if isinstance(s, dict) else None) or []
+            for sa in s_assets_list:
+                sa_role = getattr(sa, "role", None) if not isinstance(sa, dict) else sa.get("role")
+                if sa_role == "base":
+                    sa_start = getattr(sa, "start_s", None) if not isinstance(sa, dict) else sa.get("start_s")
+                    sa_end = getattr(sa, "end_s", None) if not isinstance(sa, dict) else sa.get("end_s")
+                    if sa_start is not None and sa_end is not None:
+                        timing = (float(sa_start), float(sa_end))
+                    break
+        s_edit_rev = getattr(s, "edit_revision", None)
+        if s_edit_rev is None and isinstance(s, dict):
+            s_edit_rev = s.get("edit_revision")
         val_start = getattr(s, "trim_start_s", None)
         if val_start is None and isinstance(s, dict):
             val_start = s.get("trim_start_s")
@@ -601,6 +614,7 @@ def _normalize_scenes(scenes, script, assets=None, scene_timing=None) -> list[di
             "broll_note": str(s_broll_note) if s_broll_note is not None else None,
             "asset_tag": _asset_tag(asset_obj) if s_asset else "",
             "asset_kind": str(asset_kind or ""),
+            "edit_revision": int(s_edit_rev or 1),
             "trim_start_s": float(t_start) if t_start is not None else None,
             "trim_end_s": float(t_end) if t_end is not None else None,
         })

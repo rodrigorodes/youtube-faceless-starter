@@ -238,6 +238,9 @@ class SceneMediaResult:
     asset: Asset | None
     changed: bool
     reason: str = ""
+    edit_revision: int | None = None
+    trim_start_s: float | None = None
+    trim_end_s: float | None = None
 
 
 class SwapSceneMedia:
@@ -258,16 +261,28 @@ class SwapSceneMedia:
 
     def execute(self, video_id: str, scene_id: str, *, asset_id: str | None = None,
                 candidate: MediaCandidate | None = None, expected_asset_id: str | None = None,
-                expected_version: int | None = None) -> SceneMediaResult:
+                expected_version: int | None = None, expected_edit_revision: int | None = None,
+                apply_trim: bool = False, trim_start_s: float | None = None,
+                trim_end_s: float | None = None) -> SceneMediaResult:
+        import math
+
         video = _require_video(self.videos, video_id)
         scene = _scene(self.scripts, video_id, scene_id)
         if expected_version is not None:
             latest = self.scripts.latest(video_id)
             if latest is None or latest.version != expected_version:
                 raise StateConflict("script version changed underneath the media swap")
+        if expected_edit_revision is not None and getattr(scene, "edit_revision", 1) != expected_edit_revision:
+            raise StateConflict("scene edit_revision changed underneath; reload before swapping")
+        if apply_trim and (trim_start_s is not None or trim_end_s is not None):
+            if trim_start_s is None or trim_end_s is None:
+                raise SceneMediaRefused("both trim_start_s and trim_end_s are required when trim is specified")
+            if not math.isfinite(trim_start_s) or not math.isfinite(trim_end_s) or trim_start_s < 0 or trim_end_s <= trim_start_s:
+                raise SceneMediaRefused("invalid trim bounds: require finite 0 <= trim_start_s < trim_end_s")
         if asset_id is None and candidate is None:
             current = self.assets.get(scene.asset_id) if scene.asset_id else None
-            return SceneMediaResult(scene_id=scene.id, asset=current, changed=False, reason="no_candidate")
+            return SceneMediaResult(scene_id=scene.id, asset=current, changed=False, reason="no_candidate",
+                                    edit_revision=getattr(scene, "edit_revision", 1))
         if asset_id is not None and candidate is not None:
             raise SceneMediaRefused("choose either a candidate or an asset, not both")
         if candidate is not None:
@@ -278,13 +293,38 @@ class SwapSceneMedia:
                 raise SceneMediaRefused(f"asset {asset_id!r} does not exist")
             if not (asset.license or "").strip():
                 raise AssetRefused("asset without a registered license")
-        if scene.asset_id == asset.id:
-            return SceneMediaResult(scene_id=scene.id, asset=asset, changed=False, reason="already-linked")
+            if hasattr(self.assets, "belongs_to_other_project") and self.assets.belongs_to_other_project(asset.id, video.project_id):
+                raise PermissionError(f"asset {asset.id!r} belongs to another project")
+        if scene.asset_id == asset.id and not apply_trim:
+            return SceneMediaResult(scene_id=scene.id, asset=asset, changed=False, reason="already-linked",
+                                    edit_revision=getattr(scene, "edit_revision", 1))
         if expected_asset_id is not None and (scene.asset_id or "") != expected_asset_id:
             raise StateConflict("scene media changed underneath; reload before swapping")
+        if hasattr(self.assets, "add_and_replace_scene_base_media"):
+            persisted, new_rev, ok, reason = self.assets.add_and_replace_scene_base_media(
+                video_id=video_id,
+                scene_id=scene.id,
+                existing_asset_id=asset.id,
+                expected_asset_id=scene.asset_id,
+                expected_edit_revision=expected_edit_revision,
+                apply_trim=apply_trim,
+                trim_start_s=trim_start_s,
+                trim_end_s=trim_end_s,
+            )
+            if not ok or persisted is None:
+                raise StateConflict(f"scene media changed underneath ({reason}); nothing was written")
+            return SceneMediaResult(
+                scene_id=scene.id,
+                asset=persisted,
+                changed=True,
+                edit_revision=new_rev,
+                trim_start_s=trim_start_s if apply_trim else None,
+                trim_end_s=trim_end_s if apply_trim else None,
+            )
         if not self.assets.swap_scene_asset(video_id, scene.id, asset.id, expected_asset_id=scene.asset_id):
             raise StateConflict("scene media changed underneath; nothing was written")
-        return SceneMediaResult(scene_id=scene.id, asset=asset, changed=True)
+        return SceneMediaResult(scene_id=scene.id, asset=asset, changed=True,
+                                edit_revision=getattr(scene, "edit_revision", 1) + 1)
 
     def _materialize(self, video: Video, candidate: MediaCandidate) -> Asset:
         if self.fetcher is None:
@@ -478,11 +518,21 @@ class ImportExternalMedia:
         expected_asset_id: str | None = None,
         trim_start_s: float | None = None,
         trim_end_s: float | None = None,
+        expected_edit_revision: int | None = None,
     ) -> Asset:
         import hashlib
+        import math
         from pathlib import PurePosixPath
 
         video = _require_video(self.videos, video_id)
+        if (trim_start_s is not None) != (trim_end_s is not None):
+            raise AssetRefused("both trim_start_s and trim_end_s are required when trim is specified")
+        if trim_start_s is not None and trim_end_s is not None:
+            if not math.isfinite(trim_start_s) or not math.isfinite(trim_end_s):
+                raise AssetRefused("trim_start_s and trim_end_s must be finite numbers")
+            if trim_start_s < 0.0 or trim_end_s <= trim_start_s:
+                raise AssetRefused("invalid trim bounds: require 0 <= trim_start_s < trim_end_s")
+
         clean_license = (license or "").strip()
         if not verify_license_provenance(clean_license):
             raise AssetRefused("media without a valid registered open/commercial license")
@@ -504,6 +554,8 @@ class ImportExternalMedia:
 
         if scene_id is not None:
             scene = _scene(self.scripts, video.id, scene_id)
+            if expected_edit_revision is not None and getattr(scene, "edit_revision", 1) != expected_edit_revision:
+                raise StateConflict("scene edit_revision changed underneath; reload before importing")
             if scene.asset_id != expected_asset_id:
                 raise StateConflict("scene media changed underneath; reload before importing")
 
@@ -513,7 +565,12 @@ class ImportExternalMedia:
             raise AssetRefused("media exceeds 100MB limit")
         if self.probe is None:
             raise AssetRefused("media probe adapter is not configured")
-        self.probe.probe(data, mime_normalized)
+        probed = self.probe.probe(data, mime_normalized)
+        if trim_end_s is not None and probed is not None and getattr(probed, "duration_s", None) is not None:
+            if float(trim_end_s) > float(probed.duration_s) + 1e-6:
+                raise AssetRefused(
+                    f"trim_end_s ({trim_end_s}) exceeds probed media duration ({float(probed.duration_s):.3f}s)"
+                )
 
         is_video = mime_normalized in ALLOWED_VIDEO_MIME
         kind = AssetKind.video if is_video else AssetKind.image
@@ -543,6 +600,20 @@ class ImportExternalMedia:
                 file_ok = True
             if file_ok:
                 if scene_id is not None:
+                    if hasattr(self.assets, "add_and_replace_scene_base_media"):
+                        persisted, _rev, ok, reason = self.assets.add_and_replace_scene_base_media(
+                            video_id=video.id,
+                            scene_id=scene_id,
+                            existing_asset_id=existing.id,
+                            expected_asset_id=expected_asset_id,
+                            expected_edit_revision=expected_edit_revision,
+                            apply_trim=True,
+                            trim_start_s=trim_start_s,
+                            trim_end_s=trim_end_s,
+                        )
+                        if not ok or persisted is None:
+                            raise StateConflict(f"scene media changed underneath ({reason}); nothing was linked")
+                        return persisted
                     self._link_scene_cas(video.id, scene_id, existing.id, expected_asset_id)
                     self._apply_scene_trim(scene_id, existing.id, trim_start_s, trim_end_s)
                 return existing
@@ -557,6 +628,20 @@ class ImportExternalMedia:
 
         if existing is not None:
             if scene_id is not None:
+                if hasattr(self.assets, "add_and_replace_scene_base_media"):
+                    persisted, _rev, ok, reason = self.assets.add_and_replace_scene_base_media(
+                        video_id=video.id,
+                        scene_id=scene_id,
+                        existing_asset_id=existing.id,
+                        expected_asset_id=expected_asset_id,
+                        expected_edit_revision=expected_edit_revision,
+                        apply_trim=True,
+                        trim_start_s=trim_start_s,
+                        trim_end_s=trim_end_s,
+                    )
+                    if not ok or persisted is None:
+                        raise StateConflict(f"scene media changed underneath ({reason}); nothing was linked")
+                    return persisted
                 self._link_scene_cas(video.id, scene_id, existing.id, expected_asset_id)
                 self._apply_scene_trim(scene_id, existing.id, trim_start_s, trim_end_s)
             return existing
@@ -574,7 +659,28 @@ class ImportExternalMedia:
             cost_usd=0.0,
         )
         saved: Asset | None = None
+        use_unified_base_replace = (
+            hasattr(self.assets, "add_and_replace_scene_base_media")
+            and not (
+                "add_and_swap_scene_asset" in type(self.assets).__dict__
+                and "add_and_replace_scene_base_media" not in type(self.assets).__dict__
+            )
+        )
         try:
+            if scene_id is not None and use_unified_base_replace:
+                saved, _rev, linked, reason = self.assets.add_and_replace_scene_base_media(
+                    video_id=video.id,
+                    scene_id=scene_id,
+                    asset=asset,
+                    expected_asset_id=expected_asset_id,
+                    expected_edit_revision=expected_edit_revision,
+                    apply_trim=True,
+                    trim_start_s=trim_start_s,
+                    trim_end_s=trim_end_s,
+                )
+                if not linked or saved is None:
+                    raise StateConflict(f"scene media changed underneath ({reason}); nothing was linked")
+                return saved
             if scene_id is not None and hasattr(self.assets, "add_and_swap_scene_asset"):
                 saved, linked = self.assets.add_and_swap_scene_asset(
                     asset, video.id, scene_id, expected_asset_id
@@ -626,9 +732,14 @@ class ImportExternalMedia:
                 return  # fail closed on DB ambiguity: never unlink a possibly live file
         try:
             still_exists = self.assets.find(cache_key)
+            path_referenced = (
+                self.assets.is_path_referenced(path)
+                if hasattr(self.assets, "is_path_referenced")
+                else False
+            )
         except Exception:
             return  # fail closed on DB error: never unlink a possibly live file
-        if still_exists is None and hasattr(self.store, "delete"):
+        if still_exists is None and not path_referenced and hasattr(self.store, "delete"):
             try:
                 self.store.delete(path)
             except Exception:
@@ -652,7 +763,7 @@ class GetSceneTiming:
                 sas = self.scripts.get_scene_assets(sc.id)
             except Exception:
                 continue
-            matching = [sa for sa in sas if sa.asset_id == sc.asset_id]
+            matching = [sa for sa in sas if sa.role == "base" and sa.asset_id == sc.asset_id]
             if matching:
                 timing[sc.id] = (float(matching[0].start_s), float(matching[0].end_s))
         return timing

@@ -162,19 +162,27 @@ class StartRender:
         if video.status not in (VideoStatus.ASSETS_READY, VideoStatus.RENDERED):
             raise StateConflict(f"render needs state ASSETS_READY (or RENDERED to render again), got {video.status.value}")
         pairs = _scenes_with_assets(self.videos, self.scripts, self.assets, video_id)
-        overlay_sig = [
+        layer_sig = [
             [
                 s.id,
                 [
-                    [sa.asset_id, sa.position, float(sa.start_s), float(sa.end_s), sa.role]
+                    [
+                        sa.asset_id,
+                        sa.position,
+                        float(sa.start_s),
+                        float(sa.end_s),
+                        sa.role,
+                        sa.motion,
+                        sa.transition_kind,
+                        float(sa.transition_duration_s),
+                    ]
                     for sa in _scene_assets_for(self.scripts, s)
-                    if sa.role == "overlay"
                 ],
             ]
             for s, _ in pairs
         ]
-        if any(items for _, items in overlay_sig):
-            payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs], overlay_sig], ensure_ascii=False)
+        if any(items for _, items in layer_sig):
+            payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs], layer_sig], ensure_ascii=False)
         else:
             payload = json.dumps([video.format.value, [[s.narration, s.label, a.cache_key] for s, a in pairs]], ensure_ascii=False)
         job, created = self.jobs.enqueue(video_id, hashlib.sha256(payload.encode("utf-8")).hexdigest())

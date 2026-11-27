@@ -126,6 +126,8 @@ class StoryboardScene:
     paid_operation_key: str | None = None
     voice_id: str = ""
     shots: list[StoryboardShot] | None = None
+    asset_trim_start_s: float | None = None
+    asset_trim_end_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -462,6 +464,8 @@ def build_render_plan(
                     start_tick=start_tick,
                     duration_ticks=duration_ticks,
                     asset_ref=scene.asset_id,
+                    asset_trim_start_s=scene.asset_trim_start_s,
+                    asset_trim_end_s=scene.asset_trim_end_s,
                     composition=Composition(fit="cover"),
                     effects=Effects(motion=shot_motion),
                     transition=base_transition,

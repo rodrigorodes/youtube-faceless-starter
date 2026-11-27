@@ -31,3 +31,28 @@
   - `evidence/pc00/pc00-independent-review-carbon-high.md`: `71/71` code citations verified; **`PC-00.01 = 9.585/10`** (min `9.5`), **`PC-00.02 = 9.540/10`** (min `9.5`), `0` P0 / `0` P1 / `3` non-blocking P2 (`P2-PC00-2` collision-safe two-step offset for `uq_scene_asset_pos` passed directly to `PC-01.01`).
 - **Status:** `PC-00.01` = **`VERIFIED`**, `PC-00.02` = **`VERIFIED`**. Release/audiovisual status = **`NO-GO / PLANNING ONLY`**.
 - **Next Item:** Atomic commit of `PC-00` on `develop`, then launch `PC-01.01` & `PC-01.02` (`Hydrogen Medium` executor + independent `Neon High` reviewer).
+
+---
+
+## Entry 003 — `PC-01.01` & `PC-01.02` (P0 Edit Integrity) Completed & Independently Verified (`9.350` / `9.300`)
+
+- **Timestamp (UTC):** `2026-11-27T10:33Z–11:27Z`
+- **Task IDs:** `PC-01.01`, `PC-01.02`
+- **Git Base:** `develop` `6b6dfbe` (`PC-00` commit; `main` `42700cb` strictly untouched)
+- **Executor:** `pc01-executor` (`gemini-4-hydrogen-medium`)
+- **Independent Reviewer:** `pc01-reviewer` (`gemini-4-neon-high`, separate session)
+- **Observed Quota:** `64%` → `45%` (executor) → `39%` (Round 1 REJECTED) → `36%` (Round 2 APPROVED; resets `2026-11-27T14:47:04Z`)
+- **External API Spend / Publication:** `$0.00` / `STUDIO_PUBLICATION_ENABLED=0` (`BLOCKED`)
+- **Correction Loop (Real Gate Value):**
+  - Round 1 (`pc01-reviewer`, `8.565` / `7.740`, `REJECTED`): surfaced `P0-PC01-1` (host Node VM `test_storyboard_js_undo_redo_trim_and_409_conflict` failing while container skipped Node), `P1-PC01-1` (`expected_asset_id=None` CAS gap on empty scene), and `P1-PC01-2` (`SwapSceneMedia` missing `belongs_to_other_project` `403` guard).
+  - Round 2 (`pc01-executor` fixed all 3; `pc01-reviewer` independently re-verified and **`APPROVED`**):
+    - **`PC-01.01`: `9.350/10`** (Func `9.5`, Arch `9.3`, Tests `9.4`, Sec/Rel `9.2`, Evid/Ops `9.3`)
+    - **`PC-01.02`: `9.300/10`** (Func `9.3`, Arch `9.3`, Tests `9.4`, Sec/Rel `9.2`, Evid/Ops `9.3`)
+- **Key Verified Evidence:**
+  - Additive migration `0055_scene_edit_revision.sql` (`50/50` migrations), single-tx base-only replacement preserving overlays + two-step `uq_scene_asset_pos` offset (`P2-PC00-2`), monotonic `edit_revision` CAS (ABA `409`), `_UNSET` sentinel for empty-scene CAS, `SwapSceneMedia` cross-project `403`, `StartRender` base-trim selective cache invalidation, `GetSceneTiming` overlay-trim fix, and persisted undo/redo with `409` non-overwrite.
+  - Container (`./scripts/test-container.sh` on 12 non-Node files): **`172 passed, 0 skipped`** (`exit 0`, `hash=05f4f2cd00b859d9`); reviewer independent subset: **`32 passed, 0 skipped`** (`exit 0`).
+  - Host Node (`python3 -m pytest tests/test_storyboard_js.py tests/test_erro_js.py`, Node v26.0.0): **`13 passed, 0 skipped`** (`exit 0`, verified independently by reviewer).
+  - Isolated Playwright E2E (`docker-compose.e2e.yml` port `8100`, torn down `down -v`): **`1 passed`** (`test_pc01_browser_edit_integrity_desktop_and_mobile` — Desktop `1280x800` + Mobile `390x844` + real Piper/FFmpeg MP4 `ffprobe`).
+  - Artifacts: `evidence/pc01/pc01-execution-evidence.md` & `evidence/pc01/pc01-independent-review-neon-high.md`.
+- **Status:** `PC-01.01` = **`VERIFIED`**, `PC-01.02` = **`VERIFIED`** (`4 / 27` total). Blocking P0 edit-integrity defect closed!
+- **Next Item:** Atomic commit of `PC-01` on `develop`, then launch unlocked `PC-05.02` (`Flash 3.8 High` executor + `Carbon High` reviewer).

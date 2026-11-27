@@ -542,3 +542,125 @@ def test_storyboard_js_asset_kind_and_trim_preservation():
     assert res["hasVideo"] is True
     assert res["hasAssetUrl"] is True
     assert res["hasTag"] is True
+
+
+def test_storyboard_js_undo_redo_trim_and_409_conflict():
+    """Verifies undo/redo restores trim+asset with expected_edit_revision and 409 surfaces conflict without overwrite."""
+    node_undo = """
+    const calls = [];
+    let nextCallStatus = 200;
+    global.FormData = class FormData { append(k, v) { this[k] = v; } };
+    global.fetch = async (url, opts) => {
+      const body = opts && opts.body && typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+      calls.push({ url, method: opts.method, body });
+      if (nextCallStatus === 409) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ detail: 'Conflito de revisão (409)' })
+        };
+      }
+      if (url.includes('/import-media')) {
+        const ts = body.trim_start_s != null ? parseFloat(body.trim_start_s) : null;
+        const te = body.trim_end_s != null ? parseFloat(body.trim_end_s) : null;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            scene_id: 's1',
+            asset: { id: 'aid_imported_1', kind: 'video', license: 'OWN_ORIGINAL' },
+            changed: true,
+            edit_revision: 2,
+            trim_start_s: ts,
+            trim_end_s: te
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          scene_id: 's1',
+          asset: { id: body.asset_id, kind: 'image', license: 'OWN_ORIGINAL' },
+          changed: true,
+          edit_revision: (body.expected_edit_revision || 1) + 1,
+          trim_start_s: body.trim_start_s != null ? body.trim_start_s : null,
+          trim_end_s: body.trim_end_s != null ? body.trim_end_s : null
+        })
+      };
+    };
+
+    const undoBtn = new FakeElement('button', 'btn-undo-cenas');
+    undoBtn.dataset.a = 'undo-v3';
+    elementsById['btn-undo-cenas'] = undoBtn;
+    root.appendChild(undoBtn);
+
+    const redoBtn = new FakeElement('button', 'btn-redo-cenas');
+    redoBtn.dataset.a = 'redo-v3';
+    elementsById['btn-redo-cenas'] = redoBtn;
+    root.appendChild(redoBtn);
+
+    const card0 = cardsEl.children[0];
+    const fileInput = new FakeElement('input');
+    fileInput.dataset.f = 'import-file';
+    fileInput.files = [{ name: 'clip.mp4', size: 2048 }];
+    card0.appendChild(fileInput);
+
+    const trimStart = card0.querySelector('[data-f="trim-start"]') || new FakeElement('input');
+    trimStart.dataset.f = 'trim-start';
+    trimStart.value = '0.2';
+    if (!card0.querySelector('[data-f="trim-start"]')) card0.appendChild(trimStart);
+
+    const trimEnd = card0.querySelector('[data-f="trim-end"]') || new FakeElement('input');
+    trimEnd.dataset.f = 'trim-end';
+    trimEnd.value = '1.4';
+    if (!card0.querySelector('[data-f="trim-end"]')) card0.appendChild(trimEnd);
+
+    const errEl = new FakeElement('div');
+    errEl.dataset.f = 'import-error';
+    card0.appendChild(errEl);
+
+    const submitBtn = new FakeElement('button');
+    submitBtn.dataset.a = 'submit-import';
+    submitBtn.dataset.sid = 's1';
+    card0.appendChild(submitBtn);
+    root.dispatchEvent({ type: 'click', target: submitBtn });
+
+    window.__sbFlush().then(async () => {
+      // Undo should send POST /scenes/s1/media with expected_edit_revision=2 and apply_trim=true, trim=null
+      root.dispatchEvent({ type: 'click', target: undoBtn });
+      await window.__sbFlush();
+      const trimAfterUndo = trimStart.value;
+
+      // Redo should restore MP4 + trim (0.2, 1.4) with expected_edit_revision=3
+      root.dispatchEvent({ type: 'click', target: redoBtn });
+      await window.__sbFlush();
+      const trimAfterRedo = trimStart.value;
+
+      // Now simulate 409 on next import -> must surface error and NOT overwrite model trim
+      nextCallStatus = 409;
+      trimStart.value = '0.9';
+      root.dispatchEvent({ type: 'click', target: submitBtn });
+      await window.__sbFlush();
+
+      process.stdout.write(JSON.stringify({
+        calls: calls,
+        errText: errEl.textContent,
+        trimAfterUndo: trimAfterUndo,
+        trimAfterRedo: trimAfterRedo
+      }));
+    });
+    """
+    out = json.loads(_run_storyboard_node(node_undo))
+    assert len(out["calls"]) == 4
+    assert out["calls"][1]["url"].endswith("/scenes/s1/media")
+    assert out["calls"][1]["body"]["expected_edit_revision"] == 2
+    assert out["calls"][1]["body"]["apply_trim"] is True
+    assert out["calls"][1]["body"]["trim_start_s"] is None
+    assert out["calls"][2]["url"].endswith("/scenes/s1/media")
+    assert out["calls"][2]["body"]["expected_edit_revision"] == 3
+    assert out["calls"][2]["body"]["trim_start_s"] == 0.2
+    assert out["trimAfterUndo"] == ""
+    assert out["trimAfterRedo"] == "0.2"
+    assert "409" in out["errText"] or "Conflito" in out["errText"]
+

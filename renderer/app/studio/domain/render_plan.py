@@ -245,6 +245,8 @@ class Shot(_PlanModel):
     duration_ticks: DurationTick
     asset_ref: NonBlank
     asset_offset_ticks: Tick = 0
+    asset_trim_start_s: float | None = None
+    asset_trim_end_s: float | None = None
     role: Literal["base", "overlay"] = "base"
     z_index: Annotated[int, Field(ge=0, strict=True)] = 0
     composition: Composition | None = None

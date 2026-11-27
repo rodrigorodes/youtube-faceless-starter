@@ -129,14 +129,15 @@ STORYBOARD_JS = r"""
     var expAid = card.querySelector('[data-f="expected-asset-id"]');
     if (expAid) expAid.value = s.asset_id || '';
     var trimStart = card.querySelector('[data-f="trim-start"]');
-    if (trimStart && s.trim_start_s != null && !trimStart.matches(':focus')) {
-      trimStart.value = String(s.trim_start_s);
+    if (trimStart && !trimStart.matches(':focus')) {
+      trimStart.value = (s.trim_start_s != null) ? String(s.trim_start_s) : '';
     }
     var trimEnd = card.querySelector('[data-f="trim-end"]');
     if (trimEnd) {
-      if (s.trim_end_s != null && !trimEnd.matches(':focus')) {
-        trimEnd.value = String(s.trim_end_s);
-      } else if (!trimEnd.value) {
+      if (!trimEnd.matches(':focus')) {
+        trimEnd.value = (s.trim_end_s != null) ? String(s.trim_end_s) : '';
+      }
+      if (!trimEnd.value) {
         trimEnd.placeholder = secsOf(s).toFixed(1);
       }
     }
@@ -234,11 +235,12 @@ STORYBOARD_JS = r"""
   }
   function applyScript(res, cids) {
     version = res.script.version;
-    var tags = {}, kinds = {}, trims = {};
+    var tags = {}, kinds = {}, trims = {}, revs = {};
     server.forEach(function (s) {
       tags[s.cid] = s.asset_tag;
       kinds[s.cid] = s.asset_kind;
       trims[s.cid] = { start: s.trim_start_s, end: s.trim_end_s };
+      revs[s.cid] = s.edit_revision || 1;
     });
     server = res.scenes.map(function (sc, i) {
       var prevTrim = trims[cids[i]] || {};
@@ -246,6 +248,7 @@ STORYBOARD_JS = r"""
         image_prompt: sc.image_prompt, asset_id: sc.asset_id || null,
         asset_tag: tags[cids[i]] || '',
         asset_kind: kinds[cids[i]] || '',
+        edit_revision: sc.edit_revision || revs[cids[i]] || 1,
         trim_start_s: prevTrim.start != null ? prevTrim.start : null,
         trim_end_s: prevTrim.end != null ? prevTrim.end : null,
         duration_s: sc.duration_s || null, broll_enabled: !!sc.broll_enabled, broll_note: sc.broll_note || null };
@@ -294,9 +297,26 @@ STORYBOARD_JS = r"""
     for (k = 0; k < server.length; k++) {
       s = server[k]; t = target.filter(function (x) { return x.cid === s.cid; })[0];
       if (!t) continue;
-      if (t.asset_id && t.asset_id !== s.asset_id) {
-        res = await call('POST', '/scenes/' + encodeURIComponent(s.id) + '/media', { asset_id: t.asset_id, expected_version: version }, false);
-        if (res.asset) { s.asset_id = res.asset.id; s.asset_tag = t.asset_tag; s.asset_kind = t.asset_kind; }
+      var tStart = t.trim_start_s != null ? t.trim_start_s : null;
+      var tEnd = t.trim_end_s != null ? t.trim_end_s : null;
+      var sStart = s.trim_start_s != null ? s.trim_start_s : null;
+      var sEnd = s.trim_end_s != null ? s.trim_end_s : null;
+      var mediaChanged = t.asset_id && (t.asset_id !== s.asset_id || tStart !== sStart || tEnd !== sEnd);
+      if (mediaChanged) {
+        res = await call('POST', '/scenes/' + encodeURIComponent(s.id) + '/media', {
+          asset_id: t.asset_id,
+          expected_version: version,
+          expected_edit_revision: s.edit_revision || 1,
+          apply_trim: true,
+          trim_start_s: tStart,
+          trim_end_s: tEnd
+        }, false);
+        if (res.asset) {
+          s.asset_id = res.asset.id; s.asset_tag = t.asset_tag; s.asset_kind = t.asset_kind;
+          s.edit_revision = res.edit_revision || ((s.edit_revision || 1) + 1);
+          s.trim_start_s = res.trim_start_s != null ? res.trim_start_s : null;
+          s.trim_end_s = res.trim_end_s != null ? res.trim_end_s : null;
+        }
       } else if (!t.asset_id && s.asset_id) { cannotClear = true; }
       var tn = norm(t.broll_note) || null, sn = norm(s.broll_note) || null;
       if (!!t.broll_enabled !== !!s.broll_enabled || tn !== sn) {
@@ -310,8 +330,9 @@ STORYBOARD_JS = r"""
       if (!sv) return;
       m.id = sv.id; m.duration_s = sv.duration_s;
       if (cannotClear && !m.asset_id) { m.asset_id = sv.asset_id; m.asset_tag = sv.asset_tag; m.asset_kind = sv.asset_kind; }
-      if (m.trim_start_s == null) m.trim_start_s = sv.trim_start_s;
-      if (m.trim_end_s == null) m.trim_end_s = sv.trim_end_s;
+      m.edit_revision = sv.edit_revision || m.edit_revision || 1;
+      m.trim_start_s = sv.trim_start_s != null ? sv.trim_start_s : null;
+      m.trim_end_s = sv.trim_end_s != null ? sv.trim_end_s : null;
       m.audio_state = sv.duration_s ? 'ok' : (m.audio_state === 'stale' ? 'stale' : 'none');
       if (sv.duration_s === null && m.audio_state === 'ok') m.audio_state = 'none';
     });
@@ -525,14 +546,19 @@ STORYBOARD_JS = r"""
     var m = model.filter(function (x) { return x.cid === mediaCid; })[0]; if (!m) return;
     remember(); dlgMedia.close(); say('Aplicando a m\u00eddia\u2026');
     queue = queue.then(async function () {
-      var res = await call('POST', '/scenes/' + encodeURIComponent(m.id) + '/media', { candidate: c, expected_version: version }, false);
+      var res = await call('POST', '/scenes/' + encodeURIComponent(m.id) + '/media', {
+        candidate: c,
+        expected_version: version,
+        expected_edit_revision: m.edit_revision || 1
+      }, false);
       if (res.asset) {
         var isVid = (res.asset.kind === 'video' || c.media_type === 'video');
         var lic = String(res.asset.license || '');
         var tag = lic.indexOf('ai-generated') === 0 ? 'Arte IA' : (isVid ? 'V\u00eddeo stock' : 'Imagem stock');
         m.asset_id = res.asset.id; m.asset_tag = tag; m.asset_kind = isVid ? 'video' : 'image';
+        m.edit_revision = res.edit_revision || ((m.edit_revision || 1) + 1);
         var sv = server.filter(function (x) { return x.cid === m.cid; })[0];
-        if (sv) { sv.asset_id = res.asset.id; sv.asset_tag = tag; sv.asset_kind = m.asset_kind; }
+        if (sv) { sv.asset_id = res.asset.id; sv.asset_tag = tag; sv.asset_kind = m.asset_kind; sv.edit_revision = m.edit_revision; }
       }
       renderAll(); toast('M\u00eddia da cena atualizada.'); say(res.changed ? 'M\u00eddia aplicada.' : (res.reason || 'Nada mudou.'));
     }).catch(function (err) { undo.pop(); syncButtons(); say('N\u00e3o foi poss\u00edvel trocar a m\u00eddia: ' + err.message); });
@@ -607,6 +633,8 @@ STORYBOARD_JS = r"""
     if (attInput && attInput.value) fd.append('attribution', attInput.value);
     if (srcInput && srcInput.value) fd.append('source_url', srcInput.value);
     if (expInput && expInput.value) fd.append('expected_asset_id', expInput.value);
+    var curScene = model.filter(function (x) { return x.id === sid || x.cid === (card ? card.dataset.cid : ''); })[0];
+    if (curScene && curScene.edit_revision != null) fd.append('expected_edit_revision', String(curScene.edit_revision));
     if (trimStart && trimStart.value) fd.append('trim_start_s', trimStart.value);
     if (trimEnd && trimEnd.value) fd.append('trim_end_s', trimEnd.value);
 
@@ -648,13 +676,15 @@ STORYBOARD_JS = r"""
           m.asset_id = data.asset.id;
           m.asset_tag = tag;
           m.asset_kind = data.asset.kind;
-          if (trimStart && trimStart.value) m.trim_start_s = parseFloat(trimStart.value);
-          if (trimEnd && trimEnd.value) m.trim_end_s = parseFloat(trimEnd.value);
+          m.edit_revision = data.edit_revision || ((m.edit_revision || 1) + 1);
+          m.trim_start_s = data.trim_start_s != null ? data.trim_start_s : ((trimStart && trimStart.value) ? parseFloat(trimStart.value) : null);
+          m.trim_end_s = data.trim_end_s != null ? data.trim_end_s : ((trimEnd && trimEnd.value) ? parseFloat(trimEnd.value) : null);
           var sv = server.filter(function (x) { return x.id === sid; })[0];
           if (sv) {
             sv.asset_id = data.asset.id;
             sv.asset_tag = tag;
             sv.asset_kind = data.asset.kind;
+            sv.edit_revision = m.edit_revision;
             sv.trim_start_s = m.trim_start_s;
             sv.trim_end_s = m.trim_end_s;
           }

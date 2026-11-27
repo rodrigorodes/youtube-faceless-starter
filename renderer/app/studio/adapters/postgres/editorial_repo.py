@@ -9,6 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from ...application.editorial import StateConflict
 from ...application.errors import ScriptEditIdempotencyConflict, ScriptRevisionUnavailable
 from ...application.ports import (FactCheckRecord, SceneDraft, SceneRevision, ScriptEditOutcome, ScriptEditRecord,
                                   ScriptRecord, ScriptRevisionSummary)
@@ -20,7 +21,7 @@ from .repo import _translated
 
 _SNAPSHOT = "id, video_id, url, content_sha256, text, fetched_at"
 _SCENE = ("id, video_id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
-          "duration_s, visual_intent, search_queries")
+          "duration_s, visual_intent, search_queries, edit_revision")
 _REVISION = ("scene_id, idx, narration, caption, label, image_prompt, claim_ids, asset_id, "
              "media_review_required, duration_s, visual_intent, search_queries")
 
@@ -493,16 +494,31 @@ class PostgresScriptRepository(_Base):
 
     list_scene_assets = get_scene_assets
 
-    def add_scene_asset(self, scene_id: str, asset: SceneAsset) -> SceneAsset:
+    def add_scene_asset(
+        self,
+        scene_id: str,
+        asset: SceneAsset,
+        *,
+        expected_edit_revision: int | None = None,
+    ) -> SceneAsset:
+        sid = check_id(scene_id)
         with _translated(), self._connect() as conn:
             with conn.transaction():
+                row = conn.execute(
+                    "SELECT edit_revision FROM studio.scenes WHERE id = %s FOR UPDATE",
+                    (sid,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"scene {sid} not found")
+                if expected_edit_revision is not None and int(row[0]) != int(expected_edit_revision):
+                    raise StateConflict("scene edit_revision changed underneath; reload before editing layers")
                 conn.execute(
                     "INSERT INTO studio.scene_assets "
                     "(id, scene_id, asset_id, position, start_s, end_s, role, motion, transition_kind, transition_duration_s) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(asset.id),
-                        check_id(scene_id),
+                        sid,
                         str(asset.asset_id),
                         asset.position,
                         asset.start_s,
@@ -513,13 +529,47 @@ class PostgresScriptRepository(_Base):
                         asset.transition_duration_s,
                     ),
                 )
+                conn.execute(
+                    "UPDATE studio.scenes SET edit_revision = edit_revision + 1 WHERE id = %s",
+                    (sid,),
+                )
             return asset
 
-    def delete_scene_asset(self, asset_id: str) -> bool:
+    def delete_scene_asset(
+        self,
+        asset_id: str,
+        *,
+        scene_id: str | None = None,
+        expected_edit_revision: int | None = None,
+    ) -> bool:
         with _translated(), self._connect() as conn:
             with conn.transaction():
-                conn.execute("DELETE FROM studio.scene_assets WHERE id = %s", (str(asset_id),))
-            return True
+                sid = check_id(scene_id) if scene_id else None
+                if sid is None:
+                    found = conn.execute(
+                        "SELECT scene_id FROM studio.scene_assets WHERE id = %s",
+                        (str(asset_id),),
+                    ).fetchone()
+                    sid = str(found[0]) if found else None
+                if sid is not None:
+                    row = conn.execute(
+                        "SELECT edit_revision FROM studio.scenes WHERE id = %s FOR UPDATE",
+                        (sid,),
+                    ).fetchone()
+                    if row is not None and expected_edit_revision is not None and int(row[0]) != int(expected_edit_revision):
+                        raise StateConflict("scene edit_revision changed underneath; reload before deleting layer")
+                    cur = conn.execute(
+                        "DELETE FROM studio.scene_assets WHERE id = %s AND scene_id = %s",
+                        (str(asset_id), sid),
+                    )
+                    if cur.rowcount == 1:
+                        conn.execute(
+                            "UPDATE studio.scenes SET edit_revision = edit_revision + 1 WHERE id = %s",
+                            (sid,),
+                        )
+                        return True
+                    return False
+                return False
 
     def scenes(self, video_id: str) -> list[Scene]:
         with _translated(), self._connect() as conn:
@@ -629,6 +679,8 @@ def _read_scenes(conn, video_id: str) -> list[Scene]:
                 row_dict["search_queries"] = []
             if row_dict.get("visual_intent") is None:
                 row_dict["visual_intent"] = ""
+            if row_dict.get("edit_revision") is None:
+                row_dict["edit_revision"] = 1
             result.append(Scene.model_validate(row_dict))
         return result
 

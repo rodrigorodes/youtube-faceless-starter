@@ -1,9 +1,9 @@
 # EXECUTION-STATE — V4 Product Completion (`PC-00`..`PC-09`)
 
-**Last Updated (UTC):** `2026-11-27T10:32Z` (`07:32` local)  
-**Branch:** `develop` | **Base HEAD:** `8484b72` (descendant of REC closure `2e8b153c25b2d4a723f05e1f93f1a49c4dcbd1d6` and clean functional SHA `6a55f1f296d1d34bad64d2adcaad3bc0eafce011`)  
+**Last Updated (UTC):** `2026-11-27T11:28Z` (`08:28` local)  
+**Branch:** `develop` | **Base HEAD:** `6b6dfbe` (`PC-00` verified; committing `PC-01` now)  
 **Observed `main` SHA:** `42700cb331165a68455173a91c463d4733292cfd` (strictly untouched)  
-**Campaign Status:** `IN_PROGRESS` (`PC-00.01` & `PC-00.02` `VERIFIED` at `9.585`/`9.540`; launching blocking wave `PC-01.01` → `PC-01.02`; quota `64%`, resets `2026-11-27T14:47:04Z`)  
+**Campaign Status:** `IN_PROGRESS` (`4 / 27 VERIFIED`: `PC-00.01`, `PC-00.02`, `PC-01.01`, `PC-01.02`; quota `36%`, resets `2026-11-27T14:47:04Z`)  
 **Merge / Publication Status:** `NO-GO` / `BLOCKED` (`STUDIO_PUBLICATION_ENABLED=0`, `$0.00` external API spend)
 
 ---
@@ -17,14 +17,14 @@
 
 ---
 
-## 2. Task Status Board (`PC-00.01`..`PC-09.02` — `2 / 27 VERIFIED`)
+## 2. Task Status Board (`PC-00.01`..`PC-09.02` — `4 / 27 VERIFIED`)
 
 | ID | Prio | Dep. | Executor | Reviewer | Status | Independent Score |
 |---|---|---|---|---|---|---|
 | `PC-00.01` | P0 | — | `Neon High` | `Carbon High` | **`VERIFIED`** | **`9.585/10`** (min `9.5`) |
 | `PC-00.02` | P0 | `00.01` | `Neon High` | `Carbon High` | **`VERIFIED`** | **`9.540/10`** (min `9.5`) |
-| `PC-01.01` | P0 | `00.02` | `Hydrogen Medium` | `Neon High` | `PENDING` | — |
-| `PC-01.02` | P0 | `01.01` | `Hydrogen Medium` | `Neon High` | `PENDING` | — |
+| `PC-01.01` | P0 | `00.02` | `Hydrogen Medium` | `Neon High` | **`VERIFIED`** | **`9.350/10`** (min `9.2`) |
+| `PC-01.02` | P0 | `01.01` | `Hydrogen Medium` | `Neon High` | **`VERIFIED`** | **`9.300/10`** (min `9.2`) |
 | `PC-02.01` | P1 | `01.02` | `Hydrogen Medium` / `Flash` | `Neon High` / `Carbon High` | `PENDING` | — |
 | `PC-02.02` | P1 | `02.01` | `Hydrogen Medium` / `Flash` | `Neon High` / `Carbon High` | `PENDING` | — |
 | `PC-02.03` | P1 | `02.02` | `Hydrogen Medium` | `Neon High` | `PENDING` | — |
@@ -52,4 +52,4 @@
 ---
 
 ## 3. Resume Pointer
-- **Exact Next Authorized Action:** Commit `PC-00` atomically on `develop` and immediately execute blocking P0 wave **`PC-01.01` → `PC-01.02`** (Edit Integrity: single-transaction base/trim replacement preserving overlays + monotonic `edit_revision` CAS + undo/redo + concurrency + browser E2E) using `Hydrogen Medium` executor and independent `Neon High` reviewer.
+- **Exact Next Authorized Action:** Commit `PC-01` atomically on `develop`; with `36%` quota remaining (`21%` above `15%` weekly reserve), proceed to unlocked `PC-05.02` (persistent SQL asset tags + scoped search + UI, `Flash 3.8 High` executor + `Carbon High` reviewer) and evaluate quota before launching `PC-03.01`–`03.02`.

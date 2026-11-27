@@ -645,6 +645,7 @@ class PlanFfmpegRenderer:
                     media_type=row_media_type,
                     license=GENERATED_LICENSE,
                 )
+            base_assets = [sa for sa in (getattr(row, "assets", None) or ()) if sa.role == "base"]
             scenes.append(StoryboardScene(
                 scene_id=row.id,
                 asset_id=row.asset_id,
@@ -652,6 +653,8 @@ class PlanFfmpegRenderer:
                 speech_seconds=max(0.0, float(length) - LEAD - TAIL),
                 label=row.label,
                 voice_id=spec.voice_id,
+                asset_trim_start_s=float(base_assets[0].start_s) if base_assets else None,
+                asset_trim_end_s=float(base_assets[0].end_s) if base_assets else None,
             ))
         manifest = list(manifest_by_id.values())
         # VE-01: camadas de imagem por cena. A licença é obrigatória (I16) e o asset entra no

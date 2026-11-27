@@ -350,6 +350,10 @@ class SceneMediaChoiceIn(BaseModel):
     candidate: MediaCandidateOut | None = None
     expected_asset_id: str | None = None
     expected_version: int | None = Field(default=None, ge=1)
+    expected_edit_revision: int | None = Field(default=None, ge=1)
+    apply_trim: bool = False
+    trim_start_s: float | None = None
+    trim_end_s: float | None = None
 
 
 class SceneMediaOut(BaseModel):
@@ -357,6 +361,9 @@ class SceneMediaOut(BaseModel):
     asset: Asset | None
     changed: bool
     reason: str = ""
+    edit_revision: int | None = None
+    trim_start_s: float | None = None
+    trim_end_s: float | None = None
 
 
 class SceneBrollIn(BaseModel):
@@ -1687,15 +1694,34 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             except ValueError as exc:
                 # candidato inválido (licença/proveniência em branco): erro de negócio, nunca 500
                 raise SceneMediaRefused(f"invalid media candidate: {exc}") from exc
-            return scene_swap(uc).execute(
-                check_id(video_id), check_id(scene_id),
-                asset_id=check_id(body.asset_id) if body.asset_id else None,
-                candidate=candidate,
-                expected_asset_id=check_id(body.expected_asset_id) if body.expected_asset_id else None,
-                expected_version=body.expected_version)
+            extra: dict = {}
+            if body.expected_edit_revision is not None:
+                extra["expected_edit_revision"] = body.expected_edit_revision
+            if body.apply_trim:
+                extra["apply_trim"] = True
+                extra["trim_start_s"] = body.trim_start_s
+                extra["trim_end_s"] = body.trim_end_s
+            try:
+                return scene_swap(uc).execute(
+                    check_id(video_id), check_id(scene_id),
+                    asset_id=check_id(body.asset_id) if body.asset_id else None,
+                    candidate=candidate,
+                    expected_asset_id=check_id(body.expected_asset_id) if body.expected_asset_id else None,
+                    expected_version=body.expected_version,
+                    **extra)
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
 
         result = run(go)
-        return SceneMediaOut(scene_id=result.scene_id, asset=result.asset, changed=result.changed, reason=result.reason)
+        return SceneMediaOut(
+            scene_id=result.scene_id,
+            asset=result.asset,
+            changed=result.changed,
+            reason=result.reason,
+            edit_revision=getattr(result, "edit_revision", None),
+            trim_start_s=getattr(result, "trim_start_s", None),
+            trim_end_s=getattr(result, "trim_end_s", None),
+        )
 
     @router.post("/videos/{video_id}/scenes/{scene_id}/broll", response_model=SceneBrollOut)
     def set_scene_broll(video_id: str, scene_id: str, body: SceneBrollIn):
@@ -1744,6 +1770,7 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         file_mime: str = ""
         license_str: str = ""
         expected_asset_id: str | None = None
+        expected_edit_revision: int | None = None
         source_url: str = ""
         attribution: str = ""
         trim_start_s: float | None = None
@@ -1770,6 +1797,15 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                     license_str = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
                 elif name == "expected_asset_id":
                     expected_asset_id = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip() or None
+                elif name == "expected_edit_revision":
+                    rev_raw = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
+                    if rev_raw:
+                        try:
+                            expected_edit_revision = int(rev_raw)
+                        except ValueError as exc:
+                            raise HTTPException(422, "expected_edit_revision deve ser um inteiro válido") from exc
+                        if expected_edit_revision < 1:
+                            raise HTTPException(422, "expected_edit_revision deve ser >= 1")
                 elif name == "source_url":
                     source_url = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace").strip()
                 elif name in ("author", "attribution"):
@@ -1812,6 +1848,13 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             expected_asset_id = body.get("expected_asset_id") or None
             if expected_asset_id:
                 expected_asset_id = str(expected_asset_id)
+            if body.get("expected_edit_revision") is not None:
+                try:
+                    expected_edit_revision = int(body["expected_edit_revision"])
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(422, "expected_edit_revision deve ser um inteiro válido") from exc
+                if expected_edit_revision < 1:
+                    raise HTTPException(422, "expected_edit_revision deve ser >= 1")
             source_url = str(body.get("source_url") or "")
             attribution = str(body.get("attribution") or body.get("author") or "")
             if body.get("trim_start_s") is not None:
@@ -1830,6 +1873,14 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             file_mime = content_type.split(";")[0].strip()
             license_str = request.headers.get("x-license", "")
             expected_asset_id = request.headers.get("x-expected-asset-id")
+            raw_rev = request.headers.get("x-expected-edit-revision")
+            if raw_rev:
+                try:
+                    expected_edit_revision = int(raw_rev)
+                except ValueError as exc:
+                    raise HTTPException(422, "expected_edit_revision deve ser um inteiro válido") from exc
+                if expected_edit_revision < 1:
+                    raise HTTPException(422, "expected_edit_revision deve ser >= 1")
 
         if len(file_bytes) > MAX_IMPORT_BYTES:
             raise HTTPException(413, "Mídia excede o limite máximo de 100MB.")
@@ -1872,29 +1923,46 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         def go(uc: UseCases):
             if uc.media is None or uc.media.import_media is None:
                 raise HTTPException(503, "import media service unavailable")
+            vid = check_id(video_id)
+            sid = check_id(scene_id)
             try:
                 saved = uc.media.import_media.execute(
-                    video_id=check_id(video_id),
+                    video_id=vid,
                     data=file_bytes,
                     filename=filename or "upload.bin",
                     mime=file_mime,
                     license=license_str,
-                    scene_id=check_id(scene_id),
+                    scene_id=sid,
                     attribution=attribution,
                     source_url=source_url,
                     expected_asset_id=check_id(expected_asset_id) if expected_asset_id else None,
                     trim_start_s=trim_start_s,
                     trim_end_s=trim_end_s,
+                    expected_edit_revision=expected_edit_revision,
                 )
-                return saved
+                new_rev = None
+                if uc.editorial is not None and uc.editorial.get_script is not None:
+                    for sc in uc.editorial.get_script.scripts.scenes(vid):
+                        if sc.id == sid:
+                            new_rev = getattr(sc, "edit_revision", 1)
+                            break
+                return saved, new_rev
             except AssetRefused as exc:
                 msg = str(exc)
                 if "100mb" in msg.lower() or ("exceeds" in msg.lower() and "limit" in msg.lower()):
                     raise HTTPException(413, f"Arquivo excede limite de tamanho: {msg}") from exc
                 raise HTTPException(422, f"Mídia externa recusada: {msg}") from exc
 
-        result = run(go)
-        return SceneMediaOut(scene_id=scene_id, asset=result, changed=True, reason="imported")
+        result, new_rev = run(go)
+        return SceneMediaOut(
+            scene_id=scene_id,
+            asset=result,
+            changed=True,
+            reason="imported",
+            edit_revision=new_rev,
+            trim_start_s=trim_start_s,
+            trim_end_s=trim_end_s,
+        )
 
     @router.get("/videos/{video_id}/scenes/{scene_id}/asset")
     @router.get("/videos/{video_id}/scenes/{scene_id}/preview")
@@ -1953,36 +2021,89 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
         media_type = mime_map.get(ext) or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
         return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, max-age=60", "Accept-Ranges": "bytes"})
 
+    def _require_video_scene(uc: UseCases, video_id: str, scene_id: str):
+        ed = editorial(uc)
+        vid = check_id(video_id)
+        sid = check_id(scene_id)
+        video = ed.get_script.videos.get_video(vid)
+        if video is None:
+            raise HTTPException(404, f"video {vid} not found")
+        scenes = ed.get_script.scripts.scenes(vid)
+        scene = next((sc for sc in scenes if sc.id == sid), None)
+        if scene is None:
+            raise HTTPException(404, f"scene {sid} not found in video {vid}")
+        return ed, video, scene
+
     @router.get("/videos/{video_id}/scenes/{scene_id}/assets", response_model=list[SceneAsset])
     def list_scene_assets(video_id: str, scene_id: str):
         def go(uc):
-            ed = editorial(uc)
-            return ed.get_script.scripts.get_scene_assets(check_id(scene_id))
+            ed, _video, scene = _require_video_scene(uc, video_id, scene_id)
+            return ed.get_script.scripts.get_scene_assets(scene.id)
         return run(go)
 
     @router.post("/videos/{video_id}/scenes/{scene_id}/assets", status_code=201, response_model=SceneAsset)
     def add_scene_asset(video_id: str, scene_id: str, body: dict):
         def go(uc):
-            ed = editorial(uc)
-            asset = SceneAsset(
-                scene_id=check_id(scene_id),
-                asset_id=body["asset_id"],
-                position=int(body.get("position", 0)),
-                start_s=float(body.get("start_s", 0.0)),
-                end_s=float(body.get("end_s", 2.5)),
-                role=str(body.get("role", "base")),
-                motion=str(body.get("motion", "none")),
-                transition_kind=str(body.get("transition_kind", "none")),
-                transition_duration_s=float(body.get("transition_duration_s", 0.0)),
-            )
-            return ed.get_script.scripts.add_scene_asset(check_id(scene_id), asset)
+            ed, video, scene = _require_video_scene(uc, video_id, scene_id)
+            if not isinstance(body, dict) or not body.get("asset_id"):
+                raise HTTPException(422, "asset_id é obrigatório")
+            try:
+                aid = check_id(str(body["asset_id"]))
+                position = int(body.get("position", 0))
+                start_s = float(body.get("start_s", 0.0))
+                end_s = float(body.get("end_s", 2.5))
+                transition_duration_s = float(body.get("transition_duration_s", 0.0))
+            except (ValueError, TypeError, InvalidId) as exc:
+                raise HTTPException(422, f"parâmetros de camada inválidos: {exc}") from exc
+            if (not math.isfinite(start_s) or not math.isfinite(end_s)
+                    or not math.isfinite(transition_duration_s)
+                    or position < 0 or start_s < 0 or end_s <= start_s or transition_duration_s < 0):
+                raise HTTPException(422, "valores numéricos da camada fora dos limites válidos")
+            role = str(body.get("role", "base"))
+            if role not in ("base", "overlay"):
+                raise HTTPException(422, "role deve ser 'base' ou 'overlay'")
+            exp_rev = body.get("expected_edit_revision")
+            if exp_rev is not None:
+                try:
+                    exp_rev = int(exp_rev)
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(422, "expected_edit_revision deve ser um inteiro") from exc
+                if exp_rev < 1:
+                    raise HTTPException(422, "expected_edit_revision deve ser >= 1")
+            if uc.media is not None and uc.media.swap is not None and getattr(uc.media.swap, "assets", None) is not None:
+                asset_repo = uc.media.swap.assets
+                if asset_repo.get(aid) is None:
+                    raise HTTPException(404, f"asset {aid} not found")
+                if hasattr(asset_repo, "belongs_to_other_project") and asset_repo.belongs_to_other_project(aid, video.project_id):
+                    raise HTTPException(403, "asset belongs to another project")
+            try:
+                asset = SceneAsset(
+                    scene_id=scene.id,
+                    asset_id=aid,
+                    position=position,
+                    start_s=start_s,
+                    end_s=end_s,
+                    role=role,
+                    motion=str(body.get("motion", "none")),
+                    transition_kind=str(body.get("transition_kind", "none")),
+                    transition_duration_s=transition_duration_s,
+                )
+            except ValueError as exc:
+                raise HTTPException(422, f"camada inválida: {exc}") from exc
+            return ed.get_script.scripts.add_scene_asset(scene.id, asset, expected_edit_revision=exp_rev)
         return run(go)
 
     @router.delete("/videos/{video_id}/scenes/{scene_id}/assets/{asset_id}")
-    def delete_scene_asset(video_id: str, scene_id: str, asset_id: str):
+    def delete_scene_asset(video_id: str, scene_id: str, asset_id: str, expected_edit_revision: int | None = None):
         def go(uc):
-            ed = editorial(uc)
-            ed.get_script.scripts.delete_scene_asset(asset_id)
+            ed, _video, scene = _require_video_scene(uc, video_id, scene_id)
+            if expected_edit_revision is not None and expected_edit_revision < 1:
+                raise HTTPException(422, "expected_edit_revision deve ser >= 1")
+            deleted = ed.get_script.scripts.delete_scene_asset(
+                asset_id, scene_id=scene.id, expected_edit_revision=expected_edit_revision
+            )
+            if not deleted:
+                raise HTTPException(404, f"scene asset {asset_id} not found in scene {scene.id}")
             return {"ok": True}
         return run(go)
 

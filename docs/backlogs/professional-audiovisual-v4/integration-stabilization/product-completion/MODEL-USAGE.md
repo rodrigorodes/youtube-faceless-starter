@@ -10,6 +10,9 @@
 | 2 | `2026-11-27T09:47Z` | Google Antigravity Pool (all Gemini models) | `100%` | `2026-11-27T14:43:55Z` | `$0.00` | Fresh post-reset session; verified via `swarm models` (`gemini-3.8-flash-low/high`, `gemini-4-hydrogen-medium`, `gemini-4-carbon-high`, `gemini-4-neon-high` all at `100%`). Launching `PC-00.01` & `PC-00.02`. |
 | 3 | `2026-11-27T10:07Z` | Google Antigravity Pool (all Gemini models) | `89%` | `2026-11-27T14:47:04Z` | `$0.00` | After `pc00-auditor` (`gemini-4-neon-high`) completed `PC-00.01` & `PC-00.02` deliverables + live repro (`-11%`). |
 | 4 | `2026-11-27T10:31Z` | Google Antigravity Pool (all Gemini models) | `64%` | `2026-11-27T14:47:04Z` | `$0.00` | After `pc00-reviewer` (`gemini-4-carbon-high`) completed independent review (`9.585`/`9.540`, `APPROVED`, `-25%`). Both workers killed; `64%` remaining (`49%` above `15%` weekly reserve). |
+| 5 | `2026-11-27T11:13Z` | Google Antigravity Pool (all Gemini models) | `45%` | `2026-11-27T14:47:04Z` | `$0.00` | After `pc01-executor` (`gemini-4-hydrogen-medium`) delivered `PC-01.01`–`01.02` + 172 container tests + isolated Playwright Desktop/Mobile E2E (`-19%`). |
+| 6 | `2026-11-27T11:20Z` | Google Antigravity Pool (all Gemini models) | `39%` | `2026-11-27T14:47:04Z` | `$0.00` | After `pc01-reviewer` (`gemini-4-neon-high`) Round 1 review (`REJECTED`, surfaced 1 P0 + 2 P1, `-6%`). |
+| 7 | `2026-11-27T11:27Z` | Google Antigravity Pool (all Gemini models) | `36%` | `2026-11-27T14:47:04Z` | `$0.00` | After Round 2 fix + independent `Neon High` re-review (`APPROVED` `9.350`/`9.300`, `-3%`). Both workers killed; `36%` remaining (`21%` above `15%` weekly reserve). |
 
 ## 2. Task Routing Ledger
 | Task | Role | Worker Name | Effective Model | Status | Notes |
@@ -17,3 +20,5 @@
 | Swarm Monitor | Monitor | `monitor` | `gemini-3.8-flash-low` | `ACTIVE` | Stall monitor per native swarm skill |
 | `PC-00.01`, `PC-00.02` | Executor (Auditor) | `pc00-auditor` | `gemini-4-neon-high` | `VERIFIED / KILLED` | Delivered audit, matrix, test-first plan, live PC-01 repro |
 | `PC-00.01`, `PC-00.02` | Independent Reviewer | `pc00-reviewer` | `gemini-4-carbon-high` | `APPROVED / KILLED` | `9.585/10` (`PC-00.01`), `9.540/10` (`PC-00.02`), `0` P0/P1 |
+| `PC-01.01`, `PC-01.02` | Executor | `pc01-executor` | `gemini-4-hydrogen-medium` | `VERIFIED / KILLED` | Single-tx base replace + `0055` `edit_revision` CAS + undo/redo + E2E (2 rounds) |
+| `PC-01.01`, `PC-01.02` | Independent Reviewer | `pc01-reviewer` | `gemini-4-neon-high` | `APPROVED / KILLED` | R1 REJECTED (caught 1 P0 + 2 P1) → R2 APPROVED (`9.350`/`9.300`, `0` P0/P1) |

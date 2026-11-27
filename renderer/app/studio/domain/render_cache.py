@@ -97,6 +97,12 @@ def visual_fingerprint(
         else:
             comp_repr = (comp.fit, comp.opacity, comp.scale, comp.position_x, comp.position_y)
 
+    extra_trim = (
+        ((shot.asset_trim_start_s, shot.asset_trim_end_s),)
+        if (getattr(shot, "asset_trim_start_s", None) is not None or getattr(shot, "asset_trim_end_s", None) is not None)
+        else ()
+    )
+
     return _fingerprint(
         "visual",
         shot.asset_ref,
@@ -114,6 +120,7 @@ def visual_fingerprint(
         captions,
         hosted,
         style_digest,
+        *extra_trim,
     )
 
 
