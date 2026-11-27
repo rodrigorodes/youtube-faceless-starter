@@ -234,3 +234,26 @@ Chronological audit trail per `PROMPT-MASTER.md` §5. Every entry records task I
 - **Observed Quota Reading:** Window 3 `77%` remaining (resets `2026-11-27T03:47:25Z`) | **External API Cost:** `$0.00` | **Publication Kill Switch:** `BLOCKED`.
 - **Rollback:** `git revert <rec-04-02-sha>`.
 - **Next Item:** `REC-04.03` (full canonical regression on clean final SHA + Node + isolated browser E2E).
+
+
+---
+
+## Entry — `REC-04.03` (`R12`) & `REC-04.04` (`R13`) Final Full Regression, Reconciled Matrix & Release Gate Approval
+
+- **Timestamp (UTC):** `2026-11-26T23:51Z–2026-11-27T01:01Z`
+- **Task IDs:** `REC-04.03` (`R12`, Gate `G6`), `REC-04.04` (`R13`, Final Release Gate)
+- **Clean Functional SHA:** `develop` `6a55f1f296d1d34bad64d2adcaad3bc0eafce011` (following atomic test-only commit `6a55f1f` aligning 3 pre-V4 E2E browser contract/selector tests; `hash renderer/app: b677160103d832a3`, `49/49` migrations, `main` `42700cb` untouched)
+- **Executor Model:** `Gemini 4 Carbon (High)` (`rec04-release`)
+- **Independent Reviewer Model:** `Gemini 4 Neon (High)` (`rec04-release-rev`)
+- **Verified `REC-04.03` Campaigns on Clean `6a55f1f` (Zero Failures, 100% Skip/Exclusion Closure):**
+  1. Full Canonical Container Suite: **`4510 passed, 26 skipped, 0 failed in 1063.12s`**, exit `0` (includes `test_architecture.py` `9/9`, `test_contracts_snapshot.py` `3/3`, `test_render_golden.py` `8/8`, `test_rec_01..04`).
+  2. Host Node.js / Panel Suite (8 files): **`101 passed, 0 skipped, 0 failed in 8.21s`**, exit `0` (closes all `23` Node skips).
+  3. Isolated Playwright Browser E2E (`127.0.0.1:8100`, `down -v` verified): **`27 passed, 0 skipped, 0 failed in 64.26s`**, exit `0` (closes both `--ignore` paths).
+  4. Host Playwright Contract Modules (`test_reference_browser.py` + `tests/ve08/`): **`20 passed, 0 skipped, 0 failed in 7.48s`**, exit `0` (closes all `3` Playwright module skips).
+  - Sanitized logs & JUnit XMLs (`8/8` files verified, `0` leaked secrets): `evidence/rec-04/rec-04-03/`.
+- **Independent Rubric Scores (`evidence/rec-04/rec-04-03-04-independent-review-neon-high.md`):**
+  - `REC-04.03`: **`9.585 / 10`** (`9.6 / 9.5 / 9.7 / 9.6 / 9.5`, min `9.5`, `0` P0/P1) — **APPROVED (`VERIFIED`)**
+  - `REC-04.04`: **`9.470 / 10`** (`9.4 / 9.5 / 9.5 / 9.7 / 9.2`, min `9.2`, `0` P0/P1) — **APPROVED (`VERIFIED` technical)**
+- **Final Campaign Verdict:** **`TECHNICAL GO / AWAITING HUMAN REVIEW`** (`NO-GO` for `main` merge until operator audiovisual sign-off `>= 9.0/10` and separate merge authorization).
+- **Observed Quota Reading:** Window 3 `19%` remaining (resets `2026-11-27T03:47:25Z`, safely above 15%/10% reserves) | **External API Cost:** `$0.00` | **Publication Kill Switch:** `BLOCKED`.
+- **Rollback:** `git revert <rec-04-03-04-sha>` (docs/evidence only; code unchanged since `a1e3640`).

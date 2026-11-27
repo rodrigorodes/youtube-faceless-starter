@@ -1,0 +1,41 @@
+/Users/rodrigomendes/.pyenv/versions/3.11.9/lib/python3.11/site-packages/pytest_asyncio/plugin.py:211: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform darwin -- Python 3.11.9, pytest-8.2.0, pluggy-1.6.0 -- /Users/rodrigomendes/.pyenv/versions/3.11.9/bin/python3
+rootdir: /Users/rodrigomendes/youtube-faceless-starter
+plugins: asyncio-1.1.0, playwright-0.10.0, anyio-3.7.1, cov-3.0.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 27 items
+
+tests/e2e_ux/test_e2e_dom_behavior.py::test_trends_chips_and_pillars_dialog_interaction[chromium] PASSED [  3%]
+tests/e2e_ux/test_e2e_dom_behavior.py::test_trends_create_video_button_carries_topic[chromium] PASSED [  7%]
+tests/e2e_ux/test_e2e_journey_approval.py::test_journey_preview_page_structure_and_cost_honesty[chromium] PASSED [ 11%]
+tests/e2e_ux/test_e2e_journey_creation.py::test_journey_create_channel_and_verify_active[chromium] PASSED [ 14%]
+tests/e2e_ux/test_e2e_journey_creation.py::test_journey_create_video_and_open_workspace[chromium] PASSED [ 18%]
+tests/e2e_ux/test_e2e_journey_workspace.py::test_journey_workspace_all_areas_navigable_and_clean_dom[chromium] PASSED [ 22%]
+tests/e2e_ux/test_e2e_responsive.py::test_home_page_responsive_no_overflow[chromium-mobile-390-844] PASSED [ 25%]
+tests/e2e_ux/test_e2e_responsive.py::test_home_page_responsive_no_overflow[chromium-tablet-768-1024] PASSED [ 29%]
+tests/e2e_ux/test_e2e_responsive.py::test_home_page_responsive_no_overflow[chromium-desktop-1280-800] PASSED [ 33%]
+tests/e2e_ux/test_e2e_responsive.py::test_new_video_page_responsive_no_overflow[chromium-mobile-390-844] PASSED [ 37%]
+tests/e2e_ux/test_e2e_responsive.py::test_new_video_page_responsive_no_overflow[chromium-tablet-768-1024] PASSED [ 40%]
+tests/e2e_ux/test_e2e_responsive.py::test_new_video_page_responsive_no_overflow[chromium-desktop-1280-800] PASSED [ 44%]
+tests/e2e_ux/test_e2e_responsive.py::test_channels_settings_responsive_no_overflow[chromium-mobile-390-844] PASSED [ 48%]
+tests/e2e_ux/test_e2e_responsive.py::test_channels_settings_responsive_no_overflow[chromium-tablet-768-1024] PASSED [ 51%]
+tests/e2e_ux/test_e2e_responsive.py::test_channels_settings_responsive_no_overflow[chromium-desktop-1280-800] PASSED [ 55%]
+tests/e2e_ux/test_e2e_settings.py::test_settings_channels_page_clean_dom[chromium] PASSED [ 59%]
+tests/e2e_ux/test_e2e_settings.py::test_settings_economic_profile_cards_interactive[chromium] PASSED [ 62%]
+tests/e2e_ux/test_e2e_settings.py::test_settings_team_page_roles_matrix[chromium] PASSED [ 66%]
+tests/e2e_ux/test_e2e_shell_navigation.py::test_shell_has_all_seven_canonical_nav_items[chromium] PASSED [ 70%]
+tests/e2e_ux/test_e2e_shell_navigation.py::test_shell_navigation_transitions_maintain_active_state[chromium] PASSED [ 74%]
+tests/e2e_ux/test_e2e_shell_navigation.py::test_theme_toggle_is_interactive_if_supported[chromium] PASSED [ 77%]
+tests/e2e_ux/test_e2e_smoke.py::test_studio_home_loads_and_has_clean_dom[chromium] PASSED [ 81%]
+tests/e2e_ux/test_rec_03_studio_browser.py::test_rec_03_studio_browser_desktop_and_mobile_e2e[chromium] PASSED [ 85%]
+tests/e2e_full/test_journey_diretor.py::test_diretor_storyboard_editing_then_production_and_approval[chromium] PASSED [ 88%]
+tests/e2e_full/test_journey_inicio.py::test_inicio_piloto_creates_the_video_and_starts_the_production[chromium] PASSED [ 92%]
+tests/e2e_full/test_journey_inicio.py::test_inicio_diretor_says_open_storyboard_and_does_not_start_production[chromium] PASSED [ 96%]
+tests/e2e_full/test_journey_piloto.py::test_piloto_creation_to_approved_pending_publication_and_adjustments[chromium] PASSED [100%]
+
+------ generated xml file: /tmp/rec04_03_final/browser-e2e-junit.raw.xml -------
+======================== 27 passed in 64.26s (0:01:04) =========================

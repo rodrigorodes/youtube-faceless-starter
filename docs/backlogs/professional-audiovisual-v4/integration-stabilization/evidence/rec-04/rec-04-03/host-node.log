@@ -1,0 +1,23 @@
+/Users/rodrigomendes/.pyenv/versions/3.11.9/lib/python3.11/site-packages/pytest_asyncio/plugin.py:211: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform darwin -- Python 3.11.9, pytest-8.2.0, pluggy-1.6.0
+rootdir: /Users/rodrigomendes/youtube-faceless-starter
+plugins: asyncio-1.1.0, playwright-0.10.0, anyio-3.7.1, cov-3.0.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 101 items
+
+tests/test_erro_js.py ......                                             [  5%]
+tests/test_storyboard_js.py ......                                       [ 11%]
+tests/test_panel.py .................................................... [ 63%]
+...                                                                      [ 66%]
+tests/test_falha_producao.py ......                                      [ 72%]
+tests/test_publicacao_acao.py ............                               [ 84%]
+tests/test_workflow_analytics.py ...                                     [ 87%]
+tests/test_workflow_publish.py ..........                                [ 97%]
+tests/test_workflow_trends.py ...                                        [100%]
+
+------- generated xml file: /tmp/rec04_03_final/host-node-junit.raw.xml --------
+============================= 101 passed in 8.21s ==============================

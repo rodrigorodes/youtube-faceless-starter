@@ -24,6 +24,9 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | 13 | `2026-11-26T22:47Z` | Google Antigravity Pool | `100%` | `2026-11-27T03:47:25Z` | `$0.00` | Window 3 reset (`100%`) after OpenCode session completed `REC-03.01–03` & `REC-04.01`; resuming `REC-04.02` on `Hydrogen Medium` |
 | 14 | `2026-11-26T23:37Z` | Google Antigravity Pool | `83%` | `2026-11-27T03:47:25Z` | `$0.00` | Post-REC-04.02 impl & real 309.80s documentary render (`Hydrogen Medium`, 17% delta); launching `Neon High` independent review |
 | 15 | `2026-11-26T23:48Z` | Google Antigravity Pool | `77%` | `2026-11-27T03:47:25Z` | `$0.00` | Post-REC-04.02 Round 1→2 review (`APPROVED 9.400/10`, 6% delta); launching `REC-04.03` on `Carbon High` |
+| 16 | `2026-11-27T00:22Z` | Google Antigravity Pool | `55%` | `2026-11-27T03:47:25Z` | `$0.00` | Mid-REC-04.03: caught 3 legacy browser E2E mismatches (`6a55f1f` test-only alignment committed) |
+| 17 | `2026-11-27T00:55Z` | Google Antigravity Pool | `24%` | `2026-11-27T03:47:25Z` | `$0.00` | Post-REC-04.03/04 full clean-SHA regression (`4510+101+27+20`, 0 failures) + matrix & final report; launching `Neon High` final review |
+| 18 | `2026-11-27T01:00Z` | Google Antigravity Pool | `19%` | `2026-11-27T03:47:25Z` | `$0.00` | Campaign technical gates 100% CLOSED (`REC-04.03 = 9.585`, `REC-04.04 = 9.470`; `TECHNICAL GO / AWAITING HUMAN REVIEW`) — safely above reserve |
 
 ---
 
@@ -50,8 +53,8 @@ Tracking real Google model assignments, observed quota readings, retries/escalat
 | `REC-04.01` | Independent Reviewer | sessão separada `github-copilot/gemini-4-neon` | `Gemini 4 Neon (High)` | 1 | `VERIFIED` | R1 APPROVED 9.345 |
 | `REC-04.02` | Executor | `rec04-doc` (retired) | `Gemini 4 Hydrogen (Medium)` | 2 | `VERIFIED` (técnico) | Prerequisites `P2-1`/`PRE-1`/`P2-4`/`facts.py` + 309.80s 25-scene documentary + `-57.41%` selective regen (`182 passed`) |
 | `REC-04.02` | Independent Reviewer | `rec04-doc-rev` (retired) | `Gemini 4 Neon (High)` | 2 | `VERIFIED` (técnico) | Round 1 REJECTED `9.190` (1 P1 `test_facts.py`); Round 2 APPROVED `9.400/10` (6 frames + SHA/ffprobe/ebur128 + 3 `/tmp` mutations) |
-| `REC-04.03` | Executor | `rec04-reg` | `Gemini 4 Carbon (High)` | 1 | `IN_PROGRESS` | Full canonical regression on clean final SHA + host Node + isolated Playwright E2E |
-| `REC-04.03`–`04` | Independent Reviewer | `rec04-reg-rev` / `rec04-release-rev` | `Gemini 4 Neon (High)` + Operator | — | `PENDING` | Independent Neon High review on handoff + human audiovisual review |
+| `REC-04.03`–`04` | Executor | `rec04-release` (retired) | `Gemini 4 Carbon (High)` | 1 | `VERIFIED` | Clean-SHA `6a55f1f` 4-campaign regression (`4510+101+27+20`, 0 failures) + reconciled `TRACEABILITY-MATRIX.md` + `FINAL-REPORT.md` |
+| `REC-04.03`–`04` | Independent Reviewer | `rec04-release-rev` (retired) | `Gemini 4 Neon (High)` | 1 | `VERIFIED` (técnico) | Approved `REC-04.03 = 9.585/10` & `REC-04.04 = 9.470/10`; `TECHNICAL GO / AWAITING HUMAN REVIEW` (operator audiovisual review pending) |
 
 ---
 
