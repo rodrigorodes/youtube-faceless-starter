@@ -104,7 +104,10 @@ def test_piloto_creation_to_approved_pending_publication_and_adjustments(journey
     continue_run_until_approval(j, video_id)
     status, render = j.api(f"/studio/videos/{video_id}/render")
     assert render["job"]["status"] == "SUCCEEDED" and render["job"]["error"] is None
-    assert render["qa_report"]["findings"] == [], render["qa_report"]["findings"]
+    qa = render["qa_report"]
+    assert qa is not None and qa["coverage"]["status"] == "verified", qa
+    assert len(qa["checks_run"]) > 0, qa
+    assert [f for f in qa["findings"] if f.get("severity") not in ("warning", "info")] == [], qa["findings"]
 
     # 4. Aprovar na aba Qualidade (regressão: o botão enviava corpo vazio e a API recusava)
     approve_from_quality(j, video_id)

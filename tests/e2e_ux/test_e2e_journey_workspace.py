@@ -11,9 +11,10 @@ from tests.e2e_ux.pages.channels_page import ChannelsPage
 from tests.e2e_ux.pages.new_video_page import NewVideoPage
 from tests.e2e_ux.pages.workspace_page import WorkspacePage
 
-# Decisão V3 (`panel_video_nav.VIDEO_AREAS`): o workspace tem 5 áreas; `visao-geral`/`narracao` são legadas
+# Áreas canônicas do workspace (`panel_video_nav.VIDEO_AREAS`): 6 áreas; `visao-geral`/`narracao` são legadas
 # e caem em Cenas. Cada item é (rótulo, trecho da URL).
 CANONICAL_VIDEO_AREAS = [
+    ("Direção criativa", "/direcao"),
     ("Cenas & Storyboard", "/cenas"),
     ("Composição & Legendas", "/composicao"),
     ("Qualidade & Aprovação", "/qualidade"),

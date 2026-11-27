@@ -30,7 +30,7 @@ def open_page(ctx, studio, **kw):
 
 
 def texts(page):
-    return page.eval_on_selector_all('.scene textarea', 'els => els.map(e => e.value)')
+    return page.eval_on_selector_all('.scene textarea[data-a="text"]', 'els => els.map(e => e.value)')
 
 
 def settle(page, studio=None):
@@ -41,7 +41,7 @@ def settle(page, studio=None):
 
 
 def edit(page, i, value):
-    box = page.locator('.scene textarea').nth(i)
+    box = page.locator('.scene textarea[data-a="text"]').nth(i)
     box.click()
     box.fill(value)
     page.locator('body').click(position={'x': 5, 'y': 5})  # blur -> change
@@ -122,7 +122,7 @@ def test_new_scene_adds_a_card_without_navigation_and_persists(ctx):
     assert page.locator('.scene .num').nth(3).inner_text().startswith('CENA 4 · NOVA CENA')
     assert page.locator('#dock-count').inner_text() == '4 cenas'
     assert len(st.scenes) == 4 and st.scenes[3]['narration'] == 'Escreva aqui o texto da narração desta cena.'
-    assert page.locator('.scene textarea').nth(3).evaluate('e => e === document.activeElement')
+    assert page.locator('.scene textarea[data-a="text"]').nth(3).evaluate('e => e === document.activeElement')
     page.reload()
     assert page.locator('.scene').count() == 4          # persistida; o histórico é só da sessão da página
     assert page.locator('#btn-undo-cenas').is_disabled()
