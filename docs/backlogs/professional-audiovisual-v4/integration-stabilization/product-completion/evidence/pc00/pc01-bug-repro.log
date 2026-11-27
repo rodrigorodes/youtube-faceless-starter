@@ -1,0 +1,44 @@
+# PC-00 Isolated Reproduction Log — PC-01 Edit-Integrity Defect
+# Timestamp (UTC): 2026-11-27T09:57:09Z
+# Repository: /Users/rodrigomendes/youtube-faceless-starter
+# Branch: develop | HEAD: 8484b7202d7080d916a501a945bc81a2b51274cf
+# Main (untouched): 42700cb331165a68455173a91c463d4733292cfd
+# Method: Ephemeral pytest module placed in gitignored storage/test-reports/test_pc01_repro_tmp.py,
+#         executed via ./scripts/test-container.sh against disposable postgres:16-alpine (tmpfs + proof guard),
+#         and deleted immediately after execution (zero edits to renderer/, tests/, scripts/, contracts/).
+#
+# Command:
+#   PATH="/Users/rodrigomendes/.pyenv/shims:/opt/homebrew/bin:/usr/local/bin:$PATH" \
+#     ./scripts/test-container.sh /test-reports/test_pc01_repro_tmp.py -vv -s
+# Exit Code: 0 (all 3 defect assertions confirmed bug presence on HEAD 8484b72)
+
+== imagem
+== alinhamento (checkout x imagem)
+HEAD=8484b72 alterações_em_renderer/tests=não
+hash renderer/app: checkout=b677160103d832a3 imagem=b677160103d832a3
+migrações: checkout=49 imagem=49
+== PostgreSQL descartável
+== pytest (/test-reports/test_pc01_repro_tmp.py -vv -s)
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-8.3.5, pluggy-1.7.0 -- /usr/local/bin/python
+rootdir: /test-reports
+plugins: anyio-4.16.0
+collecting ... collected 1 item
+
+../test-reports/test_pc01_repro_tmp.py::test_pc01_bug_repro_overlay_wipe_and_split_transaction 
+[G0-RUNTIME-CHECK] publication_enabled=False max_cost_video=0.0 max_cost_month=0.0 budget_guard=True STUDIO_PUBLICATION_ENABLED=0
+[BEFORE-REPLACE-NO-TRIM] scene_assets count=3 roles=['base', 'overlay', 'overlay'] ids=['1ea45e9d', 'eeeeeeee', 'ffffffff']
+[REPRO-A-AFTER-NO-TRIM] BUG CONFIRMED: scene_assets count=0 rows=[] (expected 2 overlays preserved, got 0)
+[BEFORE-REPLACE-WITH-TRIM] scene_assets count=2 roles=['overlay', 'overlay']
+[REPRO-B-AFTER-WITH-TRIM] BUG CONFIRMED: scene_assets count=1 roles=['base'] (both overlays wiped!)
+[REPRO-C-SPLIT-TX] BUG CONFIRMED: tx #2 raised RuntimeError, YET scenes.asset_id was ALREADY mutated from base3=a4f1b9b8 to base4=b666fe46 (NOT rolled back!), while scene_assets still references base3=a4f1b9b8 (DESYNCHRONIZED!)
+PASSED
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/starlette/testclient.py:37
+  /usr/local/lib/python3.12/site-packages/starlette/testclient.py:37: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = typing.Callable[[], typing.ContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 1 passed, 1 warning in 2.01s =========================
+== pytest saiu com código 0
