@@ -43,3 +43,6 @@ Importação externa assistida genérica precede APIs opcionais. Não adicionar 
 
 ## Entrada atual — segunda recuperação (26/11/2026)
 A execução INT-01–07 ocorreu, mas revisão de 72438e9 identificou lacunas e P0 financeiro. Status NO-GO. Use [PROMPT-MASTER.md](PROMPT-MASTER.md) como entrada única da campanha REC-00–04, [achados](RECOVERY-REVIEW.md), [backlog](RECOVERY-BACKLOG.md), [roteamento](MODEL-ROUTING.md) e [rubrica >=9](QUALITY-RUBRIC.md). As instruções antigas acima são históricas para INT; o master atual permite execução técnica contínua quando iniciada expressamente pelo operador, mantendo gates, review independente e aprovação humana. Não repetir ondas inteiras nem aceitar GO antigo.
+
+## Próxima campanha — Product Completion (26/11/2026)
+A revisão externa de 2e8b153 identificou P1 de integridade da edição e 44 V4 adiadas. A nova entrada para execução técnica autorizada é [product-completion/MASTER-PROMPT.md](product-completion/MASTER-PROMPT.md), com 27 tarefas, mapeamento de todos 44 IDs e 6 GAI, rubrica >=9, gates reais e review independente. REC permanece histórico; não repetir REC integralmente. Não aceitar adiamentos em nome do operador, não publicar, não gastar, não fazer merge. O GO técnico anterior não equivale a V4 completa ou avaliação audiovisual humana.

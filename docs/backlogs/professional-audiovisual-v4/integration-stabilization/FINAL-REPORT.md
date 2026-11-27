@@ -215,3 +215,6 @@ Every recovery wave was committed atomically on `develop` above reopening base `
   DELETE FROM studio.schema_migrations
    WHERE version = '0054_paid_operation_external_ref';
   ```
+
+## Próxima campanha — Product Completion (26/11/2026)
+A revisão externa de 2e8b153 identificou P1 de integridade da edição e 44 V4 adiadas. A nova entrada para execução técnica autorizada é [product-completion/MASTER-PROMPT.md](product-completion/MASTER-PROMPT.md), com 27 tarefas, mapeamento de todos 44 IDs e 6 GAI, rubrica >=9, gates reais e review independente. REC permanece histórico; não repetir REC integralmente. Não aceitar adiamentos em nome do operador, não publicar, não gastar, não fazer merge. O GO técnico anterior não equivale a V4 completa ou avaliação audiovisual humana.

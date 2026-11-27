@@ -52,3 +52,6 @@ Status de homologação V4-01–13: revalidação pendente após revisão estát
 
 ## Recuperação REC — gate >=9/10 (26/11/2026)
 A develop 72438e9 segue NO-GO. A entrada ativa é [PROMPT-MASTER de recuperação](integration-stabilization/PROMPT-MASTER.md), com [backlog REC](integration-stabilization/RECOVERY-BACKLOG.md), [roteamento](integration-stabilization/MODEL-ROUTING.md) e [rubrica](integration-stabilization/QUALITY-RUBRIC.md). Não usar GO histórico como aceite; execução técnica contínua apenas quando operador iniciar a campanha, sem merge/publicação/gasto e com gates independentes.
+
+## Product Completion — fechamento de produto V4 (26/11/2026)
+Base 2e8b153; executar a campanha autorizada em [integration-stabilization/product-completion/MASTER-PROMPT.md](integration-stabilization/product-completion/MASTER-PROMPT.md). A recuperação técnica tem evidências reais, mas não encerra 44 itens adiados nem avaliação humana. Prioridade integridade da edição e capacidades locais no Studio. Gates >=9 por dimensão, zero P0/P1 obrigatório, revisão independente e autorização separada de merge. Main não deve ser alterada por esta campanha.
