@@ -22,7 +22,7 @@ def seed_video(conn, video_id=V):
 
 
 def test_migrate_applies_once(conn):
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles", "0034_channel_style", "0035_youtube_identity", "0036_video_style", "0037_channel_youtube_target", "0038_budget_scope_attribution", "0039_production_run_config", "0040_style_patches", "0041_production_run_operation", "0042_scene_stable_identity", "0043_reopen_approved_video", "0044_script_edit_requests", "0045_publication_intent_destination_metadata", "0046_scene_revisions", "0047_channel_preferences_and_production_mode", "0048_scene_broll", "0049_saved_trends", "0050_scene_assets", "0051_scene_media_intelligence", "0052_video_production_settings", "0053_usage_ledger_category", "0054_paid_operation_external_ref", "0055_scene_edit_revision"]
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles", "0034_channel_style", "0035_youtube_identity", "0036_video_style", "0037_channel_youtube_target", "0038_budget_scope_attribution", "0039_production_run_config", "0040_style_patches", "0041_production_run_operation", "0042_scene_stable_identity", "0043_reopen_approved_video", "0044_script_edit_requests", "0045_publication_intent_destination_metadata", "0046_scene_revisions", "0047_channel_preferences_and_production_mode", "0048_scene_broll", "0049_saved_trends", "0050_scene_assets", "0051_scene_media_intelligence", "0052_video_production_settings", "0053_usage_ledger_category", "0054_paid_operation_external_ref", "0055_scene_edit_revision", "0056_asset_tags"]
     assert migrate(conn) == []
 
 
@@ -34,7 +34,7 @@ def test_failed_migration_rolls_back_and_is_not_recorded(conn, tmp_path):
     assert not table_exists(conn, "half_done")
     # a transação inteira reverteu: nada aplicado e nada registrado (nem a tabela de controle sobra)
     assert not table_exists(conn, "schema_migrations") or conn.execute("SELECT count(*) FROM studio.schema_migrations").fetchone()[0] == 0
-    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles", "0034_channel_style", "0035_youtube_identity", "0036_video_style", "0037_channel_youtube_target", "0038_budget_scope_attribution", "0039_production_run_config", "0040_style_patches", "0041_production_run_operation", "0042_scene_stable_identity", "0043_reopen_approved_video", "0044_script_edit_requests", "0045_publication_intent_destination_metadata", "0046_scene_revisions", "0047_channel_preferences_and_production_mode", "0048_scene_broll", "0049_saved_trends", "0050_scene_assets", "0051_scene_media_intelligence", "0052_video_production_settings", "0053_usage_ledger_category", "0054_paid_operation_external_ref", "0055_scene_edit_revision"]  # e uma migração boa roda normalmente depois
+    assert migrate(conn) == ["0001_init", "0002_editorial", "0003_fact_check_version", "0004_asset_credits", "0005_license_nonblank", "0006_render", "0007_publish", "0008_publication_attempt_base", "0010_approval_render", "0011_trends", "0012_categories", "0013_budget_reservations", "0014_ledger_cost_evidence", "0015_ledger_cost_confirmation", "0016_channel_profiles", "0017_paid_operations", "0018_production_runs", "0019_ledger_estimate_and_attribution", "0020_paid_operation_attempt_and_budget_indexes", "0021_channel_pillars_constraints", "0022_channel_management", "0023_longform_script_approval", "0026_analytics_learning", "0027_saas_multiuser_byok", "0028_publication_resilience", "0031_membership_audit", "0032_render_plan_cache", "0033_visual_styles", "0034_channel_style", "0035_youtube_identity", "0036_video_style", "0037_channel_youtube_target", "0038_budget_scope_attribution", "0039_production_run_config", "0040_style_patches", "0041_production_run_operation", "0042_scene_stable_identity", "0043_reopen_approved_video", "0044_script_edit_requests", "0045_publication_intent_destination_metadata", "0046_scene_revisions", "0047_channel_preferences_and_production_mode", "0048_scene_broll", "0049_saved_trends", "0050_scene_assets", "0051_scene_media_intelligence", "0052_video_production_settings", "0053_usage_ledger_category", "0054_paid_operation_external_ref", "0055_scene_edit_revision", "0056_asset_tags"]  # e uma migração boa roda normalmente depois
 
 
 def test_creates_all_tables(conn):
@@ -50,7 +50,7 @@ def test_creates_all_tables(conn):
               "render_plans", "plan_artifacts", "render_cache_entries",
               "visual_styles", "visual_style_revisions",
               "google_accounts", "oauth_grants", "youtube_channels", "channel_authorizations",
-              "script_edit_requests", "approval_history", "scene_revisions"):
+              "script_edit_requests", "approval_history", "scene_revisions", "asset_tags"):
         assert table_exists(conn, t), t
 
 
@@ -173,3 +173,36 @@ def test_project_categories_constraints_and_trend_link(conn):
     conn.execute("DELETE FROM studio.project_categories WHERE id = %s", (cat_id,))
     row = conn.execute("SELECT category_id FROM studio.trend_topics WHERE id = %s", (trend_id,)).fetchone()
     assert row[0] is None
+
+
+def test_asset_tags_constraints_and_cascade(conn):
+    migrate(conn)
+    pid = "b" * 32
+    conn.execute("INSERT INTO studio.projects(id, name) VALUES (%s, %s)", (pid, "Test Project"))
+    aid = "a" * 32
+    conn.execute(
+        "INSERT INTO studio.assets(id, kind, cache_key, path, provider, model, license) "
+        "VALUES (%s, 'image', %s, 'path/to/img.png', 'p', 'm', 'CC0-1.0')",
+        (aid, "1" * 64),
+    )
+    conn.commit()
+
+    # Valid tag
+    conn.execute("INSERT INTO studio.asset_tags(project_id, asset_id, tag) VALUES (%s, %s, %s)", (pid, aid, "historia"))
+    # Duplicate tag fails PK
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO studio.asset_tags(project_id, asset_id, tag) VALUES (%s, %s, %s)", (pid, aid, "historia"))
+    conn.rollback()
+
+    # Invalid tags rejected by CHECK constraint:
+    for bad_tag in ("", "   ", "UPPERCASE", "with spaces", "has_special!", "a" * 65, "-starts-with-dash"):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO studio.asset_tags(project_id, asset_id, tag) VALUES (%s, %s, %s)", (pid, aid, bad_tag))
+        conn.rollback()
+
+    # Cascade on asset deletion
+    conn.execute("INSERT INTO studio.asset_tags(project_id, asset_id, tag) VALUES (%s, %s, %s)", (pid, aid, "computacao"))
+    assert conn.execute("SELECT count(*) FROM studio.asset_tags WHERE asset_id = %s", (aid,)).fetchone()[0] == 1
+    conn.execute("DELETE FROM studio.assets WHERE id = %s", (aid,))
+    assert conn.execute("SELECT count(*) FROM studio.asset_tags WHERE asset_id = %s", (aid,)).fetchone()[0] == 0
+

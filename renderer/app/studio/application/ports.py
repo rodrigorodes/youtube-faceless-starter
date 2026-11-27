@@ -465,6 +465,20 @@ class AssetRepository(Protocol):
         """Grava só `broll_enabled`/`broll_note` de UMA cena (sem nova versão, sem tocar na mídia); False se a cena não existe."""
     def belongs_to_scope(self, asset_id: str, *, video_id: str | None = None, project_id: str | None = None) -> bool:
         """Verifica se o asset_id pertence ao escopo (cenas ou scene_assets do vídeo ou projeto)."""
+    def add_asset_tag(self, asset_id: str, tag: str, *, project_id: str | None = None) -> list[str]: ...
+    def remove_asset_tag(self, asset_id: str, tag: str, *, project_id: str | None = None) -> list[str]: ...
+    def list_asset_tags(self, asset_id: str, *, project_id: str | None = None) -> list[str]: ...
+    def search_project_assets(
+        self,
+        *,
+        project_id: str,
+        query: str | None = None,
+        tag: str | None = None,
+        kind: str | None = None,
+        license: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[Asset], int]: ...
 
 
 class AssetStore(Protocol):

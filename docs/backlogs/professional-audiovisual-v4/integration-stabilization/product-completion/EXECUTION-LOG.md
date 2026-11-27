@@ -56,3 +56,51 @@
   - Artifacts: `evidence/pc01/pc01-execution-evidence.md` & `evidence/pc01/pc01-independent-review-neon-high.md`.
 - **Status:** `PC-01.01` = **`VERIFIED`**, `PC-01.02` = **`VERIFIED`** (`4 / 27` total). Blocking P0 edit-integrity defect closed!
 - **Next Item:** Atomic commit of `PC-01` on `develop`, then launch unlocked `PC-05.02` (`Flash 3.8 High` executor + `Carbon High` reviewer).
+
+---
+
+## Entry 004 — `PC-05.02` Round 1 Implementation + Independent Review (`8.010` `REJECTED`) & Safe Quota Reserve Checkpoint (`11%`)
+
+- **Timestamp (UTC):** `2026-11-27T11:29Z–12:26Z`
+- **Task ID:** `PC-05.02` (`V4-11.09`)
+- **Git Base HEAD:** `develop` `8efb306` (`PC-01` committed cleanly; `main` `42700cb` strictly untouched; `PC-05.02` remains uncommitted in working tree pending Round 2 fixes)
+- **Executor (Round 1):** `pc0502-executor` (`gemini-3.8-flash-high`)
+- **Independent Reviewer (Round 1):** `pc0502-reviewer` (`gemini-4-carbon-high`, separate session)
+- **Observed Quota:** `36%` → `19%` (executor, `-17%`) → **`11%`** (independent review, `-8%`; resets `2026-11-27T14:47:04Z` / `11:47:04` local)
+- **External API Spend / Publication:** `$0.00` / `STUDIO_PUBLICATION_ENABLED=0` (`BLOCKED`)
+- **Round 1 Review Findings (`pc05-02-independent-review-carbon-high.md`, **`8.010/10` `REJECTED`**):**
+  - `P0-PC0502-1`: `Asset` added `tags`/`origin`/`provenance` without running `scripts/export_contracts.py` (`contracts/v1/asset.schema.json` stale, breaks `test_contracts_snapshot.py`).
+  - `P1-PC0502-1`: `studio.asset_tags` PK `(asset_id, tag)` omitted `project_id` (shared cached assets leak tags across projects; `_materialize` also omits `license` in `asset_cache_key`).
+  - `P1-PC0502-2`: `panel_video_storyboard_js.py` Channel Library builds preview URLs with `?video_id=${VID}` instead of `?project_id=${channelProjectId}` (`403` on cross-video thumbnails within channel).
+  - `P1-PC0502-3`: `_resolve_project_id` in `routes.py` checks non-existent `uc.videos`/`uc.channel_profiles` (`UseCases` has `channel_profiles_repo`), breaking `/channels/{cid}/assets*` for real `ChannelProfile.id`.
+- **Action Taken:** Preserved `PC-05.02` working tree + review report without committing; killed `pc0502-executor` and `pc0502-reviewer`; silenced `monitor` via `[done]`; saved checkpoint at `11%` (above `10%` 5h reserve) and scheduled automatic resume after `14:47:04Z` (`11:47:04` local) quota reset.
+- **Next Item:** Escalate `PC-05.02` Round 2 fix to `Hydrogen Medium` (concrete R1 findings), re-review with `Carbon High`, commit `PC-05.02`, then continue `PC-03` / `PC-02` / `PC-04`..`PC-09`.
+
+---
+
+## Entry 005 — Post-5h-Reset Quota Check: Weekly Gemini Reserve Reached (`10%`, resets `2026-12-03T10:00:59Z`)
+
+- **Timestamp (UTC):** `2026-11-27T14:49Z–14:50Z`
+- **Observed Quota:** After the `14:47:04Z` 5h reset elapsed, `swarm models` reported **`10%` remaining on the weekly Gemini pool** (`quota_resets: 2026-12-03T10:00:59Z` / `2026-12-03 07:00:59` local) across all Gemini models.
+- **Policy Enforcement:** `10%` is below the `15%` weekly safety reserve (`MASTER-PROMPT.md`, `MODEL-ROUTING.md`). Non-Gemini models (`Claude 5.5` / `GPT-OSS`) are at `100%` but are strictly NOT used without explicit operator authorization.
+- **Action Taken:** Zero workers spawned; `PC-05.02` working tree and Round 1 review report preserved cleanly on top of committed `develop` `8efb306` (`main` `42700cb` untouched, `$0.00` external API spend, `STUDIO_PUBLICATION_ENABLED=0`); updated `MODEL-USAGE.md`, `EXECUTION-STATE.md`, and `SESSION-HANDOFF.md` and halted cleanly awaiting weekly reset or explicit operator authorization.
+
+---
+
+## Entry 006 — `PC-05.02` Round 2 Fix Completed & Independently Approved (`9.800/10`)
+
+- **Timestamp (UTC):** `2026-11-27T18:55Z`
+- **Task ID:** `PC-05.02` (`V4-11.09`)
+- **Git Base HEAD:** `develop` `8efb306` (`main` `42700cb` strictly untouched)
+- **Model:** `Gemini 3.8 Flash Vertex` (operator authorized for execution and verification)
+- **Corrections Implemented & Verified:**
+  - `P0-PC0502-1`: Sincronizado `contracts/v1/asset.schema.json` via `scripts/export_contracts.py`; `test_contracts_snapshot.py` e `test_architecture.py` passando 100%.
+  - `P1-PC0502-1`: `0056_asset_tags.sql` agora escopado por `project_id text NOT NULL REFERENCES studio.projects(id) ON DELETE CASCADE` com PK `(project_id, asset_id, tag)`. `media_repo.py` escopa leituras, escritas e buscas por `project_id`. `media.py:342` inclui `license` no cache key. Verificado por `test_shared_asset_cross_project_tag_isolation`.
+  - `P1-PC0502-2`: `panel_video_storyboard_js.py` armazena `channelProjectId` e monta `fileUrl` com `?project_id=${channelProjectId}` na aba do canal. Verificado por `tests/test_storyboard_js.py`.
+  - `P1-PC0502-3`: `_resolve_project_id` em `routes.py` e `media.py` usa `uc.channel_profiles_repo.get(pid)` e `channels.get(pid).project_id`. Endpoints REST de canal testados por `test_channel_profile_assets_endpoints`.
+- **Test Evidence:**
+  - Container PostgreSQL: `28 passed, 0 failed` em 9.80s (`test_pc05_asset_tags.py`, `test_db.py`).
+  - Host Node.js: `26 passed, 0 failed` em 12.31s (`test_contracts_snapshot.py`, `test_architecture.py`, `test_storyboard_js.py`, `test_erro_js.py`).
+  - Isolated Playwright E2E: `1 passed` em 5.05s na porta 8100 (`test_pc05_browser_tags.py`).
+- **Independent Review:** `evidence/pc05/pc05-02-independent-review-round2-approved.md` -> **`APPROVED` (`9.800/10`)**, zero P0/P1 abertos.
+- **Status:** `PC-05.02` = **`VERIFIED`** (`5 / 27` tarefas verificadas). Pronto para commit atômico.

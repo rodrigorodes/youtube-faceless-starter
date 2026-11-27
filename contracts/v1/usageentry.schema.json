@@ -39,7 +39,7 @@
     },
     "cost_usd": {
       "default": 0.0,
-      "minimum": 0,
+      "minimum": 0.0,
       "title": "Cost Usd",
       "type": "number"
     },

@@ -117,8 +117,9 @@ from ..domain.youtube_oauth import OAuthConfigurationError
 from ..application.render import ExportSubtitles, GetRender, GetRenderFile, Rendering, RunRender, StartRender
 from ..application.scene_narration import RegenerateSceneNarration, SceneNarration
 from ..application.render_cache import PlanRegeneration
-from ..application.media import (AssetFile, GetSceneTiming, ImportExternalMedia, ListAssets, ListSceneCandidates, Media,
-                                 PrepareStoryboard, ProduceAssets, SceneAssetFile, SetSceneBroll, SwapSceneMedia)
+from ..application.media import (AssetFile, GetSceneTiming, ImportExternalMedia, ListAssets, ListSceneCandidates,
+                                 ManageAssetTags, Media, PrepareStoryboard, ProduceAssets, SceneAssetFile,
+                                 SearchProjectAssets, SetSceneBroll, SwapSceneMedia)
 from ..application.editorial import CostGuard, Editorial, GenerateScript, GetScript, IngestSource, ListSources, RunFactCheck
 from ..application.creative_director import CreateCreativeBrief
 from ..application.longform import (AddScriptScene, ApproveScriptVersion, EditScriptScene, GenerateLongScript,
@@ -581,7 +582,9 @@ class Studio:
             asset_file=SceneAssetFile(repo, scripts, assets, s.storage_root),
             import_media=ImportExternalMedia(repo, scripts, assets, asset_store, probe=FfmpegMediaProbe()),
             direct_asset_file=AssetFile(repo, scripts, assets, s.storage_root),
-            scene_timing=GetSceneTiming(scripts))
+            scene_timing=GetSceneTiming(scripts),
+            manage_tags=ManageAssetTags(repo, assets, channels=channel_repo),
+            search_assets=SearchProjectAssets(repo, assets, channels=channel_repo))
         jobs = PostgresRenderJobRepository(connect)
         steps = PostgresStepRepository(connect)
         # RP-06: persistência versionada do plano + índice de cache da regeneração seletiva.

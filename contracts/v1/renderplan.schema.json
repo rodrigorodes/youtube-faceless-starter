@@ -431,6 +431,30 @@
           "title": "Asset Ref",
           "type": "string"
         },
+        "asset_trim_end_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Trim End S"
+        },
+        "asset_trim_start_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Trim Start S"
+        },
         "composition": {
           "anyOf": [
             {
@@ -522,8 +546,7 @@
         "source": {
           "const": "channel",
           "default": "channel",
-          "title": "Source",
-          "type": "string"
+          "title": "Source"
         },
         "style_id": {
           "minLength": 1,

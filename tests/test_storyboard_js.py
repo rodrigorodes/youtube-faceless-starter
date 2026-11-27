@@ -76,7 +76,35 @@ class FakeElement {
   get value() { return this._value; }
   set value(v) { this._value = String(v == null ? '' : v); }
   get innerHTML() { return this._innerHTML || ''; }
-  set innerHTML(h) { this._innerHTML = String(h); }
+  set innerHTML(h) {
+    this._innerHTML = String(h);
+    this.children = [];
+    const tagRegex = /<([a-zA-Z0-9]+)([^>]*)>/g;
+    let match;
+    while ((match = tagRegex.exec(this._innerHTML)) !== null) {
+      const tagName = match[1].toLowerCase();
+      if (tagName.startsWith('/')) continue;
+      const attrStr = match[2];
+      const el = new FakeElement(tagName);
+      el.parentElement = this;
+      const attrPairRegex = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+      let am;
+      while ((am = attrPairRegex.exec(attrStr)) !== null) {
+        const k = am[1];
+        const v = am[2] !== undefined ? am[2] : '';
+        el.setAttribute(k, v);
+        if (k === 'id') el.id = v;
+        else if (k === 'class') {
+          for (const c of v.split(' ')) if (c) el.classList.add(c);
+        } else if (k === 'value') {
+          el.value = v;
+        } else if (k.startsWith('data-')) {
+          el.dataset[k.slice(5)] = v;
+        }
+      }
+      this.children.push(el);
+    }
+  }
   get previousElementSibling() {
     if (!this.parentElement) return null;
     const idx = this.parentElement.children.indexOf(this);
@@ -90,10 +118,11 @@ class FakeElement {
     if (sel.startsWith('#')) return this.id === sel.slice(1);
     // Attribute selector (alone or compound e.g. .scene[data-sid="..."])
     if (sel.includes('[') && sel.includes(']')) {
-      const attrMatch = sel.match(/\[([a-zA-Z0-9_-]+)(?:="([^"]*)")?\]/);
-      if (attrMatch) {
-        const attrName = attrMatch[1];
-        const attrVal = attrMatch[2];
+      const attrRegex = /\[([a-zA-Z0-9_-]+)(?:="([^"]*)")?\]/g;
+      let am;
+      while ((am = attrRegex.exec(sel)) !== null) {
+        const attrName = am[1];
+        const attrVal = am[2];
         let hasAttr = false;
         if (attrName.startsWith('data-')) {
           const prop = attrName.slice(5);
@@ -663,4 +692,130 @@ def test_storyboard_js_undo_redo_trim_and_409_conflict():
     assert out["trimAfterUndo"] == ""
     assert out["trimAfterRedo"] == "0.2"
     assert "409" in out["errText"] or "Conflito" in out["errText"]
+
+
+def test_storyboard_js_channel_media_library_and_tags():
+    """Executes real STORYBOARD_JS to verify channel tab rendering, tag add/remove, and picking from library."""
+    node_chan = """
+    const apiCalls = [];
+    let currentTags = ['antiguidade', 'roma'];
+
+    global.FormData = class FormData { append(k, v) { this[k] = v; } };
+    global.fetch = async (url, opts) => {
+      opts = opts || {};
+      const method = opts.method || 'GET';
+      const body = opts.body && typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+      apiCalls.push({ url, method, body });
+
+      if (url.includes('/assets/library')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            project_id: 'p_test',
+            total: 1,
+            limit: 12,
+            offset: 0,
+            assets: [
+              {
+                id: 'aid_chan_1',
+                kind: 'image',
+                cache_key: 'c1',
+                path: 'storage/assets/roma.png',
+                provider: 'import',
+                model: 'manual',
+                license: 'CC-BY-4.0',
+                attribution: 'Museo',
+                source_url: '',
+                cost_usd: 0.0,
+                tags: [...currentTags],
+                origin: 'Museo',
+                provenance: 'import:manual'
+              }
+            ]
+          })
+        };
+      }
+
+      if (method === 'POST' && url.includes('/assets/aid_chan_1/tags')) {
+        currentTags.push(body.tag);
+        currentTags.sort();
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, asset_id: 'aid_chan_1', tag: body.tag, tags: currentTags })
+        };
+      }
+
+      if (method === 'DELETE' && url.includes('/assets/aid_chan_1/tags/')) {
+        const parts = url.split('/');
+        const toRemove = decodeURIComponent(parts[parts.length - 1]);
+        currentTags = currentTags.filter(t => t !== toRemove);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, asset_id: 'aid_chan_1', removed: toRemove, tags: currentTags })
+        };
+      }
+
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    // 1. Open media modal for scene 0
+    const card0 = cardsEl.children[0];
+    const mBtn0 = card0.querySelector('[data-a="media"]');
+    root.dispatchEvent({ type: 'click', target: mBtn0 });
+
+    // 2. Click channel tab
+    const tabChanBtn = new FakeElement('button');
+    tabChanBtn.dataset.a = 'media-tab';
+    tabChanBtn.dataset.v = 'channel';
+    root.dispatchEvent({ type: 'click', target: tabChanBtn });
+
+    // Wait for channel library fetch
+    setTimeout(async () => {
+      const mediaBody = doc.getElementById('media-body');
+      const initialHtml = mediaBody.innerHTML;
+
+      // 3. Add tag 'imperio'
+      const tagInput = mediaBody.querySelector('input[data-f="new-tag-input"][data-asset="aid_chan_1"]');
+      if (tagInput) tagInput.value = 'imperio';
+      const addTagBtn = mediaBody.querySelector('[data-a="add-asset-tag"][data-asset="aid_chan_1"]');
+      root.dispatchEvent({ type: 'click', target: addTagBtn });
+      await new Promise(r => setTimeout(r, 20));
+      const afterAddHtml = mediaBody.innerHTML;
+
+      // 4. Remove tag 'antiguidade'
+      const removeTagBtn = mediaBody.querySelector('[data-a="remove-asset-tag"][data-asset="aid_chan_1"][data-tag="antiguidade"]');
+      root.dispatchEvent({ type: 'click', target: removeTagBtn });
+      await new Promise(r => setTimeout(r, 20));
+      const afterRemoveHtml = mediaBody.innerHTML;
+
+      // 5. Pick the asset into scene 0
+      const pickBtn = mediaBody.querySelector('[data-a="pickmedia"][data-asset="aid_chan_1"]');
+      root.dispatchEvent({ type: 'click', target: pickBtn });
+
+      const finalCard0 = cardsEl.children[0];
+      const finalThumb = finalCard0.children.find(c => c._rawHtml)._rawHtml;
+
+      process.stdout.write(JSON.stringify({
+        initialHasSearch: initialHtml.includes('data-f="channel-search-q"'),
+        initialHasTagAntiguidade: initialHtml.includes('#antiguidade'),
+        initialUsesProjectId: initialHtml.includes('/studio/assets/aid_chan_1/file?project_id=p_test'),
+        afterAddHasImperio: afterAddHtml.includes('#imperio'),
+        afterRemoveNoAntiguidade: !afterRemoveHtml.includes('#antiguidade'),
+        finalCardHasAsset: finalThumb.includes('/asset?v=aid_chan_1'),
+        apiCallCount: apiCalls.length
+      }));
+    }, 20);
+    """
+    out = json.loads(_run_storyboard_node(node_chan))
+    assert out["initialHasSearch"] is True
+    assert out["initialHasTagAntiguidade"] is True
+    assert out["initialUsesProjectId"] is True
+    assert out["afterAddHasImperio"] is True
+    assert out["afterRemoveNoAntiguidade"] is True
+    assert out["finalCardHasAsset"] is True
+    assert out["apiCallCount"] >= 3
+
 

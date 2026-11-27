@@ -26,7 +26,7 @@
     },
     "cost_usd": {
       "default": 0.0,
-      "minimum": 0,
+      "minimum": 0.0,
       "title": "Cost Usd",
       "type": "number"
     },
@@ -46,8 +46,18 @@
       "title": "Model",
       "type": "string"
     },
+    "origin": {
+      "default": "",
+      "title": "Origin",
+      "type": "string"
+    },
     "path": {
       "title": "Path",
+      "type": "string"
+    },
+    "provenance": {
+      "default": "",
+      "title": "Provenance",
       "type": "string"
     },
     "provider": {
@@ -63,6 +73,13 @@
       "default": "",
       "title": "Source Url",
       "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
     }
   },
   "required": [

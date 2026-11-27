@@ -128,7 +128,7 @@
     "duration_s": {
       "anyOf": [
         {
-          "minimum": 0,
+          "minimum": 0.0,
           "type": "number"
         },
         {
@@ -137,6 +137,12 @@
       ],
       "default": null,
       "title": "Duration S"
+    },
+    "edit_revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Edit Revision",
+      "type": "integer"
     },
     "id": {
       "title": "Id",

@@ -14,7 +14,7 @@ import re
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -103,6 +103,7 @@ from ..domain.analytics_learning import AnalyticsPeriod, DashboardQuery, Experim
 from ..domain.insight import MetricWindow
 from ..domain.policy import CostRefused
 from ..domain.rubric import IdeaScores
+from ..domain.asset_tags import AssetAccessDenied, AssetNotFound, AssetTagInvalid, normalize_tag
 from ..domain.ids import InvalidId, check_id
 from ..domain.saas import (AuthorizationDenied, ByokStatus, DuplicateMembership, DuplicateProviderKey,
                            KeyInvalid, KeyNotFound, KeyRevoked, LastOwnerRequired, MembershipInvalid,
@@ -447,6 +448,26 @@ class SceneAssetOut(BaseModel):
 
 class AssetsOut(BaseModel):
     scenes: list[SceneAssetOut]
+
+
+class AssetTagIn(BaseModel):
+    tag: str = Field(min_length=1, max_length=64)
+
+
+class AssetTagOut(BaseModel):
+    ok: bool = True
+    asset_id: str
+    tag: str | None = None
+    removed: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class ProjectAssetsOut(BaseModel):
+    project_id: str
+    total: int
+    limit: int
+    offset: int
+    assets: list[Asset]
 
 
 class RenderStatusOut(BaseModel):
@@ -1129,6 +1150,12 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
             return fn(uc)
         except InvalidId as exc:
             raise HTTPException(422, "invalid id") from exc
+        except AssetTagInvalid as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except AssetAccessDenied as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except AssetNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
         except ProjectNotFound as exc:
             raise HTTPException(404, "project not found") from exc
         except OrganizationNotFound as exc:
@@ -1338,6 +1365,276 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     @router.delete("/projects/{project_id}/saved-trends/{video_id}")
     def delete_saved_trend_route(project_id: str, video_id: str):
         return run(lambda uc: delete_saved_trend(uc, project_id, video_id))
+
+    def _resolve_project_id(uc: UseCases, project_or_channel_id: str) -> str:
+        try:
+            pid = check_id(project_or_channel_id)
+        except InvalidId as exc:
+            raise HTTPException(404, "identificador de projeto ou canal inválido") from exc
+        if uc.channel_profiles_repo is not None:
+            profile = uc.channel_profiles_repo.get(pid)
+            if profile is not None:
+                return profile.project_id
+        if uc.media and hasattr(uc.media, "manage_tags") and hasattr(uc.media.manage_tags, "resolve_project_id"):
+            try:
+                return uc.media.manage_tags.resolve_project_id(pid)
+            except ProjectNotFound as exc:
+                raise HTTPException(404, str(exc)) from exc
+        return pid
+
+    @router.get("/projects/{project_id}/assets", response_model=ProjectAssetsOut)
+    def search_project_assets_route(
+        project_id: str,
+        tag: str | None = None,
+        q: str | None = None,
+        kind: str | None = None,
+        media_type: str | None = None,
+        license: str | None = None,
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ):
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.search_assets is None:
+                raise HTTPException(503, "asset search service unavailable")
+            try:
+                pid = check_id(project_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de projeto inválido") from exc
+            effective_kind = kind or media_type
+            assets, total = uc.media.search_assets.execute(
+                pid,
+                query=q,
+                tag=tag,
+                kind=effective_kind,
+                license=license,
+                limit=limit,
+                offset=offset,
+            )
+            return ProjectAssetsOut(
+                project_id=pid,
+                total=total,
+                limit=limit,
+                offset=offset,
+                assets=assets,
+            )
+        return run(go)
+
+    @router.post("/projects/{project_id}/assets/{asset_id}/tags", status_code=200, response_model=AssetTagOut)
+    def add_project_asset_tag(project_id: str, asset_id: str, body: AssetTagIn):
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                pid = check_id(project_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de projeto ou asset inválido") from exc
+            tags = uc.media.manage_tags.add_tag(pid, aid, body.tag)
+            return AssetTagOut(ok=True, asset_id=aid, tag=normalize_tag(body.tag), tags=tags)
+        return run(go)
+
+    @router.delete("/projects/{project_id}/assets/{asset_id}/tags/{tag}", response_model=AssetTagOut)
+    def remove_project_asset_tag(project_id: str, asset_id: str, tag: str):
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                pid = check_id(project_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de projeto ou asset inválido") from exc
+            tags = uc.media.manage_tags.remove_tag(pid, aid, tag)
+            return AssetTagOut(ok=True, asset_id=aid, removed=normalize_tag(tag), tags=tags)
+        return run(go)
+
+    @router.get("/projects/{project_id}/assets/{asset_id}/tags", response_model=AssetTagOut)
+    def list_project_asset_tags(project_id: str, asset_id: str):
+        def go(uc: UseCases):
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                pid = check_id(project_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de projeto ou asset inválido") from exc
+            tags = uc.media.manage_tags.list_tags(pid, aid)
+            return AssetTagOut(ok=True, asset_id=aid, tags=tags)
+        return run(go)
+
+    @router.get("/channels/{channel_id}/assets", response_model=ProjectAssetsOut)
+    def search_channel_assets_route(
+        channel_id: str,
+        tag: str | None = None,
+        q: str | None = None,
+        kind: str | None = None,
+        media_type: str | None = None,
+        license: str | None = None,
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ):
+        def go(uc: UseCases):
+            pid = _resolve_project_id(uc, channel_id)
+            if uc.media is None or uc.media.search_assets is None:
+                raise HTTPException(503, "asset search service unavailable")
+            effective_kind = kind or media_type
+            assets, total = uc.media.search_assets.execute(
+                pid,
+                query=q,
+                tag=tag,
+                kind=effective_kind,
+                license=license,
+                limit=limit,
+                offset=offset,
+            )
+            return ProjectAssetsOut(
+                project_id=pid,
+                total=total,
+                limit=limit,
+                offset=offset,
+                assets=assets,
+            )
+        return run(go)
+
+    @router.get("/channels/{channel_id}/assets/{asset_id}/tags", response_model=AssetTagOut)
+    def list_channel_asset_tags(channel_id: str, asset_id: str):
+        def go(uc: UseCases):
+            pid = _resolve_project_id(uc, channel_id)
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de asset inválido") from exc
+            tags = uc.media.manage_tags.list_tags(pid, aid)
+            return AssetTagOut(ok=True, asset_id=aid, tags=tags)
+        return run(go)
+
+    @router.post("/channels/{channel_id}/assets/{asset_id}/tags", status_code=200, response_model=AssetTagOut)
+    def add_channel_asset_tag(channel_id: str, asset_id: str, body: AssetTagIn):
+        def go(uc: UseCases):
+            pid = _resolve_project_id(uc, channel_id)
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de asset inválido") from exc
+            tags = uc.media.manage_tags.add_tag(pid, aid, body.tag)
+            return AssetTagOut(ok=True, asset_id=aid, tag=normalize_tag(body.tag), tags=tags)
+        return run(go)
+
+    @router.delete("/channels/{channel_id}/assets/{asset_id}/tags/{tag}", response_model=AssetTagOut)
+    def remove_channel_asset_tag(channel_id: str, asset_id: str, tag: str):
+        def go(uc: UseCases):
+            pid = _resolve_project_id(uc, channel_id)
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            try:
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de asset inválido") from exc
+            tags = uc.media.manage_tags.remove_tag(pid, aid, tag)
+            return AssetTagOut(ok=True, asset_id=aid, removed=normalize_tag(tag), tags=tags)
+        return run(go)
+
+    @router.get("/videos/{video_id}/assets/library", response_model=ProjectAssetsOut)
+    def search_video_project_assets_route(
+        video_id: str,
+        tag: str | None = None,
+        q: str | None = None,
+        kind: str | None = None,
+        media_type: str | None = None,
+        license: str | None = None,
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ):
+        def go(uc: UseCases):
+            try:
+                vid = check_id(video_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de vídeo inválido") from exc
+            video = uc.get_video.execute(vid) if hasattr(uc, "get_video") else None
+            if video is None and uc.editorial is not None and hasattr(uc.editorial, "get_script"):
+                video = uc.editorial.get_script.videos.get_video(vid)
+            if video is None:
+                raise HTTPException(404, "video not found")
+            if uc.media is None or uc.media.search_assets is None:
+                raise HTTPException(503, "asset search service unavailable")
+            effective_kind = kind or media_type
+            assets, total = uc.media.search_assets.execute(
+                video.project_id,
+                query=q,
+                tag=tag,
+                kind=effective_kind,
+                license=license,
+                limit=limit,
+                offset=offset,
+            )
+            return ProjectAssetsOut(
+                project_id=video.project_id,
+                total=total,
+                limit=limit,
+                offset=offset,
+                assets=assets,
+            )
+        return run(go)
+
+    @router.get("/videos/{video_id}/assets/{asset_id}/tags", response_model=AssetTagOut)
+    def list_video_asset_tags(video_id: str, asset_id: str):
+        def go(uc: UseCases):
+            try:
+                vid = check_id(video_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de vídeo ou asset inválido") from exc
+            video = uc.get_video.execute(vid) if hasattr(uc, "get_video") else None
+            if video is None and uc.editorial is not None and hasattr(uc.editorial, "get_script"):
+                video = uc.editorial.get_script.videos.get_video(vid)
+            if video is None:
+                raise HTTPException(404, "video not found")
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            tags = uc.media.manage_tags.list_tags(video.project_id, aid)
+            return AssetTagOut(ok=True, asset_id=aid, tags=tags)
+        return run(go)
+
+    @router.post("/videos/{video_id}/assets/{asset_id}/tags", status_code=200, response_model=AssetTagOut)
+    def add_video_asset_tag(video_id: str, asset_id: str, body: AssetTagIn):
+        def go(uc: UseCases):
+            try:
+                vid = check_id(video_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de vídeo ou asset inválido") from exc
+            video = uc.get_video.execute(vid) if hasattr(uc, "get_video") else None
+            if video is None and uc.editorial is not None and hasattr(uc.editorial, "get_script"):
+                video = uc.editorial.get_script.videos.get_video(vid)
+            if video is None:
+                raise HTTPException(404, "video not found")
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            tags = uc.media.manage_tags.add_tag(video.project_id, aid, body.tag)
+            return AssetTagOut(ok=True, asset_id=aid, tag=normalize_tag(body.tag), tags=tags)
+        return run(go)
+
+    @router.delete("/videos/{video_id}/assets/{asset_id}/tags/{tag}", response_model=AssetTagOut)
+    def remove_video_asset_tag(video_id: str, asset_id: str, tag: str):
+        def go(uc: UseCases):
+            try:
+                vid = check_id(video_id)
+                aid = check_id(asset_id)
+            except InvalidId as exc:
+                raise HTTPException(404, "identificador de vídeo ou asset inválido") from exc
+            video = uc.get_video.execute(vid) if hasattr(uc, "get_video") else None
+            if video is None and uc.editorial is not None and hasattr(uc.editorial, "get_script"):
+                video = uc.editorial.get_script.videos.get_video(vid)
+            if video is None:
+                raise HTTPException(404, "video not found")
+            if uc.media is None or uc.media.manage_tags is None:
+                raise HTTPException(503, "asset tag service unavailable")
+            tags = uc.media.manage_tags.remove_tag(video.project_id, aid, tag)
+            return AssetTagOut(ok=True, asset_id=aid, removed=normalize_tag(tag), tags=tags)
+        return run(go)
 
     @router.post("/videos", status_code=201, response_model=VideoOut)
     def create_video(body: VideoIn):

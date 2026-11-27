@@ -63,7 +63,11 @@
       "type": "integer"
     },
     "status": {
-      "$ref": "#/$defs/PublicationStatus",
+      "allOf": [
+        {
+          "$ref": "#/$defs/PublicationStatus"
+        }
+      ],
       "default": "PENDING"
     },
     "thumbnail_set": {

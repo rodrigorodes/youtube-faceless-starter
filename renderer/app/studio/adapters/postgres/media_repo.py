@@ -7,6 +7,14 @@ from psycopg.rows import dict_row
 
 from ...domain.contracts import Asset
 from ...domain.ids import check_cache_key, check_id
+from ...domain.asset_tags import (
+    AssetAccessDenied,
+    AssetNotFound,
+    AssetTagInvalid,
+    MAX_TAGS_PER_ASSET,
+    escape_like,
+    normalize_tag,
+)
 from .editorial_repo import _Base
 from .repo import _translated
 
@@ -14,24 +22,52 @@ _COLUMNS = "id, kind, cache_key, path, provider, model, license, attribution, so
 _UNSET = object()
 
 
-def _asset(row: dict) -> Asset:
+def _asset(row: dict, tags: list[str] | None = None) -> Asset:
     row = dict(row)
     row["cost_usd"] = float(row["cost_usd"])
+    if tags is not None:
+        row["tags"] = list(tags)
+    elif "tags" not in row:
+        row["tags"] = []
+    if not row.get("origin"):
+        row["origin"] = row.get("source_url") or row.get("provider") or ""
+    if not row.get("provenance"):
+        row["provenance"] = f"{row.get('provider', '')}:{row.get('model', '')}" if row.get("provider") else ""
     return Asset.model_validate(row)
 
 
 class PostgresAssetRepository(_Base):
     def find(self, cache_key: str) -> Asset | None:
+        key = check_cache_key(cache_key)
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE cache_key = %s", (check_cache_key(cache_key),))
+            cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE cache_key = %s", (key,))
             row = cur.fetchone()
-            return _asset(row) if row else None
+            if not row:
+                return None
+            return _asset(row)
 
-    def get(self, asset_id: str) -> Asset | None:
+    def get(self, asset_id: str, *, project_id: str | None = None) -> Asset | None:
+        aid = check_id(asset_id)
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE id = %s", (check_id(asset_id),))
+            cur.execute(f"SELECT {_COLUMNS} FROM studio.assets WHERE id = %s", (aid,))
             row = cur.fetchone()
-            return _asset(row) if row else None
+            if not row:
+                return None
+            tags: list[str] = []
+            pid = check_id(project_id) if project_id else None
+            if not pid:
+                cur.execute(
+                    "SELECT v.project_id FROM studio.scenes s JOIN studio.videos v ON v.id = s.video_id WHERE s.asset_id = %s "
+                    "UNION SELECT v.project_id FROM studio.scene_assets sa JOIN studio.scenes s ON s.id = sa.scene_id JOIN studio.videos v ON v.id = s.video_id WHERE sa.asset_id = %s",
+                    (aid, aid),
+                )
+                p_rows = cur.fetchall()
+                if len(p_rows) == 1:
+                    pid = p_rows[0]["project_id"]
+            if pid:
+                cur.execute("SELECT tag FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s ORDER BY tag ASC", (pid, aid))
+                tags = [r["tag"] for r in cur.fetchall()]
+            return _asset(row, tags=tags)
 
     def add(self, asset: Asset) -> Asset:
         with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -265,8 +301,12 @@ class PostgresAssetRepository(_Base):
                 "  JOIN studio.scenes s ON s.id = sa.scene_id "
                 "  JOIN studio.videos v ON v.id = s.video_id "
                 "  WHERE sa.asset_id = %s AND v.project_id <> %s"
+                ") OR EXISTS ("
+                "  SELECT 1 FROM studio.render_jobs rj "
+                "  JOIN studio.videos v ON v.id = rj.video_id "
+                "  WHERE rj.output_asset_id = %s AND v.project_id <> %s"
                 ")",
-                (aid, pid, aid, pid),
+                (aid, pid, aid, pid, aid, pid),
             )
             return cur.fetchone() is not None
 
@@ -303,8 +343,11 @@ class PostgresAssetRepository(_Base):
                     "  SELECT 1 FROM studio.scene_assets sa "
                     "  JOIN studio.scenes s ON s.id = sa.scene_id "
                     "  WHERE s.video_id = %s AND sa.asset_id = %s"
+                    ") OR EXISTS ("
+                    "  SELECT 1 FROM studio.render_jobs rj "
+                    "  WHERE rj.video_id = %s AND rj.output_asset_id = %s"
                     ")",
-                    (vid, aid, vid, aid),
+                    (vid, aid, vid, aid, vid, aid),
                 )
                 return cur.fetchone() is not None
             elif project_id:
@@ -319,11 +362,198 @@ class PostgresAssetRepository(_Base):
                     "  JOIN studio.scenes s ON s.id = sa.scene_id "
                     "  JOIN studio.videos v ON v.id = s.video_id "
                     "  WHERE v.project_id = %s AND sa.asset_id = %s"
+                    ") OR EXISTS ("
+                    "  SELECT 1 FROM studio.render_jobs rj "
+                    "  JOIN studio.videos v ON v.id = rj.video_id "
+                    "  WHERE v.project_id = %s AND rj.output_asset_id = %s"
                     ")",
-                    (pid, aid, pid, aid),
+                    (pid, aid, pid, aid, pid, aid),
                 )
                 return cur.fetchone() is not None
             return False
+
+    def add_asset_tag(self, asset_id: str, tag: str, *, project_id: str | None = None) -> list[str]:
+        """Adiciona uma tag ao asset de forma concorrente-segura e idempotente."""
+        aid = check_id(asset_id)
+        if not project_id:
+            raise AssetAccessDenied("project_id is required for asset tags")
+        pid = check_id(project_id)
+        clean_tag = normalize_tag(tag)
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("SELECT 1 FROM studio.assets WHERE id = %s FOR UPDATE", (aid,))
+            if not cur.fetchone():
+                raise AssetNotFound(f"asset {aid} not found")
+
+            if not self.belongs_to_scope(aid, project_id=pid):
+                if self.belongs_to_other_project(aid, pid):
+                    raise AssetAccessDenied("asset belongs to another project")
+                raise AssetAccessDenied("asset outside project scope")
+
+            cur = conn.execute("SELECT count(*) FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s", (pid, aid))
+            count = cur.fetchone()[0]
+            if count >= MAX_TAGS_PER_ASSET:
+                cur = conn.execute("SELECT 1 FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s AND tag = %s", (pid, aid, clean_tag))
+                if not cur.fetchone():
+                    raise AssetTagInvalid(f"asset tag limit reached (maximum {MAX_TAGS_PER_ASSET} tags)")
+
+            conn.execute(
+                "INSERT INTO studio.asset_tags(project_id, asset_id, tag) VALUES (%s, %s, %s) "
+                "ON CONFLICT (project_id, asset_id, tag) DO NOTHING",
+                (pid, aid, clean_tag),
+            )
+            cur = conn.execute("SELECT tag FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s ORDER BY tag ASC", (pid, aid))
+            return [r[0] for r in cur.fetchall()]
+
+    def remove_asset_tag(self, asset_id: str, tag: str, *, project_id: str | None = None) -> list[str]:
+        """Remove uma tag do asset de forma idempotente."""
+        aid = check_id(asset_id)
+        if not project_id:
+            raise AssetAccessDenied("project_id is required for asset tags")
+        pid = check_id(project_id)
+        clean_tag = normalize_tag(tag)
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("SELECT 1 FROM studio.assets WHERE id = %s", (aid,))
+            if not cur.fetchone():
+                raise AssetNotFound(f"asset {aid} not found")
+
+            if not self.belongs_to_scope(aid, project_id=pid):
+                if self.belongs_to_other_project(aid, pid):
+                    raise AssetAccessDenied("asset belongs to another project")
+                raise AssetAccessDenied("asset outside project scope")
+
+            conn.execute(
+                "DELETE FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s AND tag = %s",
+                (pid, aid, clean_tag),
+            )
+            cur = conn.execute("SELECT tag FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s ORDER BY tag ASC", (pid, aid))
+            return [r[0] for r in cur.fetchall()]
+
+    def list_asset_tags(self, asset_id: str, *, project_id: str | None = None) -> list[str]:
+        """Lista todas as tags de um asset com verificação estrita de escopo."""
+        aid = check_id(asset_id)
+        if not project_id:
+            raise AssetAccessDenied("project_id is required for asset tags")
+        pid = check_id(project_id)
+        with _translated(), self._connect() as conn:
+            cur = conn.execute("SELECT 1 FROM studio.assets WHERE id = %s", (aid,))
+            if not cur.fetchone():
+                raise AssetNotFound(f"asset {aid} not found")
+
+            if not self.belongs_to_scope(aid, project_id=pid):
+                if self.belongs_to_other_project(aid, pid):
+                    raise AssetAccessDenied("asset belongs to another project")
+                raise AssetAccessDenied("asset outside project scope")
+
+            cur = conn.execute("SELECT tag FROM studio.asset_tags WHERE project_id = %s AND asset_id = %s ORDER BY tag ASC", (pid, aid))
+            return [r[0] for r in cur.fetchall()]
+
+    def search_project_assets(
+        self,
+        *,
+        project_id: str,
+        query: str | None = None,
+        tag: str | None = None,
+        kind: str | None = None,
+        license: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[Asset], int]:
+        """Busca determinística e paginada de assets com isolamento estrito por projeto/canal."""
+        pid = check_id(project_id)
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+
+        where_clauses = [
+            """(
+                EXISTS (
+                    SELECT 1 FROM studio.scenes s
+                    JOIN studio.videos v ON v.id = s.video_id
+                    WHERE v.project_id = %(project_id)s AND s.asset_id = a.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM studio.scene_assets sa
+                    JOIN studio.scenes s ON s.id = sa.scene_id
+                    JOIN studio.videos v ON v.id = s.video_id
+                    WHERE v.project_id = %(project_id)s AND sa.asset_id = a.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM studio.render_jobs rj
+                    JOIN studio.videos v ON v.id = rj.video_id
+                    WHERE v.project_id = %(project_id)s AND rj.output_asset_id = a.id
+                )
+            )"""
+        ]
+        params: dict[str, object] = {"project_id": pid}
+
+        if tag is not None and str(tag).strip():
+            clean_tag = normalize_tag(str(tag))
+            where_clauses.append(
+                "EXISTS (SELECT 1 FROM studio.asset_tags at WHERE at.project_id = %(project_id)s AND at.asset_id = a.id AND at.tag = %(tag)s)"
+            )
+            params["tag"] = clean_tag
+
+        if query is not None and str(query).strip():
+            clean_q = str(query).strip()
+            params["like_q"] = f"%{escape_like(clean_q)}%"
+            where_clauses.append(
+                """(
+                    a.path ILIKE %(like_q)s ESCAPE '\\'
+                    OR a.license ILIKE %(like_q)s ESCAPE '\\'
+                    OR a.attribution ILIKE %(like_q)s ESCAPE '\\'
+                    OR a.source_url ILIKE %(like_q)s ESCAPE '\\'
+                    OR a.provider ILIKE %(like_q)s ESCAPE '\\'
+                    OR a.model ILIKE %(like_q)s ESCAPE '\\'
+                    OR EXISTS (
+                        SELECT 1 FROM studio.asset_tags at
+                        WHERE at.project_id = %(project_id)s AND at.asset_id = a.id AND at.tag ILIKE %(like_q)s ESCAPE '\\'
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM studio.scenes s
+                        JOIN studio.videos v ON v.id = s.video_id
+                        WHERE v.project_id = %(project_id)s AND s.asset_id = a.id AND s.label ILIKE %(like_q)s ESCAPE '\\'
+                    )
+                )"""
+            )
+
+        if kind is not None and str(kind).strip():
+            where_clauses.append("a.kind = %(kind)s")
+            params["kind"] = str(kind).strip().lower()
+
+        if license is not None and str(license).strip():
+            where_clauses.append("a.license ILIKE %(license)s")
+            params["license"] = str(license).strip()
+
+        where_sql = " AND ".join(where_clauses)
+
+        with _translated(), self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"SELECT count(DISTINCT a.id) AS total FROM studio.assets a WHERE {where_sql}", params)
+            total = int(cur.fetchone()["total"])
+            if total == 0:
+                return [], 0
+
+            page_params = dict(params)
+            page_params["limit"] = limit
+            page_params["offset"] = offset
+
+            cur.execute(
+                f"SELECT {_COLUMNS} FROM studio.assets a WHERE {where_sql} "
+                "ORDER BY a.created_at DESC, a.id ASC LIMIT %(limit)s OFFSET %(offset)s",
+                page_params,
+            )
+            rows = cur.fetchall()
+
+            aids = [r["id"] for r in rows]
+            tags_map: dict[str, list[str]] = {aid: [] for aid in aids}
+            if aids:
+                cur.execute(
+                    "SELECT asset_id, tag FROM studio.asset_tags WHERE project_id = %s AND asset_id = ANY(%s) ORDER BY tag ASC",
+                    (pid, aids),
+                )
+                for tag_row in cur.fetchall():
+                    tags_map[tag_row["asset_id"]].append(tag_row["tag"])
+
+            assets = [_asset(r, tags=tags_map.get(r["id"], [])) for r in rows]
+            return assets, total
 
 
 class PostgresProductionLock:

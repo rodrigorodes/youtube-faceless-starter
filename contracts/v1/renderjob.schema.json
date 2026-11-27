@@ -58,7 +58,11 @@
       "type": "integer"
     },
     "status": {
-      "$ref": "#/$defs/JobStatus",
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobStatus"
+        }
+      ],
       "default": "QUEUED"
     },
     "video_id": {

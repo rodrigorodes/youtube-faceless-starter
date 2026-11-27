@@ -7,13 +7,13 @@ from decimal import Decimal
 
 from ..domain.asset_registry import requires_attribution, verify_license_provenance
 from ..domain.contracts import Asset, AssetKind, Scene, SceneAsset as DomainSceneAsset, Video, VideoStatus
-from ..domain.ids import asset_cache_key
+from ..domain.ids import asset_cache_key, check_id
 from ..domain.media import ASPECT_FOR, build_image_prompt, strip_style
 from ..domain.media_ranker import MediaRanker
 from .budget import PaidOperationGuard, paid_key, provider_settlement
 from .editorial import CostGuard, StateConflict, VideoNotFound, _require_video
-from .errors import ServiceUnavailable
-from .ports import (AssetRepository, AssetStore, ImageModel, MediaCandidate, MediaFetcher, MediaProbe, MediaSearch,
+from .errors import ProjectNotFound, ServiceUnavailable
+from .ports import (AssetRepository, AssetStore, ChannelProfileRepository, ImageModel, MediaCandidate, MediaFetcher, MediaProbe, MediaSearch,
                     ProductionLock, ScriptRepository, UsageRepository, VideoRepository)
 
 ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp"}
@@ -339,7 +339,7 @@ class SwapSceneMedia:
             raise AssetRefused("candidate without a registered license")
         if result.mime not in ALLOWED_MIME:
             raise AssetRefused(f"unsupported image mime {result.mime!r}")
-        key = asset_cache_key("image", provider, candidate.media_id or candidate.url, candidate.url, {"aspect": aspect})
+        key = asset_cache_key("image", provider, candidate.media_id or candidate.url, candidate.url, {"aspect": aspect, "license": candidate.license or result.license})
         existing = self.assets.find(key)
         if existing is not None:
             return existing  # mesmo candidato com o mesmo aspecto: reaproveita o asset já vinculável
@@ -769,6 +769,98 @@ class GetSceneTiming:
         return timing
 
 
+class ManageAssetTags:
+    """Gerenciamento de tags em assets com validação e escopo estrito de projeto."""
+
+    def __init__(
+        self,
+        videos: VideoRepository,
+        assets: AssetRepository,
+        channels: ChannelProfileRepository | None = None,
+    ):
+        self.videos, self.assets, self.channels = videos, assets, channels
+
+    def resolve_project_id(self, project_or_channel_id: str) -> str:
+        pid = check_id(project_or_channel_id)
+        if hasattr(self.videos, "get_project"):
+            proj = self.videos.get_project(pid)
+            if proj is not None:
+                return pid
+        if self.channels is not None:
+            profile = self.channels.get(pid)
+            if profile is not None:
+                return profile.project_id
+        if hasattr(self.videos, "get_project"):
+            proj = self.videos.get_project(pid)
+            if proj is not None:
+                return pid
+            raise ProjectNotFound(f"project or channel {pid!r} not found")
+        return pid
+
+    def add_tag(self, project_id: str, asset_id: str, tag: str) -> list[str]:
+        pid = self.resolve_project_id(project_id)
+        return self.assets.add_asset_tag(asset_id, tag, project_id=pid)
+
+    def remove_tag(self, project_id: str, asset_id: str, tag: str) -> list[str]:
+        pid = self.resolve_project_id(project_id)
+        return self.assets.remove_asset_tag(asset_id, tag, project_id=pid)
+
+    def list_tags(self, project_id: str, asset_id: str) -> list[str]:
+        pid = self.resolve_project_id(project_id)
+        return self.assets.list_asset_tags(asset_id, project_id=pid)
+
+
+class SearchProjectAssets:
+    """Busca paginada e filtrada de assets no acervo do canal/projeto."""
+
+    def __init__(
+        self,
+        videos: VideoRepository,
+        assets: AssetRepository,
+        channels: ChannelProfileRepository | None = None,
+    ):
+        self.videos, self.assets, self.channels = videos, assets, channels
+
+    def resolve_project_id(self, project_or_channel_id: str) -> str:
+        pid = check_id(project_or_channel_id)
+        if hasattr(self.videos, "get_project"):
+            proj = self.videos.get_project(pid)
+            if proj is not None:
+                return pid
+        if self.channels is not None:
+            profile = self.channels.get(pid)
+            if profile is not None:
+                return profile.project_id
+        if hasattr(self.videos, "get_project"):
+            proj = self.videos.get_project(pid)
+            if proj is not None:
+                return pid
+            raise ProjectNotFound(f"project or channel {pid!r} not found")
+        return pid
+
+    def execute(
+        self,
+        project_id: str,
+        *,
+        query: str | None = None,
+        tag: str | None = None,
+        kind: str | None = None,
+        license: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[Asset], int]:
+        pid = self.resolve_project_id(project_id)
+        return self.assets.search_project_assets(
+            project_id=pid,
+            query=query,
+            tag=tag,
+            kind=kind,
+            license=license,
+            limit=limit,
+            offset=offset,
+        )
+
+
 @dataclass(frozen=True)
 class Media:
     storyboard: PrepareStoryboard
@@ -781,3 +873,5 @@ class Media:
     import_media: "ImportExternalMedia | None" = None
     direct_asset_file: "AssetFile | None" = None
     scene_timing: "GetSceneTiming | None" = None
+    manage_tags: "ManageAssetTags | None" = None
+    search_assets: "SearchProjectAssets | None" = None

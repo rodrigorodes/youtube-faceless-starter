@@ -212,7 +212,7 @@ STORYBOARD_JS = r"""
     to.push(clone(model));
     model = from.pop();
     adoptIds(); renderAll(); scheduleSync();
-    toast('Edi\u00e7\u00e3o restaurada. Publica\u00e7\u00f5es e custos n\u00e3o s\u00e3o desfeitos.');
+    toast('Edição restaurada. Publicações e custos não são desfeitos.');
   }
 
   /* ---------------- sincroniza\u00e7\u00e3o com o backend ---------------- */
@@ -341,7 +341,7 @@ STORYBOARD_JS = r"""
   function rollback(err) {
     model = clone(server); undo = []; redo = [];
     adoptIds(); renderAll();
-    say('N\u00e3o foi poss\u00edvel salvar: ' + (err && err.message ? err.message : 'tente novamente.') + ' A tela voltou ao \u00faltimo estado salvo.');
+    say('Não foi possível salvar: ' + (err && err.message ? err.message : 'tente novamente.') + ' A tela voltou ao último estado salvo.');
   }
   var needsSync = false;
   function scheduleSync() {
@@ -469,7 +469,158 @@ STORYBOARD_JS = r"""
   /* modais */
   var dlgMedia = document.getElementById('dlg-media'), dlgHist = document.getElementById('dlg-audio-history');
   var mediaCid = null, mediaTab = 'video';
+  var channelAssets = [], channelTotal = 0, channelOffset = 0, channelLimit = 12, channelProjectId = '';
+  var channelQuery = '', channelTag = '', channelLoading = false, channelLoaded = false;
   function openDialog(d) { if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', ''); }
+
+  function renderChannelBody() {
+    var body = document.getElementById('media-body');
+    if (!body || mediaTab !== 'channel') return;
+    var countInfo = channelLoading ? 'Carregando acervo do canal\u2026' : (channelTotal + ' m\u00eddia(s) encontrada(s)');
+    var html = '<div class="channel-library-controls" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">' +
+      '<div class="row" style="gap:8px;align-items:center">' +
+      '<input type="search" data-f="channel-search-q" placeholder="Buscar por termo, caminho, licen\u00e7a\u2026" value="' + esc(channelQuery) + '" style="flex:1;font-size:12px;padding:4px 8px">' +
+      '<input type="text" data-f="channel-search-tag" placeholder="Filtrar por tag\u2026" value="' + esc(channelTag) + '" style="width:130px;font-size:12px;padding:4px 8px">' +
+      '<button type="button" class="btn small" data-a="channel-search-btn">\ud83d\udd0d Buscar</button>' +
+      '<button type="button" class="btn small ghost" data-a="channel-clear-btn">Limpar</button>' +
+      '</div>' +
+      '<div id="channel-library-status" class="sample" style="font-size:11px">' + esc(countInfo) + '</div>' +
+      '</div>';
+
+    if (channelLoading && !channelAssets.length) {
+      html += '<p class="sub">Carregando acervo do canal\u2026</p>';
+    } else if (!channelAssets.length) {
+      html += '<p>Nenhuma m\u00eddia dispon\u00edvel neste escopo.</p><p class="sample">Use filtros diferentes ou importe novas m\u00eddias para este canal.</p>';
+    } else {
+      html += '<div class="channel-asset-grid" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding-right:4px">';
+      channelAssets.forEach(function (a) {
+        var isVid = (a.kind === 'video' || (a.path && a.path.match(/\.(mp4|webm)$/i)));
+        var fileUrl = '/studio/assets/' + encodeURIComponent(a.id) + '/file?' + (channelProjectId ? 'project_id=' + encodeURIComponent(channelProjectId) : 'video_id=' + encodeURIComponent(VID));
+        var mediaHtml = isVid
+          ? '<video src="' + esc(fileUrl) + '" preload="metadata" muted playsinline style="width:100%;height:64px;object-fit:cover;border-radius:6px"></video>'
+          : '<img src="' + esc(fileUrl) + '" alt="" style="width:100%;height:64px;object-fit:cover;border-radius:6px">';
+        var tagsHtml = (a.tags || []).map(function (tg) {
+          return '<span class="tag-pill" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:10px;background:var(--panel2);font-size:11px">#' + esc(tg) +
+            '<button type="button" class="btn-remove-tag" data-a="remove-asset-tag" data-asset="' + esc(a.id) + '" data-tag="' + esc(tg) + '" title="Remover tag" style="border:none;background:none;color:var(--bad);cursor:pointer;font-weight:bold;padding:0 2px;line-height:1">\u00d7</button></span>';
+        }).join(' ');
+
+        html += '<div class="card flat channel-asset-card" data-asset-id="' + esc(a.id) + '" style="display:flex;gap:12px;align-items:flex-start;padding:10px;border:1px solid var(--border)">' +
+          '<div style="width:100px;flex-shrink:0">' +
+          '<button type="button" class="btn" data-a="pickmedia" data-asset="' + esc(a.id) + '" data-tag="' + esc((a.tags || []).join(', ')) + '" data-kind="' + (isVid ? 'video' : 'image') + '" title="Usar esta m\u00eddia na cena" style="width:100%;padding:2px;display:block">' +
+          mediaHtml + '</button></div>' +
+          '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">' +
+          '<div class="between" style="font-size:12px">' +
+          '<b>' + (isVid ? '\ud83c\udfac V\u00eddeo' : '\ud83d\uddbc Imagem') + ' \u00b7 ' + esc(a.id.slice(0, 8)) + '</b>' +
+          '<span class="sample" style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--panel2)">' + esc(a.license || 'Sem licen\u00e7a') + '</span></div>' +
+          '<div class="sample" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(a.path || '') + '">' +
+          '<b>Origem:</b> ' + esc(a.origin || a.provider || 'local') + ' \u00b7 <b>Proveni\u00eancia:</b> ' + esc(a.provenance || a.model || 'manual') + '</div>' +
+          '<div class="channel-tags-row" data-tags-for="' + esc(a.id) + '" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:2px">' +
+          tagsHtml + '</div>' +
+          '<div class="row" style="gap:4px;align-items:center;margin-top:4px">' +
+          '<input type="text" data-f="new-tag-input" data-asset="' + esc(a.id) + '" placeholder="nova tag" style="width:110px;font-size:11px;padding:2px 4px">' +
+          '<button type="button" class="btn small" data-a="add-asset-tag" data-asset="' + esc(a.id) + '" style="font-size:11px;padding:2px 6px">+ Tag</button></div>' +
+          '<div class="sample err tag-error" data-asset="' + esc(a.id) + '" style="display:none;color:var(--bad);font-size:11px"></div>' +
+          '</div></div>';
+      });
+      html += '</div>';
+
+      if (channelTotal > channelLimit) {
+        html += '<div class="row between" style="margin-top:8px;font-size:12px">' +
+          '<button type="button" class="btn small" data-a="channel-prev-page"' + (channelOffset === 0 ? ' disabled' : '') + '>\u25c0 Anterior</button>' +
+          '<span class="sample">' + (channelOffset + 1) + '\u2013' + Math.min(channelOffset + channelLimit, channelTotal) + ' de ' + channelTotal + '</span>' +
+          '<button type="button" class="btn small" data-a="channel-next-page"' + (channelOffset + channelLimit >= channelTotal ? ' disabled' : '') + '>Pr\u00f3xima \u25b6</button>' +
+          '</div>';
+      }
+    }
+    body.innerHTML = html;
+  }
+
+  function loadChannelMedia(offset) {
+    channelOffset = typeof offset === 'number' ? offset : 0;
+    channelLoading = true;
+    renderChannelBody();
+    var path = '/assets/library?limit=' + channelLimit + '&offset=' + channelOffset;
+    if (channelQuery) path += '&q=' + encodeURIComponent(channelQuery);
+    if (channelTag) path += '&tag=' + encodeURIComponent(channelTag);
+    call('GET', path, null, false).then(function (res) {
+      channelAssets = res.assets || [];
+      channelTotal = res.total || 0;
+      channelOffset = res.offset || 0;
+      channelProjectId = res.project_id || '';
+      channelLoading = false;
+      channelLoaded = true;
+      renderChannelBody();
+    }).catch(function (err) {
+      channelLoading = false;
+      var body = document.getElementById('media-body');
+      if (body && mediaTab === 'channel') {
+        body.innerHTML = '<p class="sub" style="color:var(--bad)">Erro ao carregar acervo do canal: ' + esc(err.message) + '</p>';
+      }
+    });
+  }
+
+  function handleChannelSearch() {
+    var body = document.getElementById('media-body');
+    if (!body) return;
+    var qEl = body.querySelector('[data-f="channel-search-q"]');
+    var tagEl = body.querySelector('[data-f="channel-search-tag"]');
+    channelQuery = qEl ? qEl.value : '';
+    channelTag = tagEl ? tagEl.value.replace(/^#+/, '').trim() : '';
+    loadChannelMedia(0);
+  }
+
+  function handleChannelClear() {
+    channelQuery = '';
+    channelTag = '';
+    loadChannelMedia(0);
+  }
+
+  function handleChannelPage(dir) {
+    var nextOffset = channelOffset + (dir * channelLimit);
+    if (nextOffset >= 0 && nextOffset < channelTotal) {
+      loadChannelMedia(nextOffset);
+    }
+  }
+
+  async function handleAddTag(assetId) {
+    var body = document.getElementById('media-body');
+    if (!body) return;
+    var input = body.querySelector('input[data-f="new-tag-input"][data-asset="' + assetId + '"]');
+    var errBox = body.querySelector('.tag-error[data-asset="' + assetId + '"]');
+    if (!input) return;
+    var tagVal = (input.value || '').trim().replace(/^#+/, '');
+    if (!tagVal) {
+      if (errBox) { errBox.textContent = 'Digite uma tag.'; errBox.style.display = 'block'; }
+      return;
+    }
+    if (errBox) errBox.style.display = 'none';
+    try {
+      var res = await call('POST', '/assets/' + encodeURIComponent(assetId) + '/tags', { tag: tagVal }, false);
+      var target = channelAssets.filter(function (x) { return x.id === assetId; })[0];
+      if (target && res.tags) target.tags = res.tags;
+      input.value = '';
+      renderChannelBody();
+      toast('Tag adicionada.');
+      say('Tag adicionada ao asset.');
+    } catch (err) {
+      if (errBox) { errBox.textContent = err.message; errBox.style.display = 'block'; }
+      say('N\u00e3o foi poss\u00edvel adicionar a tag: ' + err.message);
+    }
+  }
+
+  async function handleRemoveTag(assetId, tag) {
+    try {
+      var res = await call('DELETE', '/assets/' + encodeURIComponent(assetId) + '/tags/' + encodeURIComponent(tag), null, false);
+      var target = channelAssets.filter(function (x) { return x.id === assetId; })[0];
+      if (target && res.tags) target.tags = res.tags;
+      renderChannelBody();
+      toast('Tag removida.');
+      say('Tag removida do asset.');
+    } catch (err) {
+      say('N\u00e3o foi poss\u00edvel remover a tag: ' + err.message);
+    }
+  }
+
   function mediaBody() {
     var body = document.getElementById('media-body'), m = model.filter(function (x) { return x.cid === mediaCid; })[0];
     if (!m) return;
@@ -488,7 +639,8 @@ STORYBOARD_JS = r"""
           '" aria-label="Usar a m\u00eddia da cena ' + (indexOf(x) + 1) + '">' + mediaHtml + '</button>';
       }).join('') || '<p>Nenhuma m\u00eddia dispon\u00edvel neste escopo.</p>') + '</div>';
     } else if (mediaTab === 'channel') {
-      body.innerHTML = '<p>Nenhuma m\u00eddia dispon\u00edvel neste escopo.</p><p class="sample">A biblioteca de m\u00eddia do canal ainda n\u00e3o tem leitura no servidor.</p>';
+      renderChannelBody();
+      if (!channelLoaded) loadChannelMedia(0);
     } else if (mediaTab === 'files') {
       var aspect = (D.format === 'long') ? 'horizontal 16:9' : 'vertical 9:16';
       var defaultHint = (m.image_prompt || '') + '\n[Contexto: ' + secsOf(m) + 's, ' + aspect + ', identidade do canal]';
@@ -703,7 +855,8 @@ STORYBOARD_JS = r"""
 
   /* delega\u00e7\u00e3o de cliques */
   root.addEventListener('click', function (ev) {
-    var el = ev.target.closest('[data-a]'); if (!el || el.disabled) return;
+    var el = (ev && ev.target && typeof ev.target.closest === 'function') ? ev.target.closest('[data-a]') : null;
+    if (!el || el.disabled) return;
     var a = el.dataset.a, m = el.closest('.scene') ? sceneOf(el) : null;
     if (m) focusCid = m.cid;
     if (a === 'addscene') addScene();
@@ -721,6 +874,12 @@ STORYBOARD_JS = r"""
     else if (a === 'submit-import') doImportMedia(el.dataset.sid || (m && m.id), false);
     else if (a === 'submit-modal-import') { var cur = model.filter(function (x) { return x.cid === mediaCid; })[0]; if (cur) doImportMedia(cur.id, true); }
     else if (a === 'media-tab') { mediaTab = el.dataset.v; mediaBody(); }
+    else if (a === 'channel-search-btn') handleChannelSearch();
+    else if (a === 'channel-clear-btn') handleChannelClear();
+    else if (a === 'channel-prev-page') handleChannelPage(-1);
+    else if (a === 'channel-next-page') handleChannelPage(1);
+    else if (a === 'add-asset-tag') handleAddTag(el.dataset.asset);
+    else if (a === 'remove-asset-tag') handleRemoveTag(el.dataset.asset, el.dataset.tag);
     else if (a === 'pickmedia') pickAsset(el.dataset.asset, el.dataset.tag, el.dataset.kind);
     else if (a === 'pickcandidate') { var b = document.getElementById('media-body'); if (b._cands) pickCandidate(b._cands[Number(el.dataset.i)]); }
     else if (a === 'genmissing-from-modal') { dlgMedia.close(); var g = document.getElementById('btn-gerar-faltante'); if (g) g.click(); }
@@ -731,6 +890,19 @@ STORYBOARD_JS = r"""
     var card = img.closest('.scene'), m = model.filter(function (x) { return x.cid === card.dataset.cid; })[0];
     if (m) { var i = indexOf(m); var t = card.querySelector('[data-f="thumb"]'); t.insertAdjacentHTML('beforebegin', thumbHtml({ asset_id: null }, i)); var f = t.previousElementSibling; f.dataset.k = 'err'; t.remove(); }
   }, true);
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      var t = ev.target;
+      if (t && t.matches && t.matches('[data-f="channel-search-q"], [data-f="channel-search-tag"]')) {
+        ev.preventDefault();
+        handleChannelSearch();
+      } else if (t && t.matches && t.matches('[data-f="new-tag-input"]')) {
+        ev.preventDefault();
+        handleAddTag(t.dataset.asset);
+      }
+    }
+  });
 
   adoptIds(); renderAll();
 })();

@@ -159,6 +159,9 @@ class Asset(_Model):
     attribution: str = ""
     source_url: str = ""
     cost_usd: Cost = 0.0
+    tags: list[str] = Field(default_factory=list)
+    origin: str = ""
+    provenance: str = ""
 
 
 class RenderJob(_Model):

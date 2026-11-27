@@ -239,7 +239,6 @@
     "creative_brief": {
       "anyOf": [
         {
-          "additionalProperties": true,
           "type": "object"
         },
         {
@@ -277,7 +276,11 @@
       "type": "string"
     },
     "production_mode": {
-      "$ref": "#/$defs/ProductionMode",
+      "allOf": [
+        {
+          "$ref": "#/$defs/ProductionMode"
+        }
+      ],
       "default": "piloto"
     },
     "project_id": {
@@ -301,7 +304,11 @@
       "type": "integer"
     },
     "status": {
-      "$ref": "#/$defs/VideoStatus",
+      "allOf": [
+        {
+          "$ref": "#/$defs/VideoStatus"
+        }
+      ],
       "default": "IDEA"
     },
     "style_id": {

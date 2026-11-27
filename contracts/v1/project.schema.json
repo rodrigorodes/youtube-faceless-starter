@@ -3,7 +3,7 @@
   "properties": {
     "budget_usd_month": {
       "default": 15.0,
-      "minimum": 0,
+      "minimum": 0.0,
       "title": "Budget Usd Month",
       "type": "number"
     },
