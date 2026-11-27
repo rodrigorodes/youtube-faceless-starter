@@ -104,3 +104,25 @@
   - Isolated Playwright E2E: `1 passed` em 5.05s na porta 8100 (`test_pc05_browser_tags.py`).
 - **Independent Review:** `evidence/pc05/pc05-02-independent-review-round2-approved.md` -> **`APPROVED` (`9.800/10`)**, zero P0/P1 abertos.
 - **Status:** `PC-05.02` = **`VERIFIED`** (`5 / 27` tarefas verificadas). Pronto para commit atômico.
+
+## 2026-11-27 — Task PC-03.01: Canonical Voice Catalog, Channel Vocal Identity & Frozen Run Config
+- **Task ID:** `PC-03.01` (Priority: `P1`)
+- **Assigned:** `Gemini 3.8 Flash Vertex` | **Reviewer:** `architecture-reviewer` (Independent Subagent)
+- **Scope Implemented:**
+  - Database Migration `0057_voice_identity.sql`: Coluna aditiva `voice_settings JSONB NOT NULL DEFAULT '{}'::jsonb` em `channel_profiles`, `videos` e `scenes`.
+  - Domain `ChannelProfile`: Imutabilidade profunda com `voice_settings: Mapping[str, object]` via `MappingProxyType`, validação pura de escalares em `validate_voice_settings`, e cálculo determinístico em `__hash__`.
+  - Domain `EffectiveConfig`: Resolução com herança em camadas (`ENGINE < CHANNEL (defaults) < STYLE < CHANNEL (patch) < VIDEO (patch)`), preservando proveniência e congelando a seleção de voz e `voice_settings`.
+  - Visual Style `_clean_voice`: Suporte tipado e validado a configurações de voz (`pacing`, `pitch`, `emotion`, `volume`).
+  - Architecture Decoupling: Injeção de `list_voices` e `find_voice` em `UseCases` via `composition/wiring.py`, mantendo `api/routes.py` estritamente desacoplada de `composition` e `adapters`.
+  - Voice Preview Endpoint: `POST /studio/voices/preview` com fail-closed para vozes neurais/indisponíveis (422), geração local de WAV via Piper, e eliminação garantida de arquivos temporários via `BackgroundTask(wav_path.unlink, missing_ok=True)`.
+  - Channel Creation & Updates: `ChannelProfileIn` e `ChannelUpdateIn` com `voice_settings`, e preservação do tratamento de concorrência otimista (HTTP 409 em `ChannelVersionConflict`).
+  - Channel Transactional Creation: `channel_creation.py` atualizado com serialização segura de `MappingProxyType` para JSONB e inclusão de `voice_settings` em `_CHANNEL_PROFILE_COLS` e na query `INSERT`.
+- **Review Rounds:**
+  - Round 1 Score: `7.970/10` (achados AR-01 a AR-05).
+  - Round 2 Score: `7.500/10` (achados AR-06 e AR-07 colaterais identificados e corrigidos).
+  - Round 3 Final Score: **`9.800/10`** (**`NO FINDINGS`**, aprovado com louvor).
+- **Test Evidence:**
+  - 65 passed em `tests/test_channel_api.py`, `tests/test_channel_creation_use_case.py`, `tests/test_channel_preferences_api.py`, `tests/test_pc03_voice_identity.py`, `tests/test_db.py`.
+  - 154 passed na suíte combinada de canais, tags, banco e produção em container Docker.
+  - 120 passed na suíte de arquitetura, contratos e domínio.
+- **Status:** `PC-03.01` = **`VERIFIED`** (`6 / 27` tarefas verificadas). Pronto para commit atômico.

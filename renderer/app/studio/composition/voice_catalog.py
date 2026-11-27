@@ -5,8 +5,8 @@ reais e modelos configurados na infraestrutura do Studio.
 """
 from __future__ import annotations
 
+import dataclasses
 from decimal import Decimal
-
 from pathlib import Path
 
 from ..domain.voice_catalog import VoiceGender, VoiceProfile, VoiceStyle
@@ -113,14 +113,18 @@ def list_voice_catalog(
     available_only: bool = False,
 ) -> list[VoiceProfile]:
     """Lista vozes do catálogo filtradas por idioma, execução local e/ou disponibilidade real."""
-    results = list(_CANONICAL_VOICES)
+    resolved = [
+        dataclasses.replace(v, available=is_voice_profile_available(v))
+        for v in _CANONICAL_VOICES
+    ]
+    results = resolved
     if language is not None:
         lang_lower = language.strip().lower()
         results = [v for v in results if v.language.lower() == lang_lower]
     if is_local is not None:
         results = [v for v in results if v.is_local == is_local]
     if available_only:
-        results = [v for v in results if is_voice_profile_available(v)]
+        results = [v for v in results if v.available]
     return results
 
 
@@ -128,6 +132,6 @@ def find_voice_profile(voice_id: str) -> VoiceProfile | None:
     """Localiza perfil de voz por ID canônico (ex: 'piper:pt_BR-faber-medium')."""
     target = voice_id.strip()
     for v in _CANONICAL_VOICES:
-        if v.voice_id == target or v.model == target:
-            return v
+        if v.voice_id == target or v.model == target or target == f"{v.provider}:{v.model}":
+            return dataclasses.replace(v, available=is_voice_profile_available(v))
     return None

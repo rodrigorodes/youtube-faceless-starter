@@ -287,11 +287,36 @@ def _clean_palette(value: object) -> dict:
 
 def _clean_voice(value: object) -> dict:
     voice = _object(value, "voice")
-    _unknown("params.voice", voice, ("model",))
-    model = voice.get("model")
-    if not isinstance(model, str) or not model.strip() or len(model.strip()) > MAX_VOICE_MODEL_LENGTH:
-        raise VisualStyleParamsInvalid(f"params.voice.model must be a non-empty string of at most {MAX_VOICE_MODEL_LENGTH} characters")
-    return {"model": model.strip()}
+    _unknown("params.voice", voice, ("model", "pacing", "pitch", "emotion", "volume"))
+    out: dict[str, Any] = {}
+    if "model" in voice:
+        model = voice.get("model")
+        if not isinstance(model, str) or not model.strip() or len(model.strip()) > MAX_VOICE_MODEL_LENGTH:
+            raise VisualStyleParamsInvalid(f"params.voice.model must be a non-empty string of at most {MAX_VOICE_MODEL_LENGTH} characters")
+        out["model"] = model.strip()
+    if "pacing" in voice:
+        pacing = voice.get("pacing")
+        if isinstance(pacing, bool) or not isinstance(pacing, (int, float)) or pacing <= 0 or pacing > 5.0:
+            raise VisualStyleParamsInvalid("params.voice.pacing must be a positive number between 0.1 and 5.0")
+        out["pacing"] = float(pacing)
+    if "pitch" in voice:
+        pitch = voice.get("pitch")
+        if isinstance(pitch, bool) or not isinstance(pitch, (int, float)) or pitch < -20.0 or pitch > 20.0:
+            raise VisualStyleParamsInvalid("params.voice.pitch must be a number between -20.0 and 20.0")
+        out["pitch"] = float(pitch)
+    if "emotion" in voice:
+        emotion = voice.get("emotion")
+        if not isinstance(emotion, str) or len(emotion) > 50:
+            raise VisualStyleParamsInvalid("params.voice.emotion must be a string up to 50 characters")
+        out["emotion"] = emotion.strip()
+    if "volume" in voice:
+        volume = voice.get("volume")
+        if isinstance(volume, bool) or not isinstance(volume, (int, float)) or volume < 0.0 or volume > 5.0:
+            raise VisualStyleParamsInvalid("params.voice.volume must be a number between 0.0 and 5.0")
+        out["volume"] = float(volume)
+    if not out:
+        raise VisualStyleParamsInvalid("params.voice needs at least one attribute")
+    return out
 
 
 def _clean_extra(value: object) -> dict:

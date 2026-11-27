@@ -38,6 +38,10 @@ class VoiceProfile:
     style: VoiceStyle = VoiceStyle.DOCUMENTARY
     is_neural: bool = False
     is_local: bool = True
+    supports_emotion: bool = False
+    supports_pacing: bool = True
+    is_demo: bool = False
+    available: bool = True
     cost_per_1k_chars: Decimal = Decimal("0.00")
     description: str = ""
     tags: tuple[str, ...] = ()

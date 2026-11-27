@@ -9,14 +9,17 @@
 
 ---
 
-## 1. Current State (`4 / 27 VERIFIED`, `1 / 27 IMPLEMENTED` awaiting R2 fix)
+## 1. Current State (`6 / 27 VERIFIED`)
 - **`PC-00.01` & `PC-00.02`:** **`VERIFIED`** (`9.585/10` & `9.540/10`, `Carbon High` review) — committed on `develop` at `6b6dfbe`.
 - **`PC-01.01` & `PC-01.02` (P0 Edit Integrity — blocking defect):** **`VERIFIED`** (`9.350/10` & `9.300/10`, `Neon High` R2 review after R1 caught 1 P0 + 2 P1) — committed on `develop` at `8efb306`.
-- **`PC-05.02` (`V4-11.09` Persistent SQL Asset Tags & Scoped Search):** **`IMPLEMENTED`** (uncommitted working tree on top of `8efb306`). Round 1 independent `Carbon High` review (`evidence/pc05/pc05-02-independent-review-carbon-high.md`) returned **`REJECTED` (`8.010/10`)** with 4 concrete blocking findings ready for immediate Round 2 fix:
-  1. **`P0-PC0502-1`:** Run `scripts/export_contracts.py` to update `contracts/v1/asset.schema.json` for `Asset` `tags`/`origin`/`provenance` and pass `tests/test_contracts_snapshot.py`.
-  2. **`P1-PC0502-1`:** Scope `studio.asset_tags` PK by `project_id` (`PRIMARY KEY (project_id, asset_id, tag)`) in `0056_asset_tags.sql` & `media_repo.py` so globally cached `studio.assets` cannot leak tags across projects; also include `license` in `asset_cache_key` (`media.py:342`).
-  3. **`P1-PC0502-2`:** Fix Channel Library preview URLs in `panel_video_storyboard_js.py` to use `?project_id=${channelProjectId}` instead of `?video_id=${VID}` (avoiding `403` on cross-video thumbnails).
-  4. **`P1-PC0502-3`:** Fix `_resolve_project_id` in `routes.py` to use real `uc.channel_profiles_repo` (not non-existent `uc.videos`/`uc.channel_profiles`) and add real `/channels/{cid}/assets*` REST tests.
+- **`PC-05.02` (`V4-11.09` Persistent SQL Asset Tags & Scoped Search):** **`VERIFIED`** (`9.800/10`, `architecture-reviewer` R2 review) — committed on `develop` at `ab845c9`.
+- **`PC-03.01` (`V4-02.05`, `V4-02.06` Canonical Voice Catalog, Channel Vocal Identity & Frozen Run Config):** **`VERIFIED`** (`9.800/10`, `architecture-reviewer` R3 review, zero achados abertos).
+  - Migration `0057_voice_identity.sql` aditiva com `voice_settings JSONB`.
+  - Imutabilidade profunda do agregado `ChannelProfile` com `MappingProxyType` e validação estrita de escalares.
+  - Resolução da configuração efetiva em `EffectiveConfig` e congelamento imutável no run snapshot `studio.production_runs`.
+  - Preview local com Piper, fail-closed para vozes indisponíveis/neurais (422), e limpeza garantida via `BackgroundTask(wav_path.unlink, missing_ok=True)`.
+  - Preservação da concorrência otimista (HTTP 409 em `ChannelVersionConflict`) e integridade na criação transacional de canal (`CreateChannelTransactional`).
+- **Next Task:** `PC-03.02` (`V4-02.07`, `V4-02.08`, `V4-02.09` — Intenção emocional, ritmo/pausas, dicionário de pronúncia PT-BR e limites honestos de capacidade de TTS).
 - **Guardrails Preserved:** `$0.00` external API spend, `STUDIO_PUBLICATION_ENABLED=0`, `main` untouched (`42700cb`), DEV ports `8000`/`5678` untouched, zero leftover E2E/`8100` containers.
 
 ---

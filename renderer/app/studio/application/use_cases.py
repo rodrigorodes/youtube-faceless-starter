@@ -1,5 +1,7 @@
 """Casos de uso. Dependem das portas, nunca de adaptadores."""
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..domain.contracts import ProductionMode, Project, Video, VideoFormat, VideoStatus
 from ..domain.states import assert_transition
@@ -198,6 +200,9 @@ class UseCases:
     composition_view: "BuildCompositionView | None" = None
     create_channel_transactional: CreateChannelTransactional | None = None
     usage_repo: "UsageRepository | None" = None
+    preview_voice: "SynthesizeVoicePreview | None" = None
+    list_voices: Callable[[], list[object]] | None = None
+    find_voice: Callable[[str], object | None] | None = None
 
     @classmethod
     def from_repo(cls, repo: VideoRepository, editorial: Editorial | None = None, media: Media | None = None,
@@ -266,7 +271,10 @@ class UseCases:
                   advanced_page: "BuildAdvancedView | None" = None,
                   composition_view: "BuildCompositionView | None" = None,
                   create_channel_transactional: CreateChannelTransactional | None = None,
-                  usage_repo: "UsageRepository | None" = None) -> "UseCases":
+                  usage_repo: "UsageRepository | None" = None,
+                  preview_voice: "SynthesizeVoicePreview | None" = None,
+                  list_voices: Callable[[], list[object]] | None = None,
+                  find_voice: Callable[[str], object | None] | None = None) -> "UseCases":
         return cls(CreateProject(repo), CreateVideo(repo, style_repo), GetVideo(repo), TransitionVideo(repo),
                    editorial, media, rendering, publishing, analytics, resume, panel, ingest_trends, trends_repo,
                    categories_repo, list_categories, save_category, delete_category, refresh_trends,
@@ -286,4 +294,16 @@ list_channel_profiles, production, script_view, providers, get_channel_budget, s
                    register_byok_key, rotate_byok_key, revoke_byok_key, plan_regeneration,
                    create_visual_style, get_visual_style, list_visual_styles, update_visual_style,
                    archive_visual_style, visual_style_usage, styles_page, set_video_style, set_video_style_patch, video_style_view,
-                   advanced_page, composition_view, create_channel_transactional, usage_repo)
+                   advanced_page, composition_view, create_channel_transactional, usage_repo, preview_voice, list_voices, find_voice)
+
+
+class SynthesizeVoicePreview:
+    def __init__(self, voice_builder: Callable[[str], object]):
+        self._voice_builder = voice_builder
+
+    def execute(self, model: str, text: str, output_path: Path) -> float:
+        voice: object = self._voice_builder(model)
+        speak_fn = getattr(voice, "speak", None)
+        if not callable(speak_fn):
+            raise ValueError(f"voice {model!r} does not implement speak()")
+        return speak_fn(text, output_path)

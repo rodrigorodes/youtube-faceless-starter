@@ -584,13 +584,16 @@ def _merge_audiovisual(
     style: VisualStyle | None,
     video_patch: Mapping[str, Any],
     channel_patch: Mapping[str, Any],
+    channel_defaults: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
-    """Etapa 2: patches por chave, ascendendo ``engine < estilo < canal < vídeo``.
+    """Etapa 2: patches por chave, ascendendo ``engine < canal (defaults) < estilo < canal (patch) < vídeo``.
 
     Devolve os parâmetros mesclados e a proveniência de cada valor materializado.
     """
     layers: list[tuple[Mapping[str, Any], ConfigSource]] = [
         (AUDIOVISUAL_DEFAULTS, ConfigSource.ENGINE_DEFAULT)]
+    if channel_defaults:
+        layers.append((channel_defaults, ConfigSource.CHANNEL))
     if style is not None:
         layers.append((style.params, ConfigSource.STYLE))
     if channel_patch:
@@ -700,7 +703,17 @@ def resolve_effective_config(
             "cta": channel.cta,
         }
         editorial_source = ConfigSource.CHANNEL
-    audiovisual, provenance = _merge_audiovisual(style, video_patch, channel_patch)
+    channel_defaults: dict[str, Any] = {}
+    if channel is not None and (channel.voice or getattr(channel, "voice_settings", None)):
+        voice_default: dict[str, Any] = {}
+        if channel.voice:
+            voice_default["model"] = channel.voice
+        if getattr(channel, "voice_settings", None):
+            voice_default.update(channel.voice_settings)
+        if voice_default:
+            channel_defaults["voice"] = voice_default
+
+    audiovisual, provenance = _merge_audiovisual(style, video_patch, channel_patch, channel_defaults=channel_defaults)
 
     if provider_profile is None:
         profile = EconomicProfile.BALANCED

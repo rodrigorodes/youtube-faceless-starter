@@ -133,9 +133,10 @@ from ..adapters.wikipedia_research import WikipediaResearch
 from ..application.production import (ActiveRuns, CapacityExceeded, COORDINATOR_DAG, COORDINATOR_DAG_WITH_RESEARCH, BudgetProjection, Production, ProductionMode, ProductionWorker,
                                      ProductionCoordinator, build_stage_handlers, frozen_provider_selection)
 from ..application.advanced_page import BuildAdvancedView
-from ..application.use_cases import ServiceUnavailable, UseCases
+from ..application.use_cases import ServiceUnavailable, SynthesizeVoicePreview, UseCases
 
 from .settings import CONNECT_OPTIONS, PING_TTL_SECONDS, RETRY_SECONDS, Settings
+from .voice_catalog import find_voice_profile, list_voice_catalog
 from .providers import (FREE_PROVIDERS, ProviderRouting, _configured_provider_spec,
                         _provider_implementations, _provider_probes)
 
@@ -866,7 +867,10 @@ production=production, script_view=script_view,
                                   advanced_page=BuildAdvancedView(providers_service, panel_repo),
                                   composition_view=BuildCompositionView(PostgresRenderPlanRepository(connect)),
                                   create_channel_transactional=CreateChannelTransactional(connect),
-                                   usage_repo=usage)
+                                  usage_repo=usage,
+                                  preview_voice=SynthesizeVoicePreview(lambda model: self._build_provider("voice", f"piper:{model}")),
+                                  list_voices=list_voice_catalog,
+                                  find_voice=find_voice_profile)
 
     def ping(self) -> bool:
         ok, valid_until = self._ping

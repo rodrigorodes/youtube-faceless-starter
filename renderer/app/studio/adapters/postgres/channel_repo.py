@@ -6,6 +6,7 @@ concorrentes do mesmo perfil (quem perde recebe `ChannelVersionConflict`).
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import dataclasses
 import uuid
 from datetime import datetime
@@ -35,12 +36,13 @@ from .repo import _translated, normalize_style_patch
 
 _COLS = ("id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s, "
          "visual_identity, voice, audio, thumbnail, cta, style_id, style_patch, style_patch_revision, "
-         "youtube_channel_id, default_mode, default_format, version, archived, created_at, updated_at")
+         "youtube_channel_id, default_mode, default_format, version, archived, created_at, updated_at, voice_settings")
 
 
 def _profile(row: dict) -> ChannelProfile:
     row = dict(row)
     row["pillars"] = tuple(row["pillars"]) if row.get("pillars") is not None else ()
+    row["voice_settings"] = dict(row.get("voice_settings") or {})
     if "default_mode" in row and row["default_mode"] is not None:
         row["default_mode"] = ProductionMode(row["default_mode"])
     if "default_format" in row and row["default_format"] is not None:
@@ -56,6 +58,8 @@ def _snapshot(profile: ChannelProfile) -> dict:
             value = value.isoformat()
         elif isinstance(value, tuple):
             value = list(value)
+        elif isinstance(value, Mapping):
+            value = dict(value)
         elif isinstance(value, StylePatch):
             value = value.to_mapping()
         elif isinstance(value, (ProductionMode, VideoFormat)):
@@ -145,14 +149,14 @@ class PostgresChannelProfileRepository(_Base):
                                 name = %s, strategy = %s, language = %s, audience = %s, pillars = %s, narrative = %s,
                                 target_duration_s = %s, visual_identity = %s, voice = %s, audio = %s, thumbnail = %s,
                                 cta = %s, style_id = %s, youtube_channel_id = %s, default_mode = %s, default_format = %s,
-                                version = %s, archived = %s,
+                                version = %s, archived = %s, voice_settings = %s,
                                 updated_at = now()
                                 WHERE id = %s RETURNING {_COLS}""",
                             (updated.name, updated.strategy, updated.language, updated.audience, list(updated.pillars),
                              updated.narrative, updated.target_duration_s, updated.visual_identity, updated.voice,
                              updated.audio, updated.thumbnail, updated.cta, updated.style_id,
                              updated.youtube_channel_id, updated.default_mode.value, updated.default_format.value,
-                             updated.version, updated.archived, pid),
+                             updated.version, updated.archived, Jsonb(dict(updated.voice_settings)), pid),
                         )
                         new_row = cur.fetchone()
                     except psycopg.errors.ForeignKeyViolation as exc:
@@ -210,14 +214,14 @@ class PostgresChannelProfileRepository(_Base):
             """INSERT INTO studio.channel_profiles (
                 id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s,
                 visual_identity, voice, audio, thumbnail, cta, style_id, youtube_channel_id,
-                default_mode, default_format, version, archived
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                default_mode, default_format, version, archived, voice_settings
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING """ + _COLS,
             (profile.id, profile.project_id, profile.name, profile.strategy, profile.language, profile.audience,
              list(profile.pillars), profile.narrative, profile.target_duration_s, profile.visual_identity, profile.voice,
              profile.audio, profile.thumbnail, profile.cta, profile.style_id, profile.youtube_channel_id,
              profile.default_mode.value, profile.default_format.value,
-             profile.version, profile.archived),
+             profile.version, profile.archived, Jsonb(dict(profile.voice_settings))),
         )
         return cur.fetchone()
 

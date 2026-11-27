@@ -17,7 +17,7 @@
 
 ---
 
-## 2. Task Status Board (`PC-00.01`..`PC-09.02` — `5 / 27 VERIFIED`)
+## 2. Task Status Board (`PC-00.01`..`PC-09.02` — `6 / 27 VERIFIED`)
 
 | ID | Prio | Dep. | Executor | Reviewer | Status | Independent Score |
 |---|---|---|---|---|---|---|
@@ -28,7 +28,7 @@
 | `PC-02.01` | P1 | `01.02` | `Hydrogen Medium` / `Flash` | `Neon High` / `Carbon High` | `PENDING` | — |
 | `PC-02.02` | P1 | `02.01` | `Hydrogen Medium` / `Flash` | `Neon High` / `Carbon High` | `PENDING` | — |
 | `PC-02.03` | P1 | `02.02` | `Hydrogen Medium` | `Neon High` | `PENDING` | — |
-| `PC-03.01` | P1 | `01.02` | `Flash` / `Hydrogen Medium` | `Carbon High` | `PENDING` | — |
+| `PC-03.01` | P1 | `01.02` | `Gemini 3.8 Flash` | `Independent Review` | **`VERIFIED`** | **`9.800/10`** (R1 `7.970` -> R2 `7.500` -> R3 `9.800`) |
 | `PC-03.02` | P1 | `03.01` | `Flash` / `Hydrogen Medium` | `Carbon High` | `PENDING` | — |
 | `PC-03.03` | P1 | `03.01` | `Hydrogen Medium` | `Neon High` | `PENDING` | — |
 | `PC-04.01` | P1 | `01.02, 03.03` | `Hydrogen Medium` / `Flash` | `Neon High` | `PENDING` | — |

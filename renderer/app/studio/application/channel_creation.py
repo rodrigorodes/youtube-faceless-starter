@@ -9,6 +9,7 @@ Cria atomicamente em uma única transação de banco:
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import contextmanager
 import dataclasses
 from dataclasses import dataclass
@@ -58,13 +59,14 @@ def _translated():
 _CHANNEL_PROFILE_COLS = (
     "id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s, "
     "visual_identity, voice, audio, thumbnail, cta, style_id, style_patch, style_patch_revision, "
-    "youtube_channel_id, default_mode, default_format, version, archived, created_at, updated_at"
+    "youtube_channel_id, default_mode, default_format, version, archived, created_at, updated_at, voice_settings"
 )
 
 
 def _profile_from_row(row: dict) -> ChannelProfile:
     r = dict(row)
     r["pillars"] = tuple(r["pillars"]) if r.get("pillars") is not None else ()
+    r["voice_settings"] = dict(r.get("voice_settings") or {})
     if "default_mode" in r and r["default_mode"] is not None:
         r["default_mode"] = ProductionMode(r["default_mode"])
     if "default_format" in r and r["default_format"] is not None:
@@ -80,6 +82,8 @@ def _snapshot(profile: ChannelProfile) -> dict[str, object]:
             value = value.isoformat()
         elif isinstance(value, tuple):
             value = list(value)
+        elif isinstance(value, Mapping):
+            value = dict(value)
         elif hasattr(value, "to_mapping"):
             value = value.to_mapping()
         elif isinstance(value, (ProductionMode, VideoFormat)):
@@ -102,6 +106,7 @@ class ChannelCreationPayload:
     target_duration_s: int = 60
     visual_identity: str = ""
     voice: str = ""
+    voice_settings: dict[str, object] = dataclasses.field(default_factory=dict)
     audio: str = ""
     thumbnail: str = ""
     cta: str = ""
@@ -289,6 +294,7 @@ class CreateChannelTransactional:
                                 target_duration_s=payload.target_duration_s,
                                 visual_identity=payload.visual_identity,
                                 voice=payload.voice,
+                                voice_settings=payload.voice_settings,
                                 audio=payload.audio,
                                 thumbnail=payload.thumbnail,
                                 cta=payload.cta,
@@ -301,8 +307,8 @@ class CreateChannelTransactional:
                                 f"""INSERT INTO studio.channel_profiles (
                                     id, project_id, name, strategy, language, audience, pillars, narrative, target_duration_s,
                                     visual_identity, voice, audio, thumbnail, cta, style_id, youtube_channel_id,
-                                    default_mode, default_format, version, archived
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    default_mode, default_format, version, archived, voice_settings
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 RETURNING {_CHANNEL_PROFILE_COLS}""",
                                 (
                                     profile_to_create.id,
@@ -325,6 +331,7 @@ class CreateChannelTransactional:
                                     profile_to_create.default_format.value,
                                     profile_to_create.version,
                                     profile_to_create.archived,
+                                    _jsonb(dict(profile_to_create.voice_settings)),
                                 ),
                             )
                             profile_row = cur.fetchone()

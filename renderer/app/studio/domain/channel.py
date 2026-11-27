@@ -11,10 +11,11 @@ publicação (essa é a YT-03).
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from .contracts import ProductionMode, VideoFormat
@@ -46,6 +47,7 @@ CREATABLE_FIELDS = (
     "target_duration_s",
     "visual_identity",
     "voice",
+    "voice_settings",
     "audio",
     "thumbnail",
     "cta",
@@ -67,6 +69,7 @@ UPDATABLE_FIELDS = (
     "target_duration_s",
     "visual_identity",
     "voice",
+    "voice_settings",
     "audio",
     "thumbnail",
     "cta",
@@ -212,6 +215,22 @@ def validate_video_format(value: object) -> VideoFormat:
     )
 
 
+def validate_voice_settings(value: object) -> dict[str, object]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ChannelFieldInvalid("voice_settings must be an object")
+    cleaned = {}
+    for k, v in value.items():
+        if not isinstance(k, str) or not k.strip() or len(k.strip()) > 50:
+            raise ChannelFieldInvalid(f"invalid voice_settings key: {k!r}")
+        key = k.strip()
+        if not isinstance(v, (int, float, str, bool)):
+            raise ChannelFieldInvalid(f"voice_settings values must be primitive scalars, got {type(v).__name__} for {k!r}")
+        cleaned[key] = v
+    return cleaned
+
+
 @dataclass(frozen=True)
 class ChannelProfile:
     id: str
@@ -225,6 +244,7 @@ class ChannelProfile:
     target_duration_s: int = 60
     visual_identity: str = ""
     voice: str = ""
+    voice_settings: Mapping[str, object] = field(default_factory=dict)
     audio: str = ""
     thumbnail: str = ""
     cta: str = ""
@@ -261,6 +281,7 @@ class ChannelProfile:
         object.__setattr__(self, "target_duration_s", validate_duration(self.target_duration_s))
         object.__setattr__(self, "visual_identity", _text(self.visual_identity, "visual_identity", MAX_VISUAL_IDENTITY_LENGTH))
         object.__setattr__(self, "voice", _text(self.voice, "voice", MAX_PROVIDER_SPEC_LENGTH))
+        object.__setattr__(self, "voice_settings", MappingProxyType(validate_voice_settings(self.voice_settings)))
         object.__setattr__(self, "audio", _text(self.audio, "audio", MAX_PROVIDER_SPEC_LENGTH))
         object.__setattr__(self, "thumbnail", _text(self.thumbnail, "thumbnail", MAX_THUMBNAIL_LENGTH))
         object.__setattr__(self, "cta", _text(self.cta, "cta", MAX_CTA_LENGTH))
@@ -287,6 +308,17 @@ class ChannelProfile:
         object.__setattr__(self, "version", validate_version(self.version))
         if not isinstance(self.archived, bool):
             raise ChannelFieldInvalid("archived must be a boolean")
+
+    def __hash__(self) -> int:
+        settings_items = tuple(sorted(self.voice_settings.items())) if self.voice_settings else ()
+        return hash((
+            self.id, self.project_id, self.name, self.strategy, self.language,
+            self.audience, self.pillars, self.narrative, self.target_duration_s,
+            self.visual_identity, self.voice, settings_items, self.audio,
+            self.thumbnail, self.cta, self.style_id, self.style_patch,
+            self.style_patch_revision, self.youtube_channel_id,
+            self.default_mode, self.default_format, self.version, self.archived,
+        ))
 
 
 def resolve_publication_authorization(

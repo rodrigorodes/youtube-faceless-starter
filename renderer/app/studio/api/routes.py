@@ -674,6 +674,7 @@ class ChannelProfileIn(BaseModel):
     target_duration_s: int = Field(default=60, ge=1, le=36000)
     visual_identity: str = Field(default="", max_length=2000)
     voice: str = Field(default="", max_length=200)
+    voice_settings: dict[str, object] = Field(default_factory=dict)
     audio: str = Field(default="", max_length=200)
     thumbnail: str = Field(default="", max_length=2000)
     cta: str = Field(default="", max_length=500)
@@ -685,10 +686,12 @@ class ChannelProfileIn(BaseModel):
 
 
 class ChannelUpdateIn(BaseModel):
-    expected_version: int = Field(ge=1)
+    expected_version: int = Field(default=1, ge=1)
     changes: dict[str, object] = Field(default_factory=dict)
-    default_mode: ProductionMode = ProductionMode.piloto
-    default_format: VideoFormat = VideoFormat.short
+    voice: str | None = None
+    voice_settings: dict[str, object] | None = None
+    default_mode: ProductionMode | None = None
+    default_format: VideoFormat | None = None
 
 
 class ChannelProfileOut(BaseModel):
@@ -703,6 +706,7 @@ class ChannelProfileOut(BaseModel):
     target_duration_s: int
     visual_identity: str
     voice: str
+    voice_settings: dict[str, object] = Field(default_factory=dict)
     audio: str
     thumbnail: str
     cta: str
@@ -714,6 +718,34 @@ class ChannelProfileOut(BaseModel):
     archived: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class VoiceProfileOut(BaseModel):
+    voice_id: str
+    provider: str
+    model: str
+    name: str
+    language: str
+    gender: str
+    style: str
+    is_neural: bool
+    is_local: bool
+    supports_emotion: bool = False
+    supports_pacing: bool = True
+    is_demo: bool = False
+    available: bool = True
+    cost_per_1k_chars: float = 0.0
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class VoicesCatalogOut(BaseModel):
+    voices: list[VoiceProfileOut]
+
+
+class VoicePreviewIn(BaseModel):
+    voice_id: str
+    text: str = Field(default="Amostra de voz do canal.", max_length=500)
 
 
 class ProjectOut(BaseModel):
@@ -987,7 +1019,8 @@ def _channel_out(profile) -> dict:
             "strategy": profile.strategy, "language": profile.language, "audience": profile.audience,
             "pillars": list(profile.pillars), "narrative": profile.narrative,
             "target_duration_s": profile.target_duration_s, "visual_identity": profile.visual_identity,
-            "voice": profile.voice, "audio": profile.audio, "thumbnail": profile.thumbnail, "cta": profile.cta,
+            "voice": profile.voice, "voice_settings": getattr(profile, "voice_settings", {}),
+            "audio": profile.audio, "thumbnail": profile.thumbnail, "cta": profile.cta,
             "style_id": profile.style_id,
             "youtube_channel_id": profile.youtube_channel_id,
             "default_mode": profile.default_mode,
@@ -3475,12 +3508,21 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
     def update_channel(profile_id: str, body: ChannelUpdateIn):
         def go(uc):
             changes = dict(body.changes)
-            if "default_mode" not in changes and "default_mode" in body.model_fields_set:
+            if body.voice is not None and "voice" not in changes:
+                changes["voice"] = body.voice
+            if body.voice_settings is not None and "voice_settings" not in changes:
+                changes["voice_settings"] = dict(body.voice_settings)
+            if "default_mode" not in changes and "default_mode" in body.model_fields_set and body.default_mode is not None:
                 changes["default_mode"] = body.default_mode.value if isinstance(body.default_mode, ProductionMode) else str(body.default_mode)
-            if "default_format" not in changes and "default_format" in body.model_fields_set:
+            if "default_format" not in changes and "default_format" in body.model_fields_set and body.default_format is not None:
                 changes["default_format"] = body.default_format.value if isinstance(body.default_format, VideoFormat) else str(body.default_format)
-            profile = _need(uc, "update_channel_profile", "channel services unavailable").execute(
-                check_id(profile_id), changes, body.expected_version)
+            try:
+                profile = _need(uc, "update_channel_profile", "channel services unavailable").execute(
+                    check_id(profile_id), changes, body.expected_version)
+            except ChannelVersionConflict:
+                raise
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
             if profile is None:
                 raise HTTPException(404, "channel profile not found")
             return _channel_out(profile)
@@ -3535,6 +3577,71 @@ def make_router(get_use_cases: Callable[[], UseCases | None], ping: Callable[[],
                 },
             }
 
+        return run(go)
+
+    # -- vozes: catálogo canônico e preview (PC-03.01) ------------------------
+
+    @router.get("/voices", response_model=VoicesCatalogOut)
+    def list_voices_route():
+        def go(uc):
+            list_fn = _need(uc, "list_voices", "voice catalog unavailable")
+            voices = list_fn()
+            outs = []
+            for v in voices:
+                outs.append(VoiceProfileOut(
+                    voice_id=v.voice_id,
+                    provider=v.provider,
+                    model=v.model,
+                    name=v.name,
+                    language=v.language,
+                    gender=v.gender.value if hasattr(v.gender, "value") else str(v.gender),
+                    style=v.style.value if hasattr(v.style, "value") else str(v.style),
+                    is_neural=v.is_neural,
+                    is_local=v.is_local,
+                    supports_emotion=getattr(v, "supports_emotion", False),
+                    supports_pacing=getattr(v, "supports_pacing", True),
+                    is_demo=getattr(v, "is_demo", False),
+                    available=getattr(v, "available", True),
+                    cost_per_1k_chars=float(v.cost_per_1k_chars),
+                    description=v.description,
+                    tags=list(v.tags),
+                ))
+            return VoicesCatalogOut(voices=outs)
+        return run(go)
+
+    @router.post("/voices/preview")
+    def preview_voice_route(body: VoicePreviewIn):
+        def go(uc):
+            find_fn = _need(uc, "find_voice", "voice catalog unavailable")
+            profile = find_fn(body.voice_id)
+            if profile is None:
+                raise HTTPException(404, f"voice {body.voice_id!r} not found in catalog")
+            if not getattr(profile, "available", False):
+                raise HTTPException(422, f"voice {body.voice_id!r} is not available locally in this environment")
+            if profile.provider != "piper":
+                raise HTTPException(422, f"preview not supported for provider {profile.provider!r}")
+
+            previewer = _need(uc, "preview_voice", "voice preview unavailable")
+            import tempfile
+            from starlette.background import BackgroundTask
+            tf = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            wav_path = Path(tf.name)
+            tf.close()
+            try:
+                text_to_speak = body.text.strip() or "Amostra de voz do estúdio."
+                previewer.execute(profile.model, text_to_speak, wav_path)
+                return FileResponse(
+                    wav_path,
+                    media_type="audio/wav",
+                    headers={"Cache-Control": "no-cache"},
+                    background=BackgroundTask(wav_path.unlink, missing_ok=True),
+                )
+            except Exception as exc:
+                try:
+                    wav_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise HTTPException(500, f"failed to generate voice preview: {exc}") from exc
         return run(go)
 
     # -- estilos: biblioteca compartilhada (VS-05a) ---------------------------
